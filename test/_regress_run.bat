@@ -21,6 +21,11 @@ myc.exe check dogfood\dogfood_config.c > %OUT%
 findstr /B /C:"verdict:" /C:"assurance:" %OUT%
 myc.exe check dogfood\dogfood_config.c --run > %OUT%
 findstr /B /C:"verdict:" /C:"assurance:" %OUT%
+echo --- dogfood tilemap (tool dogfooding lintas-program ketiga)
+myc.exe check dogfood\dogfood_tilemap.c > %OUT%
+findstr /B /C:"verdict:" /C:"assurance:" %OUT%
+myc.exe check dogfood\dogfood_tilemap.c --run > %OUT%
+findstr /B /C:"verdict:" /C:"assurance:" %OUT%
 echo --- prove fixtures (--prove): ok_prove harus L2, bad_prove harus PROVE_VIOLATION
 for %%f in (test\fixtures\ok_prove.c test\fixtures\bad_prove.c) do (
   echo === %%f
