@@ -35,6 +35,9 @@ clang verification build + run      -> L3 RUNTIME (--run, opsional;
    (ASan+UBSan, -O0, eksekusi          RUNTIME_VIOLATION bila ada laporan
    terkendali via proc.c;              sanitizer; --checked juga aktif
    --checked: +MYC_CHECKED fat)        di verification build)
+harness kasus tepi (--driver,       -> L3 RUNTIME (D2.2; DRIVER_VIOLATION
+   D2.2): parse signature fungsi        bila sanitizer menangkap bug pada
+   ber-kontrak, generate + run          kasus tepi di dalam domain kontrak)
 OK (assurance: L1 SANE, L2 PROVEN, L3 RUNTIME, L4 SPATIAL, atau L5 FULL)
 ```
 
@@ -45,7 +48,7 @@ OK (assurance: L1 SANE, L2 PROVEN, L3 RUNTIME, L4 SPATIAL, atau L5 FULL)
 
 ```text
 myc check <file.c> [--json] [--analyze] [--strict] [--no-lint] [--cwd DIR]
-myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc]
+myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver]
 myc check -          [--json] [--analyze] [--strict] [--no-lint] (stdin)
 myc policy                                 (tampilkan whitelist header)
 myc probe                                  (self-test exact argv)
@@ -76,6 +79,17 @@ Flag:
   bersih tanpa marker panic → assurance **L5 FULL** (backend opsional).
   Panic Fil-C (`filc safety error` dll) → **FILC_VIOLATION**. Non-blocking:
   bila filc-clang tidak tersedia (PATH/WSL), gate di-skip + diagnostic.
+- `--driver` (D2.2) — **driver-generator**: scan fungsi ber-kontrak
+  (`//@ requires`), parse signature, bangkitkan harness yang memanggil tiap
+  fungsi dengan **kasus tepi di dalam domain kontrak** (batas dari requires,
+  0, 1, 2, 3, ...) pada buffer calloc, lalu build + run dengan clang
+  ASan+UBSan. Run bersih dengan ≥1 kasus tereksekusi → assurance **L3
+  RUNTIME**; sanitizer menangkap bug → **DRIVER_VIOLATION**. Non-blocking:
+  clang hilang / tidak ada fungsi ber-kontrak / build harness gagal → skip +
+  diagnostic. Nilai negatif/SIZE_MAX tidak diuji tanpa kontrak yang
+  membuka peluangnya (hindari false positive). Fixture: `ok_driver.c` → OK,
+  `bad_driver_oob.c` (OOB via `a[n]` saat n=4 pada kontrak `n <= 4`) →
+  DRIVER_VIOLATION.
 
 ## MCP server (P9)
 
@@ -84,11 +98,19 @@ stdio, newline-delimited — satu pesan per baris). Agen (harness yang
 mendukung MCP) dapat memanggil `myc check` sebagai tool. Tool yang tersedia:
 
 - `check` — verifikasi source C. Args: `source` (string, wajib), `flags`
-  (array string opsional: `--run --prove --checked --filc --analyze
-  --strict --no-lint`), `cwd` (opsional). Hasil: teks JSON lengkap
+  (array string opsional: `--run --prove --checked --filc --driver
+  --analyze --strict --no-lint`), `cwd` (opsional). Hasil: teks JSON lengkap
   (verdict, assurance L0–L5, error, diagnostics, output gate).
 - `version` — versi myc + ketersediaan gcc/clang.
 - `policy` — whitelist header default.
+- `contracts` — scan kontrak-lite `//@ requires/ensures` dan tampilkan
+  semua ekspresi kontrak.
+- `lint` — jalankan lint memory-safety myc pada source (verdict +
+  diagnostic).
+
+Client contoh (Python, tanpa dependensi): `python mcp_client.py` —
+melakukan handshake `initialize`, `tools/list`, lalu memanggil tool
+`check`/`version`/`contracts`/`lint` lewat stdio.
 
 MCP server memanggil pipeline **in-process** (myc.c dibangun dengan
 `-DMYC_NO_MAIN`); tidak ada shell string, source hanya lewat stdin.
@@ -135,7 +157,11 @@ Gunakan `shell` hanya bila sintaks shell memang dibutuhkan, dan jelaskan.
   sendiri `json.c`), **soak** (`test/_soak.bat`), dan **corpus abuse**
   (`test/_corpus_abuse.bat` + `test/corpus/*.c` — input ganas tidak boleh
   membuat myc crash/hang). Smoke test MCP: `test/_mcp_smoke.bat`.
-- Belum: driver-generator otomatis (D2.2).
+- **D2.2 driver-generator selesai**: gate `--driver` (harness kasus tepi
+  dari fungsi ber-kontrak, clang ASan+UBSan) → L3 RUNTIME bila bersih,
+  DRIVER_VIOLATION bila sanitizer menangkap bug. Tool MCP tambahan:
+  `contracts` + `lint`. Client MCP contoh: `mcp_client.py`. Self-dogfooding
+  kini 15 source myc (termasuk `driver.c`) → OK.
 - **Arah (2026-08-01)**: fokus = **memory-safety & minim bug**, bukan
   pembatasan library. Policy = warning non-blocking (lihat Kebijakan). Detail
   di `AGENTS.md` dan `docs/rencana-memory-safety.md`.

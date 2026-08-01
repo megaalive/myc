@@ -22,6 +22,7 @@
 #include <string.h>
 
 #include "contract.h"
+#include "driver.h"
 #include "filc.h"
 #include "lint.h"
 #include "policy.h"
@@ -450,7 +451,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         int  n;
         myc_policy_hash(policy_hex);
         n = snprintf(buf, sizeof(buf),
-                     "v6|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s|src:%s",
+                     "v7|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s|src:%s",
                      gcc_path,
                      req->cwd ? req->cwd : "",
                      policy_hex,
@@ -459,6 +460,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                      req->prove ? "prove" : "noprove",
                      req->checked ? "checked" : "nochecked",
                      req->filc ? "filc" : "nofilc",
+                     req->driver ? "driver" : "nodriver",
                      res->source_sha256 ? res->source_sha256 : "");
         sha256_hex(buf, (size_t)n, hex);
         res->fingerprint = _strdup(hex);
@@ -622,7 +624,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             if (res->assurance < MYC_ASSURANCE_L1_SANE)
                 res->assurance = MYC_ASSURANCE_L1_SANE;
         }
-        if (!req->run && !req->prove && !req->filc) {
+        if (!req->run && !req->prove && !req->filc && !req->driver) {
             free(gcc_path);
             return;
         }
@@ -655,7 +657,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             if (res->assurance < MYC_ASSURANCE_L1_SANE)
                 res->assurance = MYC_ASSURANCE_L1_SANE;
         }
-        if (!req->run && !req->filc) {
+        if (!req->run && !req->filc && !req->driver) {
             free(gcc_path);
             return;
         }
@@ -687,7 +689,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             if (res->assurance < MYC_ASSURANCE_L1_SANE)
                 res->assurance = MYC_ASSURANCE_L1_SANE;
         }
-        if (!req->run) {
+        if (!req->run && !req->driver) {
             free(gcc_path);
             return;
         }
@@ -711,15 +713,46 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             /* jangan turunkan L4 (checked) ke L3 -- max(level) */
             if (res->assurance < MYC_ASSURANCE_L3_RUNTIME)
                 res->assurance = MYC_ASSURANCE_L3_RUNTIME;
+        } else {
+            /* gate di-skip (build gagal / clang hilang): pertahankan assurance
+             * yang sudah terbukti (jangan turunkan L2 dari prove ke L1) */
+            res->verdict = MC_OK;
+            res->err = MYC_ERR_NONE;
+            if (res->assurance < MYC_ASSURANCE_L1_SANE)
+                res->assurance = MYC_ASSURANCE_L1_SANE;
+        }
+        if (!req->driver) {
             free(gcc_path);
             return;
         }
-        /* gate di-skip (build gagal / clang hilang): pertahankan assurance
-         * yang sudah terbukti (jangan turunkan L2 dari prove ke L1) */
-        res->verdict = MC_OK;
-        res->err = MYC_ERR_NONE;
-        if (res->assurance < MYC_ASSURANCE_L1_SANE)
-            res->assurance = MYC_ASSURANCE_L1_SANE;
+    }
+
+    /* --- Gate opsional: driver-generator (D2.2, --driver) -> L3 RUNTIME ---
+     * Non-blocking: bila clang hilang / tidak ada fungsi ber-kontrak / build
+     * harness gagal, assurance statis dipertahankan + diagnostic. Bila run
+     * bersih dengan >= 1 kasus tereksekusi -> L3 (runtime via sanitizer).
+     * Marker sanitizer -> MC_DRIVER_VIOLATION (bug nyata pada kasus tepi). */
+    if (req->driver) {
+        int ok = myc_driver_gate(req, src, srclen, res);
+        if (res->verdict == MC_TIMEOUT || res->verdict == MC_DRIVER_VIOLATION) {
+            if (res->verdict == MC_DRIVER_VIOLATION)
+                res->assurance = MYC_ASSURANCE_NONE;
+            free(gcc_path);
+            return;
+        }
+        if (ok && res->ran_driver && res->driver_cases > 0) {
+            res->verdict = MC_OK;
+            res->err = MYC_ERR_NONE;
+            /* jangan turunkan L5/L4 ke L3 -- max(level) */
+            if (res->assurance < MYC_ASSURANCE_L3_RUNTIME)
+                res->assurance = MYC_ASSURANCE_L3_RUNTIME;
+        } else {
+            /* di-skip: pertahankan level statis */
+            res->verdict = MC_OK;
+            res->err = MYC_ERR_NONE;
+            if (res->assurance < MYC_ASSURANCE_L1_SANE)
+                res->assurance = MYC_ASSURANCE_L1_SANE;
+        }
         free(gcc_path);
         return;
     }

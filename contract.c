@@ -201,6 +201,83 @@ int myc_contract_scan(const char *source, size_t len, myc_result *res)
 }
 
 /* ---------------------------------------------------------------- */
+/* List kontrak sebagai string ekspresi (tool MCP `contracts`, P9)    */
+/* ---------------------------------------------------------------- */
+
+/* Tambah string malloc'd ke array dinamis; return 1 sukses. */
+static int collect_expr(char ***out, int *n, const char *expr)
+{
+    char **na;
+    char  *s = _strdup(expr);
+    if (!s)
+        return 0;
+    na = (char **)realloc(*out, sizeof(char *) * (size_t)(*n + 1));
+    if (!na) {
+        free(s);
+        return 0;
+    }
+    *out = na;
+    (*out)[*n] = s;
+    (*n)++;
+    return 1;
+}
+
+int myc_contract_list(const char *source, size_t len,
+                      char ***reqs, int *nreqs,
+                      char ***ensures, int *nensures)
+{
+    size_t i = 0;
+    size_t line = 1;
+    size_t col = 1;
+
+    *reqs = NULL;
+    *nreqs = 0;
+    *ensures = NULL;
+    *nensures = 0;
+
+    while (i < len) {
+        char c = source[i];
+        if (c == '\n') {
+            line++;
+            col = 1;
+            i++;
+            continue;
+        }
+        if (c == '/' && i + 1 < len && source[i + 1] == '/') {
+            size_t line_end = i;
+            while (line_end < len && source[line_end] != '\n')
+                line_end++;
+            if (i + 2 < len && source[i + 2] == '@') {
+                size_t j = i + 3;
+                char   kw[32];
+                size_t kwend;
+                while (j < line_end && (source[j] == ' ' || source[j] == '\t'))
+                    j++;
+                kwend = read_word(source, j, line_end, kw, sizeof(kw));
+                if (strcmp(kw, "requires") == 0 ||
+                    strcmp(kw, "ensures") == 0) {
+                    char   expr[512];
+                    size_t endp;
+                    if (read_contract_expr(source, kwend, line_end, expr,
+                                           sizeof(expr), &endp)) {
+                        if (strcmp(kw, "requires") == 0)
+                            collect_expr(reqs, nreqs, expr);
+                        else
+                            collect_expr(ensures, nensures, expr);
+                    }
+                }
+            }
+            col += (line_end - i);
+            i = line_end;
+            continue;
+        }
+        i++;
+        col++;
+    }
+    return 1;
+}
+
+/* ---------------------------------------------------------------- */
 /* Inject assert(requires) untuk verification build                 */
 /* ---------------------------------------------------------------- */
 

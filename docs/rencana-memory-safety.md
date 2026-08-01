@@ -5,7 +5,9 @@ bila keputusan berubah. **Fase A (P4+P5) SELESAI 2026-08-01. P6 SELESAI 2026-08-
 P7 SELESAI 2026-08-01 (D1.5 contract-lite + D3.1 Frama-C Eva → L2 PROVEN).
 P8 SELESAI 2026-08-01 (D1.2 checked-build makro → L4 SPATIAL + D4.1
 gate Fil-C → L5 FULL opsional). P9 SELESAI 2026-08-02 (MCP server +
-soak + corpus abuse → integrasi agent).**
+soak + corpus abuse → integrasi agent). D2.2 driver-generator SELESAI
+2026-08-02 (gate --driver → L3 RUNTIME / DRIVER_VIOLATION) + tool MCP
+contracts & lint + client MCP contoh (mcp_client.py).**
 
 ## Keputusan arah (2026-08-01)
 
@@ -129,7 +131,7 @@ assurance wajib, backend L5 tersedia.
 |---|---|---|
 | **P4** | Perluas gcc flags memori (Werror set + -fanalyzer), pisahkan --level | L1 SANE penuh |
 | **P5** | D1.3 bounds provenance lint + D1.4 integer data-flow | alarm presisi spasial/int |
-| **P6** | D2.1 sanitizer build + D2.2 driver generator + eksekusi terkendali (run) | L3 RUNTIME |
+| **P6** | D2.1 sanitizer build + eksekusi terkendali (run) | L3 RUNTIME — **D2.2 driver generator SELESAI 2026-08-02** |
 | **P7** | D1.5 contract-lite + D3.1 Frama-C Eva integrasi | L2 PROVEN sound — **SELESAI 2026-08-01** |
 | **P8** | D1.2 checked-build makro + D4.1 gate Fil-C — **SELESAI 2026-08-01** | L4 SPATIAL, L5 FULL (ops) |
 | **P9** | MCP server + soak + corpus abuse — **SELESAI 2026-08-02** | integrasi agent |

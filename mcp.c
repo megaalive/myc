@@ -25,6 +25,9 @@
 #include "proc.h"
 #include "report.h"
 
+#include "contract.h"
+#include "lint.h"
+
 #define MCP_VERSION  "0.1.0"
 #define MCP_PROTOCOL "2024-11-05"
 #define MCP_MAX_LINE (8u << 20)   /* 8 MiB per pesan masuk */
@@ -176,6 +179,8 @@ static void tool_check(json_value *id, json_value *args)
                 req.checked = 1;
             else if (strcmp(f, "--filc") == 0)
                 req.filc = 1;
+            else if (strcmp(f, "--driver") == 0)
+                req.driver = 1;
             else if (strcmp(f, "--analyze") == 0)
                 req.run_analyzer = 1;
             else if (strcmp(f, "--strict") == 0)
@@ -251,6 +256,118 @@ static void tool_version(json_value *id)
     json_sb_free(&b);
 }
 
+/* ------------------------- tool: contracts -------------------------- */
+
+static void tool_contracts(json_value *id, json_value *args)
+{
+    const char *source = NULL;
+    char      **reqs = NULL;
+    char      **ensures = NULL;
+    int         nreqs = 0, nens = 0;
+    json_sb     b;
+    json_value *result = NULL;
+    json_value *content = NULL;
+    json_value *item = NULL;
+    int         i;
+
+    if (!args) {
+        send_error(id, -32602, "Invalid params: arguments wajib");
+        return;
+    }
+    source = json_get_str(args, "source");
+    if (!source) {
+        send_error(id, -32602, "Invalid params: 'source' wajib (string kode C)");
+        return;
+    }
+
+    myc_contract_list(source, strlen(source), &reqs, &nreqs,
+                      &ensures, &nens);
+
+    if (!json_sb_init(&b)) {
+        send_error(id, -32603, "Internal error");
+        goto out;
+    }
+    json_sb_printf(&b, "contracts: requires=%d ensures=%d\n", nreqs, nens);
+    for (i = 0; i < nreqs; i++)
+        json_sb_printf(&b, "  requires %s;\n", reqs[i]);
+    for (i = 0; i < nens; i++)
+        json_sb_printf(&b, "  ensures  %s;\n", ensures[i]);
+    json_sb_putc(&b, '\0');
+
+    result = json_new_obj();
+    content = json_new_arr();
+    item = json_new_obj();
+    json_obj_set(item, "type", json_new_str("text"));
+    json_obj_set(item, "text", json_new_str(b.buf));
+    json_arr_push(content, item);
+    json_obj_set(result, "content", content);
+    json_obj_set(result, "isError", json_new_bool(0));
+    send_result(id, result);
+    json_sb_free(&b);
+
+out:
+    for (i = 0; i < nreqs; i++)
+        free(reqs[i]);
+    free(reqs);
+    for (i = 0; i < nens; i++)
+        free(ensures[i]);
+    free(ensures);
+}
+
+/* ------------------------- tool: lint ------------------------------- */
+
+static void tool_lint(json_value *id, json_value *args)
+{
+    const char *source = NULL;
+    myc_result  res;
+    json_sb     b;
+    json_value *result = NULL;
+    json_value *content = NULL;
+    json_value *item = NULL;
+    int         i;
+
+    if (!args) {
+        send_error(id, -32602, "Invalid params: arguments wajib");
+        return;
+    }
+    source = json_get_str(args, "source");
+    if (!source) {
+        send_error(id, -32602, "Invalid params: 'source' wajib (string kode C)");
+        return;
+    }
+
+    myc_result_init(&res);
+    /* Catatan: myc_lint_source TIDAK mengisi res->verdict; verdict
+     * disimpulkan dari nilai kembalian (0 = VIOLATION, 1 = OK). */
+    {
+        int lv = myc_lint_source(source, strlen(source), &res);
+        if (!json_sb_init(&b)) {
+            send_error(id, -32603, "Internal error");
+            myc_result_free(&res);
+            return;
+        }
+        json_sb_printf(&b, "lint verdict: %s\n", lv ? "OK" : "VIOLATION");
+    }
+    for (i = 0; i < res.diag_count; i++) {
+        const myc_diagnostic *d = &res.diags[i];
+        json_sb_printf(&b, "  [%d:%d] %s\n", d->line, d->col,
+                       d->message ? d->message : "");
+    }
+    json_sb_putc(&b, '\0');
+
+    result = json_new_obj();
+    content = json_new_arr();
+    item = json_new_obj();
+    json_obj_set(item, "type", json_new_str("text"));
+    json_obj_set(item, "text", json_new_str(b.buf));
+    json_arr_push(content, item);
+    json_obj_set(result, "content", content);
+    json_obj_set(result, "isError", json_new_bool(0));
+    send_result(id, result);
+    json_sb_free(&b);
+    myc_result_free(&res);
+}
+
 /* ------------------------- tool: policy ----------------------------- */
 
 static void tool_policy(json_value *id)
@@ -300,7 +417,7 @@ static json_value *tools_list_body(void)
         "Verifikasi kode C dengan pipeline myc (memory-safety): verdict, "
         "assurance L0-L5, error, diagnostics, output gate run/prove/checked/"
         "filc. source: kode C (string, wajib). flags: array string opsional "
-        "dari [--run --prove --checked --filc --analyze --strict --no-lint]. "
+        "dari [--run --prove --checked --filc --driver --analyze --strict --no-lint]. "
         "cwd: direktori kerja opsional."));
     {
         json_value *schema = json_new_obj();
@@ -321,7 +438,7 @@ static json_value *tools_list_body(void)
         json_obj_set(items, "type", json_new_str("string"));
         json_obj_set(p, "items", items);
         json_obj_set(p, "description", json_new_str(
-            "Flag opsional: --run --prove --checked --filc --analyze --strict --no-lint"));
+            "Flag opsional: --run --prove --checked --filc --driver --analyze --strict --no-lint"));
         json_obj_set(props, "flags", p);
 
         p = json_new_obj();
@@ -363,6 +480,56 @@ static json_value *tools_list_body(void)
     }
     json_arr_push(tools, t);
 
+    /* contracts */
+    t = json_new_obj();
+    json_obj_set(t, "name", json_new_str("contracts"));
+    json_obj_set(t, "description", json_new_str(
+        "Scan kontrak-lite //@ requires/ensures pada source dan tampilkan "
+        "semua ekspresi kontrak. source: kode C (string, wajib)."));
+    {
+        json_value *schema = json_new_obj();
+        json_value *props = json_new_obj();
+        json_value *p;
+        json_obj_set(schema, "type", json_new_str("object"));
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("string"));
+        json_obj_set(p, "description", json_new_str("Kode sumber C yang akan dipindai kontraknya (wajib)."));
+        json_obj_set(props, "source", p);
+        json_obj_set(schema, "properties", props);
+        {
+            json_value *req = json_new_arr();
+            json_arr_push(req, json_new_str("source"));
+            json_obj_set(schema, "required", req);
+        }
+        json_obj_set(t, "inputSchema", schema);
+    }
+    json_arr_push(tools, t);
+
+    /* lint */
+    t = json_new_obj();
+    json_obj_set(t, "name", json_new_str("lint"));
+    json_obj_set(t, "description", json_new_str(
+        "Jalankan lint memory-safety myc (heuristik) pada source dan "
+        "tampilkan verdict + diagnostic. source: kode C (string, wajib)."));
+    {
+        json_value *schema = json_new_obj();
+        json_value *props = json_new_obj();
+        json_value *p;
+        json_obj_set(schema, "type", json_new_str("object"));
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("string"));
+        json_obj_set(p, "description", json_new_str("Kode sumber C yang akan di-lint (wajib)."));
+        json_obj_set(props, "source", p);
+        json_obj_set(schema, "properties", props);
+        {
+            json_value *req = json_new_arr();
+            json_arr_push(req, json_new_str("source"));
+            json_obj_set(schema, "required", req);
+        }
+        json_obj_set(t, "inputSchema", schema);
+    }
+    json_arr_push(tools, t);
+
     json_obj_set(result, "tools", tools);
     return result;
 }
@@ -386,6 +553,10 @@ static void handle_tools_call(json_value *id, json_value *params)
         tool_version(id);
     else if (strcmp(name, "policy") == 0)
         tool_policy(id);
+    else if (strcmp(name, "contracts") == 0)
+        tool_contracts(id, args);
+    else if (strcmp(name, "lint") == 0)
+        tool_lint(id, args);
     else
         send_error(id, -32602, "Unknown tool");
 }

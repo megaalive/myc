@@ -72,6 +72,8 @@ void myc_result_free(myc_result *res)
     free(res->prove_stderr_text);
     free(res->filc_stdout_text);
     free(res->filc_stderr_text);
+    free(res->driver_stdout_text);
+    free(res->driver_stderr_text);
     free(res->resolved_gcc);
     free(res->fingerprint);
     free(res->source_sha256);
@@ -83,6 +85,8 @@ void myc_result_free(myc_result *res)
     res->prove_stderr_text = NULL;
     res->filc_stdout_text = NULL;
     res->filc_stderr_text = NULL;
+    res->driver_stdout_text = NULL;
+    res->driver_stderr_text = NULL;
     res->resolved_gcc = NULL;
     res->fingerprint = NULL;
     res->source_sha256 = NULL;
@@ -141,7 +145,7 @@ static void usage(void)
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
         "  myc check <file.c> [--json] [--analyze] [--strict] [--no-lint] [--cwd DIR]\n"
-        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc]\n"
+        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver]\n"
         "  myc check -          [--json] [--analyze] [--strict] [--no-lint]\n"
         "                        (source dari stdin)\n"
         "  myc policy\n"
@@ -363,6 +367,8 @@ int main(int argc, char **argv)
                 req.checked = 1;
             else if (strcmp(argv[i], "--filc") == 0)
                 req.filc = 1;
+            else if (strcmp(argv[i], "--driver") == 0)
+                req.driver = 1;
             else if (strcmp(argv[i], "--run-stdin") == 0 && i + 1 < argc) {
                 char *buf;
                 size_t len;

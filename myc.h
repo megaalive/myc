@@ -33,7 +33,8 @@ typedef enum {
     MC_CANCELLED,
     MC_RUNTIME_VIOLATION,
     MC_PROVE_VIOLATION,
-    MC_FILC_VIOLATION
+    MC_FILC_VIOLATION,
+    MC_DRIVER_VIOLATION
 } myc_verdict;
 
 /* Assurance ladder (lihat docs/rencana-memory-safety.md, Bagian C). */
@@ -68,6 +69,7 @@ typedef enum {
     MYC_ERR_RUNTIME_VIOLATION,
     MYC_ERR_PROVE_VIOLATION,
     MYC_ERR_FILC_VIOLATION,
+    MYC_ERR_DRIVER_VIOLATION,
     MYC_ERR_CLANG_NOT_FOUND,
     MYC_ERR_INTERNAL
 } myc_error_code;
@@ -100,6 +102,9 @@ typedef struct {
                                        dir myc.exe); NULL = cari via -I cwd */
     int         filc;           /* gate Fil-C (D4.1, L5 FULL, opsional):
                                    verification build filc-clang + eksekusi */
+    int         driver;         /* gate driver-generator (D2.2, opsional):
+                                   harness kasus tepi dari fungsi ber-kontrak,
+                                   build+run clang ASan (L3 bila bersih) */
     const char *clang_program;  /* NULL = cari "clang" via PATH */
     const char *gcc_program;    /* NULL = cari "gcc" via PATH */
 } myc_request;
@@ -158,6 +163,14 @@ typedef struct {
     int         filc_panics;            /* jumlah marker panic Fil-C */
     char       *filc_stdout_text;       /* output program Fil-C */
     char       *filc_stderr_text;
+
+    /* --- hasil gate driver-generator (D2.2, --driver) --- */
+    int         ran_driver;             /* 1 bila gate driver dijalankan */
+    int         driver_funcs;           /* jumlah fungsi ber-kontrak dipanggil */
+    int         driver_cases;           /* jumlah kasus tepi tereksekusi */
+    int         driver_skipped;         /* jumlah kasus dilewati guard */
+    char       *driver_stdout_text;     /* output harness (DRIVER run=...) */
+    char       *driver_stderr_text;
 
     /* internal: gate mana yang dijalankan terakhir */
     int         ran_preprocess;

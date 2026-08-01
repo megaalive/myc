@@ -45,6 +45,25 @@ Poin penting:
   (info di laporan: `contracts: requires=N ensures=M`) + inject
   `assert(requires)` ke verification build (`--run`) sebagai defense-in-depth.
   `bad_contract_pre.c` → RUNTIME_VIOLATION (assert menangkap pelanggaran pre).
+- **D2.2 driver-generator selesai 2026-08-02**: gate `--driver` scan
+  fungsi ber-kontrak (`//@ requires`), parse signature, bangkitkan harness
+  kasus tepi DI DALAM domain kontrak (batas dari requires, 0/1/2/3), build +
+  run clang ASan+UBSan (`-O0`, source via stdin). Run bersih ≥ 1 kasus →
+  L3 RUNTIME; sanitizer menangkap bug → MC_DRIVER_VIOLATION (fixture
+  `bad_driver_oob.c`: OOB via `a[n]` saat n=4 pada kontrak `n <= 4`).
+  Non-blocking: clang hilang / tak ada fungsi ber-kontrak / build harness
+  gagal → skip + diagnostic. Nilai negatif/SIZE_MAX TIDAK diuji tanpa
+  kontrak yang membuka peluangnya (hindari false positive). Harness
+  men-rename main asli via `#define main` lalu `#undef` — source dengan
+  `main` tetap bisa di-drive.
+- **Tool MCP `contracts` + `lint` selesai 2026-08-02**: `mcp.exe` kini
+  mengekspos 5 tool (`check`, `version`, `policy`, `contracts`, `lint`).
+  `contracts` = list ekspresi `//@ requires/ensures` (API baru
+  `myc_contract_list` di contract.c). `lint` = jalankan lint memory-safety
+  langsung (tanpa pipeline penuh). Smoke test diperbarui ke 10 pesan.
+- **Client MCP contoh selesai 2026-08-02**: `mcp_client.py` (Python stdlib,
+  tanpa dependensi) — handshake initialize, tools/list, panggil
+  check/version/contracts/lint via stdio.
 - **P7 (D3.1) Frama-C Eva selesai 2026-08-01**: gate `--prove` → L2 PROVEN.
   Frama-C 33.0 (Arsenic) diinstal via opam di WSL Ubuntu-24.04
   (`/home/megaalive/.opam/default/bin/frama-c`); myc mendeteksi via `wsl.exe`

@@ -2,7 +2,7 @@
 setlocal
 set OUT=test\_tmp_run_out.txt
 echo --- self-dogfooding: semua source myc harus OK
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c json.c mcp.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c) do (
   echo === %%f
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%
@@ -46,6 +46,12 @@ for %%f in (test\fixtures\ok_filc.c test\fixtures\bad_filc_oob.c) do (
   echo === %%f
   myc.exe check "%%f" --filc > %OUT%
   findstr /B /C:"verdict:" /C:"assurance:" /C:"filc:" /C:"  panics:" %OUT%
+)
+echo --- driver fixtures (D2.2, --driver): ok_driver harus OK, bad_driver_oob harus DRIVER_VIOLATION
+for %%f in (test\fixtures\ok_driver.c test\fixtures\bad_driver_oob.c) do (
+  echo === %%f
+  myc.exe check "%%f" --driver > %OUT%
+  findstr /B /C:"verdict:" /C:"assurance:" /C:"driver:" /C:"  funcs:" /C:"  cases:" %OUT%
 )
 del %OUT%
 echo --- MCP smoke (P9): mcp.exe harus menjawab JSON-RPC

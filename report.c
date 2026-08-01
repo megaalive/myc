@@ -22,6 +22,7 @@ const char *myc_verdict_name(myc_verdict v)
     case MC_RUNTIME_VIOLATION: return "RUNTIME_VIOLATION";
     case MC_PROVE_VIOLATION:    return "PROVE_VIOLATION";
     case MC_FILC_VIOLATION:     return "FILC_VIOLATION";
+    case MC_DRIVER_VIOLATION:   return "DRIVER_VIOLATION";
     }
     return "UNKNOWN";
 }
@@ -48,6 +49,7 @@ const char *myc_error_name(myc_error_code c)
     case MYC_ERR_RUNTIME_VIOLATION:           return "runtime_violation";
     case MYC_ERR_PROVE_VIOLATION:             return "prove_violation";
     case MYC_ERR_FILC_VIOLATION:              return "filc_violation";
+    case MYC_ERR_DRIVER_VIOLATION:            return "driver_violation";
     case MYC_ERR_CLANG_NOT_FOUND:             return "clang_not_found";
     case MYC_ERR_INTERNAL:                    return "internal";
     }
@@ -158,6 +160,17 @@ void myc_report_text(const myc_result *res)
         if (res->filc_stderr_text && res->filc_stderr_text[0])
             printf("  filc_stderr:\n%s\n", res->filc_stderr_text);
     }
+
+    if (res->ran_driver) {
+        printf("driver:\n");
+        printf("  funcs: %d\n", res->driver_funcs);
+        printf("  cases: %d\n", res->driver_cases);
+        printf("  skipped: %d\n", res->driver_skipped);
+        if (res->driver_stdout_text && res->driver_stdout_text[0])
+            printf("  driver_stdout:\n%s\n", res->driver_stdout_text);
+        if (res->driver_stderr_text && res->driver_stderr_text[0])
+            printf("  driver_stderr:\n%s\n", res->driver_stderr_text);
+    }
 }
 
 char *myc_result_to_json(const myc_result *res)
@@ -212,6 +225,18 @@ char *myc_result_to_json(const myc_result *res)
         json_sb_puts(&b, ",");
         json_sb_printf(&b, "\"filc_stderr\":");
         json_sb_escape(&b, res->filc_stderr_text);
+        json_sb_puts(&b, ",");
+    }
+    json_sb_printf(&b, "\"ran_driver\":%s,", res->ran_driver ? "true" : "false");
+    json_sb_printf(&b, "\"driver_funcs\":%d,", res->driver_funcs);
+    json_sb_printf(&b, "\"driver_cases\":%d,", res->driver_cases);
+    json_sb_printf(&b, "\"driver_skipped\":%d,", res->driver_skipped);
+    if (res->ran_driver) {
+        json_sb_printf(&b, "\"driver_stdout\":");
+        json_sb_escape(&b, res->driver_stdout_text);
+        json_sb_puts(&b, ",");
+        json_sb_printf(&b, "\"driver_stderr\":");
+        json_sb_escape(&b, res->driver_stderr_text);
         json_sb_puts(&b, ",");
     }
     json_sb_printf(&b, "\"ran_prove\":%s,", res->ran_prove ? "true" : "false");

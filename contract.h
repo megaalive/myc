@@ -42,4 +42,15 @@ int myc_contract_scan(const char *source, size_t len, myc_result *res);
  */
 char *myc_contract_inject(const char *source, size_t len, size_t *out_len);
 
+/*
+ * List semua kontrak //@ requires/ensures sebagai string ekspresi (tanpa
+ * kata kunci). Mengisi *reqs/*ensures dengan array malloc'd berisi string
+ * malloc'd; *nreqs/*nensures = jumlah. Caller membebaskan tiap elemen dan
+ * array. Bila tidak ada kontrak, *reqs = NULL dan *nreqs = 0. Selalu
+ * mengembalikan 1 (non-blocking). Dipakai tool MCP `contracts` (P9).
+ */
+int myc_contract_list(const char *source, size_t len,
+                      char ***reqs, int *nreqs,
+                      char ***ensures, int *nensures);
+
 #endif /* MYC_CONTRACT_H */
