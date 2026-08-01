@@ -84,9 +84,10 @@ LOOP_SRC = "int main(void){for(;;){}return 0;}\n"
 # dengan MYC_SKIP_SLOW_TIMEOUT=1. Default: dijalankan (bukti isError TIMEOUT).
 SKIP_SLOW_TIMEOUT = os.environ.get("MYC_SKIP_SLOW_TIMEOUT") == "1"
 
-# Jumlah cek yang di-skip (counter; maksimal 4: timeout + prove-ok +
-# prove-bad + checked; dua prove skip bersamaan bila Frama-C/WSL hilang);
-# dipakai pesan akhir agar konsisten dgn jumlah [OK] yang benar2 dijalankan.
+# Jumlah cek yang di-skip (counter; maksimal 5: timeout + prove-ok +
+# prove-bad + checked + contract-pre; dua prove skip bersamaan bila
+# Frama-C/WSL hilang); dipakai pesan akhir agar konsisten dgn jumlah [OK]
+# yang benar2 dijalankan.
 SKIPPED_COUNT = 0
 
 
@@ -393,6 +394,39 @@ async def _run(exe):
                 print("[OK] check --checked ok_checked.c -> L4 SPATIAL "
                       "(checked_build_ok=true)")
 
+            # 17. check --run (fixture bad_contract_pre.c) -> RUNTIME_VIOLATION
+            # Fixture P7 (D1.5): fungsi ber-kontrak //@ requires n > 0 yang
+            # DIPANGGIL dgn pelanggaran pre (twice(-1)). Gate run meng-inject
+            # assert(requires) ke verification build -> assertion failure ->
+            # marker "Assertion failed" -> RUNTIME_VIOLATION. Ini membuktikan
+            # defense-in-depth kontrak berjalan lewat SDK. Non-blocking: bila
+            # ran_runtime=false (clang hilang / build gagal) -> [SKIP].
+            try:
+                cpre_src = _fixture_source("bad_contract_pre.c")
+            except OSError as e:
+                print("[FAIL] check --run contract: fixture tak terbaca: %r" % e)
+                return 1
+            r = await session.call_tool(
+                "check",
+                arguments={"source": cpre_src, "flags": ["--run"]})
+            t = _text(r)
+            if _is_error(r):
+                print("[FAIL] check --run contract: isError harus false: %s" % t[:250])
+                return 1
+            if '"ran_runtime":false' in t:
+                SKIPPED_COUNT += 1
+                print("[SKIP] check --run contract: gate di-skip "
+                      "(clang tidak tersedia / build verifikasi gagal)")
+            else:
+                if '"verdict":"RUNTIME_VIOLATION"' not in t or \
+                   '"error":"runtime_violation"' not in t or \
+                   '"contract_requires":1' not in t or \
+                   "Assertion failed" not in t:
+                    print("[FAIL] check --run contract: verdict/assert: %s" % t[:250])
+                    return 1
+                print("[OK] check --run bad_contract_pre.c -> RUNTIME_VIOLATION "
+                      "(assert requires)")
+
             return 0
 
 
@@ -408,7 +442,7 @@ def main():
         print("[FAIL] interop SDK gagal: %r" % e)
         return 1
     if rc == 0:
-        n_checks = 17 - SKIPPED_COUNT
+        n_checks = 18 - SKIPPED_COUNT
         suffix = " (%d skip)" % SKIPPED_COUNT if SKIPPED_COUNT else ""
         print("[OK] interop SDK MCP resmi lulus (5 tool, %d cek%s)"
               % (n_checks, suffix))
