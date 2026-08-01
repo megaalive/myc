@@ -66,7 +66,7 @@ static int flood_fill(char *map, int w, int h, int sx, int sy)
             for (nx = x - 1; nx <= x + 1; nx++) {
                 int idx;
                 if ((nx == x) == (ny == y))
-                    continue;               /* sel pusat: lewati */
+                    continue;               /* sel pusat & diagonal: lewati */
                 if (nx < 0 || nx >= w || ny < 0 || ny >= h)
                     continue;
                 if (sp >= MAX_CELLS)
