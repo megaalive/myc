@@ -1,14 +1,15 @@
 /*
  * compile.c -- Pipeline myc.
  *
- * Urutan (invariant: policy sebelum launch gate):
- *   1. scan include mentah (lapis 1)  -> VIOLATION stop
- *   2. gcc -E (argv eksak, source via stdin) -> output preprocessed
- *   3. scan markers (lapis 2)         -> VIOLATION stop
- *   4. scan calls (lapis 3)           -> VIOLATION stop
- *   5. gcc -fsyntax-only (gate)       -> COMPILE_ERROR
- *   6. (opsional) gcc -c -fanalyzer -o NUL
- *   7. verdict MC_OK
+ * Urutan (pivot memory-safety 2026-08-01: policy NON-BLOCKING):
+ *   1. scan include mentah (lapis 1)  -> warning (non-blocking)
+ *   2. lint memory-safety (P5, D1.3+D1.4) -> LINT_VIOLATION stop (gate hard)
+ *   3. gcc -E (argv eksak, source via stdin) -> output preprocessed
+ *   4. scan markers (lapis 2)         -> warning (non-blocking)
+ *   5. scan calls (lapis 3)           -> warning (non-blocking)
+ *   6. gcc -c -O2 (gate, tier dasar memori) -> COMPILE_ERROR
+ *   7. (opsional) gcc -c -fanalyzer -o NUL
+ *   8. verdict MC_OK + assurance
  *
  * Tidak pernah menyusun shell string; source tidak pernah jadi argumen.
  * Catatan ownership: req->source dimiliki caller (myc.c); file loading
@@ -20,10 +21,73 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "lint.h"
 #include "policy.h"
 #include "proc.h"
 #include "scanner.h"
 #include "sha256.h"
+
+/* ------------------------------------------------------------------ */
+/* Tabel flags gcc terpusat (P4.3).                                    */
+/* ------------------------------------------------------------------ */
+
+/* Tier dasar -- default, nol false-positive pd kode sah, semua -Werror. */
+static const char *const MEMORY_WARNINGS[] = {
+    "-Warray-bounds",
+    "-Wstringop-overflow",
+    "-Wuse-after-free",
+    "-Wfree-nonheap-object",
+    "-Wformat-overflow",
+    "-Wformat-truncation",
+    NULL
+};
+
+/* Tier ketat -- opsional (--strict), BISING, bukan default (keputusan 1). */
+static const char *const STRICT_WARNINGS[] = {
+    "-Wconversion",
+    "-Wsign-conversion",
+    "-Wint-conversion",
+    NULL
+};
+
+/* Flags syntax-only yang selalu dipakai (sanity dasar). */
+static const char *const SYNTAX_BASE[] = {
+    "-std=c11", "-Wall", "-Wextra", "-Werror",
+    "-pedantic", "-Werror=implicit-function-declaration", NULL
+};
+
+/* Gate memori: perlu -c + -O2 agar -Warray-bounds/-Wstringop-overflow aktif
+ * (gcc menjalankan analisis GIMPLE hanya saat kompilasi dengan optimisasi). */
+static const char *const MEMORY_GATE[] = {
+    "-c", "-O2", "-o", "NUL", NULL
+};
+
+/* Flags analyzer: MEMORY_GATE + -fanalyzer. */
+static const char *const ANALYZER_EXTRA[] = {
+    "-c", "-O2", "-fanalyzer", "-o", "NUL", NULL
+};
+
+/* Susun satu array argv gabungan (semua pointer statis, tak perlu bebas).
+ * count = jumlah argumen setelah gcc_path. */
+static const char **merge_args(const char *const *lists[], size_t nlists,
+                               size_t *count)
+{
+    size_t total = 0;
+    size_t li, ai, idx = 0;
+    const char **out;
+    for (li = 0; li < nlists; li++)
+        for (ai = 0; lists[li][ai]; ai++)
+            total++;
+    out = (const char **)malloc(sizeof(char *) * (total + 1));
+    if (!out)
+        return NULL;
+    for (li = 0; li < nlists; li++)
+        for (ai = 0; lists[li][ai]; ai++)
+            out[idx++] = lists[li][ai];
+    out[idx] = NULL;
+    *count = idx;
+    return out;
+}
 
 /* helper agar add_diag bisa menerima pesan dinamis dari stderr gcc.
  * Pesan disalin ke slot statis bergilir (cukup untuk laporan). */
@@ -180,22 +244,28 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         int  n;
         myc_policy_hash(policy_hex);
         n = snprintf(buf, sizeof(buf),
-                     "v1|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic|src:%s",
+                     "v2|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s|src:%s",
                      gcc_path,
                      req->cwd ? req->cwd : "",
                      policy_hex,
+                     req->strict ? "strict" : "default",
                      res->source_sha256 ? res->source_sha256 : "");
         sha256_hex(buf, (size_t)n, hex);
         res->fingerprint = _strdup(hex);
     }
 
-    /* --- Lapis 1: include mentah --- */
-    if (!myc_scan_include_raw(src, srclen, res)) {
-        res->verdict = MC_VIOLATION;
-        res->err = MYC_ERR_POLICY_DENIED;
-        res->exit_code = 1;
-        free(gcc_path);
-        return;
+    /* --- Lapis 1: include mentah (warning, non-blocking) --- */
+    myc_scan_include_raw(src, srclen, res);
+
+    /* --- Lint memory-safety (P5; default aktif, mati via --no-lint) --- */
+    if (req->run_lint) {
+        if (!myc_lint_source(src, srclen, res)) {
+            res->verdict = MC_VIOLATION;
+            res->err = MYC_ERR_LINT_VIOLATION;
+            res->exit_code = 1;
+            free(gcc_path);
+            return;
+        }
     }
 
     /* --- gcc -E --- */
@@ -224,34 +294,35 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         return;
     }
 
-    /* --- Lapis 2: markers --- */
+    /* --- Lapis 2 + 3: markers & calls (warning, non-blocking) --- */
     {
+        /* pre = buffer yang TERSIMPAN (mungkin terpotong 1MB); panjangnya
+         * harus shown_stdout_bytes, BUKAN total (gcc bisa menulis jauh lebih
+         * banyak). Memakai total -> out-of-bounds read (bug dogfooding). */
         const char *pre = res->stdout_text ? res->stdout_text : "";
-        size_t      prelen = res->stdout_text ? res->total_stdout_bytes : 0;
-        if (!myc_scan_markers(pre, prelen, res)) {
-            res->verdict = MC_VIOLATION;
-            res->err = MYC_ERR_POLICY_DENIED;
-            res->exit_code = 1;
-            free(gcc_path);
-            return;
-        }
-        /* --- Lapis 3: calls --- */
-        if (!myc_scan_calls(pre, prelen, res)) {
-            res->verdict = MC_VIOLATION;
-            res->err = MYC_ERR_POLICY_DENIED;
-            res->exit_code = 1;
-            free(gcc_path);
-            return;
-        }
+        size_t      prelen = res->stdout_text ? res->shown_stdout_bytes : 0;
+        myc_scan_markers(pre, prelen, res);
+        myc_scan_calls(pre, prelen, res);
     }
 
-    /* --- Gate: gcc -fsyntax-only --- */
+    /* --- Gate: kompilasi + tier dasar memori (perlu -O2 utk memori) --- */
     {
-        static const char *const syn_args[] = {
-            "-fsyntax-only", "-std=c11", "-Wall", "-Wextra", "-Werror",
-            "-pedantic", "-Werror=implicit-function-declaration", NULL
-        };
-        run_gcc(req, gcc_path, syn_args, src, srclen, max_out, &pr);
+        const char *const *lists[4];
+        const char **args;
+        size_t      nargs;
+        lists[0] = MEMORY_GATE;
+        lists[1] = SYNTAX_BASE;
+        lists[2] = MEMORY_WARNINGS;
+        lists[3] = req->strict ? STRICT_WARNINGS : NULL;
+        args = merge_args(lists, req->strict ? 4 : 3, &nargs);
+        if (!args) {
+            res->verdict = MC_ERROR;
+            res->err = MYC_ERR_INTERNAL;
+            free(gcc_path);
+            return;
+        }
+        run_gcc(req, gcc_path, args, src, srclen, max_out, &pr);
+        free((void *)args);
     }
     if (pr.timed_out) {
         res->verdict = MC_TIMEOUT;
@@ -275,11 +346,22 @@ void myc_pipeline(const myc_request *req, myc_result *res)
 
     /* --- Gate opsional: -fanalyzer --- */
     if (req->run_analyzer) {
-        static const char *const ana_args[] = {
-            "-c", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic",
-            "-fanalyzer", "-o", "NUL", NULL
-        };
-        run_gcc(req, gcc_path, ana_args, src, srclen, max_out, &pr);
+        const char *const *lists[4];
+        const char **args;
+        size_t      nargs;
+        lists[0] = ANALYZER_EXTRA;
+        lists[1] = SYNTAX_BASE;
+        lists[2] = MEMORY_WARNINGS;
+        lists[3] = req->strict ? STRICT_WARNINGS : NULL;
+        args = merge_args(lists, req->strict ? 4 : 3, &nargs);
+        if (!args) {
+            res->verdict = MC_ERROR;
+            res->err = MYC_ERR_INTERNAL;
+            free(gcc_path);
+            return;
+        }
+        run_gcc(req, gcc_path, args, src, srclen, max_out, &pr);
+        free((void *)args);
         if (pr.timed_out) {
             res->verdict = MC_TIMEOUT;
             res->err = MYC_ERR_TIMEOUT;
@@ -304,6 +386,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     res->verdict = MC_OK;
     res->err = MYC_ERR_NONE;
     res->exit_code = 0;
+    res->assurance = MYC_ASSURANCE_L1_SANE;
 
     free(gcc_path);
 }

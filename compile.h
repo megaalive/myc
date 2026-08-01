@@ -1,5 +1,6 @@
 /*
- * compile.h -- Pipeline myc: -E -> scan -> -fsyntax-only -> (opsional -analyze)
+ * compile.h -- Pipeline myc: -E -> scan -> -c -O2 -> (opsional -analyze).
+ * Policy scan = warning non-blocking; lint memory-safety = gate hard.
  */
 #ifndef MYC_COMPILE_H
 #define MYC_COMPILE_H

@@ -32,17 +32,25 @@ Poin penting:
 
 ### Status arah
 
-- Arah baru dicatat, **belum diimplementasikan**. Implementasi perlu
-  dikonfirmasi bertahap (pivot besar dari policy-library ke memory-safety).
-- Jangan refactor besar-besaran tanpa persetujuan.
+- Arah baru **sudah diimplementasikan (Fase A, P4+P5, selesai 2026-08-01)**.
+- Keputusan user: **policy = non-blocking warning**. Header & fungsi denylist
+  tidak lagi menolak program sah. Satu-satunya gate hard = **lint
+  memory-safety** (lint.c: intptr_t cast, realloc invalidasi) **+ gate gcc**
+  (tier memori `-Werror`, `-fanalyzer`).
+- Self-dogfooding sekarang lolos penuh: 9 source myc dicek myc sendiri → OK.
+  (Catatan lama "akan selalu VIOLATION karena windows.h" TIDAK berlaku lagi —
+  policy non-blocking.)
+- Perubahan perilaku: `bad_system.c`, `bad_fopen.c`, `bad_include.c`,
+  `bad_macro.c` kini **OK** (hanya warning policy). `bad_intptr.c`,
+  `bad_realloc.c` tetap VIOLATION (lint).
 
 ## Dogfooding (keputusan 2026-08-01)
 
 Dogfooding myc dilakukan **dua cara**:
 
-1. **Self-dogfooding**: source myc sendiri diperiksa myc. (Catatan: banyak
-   source myc memakai `windows.h`/`fopen` yang di-denylist — akan selalu
-   VIOLATION pada model whitelist saat ini, bukan bug.)
+1. **Self-dogfooding**: source myc sendiri diperiksa myc. Setelah pivot
+   (policy non-blocking), seluruh 9 source myc lulus OK — ini wajib
+   dipertahankan di setiap perubahan: tiap source harus tetap OK.
 2. **Dogfooding lintas-program**: buat tool/aplikasi lain (C murni) yang
    *realistis* untuk user, ditulis dan diperiksa dengan myc, untuk
    mematangkan jalur "lolos" (OK) myc pada kode yang sah.

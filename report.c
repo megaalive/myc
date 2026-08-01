@@ -30,6 +30,7 @@ const char *myc_error_name(myc_error_code c)
     case MYC_ERR_INPUT_TOO_LARGE:             return "input_too_large";
     case MYC_ERR_INVALID_PATH:                return "invalid_path";
     case MYC_ERR_POLICY_DENIED:               return "policy_denied";
+    case MYC_ERR_LINT_VIOLATION:              return "lint_violation";
     case MYC_ERR_COMPILE_ERROR:               return "compile_error";
     case MYC_ERR_PREPROCESS_ERROR:            return "preprocess_error";
     case MYC_ERR_GCC_NOT_FOUND:               return "gcc_not_found";
@@ -42,6 +43,20 @@ const char *myc_error_name(myc_error_code c)
     case MYC_ERR_INTERNAL:                    return "internal";
     }
     return "unknown";
+}
+
+const char *myc_assurance_name(myc_assurance a)
+{
+    switch (a) {
+    case MYC_ASSURANCE_NONE:      return "L0 (NONE)";
+    case MYC_ASSURANCE_L0_RAW:    return "L0 (RAW)";
+    case MYC_ASSURANCE_L1_SANE:   return "L1 (SANE)";
+    case MYC_ASSURANCE_L2_PROVEN: return "L2 (PROVEN)";
+    case MYC_ASSURANCE_L3_RUNTIME:return "L3 (RUNTIME)";
+    case MYC_ASSURANCE_L4_SPATIAL:return "L4 (SPATIAL)";
+    case MYC_ASSURANCE_L5_FULL:   return "L5 (FULL)";
+    }
+    return "L? (UNKNOWN)";
 }
 
 /* Escape string JSON ke buffer statis (cukup untuk laporan). */
@@ -81,6 +96,7 @@ void myc_report_text(const myc_result *res)
 {
     int i;
     printf("verdict:   %s\n", myc_verdict_name(res->verdict));
+    printf("assurance: %s\n", myc_assurance_name(res->assurance));
     printf("error:     %s\n", myc_error_name(res->err));
     printf("exit_code: %d\n", res->exit_code);
     printf("duration:  %llu ms\n", res->duration_ms);
@@ -106,6 +122,7 @@ void myc_report_json(const myc_result *res)
     int i;
     printf("{\n");
     printf("  \"verdict\": \"%s\",\n", myc_verdict_name(res->verdict));
+    printf("  \"assurance\": \"%s\",\n", myc_assurance_name(res->assurance));
     printf("  \"error\": \"%s\",\n", myc_error_name(res->err));
     printf("  \"exit_code\": %d,\n", res->exit_code);
     printf("  \"duration_ms\": %llu,\n", res->duration_ms);

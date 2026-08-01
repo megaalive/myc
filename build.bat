@@ -4,7 +4,7 @@ rem Menghasilkan myc.exe dan argv_probe.exe di folder ini.
 
 setlocal
 set GCC=gcc
-set SRC=myc.c proc.c scanner.c policy.c compile.c report.c sha256.c
+set SRC=myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c
 set FLAGS=-O2 -std=c11 -Wall -Wextra -o myc.exe
 
 echo [build] myc.exe

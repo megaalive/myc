@@ -46,7 +46,6 @@ int myc_scan_include_raw(const char *source, size_t len, myc_result *res)
 {
     size_t i = 0;
     size_t line = 1;
-    int    ok = 1;
 
     while (i < len) {
         char c = source[i];
@@ -100,8 +99,8 @@ int myc_scan_include_raw(const char *source, size_t len, myc_result *res)
                             hname[hlen] = '\0';
                             if (!myc_policy_allow_include(hname)) {
                                 add_diag(res, (int)line, (int)(start - i + 1),
-                                         "include di luar whitelist");
-                                ok = 0;
+                                         "warning: include di luar whitelist "
+                                         "(non-blocking)");
                             }
                             free(hname);
                         }
@@ -109,7 +108,7 @@ int myc_scan_include_raw(const char *source, size_t len, myc_result *res)
                     i = end + 1;
                     continue;
                 } else if (k < len && source[k] == '"') {
-                    /* include "..." -- file lokal; whitelist menolak */
+                    /* include "..." -- file lokal */
                     size_t start = k + 1;
                     size_t end = start;
                     while (end < len && source[end] != '"')
@@ -122,8 +121,8 @@ int myc_scan_include_raw(const char *source, size_t len, myc_result *res)
                             hname[hlen] = '\0';
                             if (!myc_policy_allow_include(hname)) {
                                 add_diag(res, (int)line, (int)(start - i + 1),
-                                         "include lokal/kuotasi di luar whitelist");
-                                ok = 0;
+                                         "warning: include lokal/kuotasi di "
+                                         "luar whitelist (non-blocking)");
                             }
                             free(hname);
                         }
@@ -136,7 +135,7 @@ int myc_scan_include_raw(const char *source, size_t len, myc_result *res)
 
         i++;
     }
-    return ok;
+    return 1;
 }
 
 /* ------------------------------------------------------------------ */
@@ -169,7 +168,6 @@ int myc_scan_markers(const char *pre, size_t len, myc_result *res)
 {
     size_t i = 0;
     int    user_depth = 1;
-    int    ok = 1;
 
     while (i < len) {
         if (pre[i] == '#') {
@@ -235,8 +233,9 @@ int myc_scan_markers(const char *pre, size_t len, myc_result *res)
                                                           : (base2 ? base2 + 1 : path);
                                     if (!myc_policy_allow_include(bn)) {
                                         add_diag(res, 0, 0,
-                                                 "include langsung header non-whitelist");
-                                        ok = 0;
+                                                 "warning: include langsung "
+                                                 "header non-whitelist "
+                                                 "(non-blocking)");
                                     }
                                 }
                             } else if (is_return) {
@@ -258,7 +257,7 @@ int myc_scan_markers(const char *pre, size_t len, myc_result *res)
         }
         i++;
     }
-    return ok;
+    return 1;
 }
 
 /* ------------------------------------------------------------------ */
@@ -286,7 +285,6 @@ int myc_scan_calls(const char *pre, size_t len, myc_result *res)
     size_t col = 1;
     int    user_depth = 1;
     int    src_line = 1;    /* baris source asli (dari marker <stdin>) */
-    int    ok = 1;
     char   ident[256];
 
     while (i < len) {
@@ -324,16 +322,11 @@ int myc_scan_calls(const char *pre, size_t len, myc_result *res)
                     if (end < len) {
                         size_t f = end + 1;
                         int    is_pseudo = 0;
-                        int    is_hdr = 0;
                         size_t plen = end - start;
                         /* pseudo file: nama diawali '<' (e.g. <stdin>) */
                         if (plen >= 2 && pre[start] == '<' &&
                             pre[end - 1] == '>')
                             is_pseudo = 1;
-                        /* header sistem: .h */
-                        if (plen >= 2 && pre[end - 2] == '.' &&
-                            pre[end - 1] == 'h')
-                            is_hdr = 1;
                         while (f < len) {
                             while (f < len && (pre[f] == ' ' || pre[f] == '\t'))
                                 f++;
@@ -412,8 +405,7 @@ int myc_scan_calls(const char *pre, size_t len, myc_result *res)
                     if (j < len && pre[j] == '(') {
                         if (myc_policy_deny_function(ident)) {
                             add_diag(res, src_line, (int)save_col,
-                                     "fungsi dilarang");
-                            ok = 0;
+                                     "warning: fungsi dilarang (non-blocking)");
                         }
                     }
                 }
@@ -424,5 +416,5 @@ int myc_scan_calls(const char *pre, size_t len, myc_result *res)
         i++;
         col++;
     }
-    return ok;
+    return 1;
 }

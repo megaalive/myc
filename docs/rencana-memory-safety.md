@@ -1,7 +1,7 @@
 # Rencana: myc sebagai Penjamin Memory-Safety C
 
 Status: **disetujui 2026-08-01** (arah & fase pertama). Ini dokumen hidup; update
-bila keputusan berubah.
+bila keputusan berubah. **Fase A (P4+P5) SELESAI 2026-08-01.**
 
 ## Keputusan arah (2026-08-01)
 
@@ -10,7 +10,10 @@ bila keputusan berubah.
   whitelist header hanyalah *default konservatif*, bukan larangan mutlak.
 - **Overhead produksi = 0.** Fil-C / CheriABI (yang membebani runtime produksi)
   **di luar scope utama**. Fokus: static analysis + verification-run sanitizer.
-- Fase pertama: **A — perluas statis gcc (P4 + P5)**.
+- Fase pertama: **A — perluas statis gcc (P4 + P5)** — selesai.
+- **Keputusan tambahan saat implementasi Fase A**: policy (header & denylist
+  fungsi) dijadikan **non-blocking warning** (bukan VIOLATION). Gate hard hanya
+  lint memory-safety + gate gcc.
 
 ## Bagian A — Landasan
 
@@ -132,9 +135,9 @@ myc; fitur baru diekspos lewat tool lain yang realistis.
 
 ---
 
-# Rencana Eksekusi — Fase A (P4 + P5) [DISETUJUI]
+# Rencana Eksekusi — Fase A (P4 + P5) [SELESAI 2026-08-01]
 
-## P4 — Perluas verifikasi statis gcc + perkenalkan --level
+## P4 — Perluas verifikasi statis gcc + perkenalkan --level [DONE]
 
 ### 4.1 Flags gcc baru (di compile.c)
 Tier dasar (default, nol false-positive pd kode sah):
@@ -144,6 +147,10 @@ Tier dasar (default, nol false-positive pd kode sah):
 ```
 Semua `-Werror`.
 
+> **Catatan implementasi**: gate memori memakai `-c -O2` (bukan
+> `-fsyntax-only`) karena `-Warray-bounds`/`-Wstringop-overflow` hanya aktif
+> saat kompilasi beroptimisasi (GIMPLE pass).
+
 Tier ketat (`--strict`, opsional, BISING — bukan default):
 ```
 -Wconversion -Wsign-conversion -Wint-conversion
@@ -151,41 +158,53 @@ Tier ketat (`--strict`, opsional, BISING — bukan default):
 Keputusan: tidak default agar tidak memblokir program sah (filosofi: jaminan,
 bukan pembatas).
 
-### 4.2 Label jaminan di verdict
-- myc.h: enum `myc_assurance { NONE, L1_SANE, ... }` di myc_result.
-- report.c: output teks + JSON tampilkan `assurance: L1 SANE` + sisa risiko.
-- --level default L1; --level strict menyalakan tier ketat.
+### 4.2 Label jaminan di verdict [DONE]
+- myc.h: enum `myc_assurance { NONE, L0_RAW, L1_SANE, L2_PROVEN, L3_RUNTIME,
+  L4_SPATIAL, L5_FULL }` di myc_result.
+- report.c: output teks + JSON tampilkan `assurance` (OK → `L1 (SANE)`).
+- `--strict` / `--level strict` menyalakan tier ketat.
 
-### 4.3 Refactor kecil
-- Pindahkan string flags gcc dari hardcode compile.c ke tabel terpusat.
+### 4.3 Refactor kecil [DONE]
+- Pindahkan string flags gcc dari hardcode compile.c ke tabel terpusat
+  (MEMORY_WARNINGS, STRICT_WARNINGS, SYNTAX_BASE, ANALYZER_EXTRA + merge_args).
 - Fixture baru: `ok_bounds.c` (loop index aman → OK) dan `bad_oob.c`
   (index overflow statis → COMPILE_ERROR) — bukti tier dasar tidak bising.
 
 Keluar P4: myc melaporkan assurance L1, warning memori fatal, fixture lolos.
 
-## P5 — Bounds provenance lint + integer data-flow (terbatas)
+## P5 — Bounds provenance lint + integer data-flow (terbatas) [DONE]
 
-### 5.1 Bounds provenance lint (scanner.c + file baru lint.c)
+### 5.1 Bounds provenance lint (scanner.c + file baru lint.c) [DONE]
 Deteksi pola berisiko tingkat token (feasible tanpa AST):
 - intptr_t/uintptr_t roundtrip, cast (intptr_t)/(uintptr_t) → VIOLATION lint.
 - realloc hasil disimpan ke variabel yg masih memakai pointer lama → VIOLATION.
+  (Idiom aman `tmp = realloc(buf,...); ...; buf = tmp;` dikenali via
+  reassign_after → tidak di-flag.)
 - memcpy/memmove/memset tanpa ukuran tetap/eksplisit dari sizeof → warning.
 
-### 5.2 Integer data-flow (terbatas)
-- Scanner catat malloc(n)/calloc(n) → kapasitas.
-- Loop for(i=0; i<K; ...) dgn a[i] — bila K bisa melebihi kapasitas diketahui
-  dan gcc tak menjangkaunya → diagnostic.
+### 5.2 Integer data-flow (terbatas) [DONE]
+- Scanner catat malloc(n)/calloc(n) dengan perkalian tanpa sizeof →
+  warning potensi integer overflow. (Data-flow loop index penuh dipertahankan
+  ke fase berikut; gate gcc -O2 menangkap sebagian besar.)
 
-### 5.3 Batas jujur
+### 5.3 Batas jujur [DONE]
 Tanpa AST/CFG ini heuristik, BUKAN sound. Diposisikan sebagai early warning
 (bukan penalti penuh) agar tidak memblokir program sah. Versi sound = Frama-C Eva
 di fase berikutnya (P7).
 
-### 5.4 Fixture dogfooding
+### 5.4 Fixture dogfooding [DONE]
 - ok_lint.c (clean) → OK.
 - bad_intptr.c (cast intptr_t→*) → VIOLATION lint.
 - bad_realloc.c → VIOLATION lint.
 - Ini dogfooding lintas-program sesuai AGENTS.md.
+
+### 5.5 Dogfooding (hasil nyata, 2026-08-01)
+- Self-dogfooding: 9 source myc dicek myc → **semua OK**.
+- Bug nyata DITEMUKAN dogfooding: out-of-bounds read di compile.c — `prelen`
+  memakai `total_stdout_bytes` (output gcc penuh, bisa >1MB) padahal buffer
+  hanya `shown_stdout_bytes`. Diperbaiki.
+- Tool lintas-program: `dogfood/dogfood_ring.c` (ring buffer in-memory) → OK
+  + OK dengan `--analyze`.
 
 Keluar P5: myc menangkap pola UAF/provenance/int obvious di luar gcc, false
 positive terkontrol.
@@ -194,3 +213,5 @@ positive terkontrol.
 1. Tier -Wconversion tidak default (agar tidak memblokir kode sah).
 2. Hasil P5 = heuristik, di-flag warning/lint (bukan VIOLATION) bila perlu.
 3. Test lint pakai fixture C murni di tests/.
+4. **Policy (header & denylist fungsi) = non-blocking warning** (keputusan saat
+   implementasi Fase A): header bebas, denylist hanya warning.

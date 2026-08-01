@@ -6,6 +6,8 @@
  *   myc check -                   -- baca source dari stdin
  *   myc check <file.c> --json     -- output JSON
  *   myc check <file.c> --analyze  -- jalankan gate -fanalyzer
+ *   myc check <file.c> --strict   -- tier ketat (-Wconversion dll)
+ *   myc check <file.c> --no-lint  -- matikan lint memory-safety
  *   myc policy                     -- tampilkan whitelist header
  *   myc probe                      -- self-test boundary argv (argv_probe)
  *   myc version                    -- tampilkan versi & gcc
@@ -90,8 +92,9 @@ static void usage(void)
     printf(
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
-        "  myc check <file.c> [--json] [--analyze] [--cwd DIR]\n"
-        "  myc check -          [--json] [--analyze]   (source dari stdin)\n"
+        "  myc check <file.c> [--json] [--analyze] [--strict] [--no-lint] [--cwd DIR]\n"
+        "  myc check -          [--json] [--analyze] [--strict] [--no-lint]\n"
+        "                        (source dari stdin)\n"
         "  myc policy\n"
         "  myc probe\n"
         "  myc version\n");
@@ -275,6 +278,7 @@ int main(int argc, char **argv)
 
     myc_request_init(&req);
     myc_result_init(&res);
+    req.run_lint = 1;               /* lint memory-safety default ON */
 
     /* parse flags */
     {
@@ -284,6 +288,16 @@ int main(int argc, char **argv)
                 req.as_json = 1;
             else if (strcmp(argv[i], "--analyze") == 0)
                 req.run_analyzer = 1;
+            else if (strcmp(argv[i], "--strict") == 0)
+                req.strict = 1;
+            else if (strcmp(argv[i], "--level") == 0) {
+                /* --level L1 | --level strict : sama-sama menyalakan tier ketat */
+                req.strict = 1;
+                if (i + 1 < argc && strcmp(argv[i + 1], "strict") == 0)
+                    i++;
+            }
+            else if (strcmp(argv[i], "--no-lint") == 0)
+                req.run_lint = 0;
             else if (strcmp(argv[i], "--cwd") == 0 && i + 1 < argc) {
                 req.cwd = argv[++i];
             }

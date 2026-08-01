@@ -33,6 +33,17 @@ typedef enum {
     MC_CANCELLED
 } myc_verdict;
 
+/* Assurance ladder (lihat docs/rencana-memory-safety.md, Bagian C). */
+typedef enum {
+    MYC_ASSURANCE_NONE = 0,
+    MYC_ASSURANCE_L0_RAW,
+    MYC_ASSURANCE_L1_SANE,
+    MYC_ASSURANCE_L2_PROVEN,
+    MYC_ASSURANCE_L3_RUNTIME,
+    MYC_ASSURANCE_L4_SPATIAL,
+    MYC_ASSURANCE_L5_FULL
+} myc_assurance;
+
 /* Error codes terstruktur (diadaptasi dari Appendix B rencana fpagnt). */
 typedef enum {
     MYC_ERR_NONE = 0,
@@ -41,6 +52,7 @@ typedef enum {
     MYC_ERR_INPUT_TOO_LARGE,
     MYC_ERR_INVALID_PATH,
     MYC_ERR_POLICY_DENIED,
+    MYC_ERR_LINT_VIOLATION,
     MYC_ERR_COMPILE_ERROR,
     MYC_ERR_PREPROCESS_ERROR,
     MYC_ERR_GCC_NOT_FOUND,
@@ -68,12 +80,15 @@ typedef struct {
     int         max_output_bytes;
     const char *cwd;            /* workspace root; NULL = cwd proses */
     int         run_analyzer;   /* jalankan gate -fanalyzer */
+    int         run_lint;       /* jalankan lint memory-safety (default 1) */
+    int         strict;         /* tier ketat: -Wconversion dll */
     int         as_json;        /* output JSON ke stdout */
     const char *gcc_program;    /* NULL = cari "gcc" via PATH */
 } myc_request;
 
 typedef struct {
     myc_verdict verdict;
+    myc_assurance assurance;    /* level jaminan yang DIBUKTIKAN */
     int         exit_code;              /* exit code dari gate terakhir */
     myc_error_code err;                 /* kode error utama (NONE bila ok) */
 
@@ -122,6 +137,7 @@ void myc_report_json(const myc_result *res);
 /* Nama error code (statis). */
 const char *myc_error_name(myc_error_code c);
 const char *myc_verdict_name(myc_verdict v);
+const char *myc_assurance_name(myc_assurance a);
 
 #ifdef __cplusplus
 }

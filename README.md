@@ -16,38 +16,49 @@ masuk ke shell string. Source hanya lewat stdin, gcc dipanggil dengan
 ## Pipeline
 
 ```
-scan include mentah (whitelist)   -> VIOLATION
+scan include mentah (whitelist)   -> warning (non-blocking)
+lint memory-safety (lint.c)       -> LINT_VIOLATION  (gate hard)
 gcc -E (argv eksak, via stdin)    -> preprocessed output
-scan penanda "# 1" (depth 2)      -> VIOLATION  (tangkis makro-smuggle)
-scan panggilan fungsi denylist    -> VIOLATION
-gcc -fsyntax-only -Wall -Wextra -Werror -pedantic
-  + -Werror=implicit-function-declaration
+scan penanda "# 1" (depth 2)      -> warning (non-blocking)
+scan panggilan fungsi denylist    -> warning (non-blocking)
+gcc -c -O2 -Wall -Wextra -Werror -pedantic
+  + tier memori (Warray-bounds, stringop-overflow, use-after-free, ...)
                                     -> COMPILE_ERROR
-gcc -c -fanalyzer -o NUL (--analyze, opsional)
+gcc -c -O2 -fanalyzer -o NUL (--analyze, opsional)
                                     -> COMPILE_ERROR
-OK
+OK (assurance: L1 SANE)
 ```
+
+> Catatan: gate memori memakai `-c -O2` karena `-Warray-bounds` dan
+> `-Wstringop-overflow` hanya aktif saat kompilasi beroptimisasi.
 
 ## Penggunaan
 
 ```text
-myc check <file.c> [--json] [--analyze] [--cwd DIR]
-myc check -          [--json] [--analyze]   (source dari stdin)
+myc check <file.c> [--json] [--analyze] [--strict] [--no-lint] [--cwd DIR]
+myc check -          [--json] [--analyze] [--strict] [--no-lint] (stdin)
 myc policy                                 (tampilkan whitelist header)
 myc probe                                  (self-test exact argv)
 myc version
 ```
 
-## Kebijakan
+Flag:
+- `--strict` (alias `--level strict`) — tier ketat `-Wconversion
+  -Wsign-conversion -Wint-conversion` (BISING, bukan default).
+- `--no-lint` — matikan lint memory-safety.
+- `--analyze` — tambah gate `-fanalyzer`.
 
-- **Whitelist header**: assert, ctype, errno, float, limits, locale, math,
-  stdarg, stdbool, stddef, stdint, stdio, stdlib, string, time.
-- **Denylist fungsi**: `system`, `exec*`, `spawn*`, `fork`, `popen`, file I/O
-  ke disk (`fopen`, `fread`, ...), jaringan, `mmap`, env, utas.
-- Fungsi user-defined bebas; fungsi tak dikenal ditangkap gcc via
-  `-Werror=implicit-function-declaration`.
-- Header yang diizinkan boleh menarik header sistem transitif (perilaku C
-  normal); hanya include langsung (depth 2) yang wajib di whitelist.
+## Kebijakan (pivot 2026-08-01: memory-safety, bukan pembatasan library)
+
+- **Header bebas**. Whitelist header hanyalah *default konservatif*; semua
+  scan policy (include, markers, calls) bersifat **non-blocking** — hanya
+  menambah warning, tidak pernah menolak program sah.
+- **Denylist fungsi** (`system`, `exec*`, `spawn*`, `fork`, `popen`, file I/O,
+  jaringan, `mmap`, env, utas) tetap dilaporkan sebagai warning (safety
+  tambahan), bukan penghalang.
+- **Gate hard = lint memory-safety** (intptr_t cast → VIOLATION, realloc
+  invalidasi → VIOLATION) **+ gate gcc** (tier memori, `-Werror`).
+- Fungsi tak dikenal ditangkap gcc via `-Werror=implicit-function-declaration`.
 
 ## Aturan untuk coding agent
 
@@ -57,13 +68,14 @@ Gunakan `shell` hanya bila sintaks shell memang dibutuhkan, dan jelaskan.
 
 ## Status
 
-- P0–P3 selesai: `myc check` end-to-end jalan.
-- Belum: eksekusi kode (hanya compile+static), MCP server, corpus abuse
-  lintas platform (WSL tersedia), soak.
-- **Arah baru (2026-08-01)**: fokus bergeser dari pembatasan library
-  (whitelist/denylist header) ke **memory-safety & minim bug**. Detail di
-  `AGENTS.md`. Whitelist saat ini menjadi *default konservatif*, bukan
-  larangan mutlak; denylist fungsi tetap ada sebagai safety tambahan.
+- P0–P5 selesai: `myc check` end-to-end, policy non-blocking, lint
+  memory-safety (intptr_t/realloc), tier memori gcc + `-fanalyzer`,
+  assurance L1 SANE, self-dogfooding (9 source myc OK).
+- Belum: eksekusi kode (hanya compile+static), Frama-C (L2), sanitizer build
+  (L3), MCP server, corpus abuse lintas platform (WSL tersedia), soak.
+- **Arah (2026-08-01)**: fokus = **memory-safety & minim bug**, bukan
+  pembatasan library. Policy = warning non-blocking (lihat Kebijakan). Detail
+  di `AGENTS.md` dan `docs/rencana-memory-safety.md`.
 
 ## Build
 
