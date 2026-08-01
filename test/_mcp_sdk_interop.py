@@ -84,11 +84,11 @@ LOOP_SRC = "int main(void){for(;;){}return 0;}\n"
 # dengan MYC_SKIP_SLOW_TIMEOUT=1. Default: dijalankan (bukti isError TIMEOUT).
 SKIP_SLOW_TIMEOUT = os.environ.get("MYC_SKIP_SLOW_TIMEOUT") == "1"
 
-# Jumlah cek yang di-skip (counter; maksimal 9: timeout + prove-ok +
+# Jumlah cek yang di-skip (counter; maksimal 10: timeout + prove-ok +
 # prove-bad + checked-ok + checked-bad + contract-pre + run-stdin + filc
-# + run-checked; dua prove skip bersamaan bila Frama-C/WSL hilang, dua
-# checked skip bersamaan bila pola MYC_BUF hilang); dipakai pesan akhir
-# agar konsisten dgn jumlah [OK] yang benar2 dijalankan.
+# + run-checked + combo-gate; dua prove skip bersamaan bila Frama-C/WSL
+# hilang, dua checked skip bersamaan bila pola MYC_BUF hilang); dipakai
+# pesan akhir agar konsisten dgn jumlah [OK] yang benar2 dijalankan.
 SKIPPED_COUNT = 0
 
 
@@ -561,6 +561,39 @@ async def _run(exe):
                 print("[OK] check --run --checked bad_checked_oob.c -> "
                       "RUNTIME_VIOLATION (MYC_AT fat-pointer)")
 
+            # 22. check --run --checked (fixture tests/ok_checked.c) -> L4 SPATIAL
+            # Kombinasi 2 gate sekaligus: checked (L4) + run (L3). Karena
+            # assurance = max(level yang terbukti), hasil akhir harus L4
+            # (SPATIAL) -- bukan L3. Ini membuktikan kombinasi gate bekerja
+            # dan max(level) benar lewat SDK (verifikasi build pakai
+            # fat-pointer; program bersih, run_exit 0). Non-blocking: bila
+            # salah satu gate di-skip (clang hilang / tanpa MYC_BUF) -> [SKIP].
+            try:
+                combo_src = _tests_source("ok_checked.c")
+            except OSError as e:
+                print("[FAIL] check combo gate: fixture tak terbaca: %r" % e)
+                return 1
+            r = await session.call_tool(
+                "check",
+                arguments={"source": combo_src,
+                           "flags": ["--run", "--checked"]})
+            t = _text(r)
+            if _is_error(r):
+                print("[FAIL] check combo gate: isError harus false: %s" % t[:250])
+                return 1
+            if '"ran_checked":false' in t or '"ran_runtime":false' in t:
+                SKIPPED_COUNT += 1
+                print("[SKIP] check combo gate ok_checked.c: gate di-skip "
+                      "(clang tidak tersedia / tanpa pola MYC_BUF)")
+            else:
+                if '"verdict":"OK"' not in t or \
+                   '"assurance":"L4 (SPATIAL)"' not in t or \
+                   '"checked_build_ok":true' not in t:
+                    print("[FAIL] check combo gate: verdict/assurance: %s" % t[:250])
+                    return 1
+                print("[OK] check combo gate ok_checked.c --run --checked "
+                      "-> L4 SPATIAL (max level)")
+
             return 0
 
 
@@ -576,7 +609,7 @@ def main():
         print("[FAIL] interop SDK gagal: %r" % e)
         return 1
     if rc == 0:
-        n_checks = 22 - SKIPPED_COUNT
+        n_checks = 23 - SKIPPED_COUNT
         suffix = " (%d skip)" % SKIPPED_COUNT if SKIPPED_COUNT else ""
         print("[OK] interop SDK MCP resmi lulus (5 tool, %d cek%s)"
               % (n_checks, suffix))
