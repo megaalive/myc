@@ -122,6 +122,42 @@ Poin penting:
   RUNTIME_VIOLATION (`--run --checked`).
 - Fixture P8 (D4.1): `ok_filc.c` / `bad_filc_oob.c` → L5 / FILC_VIOLATION
   bila Fil-C tersedia; di-skip (non-blocking) bila tidak.
+- **Trust Core Stabilization — Fase 1 partial selesai 2026-08-02**
+  (dari audit `docs/myc-serious-review-and-roadmap.md`):
+  - **MYC-AUDIT-005 diperbaiki** (`compile.c`): fingerprint OOB read.
+    `snprintf` truncated mengembalikan panjang *yang seharusnya* ditulis,
+    bukan panjang aktual di buffer. Bug lama: `sha256_hex(buf, n, ...)` bisa
+    membaca di luar `buf[512]` bila path gcc + cwd + metadata > 511 byte.
+    Perbaikan: `snprintf(NULL, 0, ...)` dulu untuk menghitung panjang exact,
+    alokasi dinamis, baru hash. Fingerprint version bump: `v7` → `v8`.
+  - **MYC-AUDIT-001 diperbaiki** (`proc.c`): drain thread POSIX tidak
+    di-join. `pthread_t` lama dibuang — thread masih menulis ke buffer
+    sementara parent sudah transfer hasil (race/UAF). Perbaikan: simpan
+    `pthread_t to/te`, periksa return `pthread_create`, `pthread_join`
+    keduanya *setelah* child berhenti dan pipe ditutup, baru salin buffer.
+  - **MYC-AUDIT-002 diperbaiki** (`proc.c`): deadlock POSIX stdin/output.
+    Urutan lama: tulis stdin penuh → baru buat drain thread. Bila child
+    mengisi pipe output sebelum selesai baca stdin → deadlock. Perbaikan:
+    drain thread dibuat *sebelum* menulis stdin.
+  - **MYC-AUDIT-011 diperbaiki** (`proc.c`): process group POSIX belum
+    dibentuk sehingga `kill(-pid, SIGKILL)` tidak menjamin membunuh seluruh
+    pohon child. Perbaikan: `setpgid(0, 0)` di child sebelum `execvp`;
+    parent memakai `kill(-pid, ...)` ke group baru.
+  - **MYC-AUDIT-003 partial** (`proc.c`): tidak bisa bedakan `execvp` gagal
+    dari program yang memang exit 127. Perbaikan: exec-error pipe dengan
+    `FD_CLOEXEC` — child write errno saat `execvp` gagal, parent baca untuk
+    mengklasifikasikan `MYC_ERR_EXECUTE_FAILED` dengan tepat.
+  - **MYC-AUDIT-003 partial** (`run.c`): fallback temp dir `"."` menghasilkan
+    path relatif yang rusak saat child `chdir(tmp_dir)`. Perbaikan: fallback
+    ke `/tmp` (POSIX) / `C:/Temp` (Windows), canonicalize via `getcwd` bila
+    base masih relatif.
+  - **MYC-AUDIT-007 diperbaiki** (`myc.c`): `file_path`-only request lolos
+    validasi tapi pipeline null-deref (`req->source == NULL`). Perbaikan:
+    `myc_run()` load file ke memory di ingress layer sebelum masuk pipeline;
+    pipeline selalu menerima source in-memory.
+  - Dogfooding: self-check 15/15 source myc OK + 3/3 dogfood/ OK; semua
+    regression test + `_regress_run.bat` pass setelah perbaikan.
+
 - **P9 (MCP server + soak + corpus abuse) selesai 2026-08-02**:
   - `mcp.exe` — MCP server JSON-RPC 2.0 over stdio (newline-delimited, satu
     pesan per baris). In-process memakai `myc_run` (myc.c dibangun dengan

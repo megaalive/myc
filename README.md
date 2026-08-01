@@ -182,6 +182,26 @@ Gunakan `shell` hanya bila sintaks shell memang dibutuhkan, dan jelaskan.
   DRIVER_VIOLATION bila sanitizer menangkap bug. Tool MCP tambahan:
   `contracts` + `lint`. Client MCP contoh: `mcp_client.py`. Self-dogfooding
   kini 15 source myc (termasuk `driver.c`) → OK.
+- **Trust Core Stabilization — Fase 1 partial (2026-08-02)**:
+  7 bug kritis dari audit `docs/myc-serious-review-and-roadmap.md`
+  diperbaiki:
+  - **MYC-AUDIT-005**: fingerprint OOB read (`compile.c`) — `snprintf`
+    truncated dipakai sebagai panjang ke `sha256_hex`; kini hitung exact
+    dengan `snprintf(NULL,0,...)` + alokasi dinamis.
+  - **MYC-AUDIT-001**: drain thread POSIX tidak di-join (`proc.c`) —
+    race/UAF pada buffer hasil; kini `pthread_join` sebelum transfer.
+  - **MYC-AUDIT-002**: deadlock POSIX stdin/output (`proc.c`) — drain thread
+    kini dibuat *sebelum* menulis stdin.
+  - **MYC-AUDIT-011**: process group POSIX belum dibentuk (`proc.c`) —
+    `setpgid(0,0)` di child agar `kill(-pgid)` efektif.
+  - **MYC-AUDIT-003**: exec-error pipe (`proc.c`) — `execvp` gagal kini
+    dibedakan dari exit 127 program via pipe `FD_CLOEXEC`.
+  - **MYC-AUDIT-003**: temp path relatif POSIX (`run.c`) — fallback ke
+    `/tmp`; canonicalize via `getcwd` bila base relatif.
+  - **MYC-AUDIT-007**: `file_path` API null-deref (`myc.c`) — `myc_run()`
+    kini load file ke memory sebelum masuk pipeline.
+  - Dogfooding post-fix: 15/15 self + 3/3 dogfood/ OK;
+    `_regress.bat` + `_regress_run.bat` semua pass.
 - **Arah (2026-08-01)**: fokus = **memory-safety & minim bug**, bukan
   pembatasan library. Policy = warning non-blocking (lihat Kebijakan). Detail
   di `AGENTS.md` dan `docs/rencana-memory-safety.md`.

@@ -31,6 +31,7 @@
 #define myc_mkdir(path) _mkdir(path)
 #define myc_rmdir(path) _rmdir(path)
 #define myc_getpid() _getpid()
+#define my_getcwd(buf,sz) _getcwd(buf,sz)
 #else
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -38,6 +39,7 @@
 #define myc_mkdir(path) mkdir(path, 0700)
 #define myc_rmdir(path) rmdir(path)
 #define myc_getpid() getpid()
+#define my_getcwd(buf,sz) getcwd(buf,sz)
 #endif
 
 #include "contract.h"
@@ -98,10 +100,13 @@ static void add_diag_run(myc_result *res, const char *msg)
     }
 }
 
-/* Buat path direktori temp unik: <base>/myc_run_<pid>_<n>. */
+/* Buat path direktori temp unik: <base>/myc_run_<pid>_<n>.
+ * MYC-AUDIT-003: selalu kembalikan path absolut agar exe_path
+ * tidak menjadi path relatif saat cwd diubah ke tmp_dir. */
 static char *make_temp_dir(void)
 {
     const char *base = getenv("TEMP");
+    char        cwdbuf[4096];
     char       *dir;
     int         n = 0;
     size_t      bl;
@@ -109,19 +114,34 @@ static char *make_temp_dir(void)
 #ifdef _WIN32
     if (!base || !*base)
         base = getenv("TMP");
-#endif
+#else
     if (!base || !*base)
-        base = ".";
+        base = getenv("TMPDIR");
+#endif
+    if (!base || !*base) {
+#ifdef _WIN32
+        base = "C:/Temp";
+#else
+        base = "/tmp";
+#endif
+    }
+    /* Jika base relatif, canonicalize via getcwd agar path absolut. */
+    if (base[0] != '/' && !(base[0] && base[1] == ':')) {
+        if (my_getcwd(cwdbuf, sizeof(cwdbuf))) {
+            base = cwdbuf;
+        }
+    }
     bl = strlen(base);
 
     while (n < 100) {
         char   buf[32];
-        size_t need = bl + 1 + strlen("myc_run_") + strlen(buf) + 1;
+        size_t need;
+        snprintf(buf, sizeof(buf), "myc_run_%lu_%d",
+                 (unsigned long)myc_getpid(), n);
+        need = bl + 1 + strlen(buf) + 1;
         dir = (char *)malloc(need);
         if (!dir)
             return NULL;
-        snprintf(buf, sizeof(buf), "myc_run_%lu_%d",
-                 (unsigned long)myc_getpid(), n);
         snprintf(dir, need, "%s/%s", base, buf);
         if (myc_mkdir(dir) == 0)
             return dir;

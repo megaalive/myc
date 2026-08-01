@@ -444,14 +444,20 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     }
     res->resolved_gcc = _strdup(gcc_path);
 
-    /* fingerprint kanonik */
+    /* fingerprint kanonik
+     * Perbaikan MYC-AUDIT-005: snprintf() mengembalikan panjang yang
+     * *seharusnya* ditulis jika terpotong, bukan panjang aktual di buffer.
+     * Dulu kode memakai nilai n yang truncated sebagai panjang ke sha256_hex
+     * sehingga bisa membaca di luar buf[512]. Sekarang kita hitung dulu
+     * dengan snprintf(NULL,0,...), lalu alokasi exact, baru hash. */
     {
-        char policy_hex[65];
-        char buf[512];
-        int  n;
+        char  policy_hex[65];
+        char *fp_buf = NULL;
+        int   fp_need;
+        size_t fp_len;
         myc_policy_hash(policy_hex);
-        n = snprintf(buf, sizeof(buf),
-                     "v7|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s|src:%s",
+        fp_need = snprintf(NULL, 0,
+                     "v8|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s|src:%s",
                      gcc_path,
                      req->cwd ? req->cwd : "",
                      policy_hex,
@@ -462,7 +468,29 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                      req->filc ? "filc" : "nofilc",
                      req->driver ? "driver" : "nodriver",
                      res->source_sha256 ? res->source_sha256 : "");
-        sha256_hex(buf, (size_t)n, hex);
+        if (fp_need > 0) {
+            fp_len = (size_t)fp_need;
+            fp_buf = (char *)malloc(fp_len + 1);
+        }
+        if (fp_buf) {
+            snprintf(fp_buf, fp_len + 1,
+                     "v8|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s|src:%s",
+                     gcc_path,
+                     req->cwd ? req->cwd : "",
+                     policy_hex,
+                     req->strict ? "strict" : "default",
+                     req->run ? "run" : "norun",
+                     req->prove ? "prove" : "noprove",
+                     req->checked ? "checked" : "nochecked",
+                     req->filc ? "filc" : "nofilc",
+                     req->driver ? "driver" : "nodriver",
+                     res->source_sha256 ? res->source_sha256 : "");
+            sha256_hex(fp_buf, fp_len, hex);
+            free(fp_buf);
+        } else {
+            /* alokasi gagal: hash string kosong sebagai fallback */
+            sha256_hex("", 0, hex);
+        }
         res->fingerprint = _strdup(hex);
     }
 

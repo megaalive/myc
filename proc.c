@@ -571,82 +571,168 @@ cleanup:
 
 static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
 {
-    int     in_pipe[2], out_pipe[2], err_pipe[2];
-    pid_t   pid;
+    int     in_pipe[2]  = {-1,-1};
+    int     out_pipe[2] = {-1,-1};
+    int     err_pipe[2] = {-1,-1};
+    int     exec_pipe[2] = {-1,-1}; /* MYC-AUDIT-003: deteksi execvp gagal */
+    pid_t   pid = -1;
     drain_buf out, err;
+    pthread_t to = 0, te = 0;
+    int     to_created = 0, te_created = 0;
     size_t  max_out = req->max_output_bytes ? req->max_output_bytes : MYC_MAX_OUTPUT_BYTES;
     unsigned long long t0;
-    int     status;
+    int     status = 0;
     int     timed_out = 0;
 
-    (void)max_out;
-    if (pipe(in_pipe) < 0 || pipe(out_pipe) < 0 || pipe(err_pipe) < 0)
-        return 0;
+    memset(&out, 0, sizeof(out));
+    memset(&err, 0, sizeof(err));
+
+    /* Buat semua pipe; tutup yang sudah terbuka jika gagal. */
+    if (pipe(in_pipe) < 0 || pipe(out_pipe) < 0 || pipe(err_pipe) < 0 ||
+        pipe(exec_pipe) < 0) {
+        res->err = MYC_ERR_INTERNAL;
+        goto cleanup_pipes;
+    }
+
+    /* exec_pipe: sisi write diwarisi child; FD_CLOEXEC agar otomatis
+     * tertutup bila execvp sukses → parent membaca 0 byte = exec berhasil.
+     * Bila execvp gagal, child menulis errno → parent tahu exec gagal. */
+    {
+        int fl = fcntl(exec_pipe[1], F_GETFD, 0);
+        if (fl >= 0)
+            fcntl(exec_pipe[1], F_SETFD, fl | FD_CLOEXEC);
+    }
 
     t0 = now_ms();
     pid = fork();
-    if (pid < 0)
-        return 0;
+    if (pid < 0) {
+        res->err = MYC_ERR_EXECUTE_FAILED;
+        goto cleanup_pipes;
+    }
 
     if (pid == 0) {
-        /* Child. */
+        /* === CHILD === */
+        /* Bentuk process group sendiri agar kill(-pgid) efektif.
+         * MYC-AUDIT-011: setpgid sebelum exec. */
+        setpgid(0, 0);
+
+        /* Hubungkan pipe ke stdin/stdout/stderr. */
         dup2(in_pipe[0], 0);
         dup2(out_pipe[1], 1);
         dup2(err_pipe[1], 2);
+
+        /* Tutup semua fd pipe di child (dup2 sudah menyalin). */
         close(in_pipe[0]); close(in_pipe[1]);
         close(out_pipe[0]); close(out_pipe[1]);
         close(err_pipe[0]); close(err_pipe[1]);
+        close(exec_pipe[0]); /* sisi read tidak dibutuhkan child */
+        /* exec_pipe[1] tetap terbuka, FD_CLOEXEC akan menutupnya saat exec
+         * berhasil. Bila exec gagal, kita write errno lalu _exit. */
+
         if (req->cwd) {
-            if (chdir(req->cwd) != 0)
+            if (chdir(req->cwd) != 0) {
+                int e = errno;
+                (void)write(exec_pipe[1], &e, sizeof(e));
                 _exit(127);
+            }
         }
         execvp(req->argv[0], (char *const *)req->argv);
+        /* execvp gagal: kirim errno ke parent. */
+        {
+            int e = errno;
+            (void)write(exec_pipe[1], &e, sizeof(e));
+        }
         _exit(127);
     }
 
-    close(in_pipe[0]); close(out_pipe[1]); close(err_pipe[1]);
+    /* === PARENT === */
+    /* Tutup sisi child dari semua pipe. */
+    close(in_pipe[0]);  in_pipe[0] = -1;
+    close(out_pipe[1]); out_pipe[1] = -1;
+    close(err_pipe[1]); err_pipe[1] = -1;
+    close(exec_pipe[1]); exec_pipe[1] = -1;
 
-    /* tulis stdin */
+    /* Inisialisasi drain buffer dan mulai thread drain SEBELUM menulis
+     * stdin. MYC-AUDIT-002: memulai drain dulu mencegah deadlock bila
+     * child mengisi pipe output sebelum selesai membaca stdin. */
+    if (!drain_init(&out, max_out) || !drain_init(&err, max_out)) {
+        res->err = MYC_ERR_INTERNAL;
+        goto cleanup_kill;
+    }
+    out.fd = out_pipe[0];
+    err.fd = err_pipe[0];
+
+    /* MYC-AUDIT-001: simpan pthread_t dan periksa return value. */
+    if (pthread_create(&to, NULL, drain_thread, &out) != 0) {
+        res->err = MYC_ERR_INTERNAL;
+        goto cleanup_kill;
+    }
+    to_created = 1;
+    if (pthread_create(&te, NULL, drain_thread, &err) != 0) {
+        res->err = MYC_ERR_INTERNAL;
+        goto cleanup_kill;
+    }
+    te_created = 1;
+
+    /* Tulis stdin SETELAH drain thread sudah berjalan. */
     if (req->stdin_len > 0) {
         size_t off = 0;
         while (off < req->stdin_len) {
             ssize_t w = write(in_pipe[1], (const char *)req->stdin_data + off,
                               req->stdin_len - off);
             if (w <= 0)
-                break;
+                break; /* broken pipe: child mungkin sudah exit */
             off += (size_t)w;
         }
     }
-    close(in_pipe[1]);
+    close(in_pipe[1]); in_pipe[1] = -1;
 
-    if (!drain_init(&out, max_out) || !drain_init(&err, max_out))
-        return 0;
-    out.fd = out_pipe[0];
-    err.fd = err_pipe[0];
+    /* Periksa apakah execvp berhasil: baca dari exec_pipe[0].
+     * Jika exec berhasil, pipe ditutup oleh FD_CLOEXEC → read() = 0.
+     * Jika exec gagal, child menulis errno. */
     {
-        pthread_t to, te;
-        pthread_create(&to, NULL, drain_thread, &out);
-        pthread_create(&te, NULL, drain_thread, &err);
-        (void)to; (void)te;
+        int exec_errno = 0;
+        ssize_t r = read(exec_pipe[0], &exec_errno, sizeof(exec_errno));
+        if (r == (ssize_t)sizeof(exec_errno)) {
+            /* exec gagal: child tidak pernah berjalan */
+            res->err = MYC_ERR_EXECUTE_FAILED;
+            res->ok = 0;
+            goto cleanup_kill;
+        }
+        /* r==0: exec berhasil. r<0: error read, tetap lanjut. */
     }
+    close(exec_pipe[0]); exec_pipe[0] = -1;
 
-    /* tunggu dengan timeout */
+    /* Tunggu child selesai atau timeout. */
     while (1) {
         unsigned long long elapsed = now_ms() - t0;
         int r = waitpid(pid, &status, WNOHANG);
         if (r == pid) {
+            pid = -1; /* sudah dipanen */
             break;
         }
         if (req->timeout_ms > 0 && elapsed >= (unsigned long long)req->timeout_ms) {
             timed_out = 1;
+            /* MYC-AUDIT-011: bunuh seluruh process group child. */
             kill(-pid, SIGKILL);
             kill(pid, SIGKILL);
             waitpid(pid, &status, 0);
+            pid = -1;
             break;
         }
-        struct timespec ts = {0, 10 * 1000000};
-        nanosleep(&ts, NULL);
+        {
+            struct timespec ts = {0, 10 * 1000000};
+            nanosleep(&ts, NULL);
+        }
     }
+
+    /* Tutup sisi read pipe sehingga drain thread mendapat EOF. */
+    if (out_pipe[0] >= 0) { close(out_pipe[0]); out_pipe[0] = -1; }
+    if (err_pipe[0] >= 0) { close(err_pipe[0]); err_pipe[0] = -1; }
+
+    /* MYC-AUDIT-001: join kedua thread sebelum menyentuh buffer hasil. */
+    if (to_created) { pthread_join(to, NULL); to_created = 0; }
+    if (te_created) { pthread_join(te, NULL); te_created = 0; }
 
     if (timed_out) {
         res->timed_out = 1;
@@ -656,14 +742,15 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
         res->exit_code = WEXITSTATUS(status);
         res->ok = 1;
         res->err = MYC_ERR_NONE;
+    } else if (WIFSIGNALED(status)) {
+        res->exit_code = 128 + WTERMSIG(status);
+        res->ok = 0;
+        res->err = MYC_ERR_EXECUTE_FAILED;
     } else {
         res->exit_code = 1;
         res->ok = 0;
         res->err = MYC_ERR_EXECUTE_FAILED;
     }
-
-    close(out_pipe[0]);
-    close(err_pipe[0]);
 
     res->duration_ms = now_ms() - t0;
     res->stdout_data = out.data; out.data = NULL;
@@ -673,7 +760,36 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
     res->stdout_shown = out.len;
     res->stderr_shown = err.len;
     res->truncated = out.truncated || err.truncated;
+    if (res->stdout_data) res->stdout_data[out.len] = '\0';
+    if (res->stderr_data) res->stderr_data[err.len] = '\0';
+    if (!res->stdout_data) { res->stdout_data = (char *)malloc(1); if (res->stdout_data) res->stdout_data[0] = '\0'; }
+    if (!res->stderr_data) { res->stderr_data = (char *)malloc(1); if (res->stderr_data) res->stderr_data[0] = '\0'; }
+    /* out.data dan err.data sudah diserahkan ke res (di-NULL-kan di atas);
+     * jangan free lagi di sini. */
     return res->ok ? 1 : 0;
+
+cleanup_kill:
+    if (pid > 0) {
+        kill(-pid, SIGKILL);
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+    }
+cleanup_pipes:
+    /* Tutup sisi read pipe agar drain thread (jika sempat dibuat) mendapat EOF. */
+    if (out_pipe[0] >= 0) { close(out_pipe[0]); out_pipe[0] = -1; }
+    if (err_pipe[0] >= 0) { close(err_pipe[0]); err_pipe[0] = -1; }
+    if (to_created) { pthread_join(to, NULL); }
+    if (te_created) { pthread_join(te, NULL); }
+    /* Tutup semua fd yang tersisa. */
+    if (in_pipe[0]  >= 0) close(in_pipe[0]);
+    if (in_pipe[1]  >= 0) close(in_pipe[1]);
+    if (out_pipe[1] >= 0) close(out_pipe[1]);
+    if (err_pipe[1] >= 0) close(err_pipe[1]);
+    if (exec_pipe[0] >= 0) close(exec_pipe[0]);
+    if (exec_pipe[1] >= 0) close(exec_pipe[1]);
+    free(out.data);
+    free(err.data);
+    return 0;
 }
 
 #endif /* !_WIN32 */

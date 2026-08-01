@@ -100,6 +100,53 @@ void myc_run(const myc_request *req, myc_result *res)
         res->err = ve;
         return;
     }
+
+    /* MYC-AUDIT-007: bila caller memakai file_path tanpa source,
+     * load file di sini sebelum masuk pipeline. Pipeline selalu
+     * menerima source in-memory; tidak ada NULL dereference di bawah. */
+    if (!req->source && req->file_path) {
+        FILE  *f = fopen(req->file_path, "rb");
+        long   sz;
+        char  *buf;
+        myc_request req2;
+        if (!f) {
+            res->verdict = MC_ERROR;
+            res->err = MYC_ERR_INVALID_PATH;
+            return;
+        }
+        fseek(f, 0, SEEK_END);
+        sz = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (sz < 0 || (size_t)sz > MYC_MAX_CODE_BYTES) {
+            fclose(f);
+            res->verdict = MC_ERROR;
+            res->err = sz < 0 ? MYC_ERR_INVALID_PATH : MYC_ERR_INPUT_TOO_LARGE;
+            return;
+        }
+        buf = (char *)malloc((size_t)sz + 1);
+        if (!buf) {
+            fclose(f);
+            res->verdict = MC_ERROR;
+            res->err = MYC_ERR_INTERNAL;
+            return;
+        }
+        if (sz > 0 && fread(buf, 1, (size_t)sz, f) != (size_t)sz) {
+            free(buf);
+            fclose(f);
+            res->verdict = MC_ERROR;
+            res->err = MYC_ERR_INVALID_PATH;
+            return;
+        }
+        buf[sz] = '\0';
+        fclose(f);
+        req2 = *req;
+        req2.source = buf;
+        req2.source_len = (size_t)sz;
+        myc_pipeline(&req2, res);
+        free(buf);
+        return;
+    }
+
     myc_pipeline(req, res);
 }
 
