@@ -77,8 +77,8 @@ LOOP_SRC = "int main(void){for(;;){}return 0;}\n"
 # dengan MYC_SKIP_SLOW_TIMEOUT=1. Default: dijalankan (bukti isError TIMEOUT).
 SKIP_SLOW_TIMEOUT = os.environ.get("MYC_SKIP_SLOW_TIMEOUT") == "1"
 
-# Jumlah cek yang di-skip (0/1); dipakai pesan akhir agar konsisten dgn
-# jumlah [OK] yang benar-benar dijalankan.
+# Jumlah cek yang di-skip (counter; maksimal 2: timeout + prove); dipakai
+# pesan akhir agar konsisten dgn jumlah [OK] yang benar-benar dijalankan.
 SKIPPED_COUNT = 0
 
 
@@ -107,6 +107,9 @@ def _text(result):
 
 
 async def _run(exe):
+    # global wajib dideklarasikan SEKALI di awal fungsi sebelum penggunaan
+    # apa pun (Python: nama yang di-assign sebelum `global` = SyntaxError).
+    global SKIPPED_COUNT
     params = StdioServerParameters(command=exe, args=[], cwd=None)
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
@@ -222,8 +225,7 @@ async def _run(exe):
             # tanpa batas bila timeout server/proc tidak pernah terjadi.
             # Di-lewati (skip) bila MYC_SKIP_SLOW_TIMEOUT=1 utk iterasi cepat.
             if SKIP_SLOW_TIMEOUT:
-                global SKIPPED_COUNT
-                SKIPPED_COUNT = 1
+                SKIPPED_COUNT += 1
                 print("[SKIP] check --run loop (TIMEOUT): MYC_SKIP_SLOW_TIMEOUT=1")
             else:
                 t0 = time.time()
@@ -290,6 +292,36 @@ async def _run(exe):
                 return 1
             print("[OK] check --driver bad_driver_oob.c -> DRIVER_VIOLATION")
 
+            # 14. check --prove (fixture ok_prove.c) -> L2 PROVEN bila Frama-C
+            # tersedia. Gate prove NON-BLOCKING: bila wsl/frama-c hilang atau
+            # Eva tidak menganalisis, ran_prove=false -> [SKIP] (assurance
+            # statis dipertahankan, bukan error). Bila berjalan: verdict OK +
+            # assurance L2 (PROVEN) + prove_alarms=0 (Eva bersih).
+            try:
+                prove_src = _fixture_source("ok_prove.c")
+            except OSError as e:
+                print("[FAIL] check --prove: fixture tak terbaca: %r" % e)
+                return 1
+            r = await session.call_tool(
+                "check",
+                arguments={"source": prove_src, "flags": ["--prove"]})
+            t = _text(r)
+            if _is_error(r):
+                print("[FAIL] check --prove: isError harus false: %s" % t[:250])
+                return 1
+            if '"ran_prove":false' in t:
+                SKIPPED_COUNT += 1
+                print("[SKIP] check --prove ok_prove.c: gate di-skip "
+                      "(Frama-C/WSL tidak tersedia / Eva tidak menganalisis)")
+            else:
+                if '"verdict":"OK"' not in t or \
+                   '"assurance":"L2 (PROVEN)"' not in t or \
+                   '"prove_alarms":0' not in t:
+                    print("[FAIL] check --prove: verdict/assurance/alarms: %s"
+                          % t[:250])
+                    return 1
+                print("[OK] check --prove ok_prove.c -> L2 PROVEN (alarms=0)")
+
             return 0
 
 
@@ -305,8 +337,8 @@ def main():
         print("[FAIL] interop SDK gagal: %r" % e)
         return 1
     if rc == 0:
-        n_checks = 14 - SKIPPED_COUNT
-        suffix = " (1 skip)" if SKIPPED_COUNT else ""
+        n_checks = 15 - SKIPPED_COUNT
+        suffix = " (%d skip)" % SKIPPED_COUNT if SKIPPED_COUNT else ""
         print("[OK] interop SDK MCP resmi lulus (5 tool, %d cek%s)"
               % (n_checks, suffix))
     return rc
