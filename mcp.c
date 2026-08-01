@@ -138,6 +138,7 @@ static void tool_check(json_value *id, json_value *args)
     myc_result  res;
     const char *source = NULL;
     const char *cwd = NULL;
+    const char *run_stdin = NULL;
     json_value *flags = NULL;
     char       *text = NULL;
     json_value *result = NULL;
@@ -155,6 +156,7 @@ static void tool_check(json_value *id, json_value *args)
         return;
     }
     cwd = json_get_str(args, "cwd");
+    run_stdin = json_get_str(args, "run_stdin");
     flags = json_get(args, "flags");
 
     myc_request_init(&req);
@@ -164,6 +166,12 @@ static void tool_check(json_value *id, json_value *args)
     req.checked_header_dir = g_exe_dir;
     if (cwd)
         req.cwd = cwd;
+    /* stdin program verification (--run): hanya efektif bila --run juga
+     * diminta; aman karena string hidup selama blok tool_check ini. */
+    if (run_stdin) {
+        req.run_stdin = run_stdin;
+        req.run_stdin_len = strlen(run_stdin);
+    }
 
     if (flags && flags->type == JSON_ARR) {
         for (i = 0; i < flags->len; i++) {
@@ -418,7 +426,8 @@ static json_value *tools_list_body(void)
         "assurance L0-L5, error, diagnostics, output gate run/prove/checked/"
         "filc. source: kode C (string, wajib). flags: array string opsional "
         "dari [--run --prove --checked --filc --driver --analyze --strict --no-lint]. "
-        "cwd: direktori kerja opsional."));
+        "run_stdin: string stdin untuk program verification (opsional; hanya "
+        "efektif bila --run juga diminta). cwd: direktori kerja opsional."));
     {
         json_value *schema = json_new_obj();
         json_value *props = json_new_obj();
@@ -440,6 +449,13 @@ static json_value *tools_list_body(void)
         json_obj_set(p, "description", json_new_str(
             "Flag opsional: --run --prove --checked --filc --driver --analyze --strict --no-lint"));
         json_obj_set(props, "flags", p);
+
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("string"));
+        json_obj_set(p, "description", json_new_str(
+            "stdin untuk program verification (opsional; hanya efektif bila "
+            "--run juga diminta)."));
+        json_obj_set(props, "run_stdin", p);
 
         p = json_new_obj();
         json_obj_set(p, "type", json_new_str("string"));

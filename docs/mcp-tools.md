@@ -21,6 +21,9 @@ sebagai server dan memanggil pipeline verifikasi `myc` sebagai tool.
 - `source` (string, **wajib**): kode C yang akan diperiksa.
 - `flags` (array string, opsional): `--run --prove --checked --filc
   --driver --analyze --strict --no-lint` (lihat README untuk arti tiap flag).
+- `run_stdin` (string, opsional): stdin untuk program verification. Hanya
+  efektif bila `--run` juga diminta — konten ini dikirim ke stdin program
+  yang dibangun gate `--run` (pengganti `--run-stdin FILE` di CLI).
 - `cwd` (string, opsional): direktori kerja gate (gcc/clang).
 - **Hasil**: satu string teks berisi **JSON lengkap** `myc_result`:
   `verdict`, `assurance`, `error`, `exit_code`, `duration_ms`,
@@ -41,8 +44,9 @@ Contoh:
 
 ```json
 {"name":"check","arguments":{
-  "source":"#include <stdlib.h>\nint main(void){int*p=(int*)malloc(4*sizeof(int));p[0]=1;free(p);return 0;}",
-  "flags":["--run"]}}
+  "source":"#include <stdio.h>\nint main(void){char b[64];if(fgets(b,sizeof b,stdin))printf(\"got:%s\",b);return 0;}",
+  "flags":["--run"],
+  "run_stdin":"halo myc\n"}}
 ```
 
 ### 2. `version` — versi myc + ketersediaan backend
