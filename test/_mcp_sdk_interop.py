@@ -17,6 +17,7 @@ Kode keluar 0 = semua cek lulus; 1 = ada kegagalan; 2 = SDK tidak terpasang.
 import asyncio
 import os
 import sys
+import time
 
 try:
     from mcp import ClientSession, StdioServerParameters
@@ -49,6 +50,30 @@ LINT_SRC = (
     "#include <stdint.h>\n"
     "int main(void){intptr_t p = (intptr_t)&p; return 0;}\n"
 )
+
+# > 1 MiB source -> myc_request_validate menolak (MYC_ERR_INPUT_TOO_LARGE)
+# -> verdict ERROR -> isError=true. Jalan cepat & deterministik untuk
+# menguji isError true tanpa menunggu proses eksternal.
+HUGE_SRC = "//" + "a" * (1 << 20) + "\n"
+
+# Loop tak hingga -> gate run (--run) menunggu MYC_DEFAULT_TIMEOUT_MS
+# (30 dtk) lalu MC_TIMEOUT -> isError=true. Lambat tapi nyata; komentar
+# ini menjelaskan kenapa cek isError TIMEOUT butuh ~30 dtk.
+LOOP_SRC = "int main(void){for(;;){}return 0;}\n"
+
+# Cek TIMEOUT butuh ~30 dtk; bisa dilewati (untuk iterasi regress cepat)
+# dengan MYC_SKIP_SLOW_TIMEOUT=1. Default: dijalankan (bukti isError TIMEOUT).
+SKIP_SLOW_TIMEOUT = os.environ.get("MYC_SKIP_SLOW_TIMEOUT") == "1"
+
+# Jumlah cek yang di-skip (0/1); dipakai pesan akhir agar konsisten dgn
+# jumlah [OK] yang benar-benar dijalankan.
+SKIPPED_COUNT = 0
+
+
+def _is_error(result):
+    """Baca flag isError dari CallToolResult (SDK 2.x: field is_error)."""
+    return bool(getattr(result, "is_error", None) or
+                getattr(result, "isError", None))
 
 # Whitelist header konservatif (policy.c) -- harus muncul di output tool
 # `policy` beserta jumlahnya. Bila daftar diubah di policy.c, sinkronkan.
@@ -145,6 +170,68 @@ async def _run(exe):
                 return 1
             print("[OK] lint (intptr_t) -> VIOLATION")
 
+            # 8. contracts -- argumen INVALID (source hilang) -> error -32602
+            try:
+                await session.call_tool("contracts", arguments={})
+                print("[FAIL] contracts tanpa source: tidak error")
+                return 1
+            except Exception as e:
+                # MCPError dari SDK; cari kode JSON-RPC di e.code / e.error.code
+                code = getattr(e, "code", None)
+                if code is None:
+                    code = getattr(getattr(e, "error", None), "code", None)
+                if code != -32602:
+                    print("[FAIL] contracts tanpa source: code=%r (%r)" % (code, e))
+                    return 1
+            print("[OK] contracts tanpa source -> JSON-RPC -32602")
+
+            # 9. contracts -- source KOSONG -> hasil valid (bukan error)
+            r = await session.call_tool("contracts", arguments={"source": ""})
+            t = _text(r)
+            if _is_error(r) or "requires=0 ensures=0" not in t:
+                print("[FAIL] contracts source kosong: %s" % t[:200])
+                return 1
+            print("[OK] contracts source kosong -> requires=0 ensures=0 (isError=false)")
+
+            # 10. check -- source > 1 MiB -> verdict ERROR (input_too_large),
+            # isError=true. "input_too_large" sudah cukup membuktikan verdict
+            # ERROR (nama error hanya muncul pada verdict MC_ERROR).
+            r = await session.call_tool("check", arguments={"source": HUGE_SRC})
+            t = _text(r)
+            if not _is_error(r) or "input_too_large" not in t:
+                print("[FAIL] check 1MiB+: isError harus true (verdict ERROR): %s"
+                      % t[:200])
+                return 1
+            print("[OK] check 1MiB+ -> isError=true (verdict ERROR)")
+
+            # 11. check --run -- loop tak hingga -> verdict TIMEOUT, isError=true
+            # Catatan: butuh ~MYC_DEFAULT_TIMEOUT_MS (30 dtk) menunggu timeout.
+            # Dibungkus asyncio.wait_for(60 dtk) agar test TIDAK menggantung
+            # tanpa batas bila timeout server/proc tidak pernah terjadi.
+            # Di-lewati (skip) bila MYC_SKIP_SLOW_TIMEOUT=1 utk iterasi cepat.
+            if SKIP_SLOW_TIMEOUT:
+                global SKIPPED_COUNT
+                SKIPPED_COUNT = 1
+                print("[SKIP] check --run loop (TIMEOUT): MYC_SKIP_SLOW_TIMEOUT=1")
+            else:
+                t0 = time.time()
+                try:
+                    r = await asyncio.wait_for(
+                        session.call_tool(
+                            "check",
+                            arguments={"source": LOOP_SRC, "flags": ["--run"]}),
+                        timeout=60)
+                except asyncio.TimeoutError:
+                    print("[FAIL] check --run loop: server tidak timeout dalam 60 dtk")
+                    return 1
+                t = _text(r)
+                dt = time.time() - t0
+                if not _is_error(r) or "TIMEOUT" not in t:
+                    print("[FAIL] check --run loop: isError harus true (TIMEOUT): %s"
+                          % t[:200])
+                    return 1
+                print("[OK] check --run loop -> isError=true (TIMEOUT, %.0f dtk)" % dt)
+
             return 0
 
 
@@ -160,7 +247,10 @@ def main():
         print("[FAIL] interop SDK gagal: %r" % e)
         return 1
     if rc == 0:
-        print("[OK] interop SDK MCP resmi lulus (5 tool, 8 cek)")
+        n_checks = 12 - SKIPPED_COUNT
+        suffix = " (1 skip)" if SKIPPED_COUNT else ""
+        print("[OK] interop SDK MCP resmi lulus (5 tool, %d cek%s)"
+              % (n_checks, suffix))
     return rc
 
 
