@@ -594,6 +594,24 @@ async def _run(exe):
                 print("[OK] check combo gate ok_checked.c --run --checked "
                       "-> L4 SPATIAL (max level)")
 
+            # 23. lint (fixture tests/ok_lint.c) -> OK (bukan false VIOLATION)
+            # Fixture P5: source bersih (malloc + memcpy dengan sizeof eksplisit).
+            # Lint memory-safety HARUS diam (verdict OK) -- membuktikan tidak
+            # ada false positive VIOLATION pada idiom aman. Berlawanan dengan
+            # cek #7 (lint intptr_t -> VIOLATION). Deterministik (tanpa skip).
+            try:
+                ok_lint_src = _tests_source("ok_lint.c")
+            except OSError as e:
+                print("[FAIL] lint ok: fixture tak terbaca: %r" % e)
+                return 1
+            r = await session.call_tool("lint", arguments={"source": ok_lint_src})
+            t = _text(r)
+            if _is_error(r) or "lint verdict: OK" not in t or \
+               "VIOLATION" in t:
+                print("[FAIL] lint ok: %s" % t[:250])
+                return 1
+            print("[OK] lint ok_lint.c -> OK (tidak ada false VIOLATION)")
+
             return 0
 
 
@@ -609,7 +627,7 @@ def main():
         print("[FAIL] interop SDK gagal: %r" % e)
         return 1
     if rc == 0:
-        n_checks = 23 - SKIPPED_COUNT
+        n_checks = 24 - SKIPPED_COUNT
         suffix = " (%d skip)" % SKIPPED_COUNT if SKIPPED_COUNT else ""
         print("[OK] interop SDK MCP resmi lulus (5 tool, %d cek%s)"
               % (n_checks, suffix))
