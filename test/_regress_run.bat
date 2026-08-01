@@ -16,6 +16,11 @@ for %%f in (tests\ok_run.c tests\bad_run_oob.c tests\bad_run_uaf.c tests\bad_run
 echo --- dogfood ring
 myc.exe check dogfood\dogfood_ring.c --run > %OUT%
 findstr /B /C:"verdict:" /C:"assurance:" %OUT%
+echo --- dogfood config (tool dogfooding lintas-program kedua)
+myc.exe check dogfood\dogfood_config.c > %OUT%
+findstr /B /C:"verdict:" /C:"assurance:" %OUT%
+myc.exe check dogfood\dogfood_config.c --run > %OUT%
+findstr /B /C:"verdict:" /C:"assurance:" %OUT%
 echo --- prove fixtures (--prove): ok_prove harus L2, bad_prove harus PROVE_VIOLATION
 for %%f in (test\fixtures\ok_prove.c test\fixtures\bad_prove.c) do (
   echo === %%f
