@@ -21,9 +21,10 @@ sebagai server dan memanggil pipeline verifikasi `myc` sebagai tool.
 - `source` (string, **wajib**): kode C yang akan diperiksa.
 - `flags` (array string, opsional): `--run --prove --checked --filc
   --driver --analyze --strict --no-lint` (lihat README untuk arti tiap flag).
-- `run_stdin` (string, opsional): stdin untuk program verification. Hanya
-  efektif bila `--run` juga diminta — konten ini dikirim ke stdin program
-  yang dibangun gate `--run` (pengganti `--run-stdin FILE` di CLI).
+- `run_stdin` (string, opsional): stdin untuk program verification. Efektif
+  bila `--run` (verification build clang) atau `--filc` (verification build
+  Fil-C) diminta — konten ini dikirim ke stdin program yang dijalankan gate
+  tersebut (pengganti `--run-stdin FILE` di CLI).
 - `cwd` (string, opsional): direktori kerja gate (gcc/clang).
 - **Hasil**: satu string teks berisi **JSON lengkap** `myc_result`:
   `verdict`, `assurance`, `error`, `exit_code`, `duration_ms`,
@@ -108,4 +109,14 @@ realloc ke variabel lain (VIOLATION), memcpy/memmove/memset tanpa `sizeof`
   diagnostic — jangan anggap skip sebagai kegagalan.
 - Untuk program yang memakai `MYC_BUF`, gunakan `--checked` untuk L4 SPATIAL.
 - Debug interop resmi: `test/_mcp_sdk_interop.py` (memakai SDK MCP Python
-  resmi, bukan client buatan sendiri).
+  resmi, bukan client buatan sendiri). Cakupan: **24 cek** — handshake +
+  `tools/list`, kelima tool, verdict OK + VIOLATION, isError transport
+  (ERROR `1MiB+` / TIMEOUT), dan seluruh gate opsional: `--run`
+  (RUNTIME_VIOLATION OOB, contract-assert `bad_contract_pre.c`, `run_stdin`
+  echo, TIMEOUT loop), `--prove` (L2 PROVEN / PROVE_VIOLATION),
+  `--checked` (L4 SPATIAL / COMPILE_ERROR akses-langsung),
+  `--run --checked` (RUNTIME_VIOLATION OOB + kombinasi max-level L4),
+  `--driver` (L3 RUNTIME / DRIVER_VIOLATION), `--filc` (L5 FULL / skip),
+  lint (VIOLATION intptr_t + tidak ada false-positive pada `ok_lint.c`).
+  Semua gate non-blocking: bila backend hilang (clang/Frama-C/Fil-C/MYC_BUF),
+  cek di-[SKIP] bukan [FAIL].

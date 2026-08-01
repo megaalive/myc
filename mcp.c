@@ -166,8 +166,9 @@ static void tool_check(json_value *id, json_value *args)
     req.checked_header_dir = g_exe_dir;
     if (cwd)
         req.cwd = cwd;
-    /* stdin program verification (--run): hanya efektif bila --run juga
-     * diminta; aman karena string hidup selama blok tool_check ini. */
+    /* stdin program verification: dikonsumsi gate --run (run.c) dan
+     * --filc (filc.c); hanya efektif bila salah satu flag diminta; aman
+     * karena string hidup selama blok tool_check ini. */
     if (run_stdin) {
         req.run_stdin = run_stdin;
         req.run_stdin_len = strlen(run_stdin);
@@ -426,8 +427,8 @@ static json_value *tools_list_body(void)
         "assurance L0-L5, error, diagnostics, output gate run/prove/checked/"
         "filc. source: kode C (string, wajib). flags: array string opsional "
         "dari [--run --prove --checked --filc --driver --analyze --strict --no-lint]. "
-        "run_stdin: string stdin untuk program verification (opsional; hanya "
-        "efektif bila --run juga diminta). cwd: direktori kerja opsional."));
+        "run_stdin: string stdin untuk program verification (opsional; efektif "
+        "bila --run atau --filc diminta). cwd: direktori kerja opsional."));
     {
         json_value *schema = json_new_obj();
         json_value *props = json_new_obj();
@@ -453,8 +454,8 @@ static json_value *tools_list_body(void)
         p = json_new_obj();
         json_obj_set(p, "type", json_new_str("string"));
         json_obj_set(p, "description", json_new_str(
-            "stdin untuk program verification (opsional; hanya efektif bila "
-            "--run juga diminta)."));
+            "stdin untuk program verification (opsional; efektif bila --run "
+            "atau --filc diminta)."));
         json_obj_set(props, "run_stdin", p);
 
         p = json_new_obj();
