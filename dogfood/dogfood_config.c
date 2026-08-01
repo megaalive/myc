@@ -63,6 +63,10 @@ static int config_add(struct config *cfg, const char *key, const char *value)
         ncap = cfg->cap ? cfg->cap * 2 : 8;
         if (ncap > CFG_MAX_ENTRIES)
             ncap = CFG_MAX_ENTRIES;
+        /* batas entri tercapai: JANGAN tumbuh ke kapasitas yang sama lalu
+         * menulis items[count] (OOB). Gagal saja, bukan overflow. */
+        if (ncap <= cfg->cap)
+            return 0;
         tmp = (struct entry *)realloc(cfg->items, ncap * sizeof(*tmp));
         if (!tmp)
             return 0;
