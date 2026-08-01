@@ -84,11 +84,11 @@ LOOP_SRC = "int main(void){for(;;){}return 0;}\n"
 # dengan MYC_SKIP_SLOW_TIMEOUT=1. Default: dijalankan (bukti isError TIMEOUT).
 SKIP_SLOW_TIMEOUT = os.environ.get("MYC_SKIP_SLOW_TIMEOUT") == "1"
 
-# Jumlah cek yang di-skip (counter; maksimal 8: timeout + prove-ok +
-# prove-bad + checked-ok + checked-bad + contract-pre + run-stdin + filc;
-# dua prove skip bersamaan bila Frama-C/WSL hilang, dua checked skip
-# bersamaan bila pola MYC_BUF hilang); dipakai pesan akhir agar konsisten
-# dgn jumlah [OK] yang benar2 dijalankan.
+# Jumlah cek yang di-skip (counter; maksimal 9: timeout + prove-ok +
+# prove-bad + checked-ok + checked-bad + contract-pre + run-stdin + filc
+# + run-checked; dua prove skip bersamaan bila Frama-C/WSL hilang, dua
+# checked skip bersamaan bila pola MYC_BUF hilang); dipakai pesan akhir
+# agar konsisten dgn jumlah [OK] yang benar2 dijalankan.
 SKIPPED_COUNT = 0
 
 
@@ -524,6 +524,43 @@ async def _run(exe):
                     return 1
                 print("[OK] check --filc ok_filc.c -> L5 FULL (panics=0)")
 
+            # 21. check --run --checked (fixture tests/bad_checked_oob.c) ->
+            # RUNTIME_VIOLATION. Fixture memakai MYC_AT dengan indeks OOB
+            # (via argc, opaque bagi analisis statis). Lolos gate gcc statis,
+            # tapi di verification build fat-pointer (--checked + --run)
+            # MYC_AT menangkap OOB -> marker "MYC_CHECKED:" ->
+            # RUNTIME_VIOLATION. Membuktikan L4 SPATIAL + runtime bekerja
+            # bersamaan lewat SDK. Non-blocking: bila ran_runtime=false
+            # (clang hilang / build verifikasi gagal) -> [SKIP].
+            try:
+                ckoob_src = _tests_source("bad_checked_oob.c")
+            except OSError as e:
+                print("[FAIL] check --run --checked: fixture tak terbaca: %r" % e)
+                return 1
+            r = await session.call_tool(
+                "check",
+                arguments={"source": ckoob_src,
+                           "flags": ["--run", "--checked"]})
+            t = _text(r)
+            if _is_error(r):
+                print("[FAIL] check --run --checked: isError harus false: %s"
+                      % t[:250])
+                return 1
+            if '"ran_runtime":false' in t:
+                SKIPPED_COUNT += 1
+                print("[SKIP] check --run --checked: gate di-skip "
+                      "(clang tidak tersedia / build verifikasi gagal)")
+            else:
+                if '"verdict":"RUNTIME_VIOLATION"' not in t or \
+                   '"ran_checked":true' not in t or \
+                   '"checked_build_ok":true' not in t or \
+                   '"checked_uses_buf":true' not in t:
+                    print("[FAIL] check --run --checked: verdict/checked: %s"
+                          % t[:250])
+                    return 1
+                print("[OK] check --run --checked bad_checked_oob.c -> "
+                      "RUNTIME_VIOLATION (MYC_AT fat-pointer)")
+
             return 0
 
 
@@ -539,7 +576,7 @@ def main():
         print("[FAIL] interop SDK gagal: %r" % e)
         return 1
     if rc == 0:
-        n_checks = 21 - SKIPPED_COUNT
+        n_checks = 22 - SKIPPED_COUNT
         suffix = " (%d skip)" % SKIPPED_COUNT if SKIPPED_COUNT else ""
         print("[OK] interop SDK MCP resmi lulus (5 tool, %d cek%s)"
               % (n_checks, suffix))
