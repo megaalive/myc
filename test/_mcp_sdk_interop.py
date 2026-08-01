@@ -77,7 +77,8 @@ LOOP_SRC = "int main(void){for(;;){}return 0;}\n"
 # dengan MYC_SKIP_SLOW_TIMEOUT=1. Default: dijalankan (bukti isError TIMEOUT).
 SKIP_SLOW_TIMEOUT = os.environ.get("MYC_SKIP_SLOW_TIMEOUT") == "1"
 
-# Jumlah cek yang di-skip (counter; maksimal 2: timeout + prove); dipakai
+# Jumlah cek yang di-skip (counter; maksimal 3: timeout + prove-ok +
+# prove-bad; dua prove skip bersamaan bila Frama-C/WSL hilang); dipakai
 # pesan akhir agar konsisten dgn jumlah [OK] yang benar-benar dijalankan.
 SKIPPED_COUNT = 0
 
@@ -322,6 +323,38 @@ async def _run(exe):
                     return 1
                 print("[OK] check --prove ok_prove.c -> L2 PROVEN (alarms=0)")
 
+            # 15. check --prove (fixture bad_prove.c) -> PROVE_VIOLATION bila
+            # Frama-C tersedia. Fixture ini membaca OOB via argc opaque sehingga
+            # Eva menghasilkan 2 alarm RTE (kelas bug pasti) -> PROVE_VIOLATION.
+            # Non-blocking: bila ran_prove=false (Frama-C/WSL hilang / Eva tidak
+            # menganalisis) -> [SKIP], bukan [FAIL] (pola sama dgn cek #14).
+            try:
+                bad_prove_src = _fixture_source("bad_prove.c")
+            except OSError as e:
+                print("[FAIL] check --prove bad: fixture tak terbaca: %r" % e)
+                return 1
+            r = await session.call_tool(
+                "check",
+                arguments={"source": bad_prove_src, "flags": ["--prove"]})
+            t = _text(r)
+            if _is_error(r):
+                print("[FAIL] check --prove bad: isError harus false: %s" % t[:250])
+                return 1
+            if '"ran_prove":false' in t:
+                SKIPPED_COUNT += 1
+                print("[SKIP] check --prove bad_prove.c: gate di-skip "
+                      "(Frama-C/WSL tidak tersedia / Eva tidak menganalisis)")
+            else:
+                # Verdict+error membuktikan PROVE_VIOLATION. Jumlah alarm
+                # TIDAK di-asert sebagai nilai eksak (bisa beda antar versi
+                # Frama-C) -- cukup pastikan > 0 (bukan 0 = Eva bersih).
+                if '"verdict":"PROVE_VIOLATION"' not in t or \
+                   '"error":"prove_violation"' not in t or \
+                   '"prove_alarms":0' in t:
+                    print("[FAIL] check --prove bad: verdict/alarms: %s" % t[:250])
+                    return 1
+                print("[OK] check --prove bad_prove.c -> PROVE_VIOLATION (alarms>0)")
+
             return 0
 
 
@@ -337,7 +370,7 @@ def main():
         print("[FAIL] interop SDK gagal: %r" % e)
         return 1
     if rc == 0:
-        n_checks = 15 - SKIPPED_COUNT
+        n_checks = 16 - SKIPPED_COUNT
         suffix = " (%d skip)" % SKIPPED_COUNT if SKIPPED_COUNT else ""
         print("[OK] interop SDK MCP resmi lulus (5 tool, %d cek%s)"
               % (n_checks, suffix))
