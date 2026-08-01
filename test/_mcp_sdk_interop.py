@@ -50,6 +50,15 @@ LINT_SRC = (
     "int main(void){intptr_t p = (intptr_t)&p; return 0;}\n"
 )
 
+# Whitelist header konservatif (policy.c) -- harus muncul di output tool
+# `policy` beserta jumlahnya. Bila daftar diubah di policy.c, sinkronkan.
+EXPECTED_HEADERS = (
+    "assert.h", "ctype.h", "errno.h", "float.h", "limits.h",
+    "locale.h", "math.h", "stdarg.h", "stdbool.h", "stddef.h",
+    "stdint.h", "stdio.h", "stdlib.h", "string.h", "time.h",
+)
+EXPECTED_HEADER_COUNT = len(EXPECTED_HEADERS)  # 15
+
 
 def _text(result):
     """Gabungkan content text dari hasil tools/call."""
@@ -101,13 +110,23 @@ async def _run(exe):
                 return 1
             print("[OK] version")
 
-            # 5. policy
+            # 5. policy -- verifikasi jumlah header whitelist
             r = await session.call_tool("policy", arguments={})
             t = _text(r)
-            if "whitelist" not in t:
-                print("[FAIL] policy: %s" % t[:200])
+            if "whitelist" not in t or \
+               "(%d)" % EXPECTED_HEADER_COUNT not in t:
+                print("[FAIL] policy (jumlah): %s" % t[:200])
                 return 1
-            print("[OK] policy")
+            print("[OK] policy (jumlah whitelist = %d)" % EXPECTED_HEADER_COUNT)
+
+            # 5b. policy -- verifikasi seluruh daftar header whitelist
+            expected_hdr = ["<%s>" % h for h in EXPECTED_HEADERS]
+            missing_hdrs = [h for h in expected_hdr if h not in t]
+            if missing_hdrs:
+                print("[FAIL] policy kurang header: %s" % missing_hdrs)
+                return 1
+            print("[OK] policy whitelist: %d header diverifikasi"
+                  % len(expected_hdr))
 
             # 6. contracts
             r = await session.call_tool("contracts",
@@ -141,7 +160,7 @@ def main():
         print("[FAIL] interop SDK gagal: %r" % e)
         return 1
     if rc == 0:
-        print("[OK] interop SDK MCP resmi lulus (5 tool, 7 cek)")
+        print("[OK] interop SDK MCP resmi lulus (5 tool, 8 cek)")
     return rc
 
 
