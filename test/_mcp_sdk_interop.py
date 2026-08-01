@@ -31,6 +31,12 @@ def _exe_default():
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "mcp.exe")
 
 
+def _fixture_path(name):
+    """Path file fixture di test/fixtures (relatif ke script ini)."""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "fixtures", name)
+
+
 SAFE_SRC = (
     "#include <stdlib.h>\n"
     "int main(void){int *p=(int*)malloc(4*sizeof(int));p[0]=1;free(p);return 0;}\n"
@@ -232,6 +238,30 @@ async def _run(exe):
                     return 1
                 print("[OK] check --run loop -> isError=true (TIMEOUT, %.0f dtk)" % dt)
 
+            # 12. check --driver (fixture ok_driver.c) -> L3 RUNTIME via SDK
+            # Membuktikan gate driver-generator D2.2 bisa dipanggil penuh
+            # lewat harness MCP resmi (source fixture dikirim sebagai string).
+            # Ekspektasi: verdict OK, assurance L3 (RUNTIME), 2 fungsi
+            # ber-kontrak diuji, 10 kasus tepi tereksekusi (0 skipped).
+            try:
+                drv_src = open(_fixture_path("ok_driver.c"), "rb").read()
+                drv_src = drv_src.decode("utf-8", "replace")
+            except OSError as e:
+                print("[FAIL] check --driver: fixture tak terbaca: %r" % e)
+                return 1
+            r = await session.call_tool(
+                "check",
+                arguments={"source": drv_src, "flags": ["--driver"]})
+            t = _text(r)
+            if _is_error(r) or '"verdict":"OK"' not in t or \
+               '"assurance":"L3 (RUNTIME)"' not in t:
+                print("[FAIL] check --driver: verdict/assurance: %s" % t[:250])
+                return 1
+            if '"driver_funcs":2' not in t or '"driver_cases":10' not in t:
+                print("[FAIL] check --driver: funcs/cases: %s" % t[:250])
+                return 1
+            print("[OK] check --driver ok_driver.c -> L3 RUNTIME (funcs=2, cases=10)")
+
             return 0
 
 
@@ -247,7 +277,7 @@ def main():
         print("[FAIL] interop SDK gagal: %r" % e)
         return 1
     if rc == 0:
-        n_checks = 12 - SKIPPED_COUNT
+        n_checks = 13 - SKIPPED_COUNT
         suffix = " (1 skip)" if SKIPPED_COUNT else ""
         print("[OK] interop SDK MCP resmi lulus (5 tool, %d cek%s)"
               % (n_checks, suffix))
