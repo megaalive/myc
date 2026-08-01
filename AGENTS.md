@@ -74,9 +74,16 @@ Poin penting:
   menganalisis → skip, assurance statis dipertahankan + diagnostic.
   Fixture: `ok_prove.c` → L2; `bad_prove.c` (OOB via argc opaque) →
   PROVE_VIOLATION.
-- Self-dogfooding lolos penuh: 14 source myc dicek myc sendiri → OK.
+- Self-dogfooding lolos penuh: 15 source myc dicek myc sendiri → OK.
   (Catatan lama "akan selalu VIOLATION karena windows.h" TIDAK berlaku lagi —
   policy non-blocking.)
+- **Dogfooding lintas-program tiga tool (2026-08-02)**: `dogfood_ring.c`
+  (ring buffer, MYC_BUF → L4), `dogfood_config.c` (parser config key=value,
+  idiom realloc aman ke member `cfg->items = tmp` + copy_bounded), dan
+  `dogfood_tilemap.c` (flood-fill BFS tile map 2D domain game,  stack eksplisit non-rekursif + indeks y*W+x berbatas). Ketiganya lolos `myc
+  check` OK/L1 + `--run` OK/L3, gcc -Wall -Wextra -Werror diam; tilemap juga
+  tervalidasi diam terhadap `-fanalyzer`. Terdaftar di
+  `test/_regress_run.bat`.
 - **P8 (D1.2) checked-build makro selesai 2026-08-01**: `myc_buf.h`
   dual-mode (produksi `MYC_BUF(T)` = `T*` polos; `-DMYC_CHECKED=1` =
   fat-struct + `MYC_AT` cek batas). Gate `--checked` membangun source 2×;
@@ -136,12 +143,22 @@ Poin penting:
 Dogfooding myc dilakukan **dua cara**:
 
 1. **Self-dogfooding**: source myc sendiri diperiksa myc (termasuk
-   `json.c`/`mcp.c` sejak P9). Setelah pivot (policy non-blocking), seluruh
-   14 source myc lulus OK — ini wajib dipertahankan di setiap perubahan:
+   `json.c`/`mcp.c`/`driver.c`). Setelah pivot (policy non-blocking), seluruh
+   15 source myc lulus OK — ini wajib dipertahankan di setiap perubahan:
    tiap source harus tetap OK.
 2. **Dogfooding lintas-program**: buat tool/aplikasi lain (C murni) yang
    *realistis* untuk user, ditulis dan diperiksa dengan myc, untuk
    mematangkan jalur "lolos" (OK) myc pada kode yang sah.
+
+Daftar tool dogfooding saat ini (semua di `dogfood/`, terdaftar di
+`test/_regress_run.bat`):
+- `dogfood_ring.c` — ring buffer kasir (domain aplikasi/game), memakai
+  MYC_BUF → L4 SPATIAL saat `--checked`.
+- `dogfood_config.c` — parser config key=value (domain web/server), melatih
+  idiom realloc aman ke member struct + copy per-byte berbatas.
+- `dogfood_tilemap.c` — flood-fill BFS tile map 2D (domain game), melatih
+  indeks 2D berbatas + stack eksplisit non-rekursif + alokasi sizeof
+  eksplisit.
 
 Ciri tool dogfooding yang baik:
 - Murni API yang sah (console, in-memory), sehingga melatih jalur OK.
