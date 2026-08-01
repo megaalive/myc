@@ -41,21 +41,85 @@ Poin penting:
   clang ASan+UBSan (`-O0`, source via stdin, DLL runtime disalin, eksekusi
   via proc.c) → assurance **L3 RUNTIME**. Non-blocking: bila clang hilang /
   kode bukan executable, assurance statis dipertahankan + diagnostic.
-- Self-dogfooding sekarang lolos penuh: 9 source myc dicek myc sendiri → OK.
+- **P7 (D1.5) contract-lite selesai 2026-08-01**: scan `//@ requires/ensures`
+  (info di laporan: `contracts: requires=N ensures=M`) + inject
+  `assert(requires)` ke verification build (`--run`) sebagai defense-in-depth.
+  `bad_contract_pre.c` → RUNTIME_VIOLATION (assert menangkap pelanggaran pre).
+- **P7 (D3.1) Frama-C Eva selesai 2026-08-01**: gate `--prove` → L2 PROVEN.
+  Frama-C 33.0 (Arsenic) diinstal via opam di WSL Ubuntu-24.04
+  (`/home/megaalive/.opam/default/bin/frama-c`); myc mendeteksi via `wsl.exe`
+  dan memanggil `frama-c -eva` dengan source via stdin (template bash tetap,
+  tanpa shell string berisi source). Alarm Eva (`[eva:alarm]`, kelas RTE =
+  bug pasti) → verdict PROVE_VIOLATION; 0 alarm + analisis sungguhan (cek
+  "ANALYSIS SUMMARY") → L2. Non-blocking: wsl/frama-c hilang atau Eva tidak
+  menganalisis → skip, assurance statis dipertahankan + diagnostic.
+  Fixture: `ok_prove.c` → L2; `bad_prove.c` (OOB via argc opaque) →
+  PROVE_VIOLATION.
+- Self-dogfooding lolos penuh: 14 source myc dicek myc sendiri → OK.
   (Catatan lama "akan selalu VIOLATION karena windows.h" TIDAK berlaku lagi —
   policy non-blocking.)
+- **P8 (D1.2) checked-build makro selesai 2026-08-01**: `myc_buf.h`
+  dual-mode (produksi `MYC_BUF(T)` = `T*` polos; `-DMYC_CHECKED=1` =
+  fat-struct + `MYC_AT` cek batas). Gate `--checked` membangun source 2×;
+  akses langsung `b[i]` pada MYC_BUF = COMPILE_ERROR di checked build →
+  semua akses dipaksa via MYC_AT → **L4 SPATIAL**. `--run --checked`
+  memakai verification build fat-pointer di bawah ASan. Non-blocking:
+  source tanpa pola MYC_BUF → skip + diagnostic. Fixture: `ok_checked.c` →
+  L4; `bad_checked.c` → COMPILE_ERROR; `bad_checked_oob.c` →
+  RUNTIME_VIOLATION. Dogfooding: `dogfood_ring.c` ditulis ulang memakai
+  MYC_BUF → L4.
+- **P8 (D4.1) gate Fil-C selesai 2026-08-01**: `--filc` → **L5 FULL**
+  (backend opsional). Deteksi filc-clang di PATH (native Linux) atau via
+  WSL (`command -v filc-clang` / `/opt/fil/bin/filc-clang`); verification
+  build + eksekusi terkendali. Marker panic Fil-C (`filc safety error` dll,
+  terkonfirmasi dari issue tracker) → verdict **FILC_VIOLATION**. Run
+  bersih → L5. Non-blocking: filc-clang tidak tersedia → skip + diagnostic
+  (assurance statis dipertahankan). Fixture: `ok_filc.c` → L5 bila ada,
+  skip bila tidak; `bad_filc_oob.c` → FILC_VIOLATION bila ada, skip bila
+  tidak. Di sistem ini Fil-C TIDAK terpasang → fixture diverifikasi lewat
+  jalur skip (non-blocking berfungsi).
+- Catatan bug yang ditemukan & diperbaiki saat P7 (dogfooding):
+  - lint.c hanya mengenali idiom realloc aman `buf = tmp`, TIDAK mengenali
+    akses member `b->data = nd` → false VIOLATION pd kode sah. Diperbaiki:
+    `read_arg_ident`/`ident_before` kini membaca rantai member (`->`/`.`).
+  - run.c: `myc_contract_inject` menulis `*out_len=0` pd return NULL sehingga
+    `build_src_len` ter-clobber → clang menerima stdin kosong →
+    `lld-link: subsystem must be defined` → semua fixture non-kontrak turun ke
+    L1. Diperbaiki: panjang inject dipakai hanya bila non-NULL; contract.c
+    tidak lagi menyentuh `*out_len` saat NULL.
 - Perubahan perilaku: `bad_system.c`, `bad_fopen.c`, `bad_include.c`,
   `bad_macro.c` kini **OK** (hanya warning policy). `bad_intptr.c`,
   `bad_realloc.c` tetap VIOLATION (lint). Fixture P6: `ok_run.c` → L3;
   `bad_run_oob.c`/`bad_run_uaf.c`/`bad_run_intovf.c` → RUNTIME_VIOLATION.
+- Fixture P8 (D1.2): `ok_checked.c` → L4 (SPATIAL); `bad_checked.c` →
+  COMPILE_ERROR (akses langsung pada MYC_BUF); `bad_checked_oob.c` →
+  RUNTIME_VIOLATION (`--run --checked`).
+- Fixture P8 (D4.1): `ok_filc.c` / `bad_filc_oob.c` → L5 / FILC_VIOLATION
+  bila Fil-C tersedia; di-skip (non-blocking) bila tidak.
+- **P9 (MCP server + soak + corpus abuse) selesai 2026-08-02**:
+  - `mcp.exe` — MCP server JSON-RPC 2.0 over stdio (newline-delimited, satu
+    pesan per baris). In-process memakai `myc_run` (myc.c dibangun dengan
+    `-DMYC_NO_MAIN`; main CLI di-guard `#ifndef MYC_NO_MAIN`). Tool:
+    `check` (source + flags + cwd → JSON verdict/assurance lengkap),
+    `version`, `policy`. Parser/serializer JSON sendiri di `json.c`/`json.h`
+    (depth cap 64, escape `\uXXXX` incl. surrogate pair, angka int64).
+    `myc_result_to_json` (report.c) = serialisasi hasil reusable (tanpa batas
+    buffer statis 4096). Smoke test: `test/_mcp_smoke.bat` +
+    `test/mcp_smoke_input.jsonl`.
+  - `test/_soak.bat` — stabilitas: 20× `myc check myc.c --analyze` (harus OK)
+    + 10× `myc check ok_run.c --run` (harus ada verdict).
+  - `test/_corpus_abuse.bat` + `test/corpus/*.c` — input ganas (empty,
+    garbage, unclosed comment/string, deep nesting, huge line, macro ganas,
+    rekursi dalam): myc harus tetap memberi verdict, tidak crash/hang.
 
 ## Dogfooding (keputusan 2026-08-01)
 
 Dogfooding myc dilakukan **dua cara**:
 
-1. **Self-dogfooding**: source myc sendiri diperiksa myc. Setelah pivot
-   (policy non-blocking), seluruh 9 source myc lulus OK — ini wajib
-   dipertahankan di setiap perubahan: tiap source harus tetap OK.
+1. **Self-dogfooding**: source myc sendiri diperiksa myc (termasuk
+   `json.c`/`mcp.c` sejak P9). Setelah pivot (policy non-blocking), seluruh
+   14 source myc lulus OK — ini wajib dipertahankan di setiap perubahan:
+   tiap source harus tetap OK.
 2. **Dogfooding lintas-program**: buat tool/aplikasi lain (C murni) yang
    *realistis* untuk user, ditulis dan diperiksa dengan myc, untuk
    mematangkan jalur "lolos" (OK) myc pada kode yang sah.

@@ -40,6 +40,7 @@
 #define myc_getpid() getpid()
 #endif
 
+#include "contract.h"
 #include "proc.h"
 
 /* Nama runtime DLL ASan untuk target x86_64-windows-msvc. */
@@ -58,6 +59,8 @@ static const char *const SANITIZER_MARKERS[] = {
     "stack-buffer-overflow",
     "global-buffer-overflow",
     "use-after-poison",
+    "Assertion failed",
+    "MYC_CHECKED:",
     NULL
 };
 
@@ -222,8 +225,12 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
     char *exe_path = NULL;
     char *dll_src = NULL;
     char *dll_dst = NULL;
+    char *injected = NULL;
     const char **build_argv = NULL;
     const char **run_argv = NULL;
+    const char *build_src = source;
+    size_t      build_src_len = source_len;
+    size_t      injected_len = 0;
     myc_proc_request preq;
     myc_proc_result  pres;
     int   ret = 0;
@@ -238,6 +245,17 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
         res->err = MYC_ERR_CLANG_NOT_FOUND;
         add_diag_run(res, "verification run di-skip: clang tidak ditemukan");
         return 0;
+    }
+
+    /* 1b. Inject assert(requires) (D1.5) untuk verification build.
+     * Catatan: myc_contract_inject TIDAK menulis *out_len saat tidak ada
+     * kontrak (return NULL) -- jadi injected_len tetap 0 dan build_src_len
+     * (source asli) TIDAK boleh ter-clobber. */
+    injected = myc_contract_inject(source, source_len, &injected_len);
+    if (injected) {
+        build_src = injected;
+        build_src_len = injected_len;
+        add_diag_run(res, "verification run: kontrak requires di-inject (assert)");
     }
 
     /* 2. Direktori temp. */
@@ -255,7 +273,9 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
         return 0;
     }
 
-    /* 3. Verification build (source via stdin). */
+    /* 3. Verification build (source via stdin). Bila --checked, definisikan
+     * MYC_CHECKED (fat-pointer aktif) dan tambah -I ke direktori myc_buf.h
+     * sehingga runtime fat MYC_AT ikut di-sanitize. */
     {
         static const char *const base_flags[] = {
             "-x", "c", "-", "-std=c11", "-O0", "-g",
@@ -263,10 +283,13 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
             "-fno-sanitize-recover=all",
             NULL
         };
+        int extra = 0;
+        if (req->checked)
+            extra += 3;                 /* -DMYC_CHECKED=1, -I, <dir> */
         total = 1;
         while (base_flags[bfl++])
             total++;
-        total += 2 + 1;                 /* "-o", exe_path, NULL */
+        total += extra + 2 + 1;         /* (+extra) "-o", exe_path, NULL */
         bfl = 0;
         build_argv = (const char **)malloc(sizeof(char *) * (size_t)total);
         if (!build_argv) {
@@ -276,6 +299,12 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
         build_argv[n++] = clang_path;
         for (bfl = 0; base_flags[bfl]; bfl++)
             build_argv[n++] = base_flags[bfl];
+        if (req->checked) {
+            build_argv[n++] = "-DMYC_CHECKED=1";
+            build_argv[n++] = "-I";
+            build_argv[n++] = req->checked_header_dir ? req->checked_header_dir
+                                                       : ".";
+        }
         build_argv[n++] = "-o";
         build_argv[n++] = exe_path;
         build_argv[n] = NULL;
@@ -283,8 +312,8 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
         memset(&preq, 0, sizeof(preq));
         preq.argv = build_argv;
         preq.cwd = req->cwd;
-        preq.stdin_data = source;
-        preq.stdin_len = source_len;
+        preq.stdin_data = build_src;
+        preq.stdin_len = build_src_len;
         preq.timeout_ms = req->timeout_ms;
         preq.max_output_bytes = max_out;
         if (!myc_proc_run(&preq, &pres)) {
@@ -425,6 +454,7 @@ out_skip:
     /* Jangan ubah verdict statis; assurance tetap level statis. */
 
 out:
+    if (injected) free(injected);
     if (dll_dst) free(dll_dst);
     if (dll_src) free(dll_src);
     if (exe_path) {

@@ -47,9 +47,10 @@ static int prev_sig(const char *s, size_t i)
 }
 
 /* Ambil argumen pertama pemanggilan setelah '('. i = posisi sesudah '('.
- * Lewati prefix unary '&'/'*' lalu baca identifier. Isi *argend = posisi
- * akhir identifier. Mengembalikan posisi awal identifier (setelah prefix),
- * atau `i` bila tidak ada identifier. */
+ * Lewati prefix unary '&'/'*' lalu baca identifier termasuk rantai member
+ * (mis. "b->data", "s.buf"). Isi *argend = posisi akhir identifier.
+ * Mengembalikan posisi awal identifier (setelah prefix), atau `i` bila
+ * tidak ada identifier. */
 static size_t read_arg_ident(const char *s, size_t len, size_t i,
                              size_t *argend)
 {
@@ -57,32 +58,84 @@ static size_t read_arg_ident(const char *s, size_t len, size_t i,
     if (i < len && (s[i] == '&' || s[i] == '*'))
         i++;
     start = i;
-    while (i < len && is_ident_start((unsigned char)s[i]))
+    if (i < len && is_ident_start((unsigned char)s[i])) {
         i++;
+        while (i < len && is_ident_char((unsigned char)s[i]))
+            i++;
+    }
+    /* rantai member: ->ident atau .ident */
+    for (;;) {
+        if (i + 1 < len && s[i] == '-' && s[i + 1] == '>' &&
+            i + 2 < len && is_ident_start((unsigned char)s[i + 2])) {
+            i += 2;
+            while (i < len && is_ident_char((unsigned char)s[i]))
+                i++;
+            continue;
+        }
+        if (i < len && s[i] == '.' && i + 1 < len &&
+            is_ident_start((unsigned char)s[i + 1])) {
+            i++;
+            while (i < len && is_ident_char((unsigned char)s[i]))
+                i++;
+            continue;
+        }
+        break;
+    }
     *argend = i;
     return start;
 }
 
-/* Identifier yang berakhir tepat sebelum posisi `before` (lewati spasi).
- * Salin ke out/outcap; return 1 bila ketemu. */
+/* Identifier yang berakhir tepat sebelum posisi `before` (lewati spasi),
+ * termasuk rantai member (mis. "b->data", "s.buf"). Salin ke out/outcap;
+ * return 1 bila ketemu. */
 static int ident_before(const char *s, size_t before,
                         char *out, size_t outcap)
 {
     size_t end = before;
-    size_t start;
-    size_t n;
+    size_t b;
+    size_t tlen = 0;
+    char   tmp[64];
+
     while (end > 0 && (s[end - 1] == ' ' || s[end - 1] == '\t'))
         end--;
-    start = end;
-    while (start > 0 && is_ident_char((unsigned char)s[start - 1]))
-        start--;
-    if (start == end)
+    for (;;) {
+        size_t n;
+        b = end;
+        while (b > 0 && is_ident_char((unsigned char)s[b - 1]))
+            b--;
+        if (b == end)
+            return 0;               /* tidak ada identifier */
+        n = end - b;
+        if (tlen + n + 2 >= sizeof(tmp))
+            return 0;               /* path member terlalu panjang */
+        memmove(tmp + n, tmp, tlen);
+        memcpy(tmp, s + b, n);
+        tlen += n;
+        /* rantai member mundur: -> atau . sebelum identifier */
+        if (b >= 2 && s[b - 1] == '>' && s[b - 2] == '-') {
+            memmove(tmp + 2, tmp, tlen);
+            tmp[0] = '-';
+            tmp[1] = '>';
+            tlen += 2;
+            end = b - 2;
+            continue;
+        }
+        if (b >= 1 && s[b - 1] == '.') {
+            memmove(tmp + 1, tmp, tlen);
+            tmp[0] = '.';
+            tlen += 1;
+            end = b - 1;
+            continue;
+        }
+        break;
+    }
+    if (tlen == 0)
         return 0;
-    n = end - start;
-    if (n >= outcap)
-        n = outcap - 1;
-    memcpy(out, s + start, n);
-    out[n] = '\0';
+    tmp[tlen] = '\0';
+    if (tlen >= outcap)
+        tlen = outcap - 1;
+    memcpy(out, tmp, tlen);
+    out[tlen] = '\0';
     return 1;
 }
 
@@ -210,12 +263,88 @@ static int region_has_mul(const char *s, size_t a, size_t b)
     return 0;
 }
 
+/* --- D1.2 (P8): pelacakan variabel MYC_BUF + akses langsung b[i] --- */
+
+/* Nama variabel yang dideklarasikan via MYC_BUF (max 64). */
+static char buf_vars[64][32];
+static int  buf_var_count = 0;
+
+/* Daftar nama yang TIDAK dianggap variabel MYC_BUF (konteks pemanggil). */
+static int is_buf_var(const char *name)
+{
+    int i;
+    for (i = 0; i < buf_var_count; i++)
+        if (strcmp(buf_vars[i], name) == 0)
+            return 1;
+    return 0;
+}
+
+/* Catat nama variabel bila deklarasi `MYC_BUF(...) name` terlihat.
+ * i = posisi awal token "MYC_BUF"; kembalikan posisi setelah nama
+ * (agar scanner lanjut dari sana), atau i bila tidak dikenali. */
+static size_t note_buf_decl(const char *s, size_t len, size_t i, size_t *linep,
+                            size_t *colp)
+{
+    size_t j;
+    /* lewati "MYC_BUF" lalu '( ... )' */
+    j = i + 7;                          /* panjang "MYC_BUF" */
+    while (j < len && (s[j] == ' ' || s[j] == '\t')) {
+        j++;
+        (*colp)++;
+    }
+    if (j >= len || s[j] != '(')
+        return i;
+    {
+        int depth = 0;
+        while (j < len) {
+            if (s[j] == '(')
+                depth++;
+            else if (s[j] == ')') {
+                depth--;
+                if (depth == 0) {
+                    j++;
+                    break;
+                }
+            } else if (s[j] == '\n') {
+                (*linep)++;
+                *colp = 1;
+            } else {
+                (*colp)++;
+            }
+            j++;
+        }
+    }
+    /* lewati spasi, lalu baca nama variabel */
+    while (j < len && (s[j] == ' ' || s[j] == '\t')) {
+        j++;
+        (*colp)++;
+    }
+    if (j < len && is_ident_start((unsigned char)s[j])) {
+        size_t k = j;
+        size_t n = 0;
+        char   name[32];
+        while (k < len && n < 31 && is_ident_char((unsigned char)s[k])) {
+            name[n++] = s[k];
+            k++;
+        }
+        name[n] = '\0';
+        if (n > 0 && buf_var_count < 64) {
+            memcpy(buf_vars[buf_var_count], name, n + 1);
+            buf_var_count++;
+        }
+        return k;
+    }
+    return i;
+}
+
 int myc_lint_source(const char *source, size_t len, myc_result *res)
 {
     size_t i = 0;
     size_t line = 1;
     size_t col = 1;
     int    ok = 1;
+
+    buf_var_count = 0;                  /* reset per pemanggilan */
 
     while (i < len) {
         char c = source[i];
@@ -336,6 +465,29 @@ int myc_lint_source(const char *source, size_t len, myc_result *res)
                 col++;
             }
             tok[tlen] = '\0';
+
+            /* --- D1.2: deklarasi MYC_BUF -> catat nama variabel --- */
+            if (strcmp(tok, "MYC_BUF") == 0) {
+                size_t after = note_buf_decl(source, len, start, &line, &col);
+                if (after > i)
+                    i = after;
+                continue;
+            }
+
+            /* --- D1.2: akses langsung `b[i]` pada variabel MYC_BUF ---
+             * Di checked build ini = error kompilasi (fat-struct tak bisa
+             * di-index); di sini diberi warning lebih awal agar jelas. */
+            if (is_buf_var(tok)) {
+                size_t j = i;
+                while (j < len && (source[j] == ' ' || source[j] == '\t'))
+                    j++;
+                if (j < len && source[j] == '[') {
+                    add_diag(res, (int)line, (int)tokcol,
+                             "warning: akses langsung [..] pada variabel "
+                             "MYC_BUF -- gunakan MYC_AT agar checked build "
+                             "(L4 SPATIAL) berlaku");
+                }
+            }
 
             /* --- 1. cast pointer -> integer --- */
             if (strcmp(tok, "intptr_t") == 0 || strcmp(tok, "uintptr_t") == 0) {

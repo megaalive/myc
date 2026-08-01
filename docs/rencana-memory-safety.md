@@ -1,7 +1,11 @@
 # Rencana: myc sebagai Penjamin Memory-Safety C
 
 Status: **disetujui 2026-08-01** (arah & fase pertama). Ini dokumen hidup; update
-bila keputusan berubah. **Fase A (P4+P5) SELESAI 2026-08-01. P6 SELESAI 2026-08-01.**
+bila keputusan berubah. **Fase A (P4+P5) SELESAI 2026-08-01. P6 SELESAI 2026-08-01.
+P7 SELESAI 2026-08-01 (D1.5 contract-lite + D3.1 Frama-C Eva → L2 PROVEN).
+P8 SELESAI 2026-08-01 (D1.2 checked-build makro → L4 SPATIAL + D4.1
+gate Fil-C → L5 FULL opsional). P9 SELESAI 2026-08-02 (MCP server +
+soak + corpus abuse → integrasi agent).**
 
 ## Keputusan arah (2026-08-01)
 
@@ -126,9 +130,9 @@ assurance wajib, backend L5 tersedia.
 | **P4** | Perluas gcc flags memori (Werror set + -fanalyzer), pisahkan --level | L1 SANE penuh |
 | **P5** | D1.3 bounds provenance lint + D1.4 integer data-flow | alarm presisi spasial/int |
 | **P6** | D2.1 sanitizer build + D2.2 driver generator + eksekusi terkendali (run) | L3 RUNTIME |
-| **P7** | D1.5 contract-lite + D3.1 Frama-C Eva integrasi | L2 PROVEN sound |
-| **P8** | D1.2 checked-build makro + D4.1 deteksi Fil-C | L4 SPATIAL, L5 FULL (ops) |
-| **P9** | MCP server + soak + corpus abuse | integrasi agent |
+| **P7** | D1.5 contract-lite + D3.1 Frama-C Eva integrasi | L2 PROVEN sound — **SELESAI 2026-08-01** |
+| **P8** | D1.2 checked-build makro + D4.1 gate Fil-C — **SELESAI 2026-08-01** | L4 SPATIAL, L5 FULL (ops) |
+| **P9** | MCP server + soak + corpus abuse — **SELESAI 2026-08-02** | integrasi agent |
 
 Setiap fase = dogfooding (aturan AGENTS.md): alat ditulis C murni & diperiksa
 myc; fitur baru diekspos lewat tool lain yang realistis.
@@ -208,6 +212,71 @@ di fase berikutnya (P7).
 
 Keluar P5: myc menangkap pola UAF/provenance/int obvious di luar gcc, false
 positive terkontrol.
+
+# Rencana Eksekusi — P8 D4.1 (gate Fil-C → L5 FULL, opsional backend) [DONE 2026-08-01]
+
+## 9.1 Deteksi & integrasi [DONE]
+
+- `--filc`: cari driver `filc-clang` di PATH (native Linux) atau di dalam
+  WSL (`command -v filc-clang` / `/opt/fil/bin/filc-clang`). Fil-C hanya
+  Linux/X86_64 (konfirmasi README resmi). Di Windows → WSL (pola prove.c).
+- Verification build `filc-clang -O0 -g` (source via stdin, template WSL
+  tetap) + eksekusi terkendali via proc.c.
+
+## 9.2 Verdict & assurance [DONE]
+
+- Marker panic Fil-C (`filc safety error` — terkonfirmasi dari issue
+  tracker; plus `Fatal runtime error`, `panicked`, `double free`) pada
+  stdout/stderr → **MC_FILC_VIOLATION** (bug memori terbukti).
+- Run bersih (exit 0, tanpa marker) → caller naikkan ke **L5 FULL**.
+- Non-blocking (arah): filc-clang tidak tersedia (PATH/WSL) → skip,
+  assurance statis dipertahankan + diagnostic. Build/run gagal tanpa
+  marker panic → skip (bukan bukti bug).
+
+## 9.3 Fixture [DONE]
+
+- `ok_filc.c` → L5 (bila Fil-C tersedia); skip bila tidak.
+- `bad_filc_oob.c` (OOB via argc opaque) → FILC_VIOLATION bila ada;
+  skip bila tidak. Di sistem ini Fil-C tidak terpasang → jalur skip
+  diverifikasi (non-blocking bekerja).
+
+# Rencana Eksekusi — P8 D1.2 (checked-build makro → L4 SPATIAL) [DONE 2026-08-01]
+
+## 8.1 myc_buf.h dual-mode [DONE]
+
+- Header `myc_buf.h` di root proyek (dikirim bersama myc.exe).
+- Mode produksi (tanpa `-DMYC_CHECKED`): `MYC_BUF(T)` = `T*` polos,
+  `MYC_NEW` = calloc, `MYC_AT` = index biasa, `MYC_FREE` = free. Overhead 0.
+- Mode checked (`-DMYC_CHECKED=1`): `MYC_BUF(T)` = fat-struct `myc_fat`
+  (`void *data; size_t cap`); `MYC_AT` memanggil `myc_buf_at` yang abort
+  (dengan marker `MYC_CHECKED:`) saat indeks ≥ cap atau data NULL.
+
+## 8.2 Gate --checked (compile.c) [DONE]
+
+- `myc check <file> --checked`: setelah gate gcc statis, source dibangun
+  ulang dengan `-DMYC_CHECKED=1 -include myc_buf.h` (+ `-I<dir myc.exe>`).
+- Akses langsung `b[i]` pada variabel MYC_BUF → fat-struct tak bisa
+  di-index → COMPILE_ERROR. Inilah mekanisme L4: disiplin dipaksakan oleh
+  tipe, bukan heuristik.
+- Build checked lolos → verdict OK + assurance **L4 SPATIAL** untuk buffer
+  MYC_BUF (jujur: buffer di luar MYC_BUF tetap L1/ASan).
+- Non-blocking: source tanpa pola MYC_BUF → skip + diagnostic (assurance
+  statis dipertahankan).
+
+## 8.3 Integrasi --run [DONE]
+
+- `--run --checked`: verification build clang diberi `-DMYC_CHECKED=1 -I`
+  → runtime fat-pointer ikut di-sanitize (ASan+UBSan). Marker `MYC_CHECKED:`
+  ditambahkan ke deteksi sanitizer → pelanggaran batas = RUNTIME_VIOLATION.
+- L4 > L3: bila checked build lolos dan run bersih, assurance tetap L4.
+
+## 8.4 Fixture & dogfooding [DONE]
+
+- `ok_checked.c` → L4; `bad_checked.c` → COMPILE_ERROR; `bad_checked_oob.c`
+  → RUNTIME_VIOLATION.
+- `dogfood/dogfood_ring.c` ditulis ulang memakai MYC_BUF → L4 + L4-runtime.
+- Lint D1.2: lint.c mencatat variabel MYC_BUF dan memberi warning saat
+  diakses langsung `b[i]` (non-blocking, diagnosis lebih awal).
 
 # Rencana Eksekusi — P6 (D2.1 sanitizer build + eksekusi terkendali) [DONE 2026-08-01]
 

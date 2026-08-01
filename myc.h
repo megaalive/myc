@@ -31,7 +31,9 @@ typedef enum {
     MC_ERROR,
     MC_TIMEOUT,
     MC_CANCELLED,
-    MC_RUNTIME_VIOLATION
+    MC_RUNTIME_VIOLATION,
+    MC_PROVE_VIOLATION,
+    MC_FILC_VIOLATION
 } myc_verdict;
 
 /* Assurance ladder (lihat docs/rencana-memory-safety.md, Bagian C). */
@@ -64,6 +66,8 @@ typedef enum {
     MYC_ERR_STDERR_READ_FAILED,
     MYC_ERR_PROCESS_TREE_CLEANUP_FAILED,
     MYC_ERR_RUNTIME_VIOLATION,
+    MYC_ERR_PROVE_VIOLATION,
+    MYC_ERR_FILC_VIOLATION,
     MYC_ERR_CLANG_NOT_FOUND,
     MYC_ERR_INTERNAL
 } myc_error_code;
@@ -89,6 +93,13 @@ typedef struct {
     int         run;            /* verification build + eksekusi (L3 RUNTIME) */
     const char *run_stdin;      /* stdin untuk program verification (NULL = kosong) */
     size_t      run_stdin_len;
+    int         prove;          /* gate Frama-C Eva (D3.1, L2 PROVEN, via WSL) */
+    int         checked;        /* checked-build makro (D1.2, L4 SPATIAL):
+                                   bangun 2x (produksi T* + -DMYC_CHECKED fat) */
+    const char *checked_header_dir; /* direktori berisi myc_buf.h (biasanya
+                                       dir myc.exe); NULL = cari via -I cwd */
+    int         filc;           /* gate Fil-C (D4.1, L5 FULL, opsional):
+                                   verification build filc-clang + eksekusi */
     const char *clang_program;  /* NULL = cari "clang" via PATH */
     const char *gcc_program;    /* NULL = cari "gcc" via PATH */
 } myc_request;
@@ -120,12 +131,33 @@ typedef struct {
     int         run_truncated;
     int         run_timed_out;
 
+    /* --- hasil gate prove (D3.1, --prove) --- */
+    int         ran_prove;              /* 1 bila gate prove dijalankan */
+    int         prove_alarms;           /* jumlah alarm Eva (RTE) */
+    char       *prove_stdout_text;      /* output frama-c -eva */
+    char       *prove_stderr_text;
+
     char       *resolved_gcc;           /* canonical executable identity */
     char       *fingerprint;            /* canonical process fingerprint */
     char       *source_sha256;          /* stdin content hash */
 
     myc_diagnostic diags[MYC_MAX_DIAGNOSTICS];
     int         diag_count;
+
+    /* --- hasil contract-lite (D1.5, P7) --- */
+    int         contract_requires;      /* jumlah //@ requires terbaca */
+    int         contract_ensures;       /* jumlah //@ ensures terbaca */
+
+    /* --- hasil checked build (D1.2, P8, --checked) --- */
+    int         ran_checked;            /* 1 bila gate checked-build dijalankan */
+    int         checked_uses_buf;       /* 1 bila source memakai makro MYC_BUF */
+    int         checked_build_ok;       /* 1 bila build -DMYC_CHECKED lolos */
+
+    /* --- hasil gate Fil-C (D4.1, P8, --filc) --- */
+    int         ran_filc;               /* 1 bila gate Fil-C dijalankan */
+    int         filc_panics;            /* jumlah marker panic Fil-C */
+    char       *filc_stdout_text;       /* output program Fil-C */
+    char       *filc_stderr_text;
 
     /* internal: gate mana yang dijalankan terakhir */
     int         ran_preprocess;
@@ -156,6 +188,11 @@ void myc_report_json(const myc_result *res);
 const char *myc_error_name(myc_error_code c);
 const char *myc_verdict_name(myc_verdict v);
 const char *myc_assurance_name(myc_assurance a);
+
+/* Direktori yang memuat executable (tempat myc_buf.h diharapkan ada).
+ * Mengembalikan string malloc'd atau NULL. Dipakai gate checked-build (D1.2)
+ * untuk -I dan oleh MCP server (P9, mcp.exe). */
+char *myc_exe_dirname(const char *argv0);
 
 #ifdef __cplusplus
 }

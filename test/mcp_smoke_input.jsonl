@@ -1,0 +1,9 @@
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{"roots":{"listChanged":true}},"clientInfo":{"name":"myc-smoke","version":"1.0"}}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":2,"method":"ping"}
+{"jsonrpc":"2.0","id":3,"method":"tools/list"}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"check","arguments":{"source":"#include <stdlib.h>\nint main(void){int *p=(int*)malloc(4*sizeof(int));p[0]=1;free(p);return 0;}\n"}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"check","arguments":{"source":"#include <stdlib.h>\n#include <string.h>\nint main(void){char *p=(char*)malloc(8);memset(p,0,16);free(p);return 0;}\n","flags":["--run"]}}}
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"version"}}
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"nope","arguments":{}}}
+{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"check","arguments":{}}}

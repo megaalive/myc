@@ -68,6 +68,10 @@ void myc_result_free(myc_result *res)
     free(res->stderr_text);
     free(res->run_stdout_text);
     free(res->run_stderr_text);
+    free(res->prove_stdout_text);
+    free(res->prove_stderr_text);
+    free(res->filc_stdout_text);
+    free(res->filc_stderr_text);
     free(res->resolved_gcc);
     free(res->fingerprint);
     free(res->source_sha256);
@@ -75,6 +79,10 @@ void myc_result_free(myc_result *res)
     res->stderr_text = NULL;
     res->run_stdout_text = NULL;
     res->run_stderr_text = NULL;
+    res->prove_stdout_text = NULL;
+    res->prove_stderr_text = NULL;
+    res->filc_stdout_text = NULL;
+    res->filc_stderr_text = NULL;
     res->resolved_gcc = NULL;
     res->fingerprint = NULL;
     res->source_sha256 = NULL;
@@ -91,13 +99,49 @@ void myc_run(const myc_request *req, myc_result *res)
     myc_pipeline(req, res);
 }
 
+/* Direktori yang memuat myc.exe (tempat myc_buf.h diharapkan ada).
+ * Mengembalikan string malloc'd atau NULL. Dipakai oleh gate checked-build
+ * (D1.2) untuk menambah -I sehingga `#include "myc_buf.h"` ditemukan, dan
+ * oleh MCP server (P9, mcp.exe). */
+char *myc_exe_dirname(const char *argv0)
+{
+    char *self = _strdup(argv0);
+    char *slash;
+    char *fwd;
+    char *last;
+    char *dir;
+    if (!self)
+        return NULL;
+    slash = strrchr(self, '\\');
+    fwd = strrchr(self, '/');
+    last = slash > fwd ? slash : fwd;
+    if (last)
+        *last = '\0';
+    else {
+        free(self);
+        return _strdup(".");
+    }
+    dir = self;
+    /* samakan separator ke '/' agar aman sebagai argumen gcc/clang */
+    for (slash = dir; *slash; slash++)
+        if (*slash == '\\')
+            *slash = '/';
+    return dir;
+}
+
+/* ================================================================== */
+/* Bagian CLI myc (main) -- TIDAK ikut dibangun bila MYC_NO_MAIN        */
+/* (dipakai mcp.exe yang punya main sendiri, P9).                      */
+/* ================================================================== */
+#ifndef MYC_NO_MAIN
+
 static void usage(void)
 {
     printf(
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
         "  myc check <file.c> [--json] [--analyze] [--strict] [--no-lint] [--cwd DIR]\n"
-        "  myc check <file.c> [--run [--run-stdin FILE]]\n"
+        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc]\n"
         "  myc check -          [--json] [--analyze] [--strict] [--no-lint]\n"
         "                        (source dari stdin)\n"
         "  myc policy\n"
@@ -291,6 +335,7 @@ int main(int argc, char **argv)
     myc_request_init(&req);
     myc_result_init(&res);
     req.run_lint = 1;               /* lint memory-safety default ON */
+    req.checked_header_dir = myc_exe_dirname(argv[0]);
 
     /* parse flags */
     {
@@ -312,6 +357,12 @@ int main(int argc, char **argv)
                 req.run_lint = 0;
             else if (strcmp(argv[i], "--run") == 0)
                 req.run = 1;
+            else if (strcmp(argv[i], "--prove") == 0)
+                req.prove = 1;
+            else if (strcmp(argv[i], "--checked") == 0)
+                req.checked = 1;
+            else if (strcmp(argv[i], "--filc") == 0)
+                req.filc = 1;
             else if (strcmp(argv[i], "--run-stdin") == 0 && i + 1 < argc) {
                 char *buf;
                 size_t len;
@@ -364,3 +415,5 @@ int main(int argc, char **argv)
         free((void *)req.run_stdin);
     return res.verdict == MC_OK ? 0 : 1;
 }
+
+#endif /* MYC_NO_MAIN */
