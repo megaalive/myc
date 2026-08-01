@@ -38,8 +38,16 @@ def _fixture_path(name):
 
 
 def _fixture_source(name):
-    """Baca isi fixture sebagai teks UTF-8 (raise OSError bila gagal)."""
+    """Baca isi fixture di test/fixtures sebagai teks UTF-8."""
     with open(_fixture_path(name), "rb") as f:
+        return f.read().decode("utf-8", "replace")
+
+
+def _tests_source(name):
+    """Baca isi fixture di tests/ (mis. ok_checked.c) sebagai teks UTF-8."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "..", "tests", name)
+    with open(path, "rb") as f:
         return f.read().decode("utf-8", "replace")
 
 
@@ -77,9 +85,9 @@ LOOP_SRC = "int main(void){for(;;){}return 0;}\n"
 # dengan MYC_SKIP_SLOW_TIMEOUT=1. Default: dijalankan (bukti isError TIMEOUT).
 SKIP_SLOW_TIMEOUT = os.environ.get("MYC_SKIP_SLOW_TIMEOUT") == "1"
 
-# Jumlah cek yang di-skip (counter; maksimal 3: timeout + prove-ok +
-# prove-bad; dua prove skip bersamaan bila Frama-C/WSL hilang); dipakai
-# pesan akhir agar konsisten dgn jumlah [OK] yang benar-benar dijalankan.
+# Jumlah cek yang di-skip (counter; maksimal 4: timeout + prove-ok +
+# prove-bad + checked; dua prove skip bersamaan bila Frama-C/WSL hilang);
+# dipakai pesan akhir agar konsisten dgn jumlah [OK] yang benar2 dijalankan.
 SKIPPED_COUNT = 0
 
 
@@ -355,6 +363,37 @@ async def _run(exe):
                     return 1
                 print("[OK] check --prove bad_prove.c -> PROVE_VIOLATION (alarms>0)")
 
+            # 16. check --checked (fixture tests/ok_checked.c) -> L4 SPATIAL
+            # bila pola MYC_BUF tersedia. Gate checked NON-BLOCKING: bila
+            # source tidak memakai MYC_BUF (ran_checked=false) -> [SKIP].
+            # Bila berjalan dan build -DMYC_CHECKED=1 lolos (fat-pointer
+            # berlaku) -> checked_build_ok=true + assurance L4 (SPATIAL).
+            try:
+                checked_src = _tests_source("ok_checked.c")
+            except OSError as e:
+                print("[FAIL] check --checked: fixture tak terbaca: %r" % e)
+                return 1
+            r = await session.call_tool(
+                "check",
+                arguments={"source": checked_src, "flags": ["--checked"]})
+            t = _text(r)
+            if _is_error(r):
+                print("[FAIL] check --checked: isError harus false: %s" % t[:250])
+                return 1
+            if '"ran_checked":false' in t:
+                SKIPPED_COUNT += 1
+                print("[SKIP] check --checked ok_checked.c: tanpa pola MYC_BUF "
+                      "(gate di-skip)")
+            else:
+                if '"verdict":"OK"' not in t or \
+                   '"assurance":"L4 (SPATIAL)"' not in t or \
+                   '"checked_build_ok":true' not in t or \
+                   '"checked_uses_buf":true' not in t:
+                    print("[FAIL] check --checked: verdict/assurance: %s" % t[:250])
+                    return 1
+                print("[OK] check --checked ok_checked.c -> L4 SPATIAL "
+                      "(checked_build_ok=true)")
+
             return 0
 
 
@@ -370,7 +409,7 @@ def main():
         print("[FAIL] interop SDK gagal: %r" % e)
         return 1
     if rc == 0:
-        n_checks = 16 - SKIPPED_COUNT
+        n_checks = 17 - SKIPPED_COUNT
         suffix = " (%d skip)" % SKIPPED_COUNT if SKIPPED_COUNT else ""
         print("[OK] interop SDK MCP resmi lulus (5 tool, %d cek%s)"
               % (n_checks, suffix))
