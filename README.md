@@ -26,7 +26,10 @@ gcc -c -O2 -Wall -Wextra -Werror -pedantic
                                     -> COMPILE_ERROR
 gcc -c -O2 -fanalyzer -o NUL (--analyze, opsional)
                                     -> COMPILE_ERROR
-OK (assurance: L1 SANE)
+clang verification build + run      -> L3 RUNTIME (--run, opsional;
+   (ASan+UBSan, -O0, eksekusi          RUNTIME_VIOLATION bila ada laporan
+   terkendali via proc.c)              sanitizer)
+OK (assurance: L1 SANE, atau L3 RUNTIME dengan --run)
 ```
 
 > Catatan: gate memori memakai `-c -O2` karena `-Warray-bounds` dan
@@ -36,6 +39,7 @@ OK (assurance: L1 SANE)
 
 ```text
 myc check <file.c> [--json] [--analyze] [--strict] [--no-lint] [--cwd DIR]
+myc check <file.c> [--run [--run-stdin FILE]]
 myc check -          [--json] [--analyze] [--strict] [--no-lint] (stdin)
 myc policy                                 (tampilkan whitelist header)
 myc probe                                  (self-test exact argv)
@@ -47,6 +51,12 @@ Flag:
   -Wsign-conversion -Wint-conversion` (BISING, bukan default).
 - `--no-lint` — matikan lint memory-safety.
 - `--analyze` — tambah gate `-fanalyzer`.
+- `--run` — verification build (clang ASan+UBSan, `-O0`) + eksekusi
+  terkendali. Bersih (exit 0, tanpa laporan sanitizer) → assurance **L3
+  RUNTIME**. `--run-stdin FILE` memberi stdin untuk program hasil build.
+- `--run` bersifat **opsional & non-blocking**: bila clang tidak tersedia atau
+  kode bukan program executable (tanpa `main`), myc tetap memberi verdict
+  statis (L1) plus diagnostic, tidak menahan.
 
 ## Kebijakan (pivot 2026-08-01: memory-safety, bukan pembatasan library)
 
@@ -68,11 +78,14 @@ Gunakan `shell` hanya bila sintaks shell memang dibutuhkan, dan jelaskan.
 
 ## Status
 
-- P0–P5 selesai: `myc check` end-to-end, policy non-blocking, lint
+- P0–P6 selesai: `myc check` end-to-end, policy non-blocking, lint
   memory-safety (intptr_t/realloc), tier memori gcc + `-fanalyzer`,
-  assurance L1 SANE, self-dogfooding (9 source myc OK).
-- Belum: eksekusi kode (hanya compile+static), Frama-C (L2), sanitizer build
-  (L3), MCP server, corpus abuse lintas platform (WSL tersedia), soak.
+  assurance L1 SANE, **verification run clang ASan+UBSan → L3 RUNTIME**
+  (`--run`, eksekusi terkendali via proc.c, timeout kill pohon proses),
+  self-dogfooding (9 source myc OK) + dogfooding lintas-program
+  (`dogfood_ring.c` → L3).
+- Belum: Frama-C (L2), driver-generator otomatis (D2.2), MCP server, corpus
+  abuse lintas platform (WSL tersedia), soak.
 - **Arah (2026-08-01)**: fokus = **memory-safety & minim bug**, bukan
   pembatasan library. Policy = warning non-blocking (lihat Kebijakan). Detail
   di `AGENTS.md` dan `docs/rencana-memory-safety.md`.

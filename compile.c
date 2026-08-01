@@ -24,6 +24,7 @@
 #include "lint.h"
 #include "policy.h"
 #include "proc.h"
+#include "run.h"
 #include "scanner.h"
 #include "sha256.h"
 
@@ -244,11 +245,12 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         int  n;
         myc_policy_hash(policy_hex);
         n = snprintf(buf, sizeof(buf),
-                     "v2|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s|src:%s",
+                     "v3|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s|src:%s",
                      gcc_path,
                      req->cwd ? req->cwd : "",
                      policy_hex,
                      req->strict ? "strict" : "default",
+                     req->run ? "run" : "norun",
                      res->source_sha256 ? res->source_sha256 : "");
         sha256_hex(buf, (size_t)n, hex);
         res->fingerprint = _strdup(hex);
@@ -381,6 +383,29 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             return;
         }
         myc_proc_result_free(&pr);
+    }
+
+    /* --- Gate opsional: verification run (P6, --run) -> L3 RUNTIME --- */
+    if (req->run) {
+        int ok = myc_run_gate(req, src, srclen, res);
+        if (res->verdict == MC_TIMEOUT || res->verdict == MC_RUNTIME_VIOLATION ||
+            res->err == MYC_ERR_EXECUTE_FAILED || res->err == MYC_ERR_INTERNAL) {
+            free(gcc_path);
+            return;
+        }
+        if (ok && res->ran_runtime && !res->run_timed_out) {
+            res->verdict = MC_OK;
+            res->err = MYC_ERR_NONE;
+            res->assurance = MYC_ASSURANCE_L3_RUNTIME;
+            free(gcc_path);
+            return;
+        }
+        /* gate di-skip (build gagal / clang hilang): pertahankan level statis */
+        res->verdict = MC_OK;
+        res->err = MYC_ERR_NONE;
+        res->assurance = MYC_ASSURANCE_L1_SANE;
+        free(gcc_path);
+        return;
     }
 
     res->verdict = MC_OK;

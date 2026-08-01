@@ -37,12 +37,17 @@ Poin penting:
   tidak lagi menolak program sah. Satu-satunya gate hard = **lint
   memory-safety** (lint.c: intptr_t cast, realloc invalidasi) **+ gate gcc**
   (tier memori `-Werror`, `-fanalyzer`).
+- **P6 selesai 2026-08-01**: gate verification run opsional (`--run`) dengan
+  clang ASan+UBSan (`-O0`, source via stdin, DLL runtime disalin, eksekusi
+  via proc.c) → assurance **L3 RUNTIME**. Non-blocking: bila clang hilang /
+  kode bukan executable, assurance statis dipertahankan + diagnostic.
 - Self-dogfooding sekarang lolos penuh: 9 source myc dicek myc sendiri → OK.
   (Catatan lama "akan selalu VIOLATION karena windows.h" TIDAK berlaku lagi —
   policy non-blocking.)
 - Perubahan perilaku: `bad_system.c`, `bad_fopen.c`, `bad_include.c`,
   `bad_macro.c` kini **OK** (hanya warning policy). `bad_intptr.c`,
-  `bad_realloc.c` tetap VIOLATION (lint).
+  `bad_realloc.c` tetap VIOLATION (lint). Fixture P6: `ok_run.c` → L3;
+  `bad_run_oob.c`/`bad_run_uaf.c`/`bad_run_intovf.c` → RUNTIME_VIOLATION.
 
 ## Dogfooding (keputusan 2026-08-01)
 

@@ -17,6 +17,7 @@ const char *myc_verdict_name(myc_verdict v)
     case MC_ERROR:         return "ERROR";
     case MC_TIMEOUT:       return "TIMEOUT";
     case MC_CANCELLED:     return "CANCELLED";
+    case MC_RUNTIME_VIOLATION: return "RUNTIME_VIOLATION";
     }
     return "UNKNOWN";
 }
@@ -40,6 +41,8 @@ const char *myc_error_name(myc_error_code c)
     case MYC_ERR_STDOUT_READ_FAILED:          return "stdout_read_failed";
     case MYC_ERR_STDERR_READ_FAILED:          return "stderr_read_failed";
     case MYC_ERR_PROCESS_TREE_CLEANUP_FAILED: return "process_tree_cleanup_failed";
+    case MYC_ERR_RUNTIME_VIOLATION:           return "runtime_violation";
+    case MYC_ERR_CLANG_NOT_FOUND:             return "clang_not_found";
     case MYC_ERR_INTERNAL:                    return "internal";
     }
     return "unknown";
@@ -115,6 +118,16 @@ void myc_report_text(const myc_result *res)
 
     if (res->stderr_text && res->stderr_text[0])
         printf("stderr:\n%s\n", res->stderr_text);
+
+    if (res->ran_runtime) {
+        printf("run:\n");
+        printf("  timed_out: %s\n", res->run_timed_out ? "yes" : "no");
+        printf("  run_exit_code: %d\n", res->exit_code);
+        if (res->run_stdout_text && res->run_stdout_text[0])
+            printf("  run_stdout:\n%s\n", res->run_stdout_text);
+        if (res->run_stderr_text && res->run_stderr_text[0])
+            printf("  run_stderr:\n%s\n", res->run_stderr_text);
+    }
 }
 
 void myc_report_json(const myc_result *res)
@@ -137,6 +150,15 @@ void myc_report_json(const myc_result *res)
            (unsigned long long)res->total_stdout_bytes);
     printf("  \"stderr_bytes\": %llu,\n",
            (unsigned long long)res->total_stderr_bytes);
+    printf("  \"ran_runtime\": %s,\n", res->ran_runtime ? "true" : "false");
+    if (res->ran_runtime) {
+        printf("  \"run_timed_out\": %s,\n", res->run_timed_out ? "true" : "false");
+        printf("  \"run_exit_code\": %d,\n", res->exit_code);
+        printf("  \"run_stdout\": \"%s\",\n",
+               json_escape(res->run_stdout_text));
+        printf("  \"run_stderr\": \"%s\",\n",
+               json_escape(res->run_stderr_text));
+    }
     printf("  \"diagnostics\": [");
     for (i = 0; i < res->diag_count; i++) {
         const myc_diagnostic *d = &res->diags[i];

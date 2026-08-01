@@ -1,7 +1,7 @@
 # Rencana: myc sebagai Penjamin Memory-Safety C
 
 Status: **disetujui 2026-08-01** (arah & fase pertama). Ini dokumen hidup; update
-bila keputusan berubah. **Fase A (P4+P5) SELESAI 2026-08-01.**
+bila keputusan berubah. **Fase A (P4+P5) SELESAI 2026-08-01. P6 SELESAI 2026-08-01.**
 
 ## Keputusan arah (2026-08-01)
 
@@ -209,9 +209,59 @@ di fase berikutnya (P7).
 Keluar P5: myc menangkap pola UAF/provenance/int obvious di luar gcc, false
 positive terkontrol.
 
+# Rencana Eksekusi — P6 (D2.1 sanitizer build + eksekusi terkendali) [DONE 2026-08-01]
+
+## 6.1 Backend sanitizer (clang ASan+UBSan) [DONE]
+
+- clang 22.1.6 di `D:\LLVM\bin\clang.exe` (target x86_64-pc-windows-msvc)
+  mendukung `-fsanitize=address,undefined`. gcc MinGW 15.2 TIDAK punya
+  libasan/libubsan.
+- `-fsanitize=leak` dan `-fsanitize=memory` TIDAK didukung target Windows
+  clang → L3 di Windows = ASan+UBSan (tanpa LSan/MSan).
+- **`-O0` WAJIB**: di `-O1`/`-O2` clang mengeliminasi dead-store sehingga ASan
+  luput dari OOB yang tidak dibaca (dead-store elimination). Resep final:
+  `clang -x c - -std=c11 -O0 -g -fsanitize=address,undefined
+  -fno-sanitize-recover=all -o <exe>` (source via stdin).
+- Runtime DLL Windows: `clang -print-file-name=clang_rt.asan_dynamic-x86_64.dll`
+  → disalin ke samping exe hasil build; tanpa itu exe gagal run 0xC0000135.
+
+## 6.2 Gate verification run (run.c) [DONE]
+
+- `myc check <file> --run [--run-stdin FILE]`:
+  1. Cari clang (PATH / req->clang_program).
+  2. Buat direktori temp unik (`%TEMP%/myc_run_<pid>_<n>`).
+  3. Verification build (source via stdin, tidak pernah jadi argumen).
+  4. Windows: salin ASan DLL ke samping exe.
+  5. Eksekusi via `myc_proc_run` (Job Object + timeout; kill pohon proses).
+  6. Deteksi marker sanitizer (ASan/UBSan) pada stdout+stderr.
+- Verdict: run bersih (exit 0, tanpa marker) → `MC_OK` + **assurance L3
+  (RUNTIME)**. Marker sanitizer → `MC_RUNTIME_VIOLATION` + err
+  `runtime_violation`. Timeout → `MC_TIMEOUT`. Build verifikasi gagal (mis.
+  tanpa `main`) / clang hilang → gate di-skip, assurance statis dipertahankan
+  (non-blocking, sesuai arah).
+- run.c/beserta 9 source myc lain lolos self-dogfooding (OK).
+
+## 6.3 Fixture P6 [DONE]
+
+- `ok_run.c` (hello heap) → OK + L3 RUNTIME.
+- `bad_run_oob.c` (heap-buffer-overflow, `memset` 16 ke malloc 8) → RUNTIME_VIOLATION.
+- `bad_run_uaf.c` (use-after-free lintas fungsi `noinline` — lolos gate statis
+  gcc, hanya tertangkap ASan) → RUNTIME_VIOLATION.
+- `bad_run_intovf.c` (signed integer overflow) → RUNTIME_VIOLATION (UBSan).
+- `dogfood_ring.c` → OK + L3 RUNTIME.
+- Catatan: `bad_run_uaf` varian non-noinline tertangkap gate statis gcc
+  (`-Werror=use-after-free`) — defense-in-depth bekerja seperti seharusnya.
+
+Keluar P6: assurance L3 RUNTIME tercapai; sanitizer menangkap OOB/UAF/int-overflow
+yang lolos statis; timeout membunuh pohon proses tanpa sisa.
+
 ## Catatan keputusan yang disetujui
 1. Tier -Wconversion tidak default (agar tidak memblokir kode sah).
 2. Hasil P5 = heuristik, di-flag warning/lint (bukan VIOLATION) bila perlu.
 3. Test lint pakai fixture C murni di tests/.
 4. **Policy (header & denylist fungsi) = non-blocking warning** (keputusan saat
    implementasi Fase A): header bebas, denylist hanya warning.
+5. **--run = opsional, non-blocking** (keputusan P6): bila clang tidak tersedia
+   atau build verifikasi gagal (mis. kode bukan program executable tanpa main),
+   myc tetap memberi verdict statis (L1) dan menulis diagnostic; tidak menahan.
+6. **L3 di Windows = ASan+UBSan** (LSan/MSan tidak didukung target MSVC).

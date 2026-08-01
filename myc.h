@@ -30,7 +30,8 @@ typedef enum {
     MC_COMPILE_ERROR,
     MC_ERROR,
     MC_TIMEOUT,
-    MC_CANCELLED
+    MC_CANCELLED,
+    MC_RUNTIME_VIOLATION
 } myc_verdict;
 
 /* Assurance ladder (lihat docs/rencana-memory-safety.md, Bagian C). */
@@ -62,6 +63,8 @@ typedef enum {
     MYC_ERR_STDOUT_READ_FAILED,
     MYC_ERR_STDERR_READ_FAILED,
     MYC_ERR_PROCESS_TREE_CLEANUP_FAILED,
+    MYC_ERR_RUNTIME_VIOLATION,
+    MYC_ERR_CLANG_NOT_FOUND,
     MYC_ERR_INTERNAL
 } myc_error_code;
 
@@ -83,6 +86,10 @@ typedef struct {
     int         run_lint;       /* jalankan lint memory-safety (default 1) */
     int         strict;         /* tier ketat: -Wconversion dll */
     int         as_json;        /* output JSON ke stdout */
+    int         run;            /* verification build + eksekusi (L3 RUNTIME) */
+    const char *run_stdin;      /* stdin untuk program verification (NULL = kosong) */
+    size_t      run_stdin_len;
+    const char *clang_program;  /* NULL = cari "clang" via PATH */
     const char *gcc_program;    /* NULL = cari "gcc" via PATH */
 } myc_request;
 
@@ -101,6 +108,17 @@ typedef struct {
     int         truncated;
 
     unsigned long long duration_ms;
+
+    /* --- hasil verification run (P6, --run) --- */
+    int         ran_runtime;            /* 1 bila gate run dijalankan */
+    char       *run_stdout_text;        /* stdout program verification */
+    char       *run_stderr_text;        /* stderr program verification */
+    size_t      run_total_stdout_bytes;
+    size_t      run_total_stderr_bytes;
+    size_t      run_shown_stdout_bytes;
+    size_t      run_shown_stderr_bytes;
+    int         run_truncated;
+    int         run_timed_out;
 
     char       *resolved_gcc;           /* canonical executable identity */
     char       *fingerprint;            /* canonical process fingerprint */

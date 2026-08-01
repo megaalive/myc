@@ -2,3 +2,6 @@
 *.o
 *.obj
 *.db
+*.pdb
+*.dll
+

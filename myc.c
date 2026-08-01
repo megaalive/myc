@@ -66,11 +66,15 @@ void myc_result_free(myc_result *res)
         return;
     free(res->stdout_text);
     free(res->stderr_text);
+    free(res->run_stdout_text);
+    free(res->run_stderr_text);
     free(res->resolved_gcc);
     free(res->fingerprint);
     free(res->source_sha256);
     res->stdout_text = NULL;
     res->stderr_text = NULL;
+    res->run_stdout_text = NULL;
+    res->run_stderr_text = NULL;
     res->resolved_gcc = NULL;
     res->fingerprint = NULL;
     res->source_sha256 = NULL;
@@ -93,6 +97,7 @@ static void usage(void)
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
         "  myc check <file.c> [--json] [--analyze] [--strict] [--no-lint] [--cwd DIR]\n"
+        "  myc check <file.c> [--run [--run-stdin FILE]]\n"
         "  myc check -          [--json] [--analyze] [--strict] [--no-lint]\n"
         "                        (source dari stdin)\n"
         "  myc policy\n"
@@ -228,12 +233,19 @@ static int cmd_probe(const char *argv0)
 static int cmd_version(void)
 {
     char *gcc = myc_find_executable("gcc");
+    char *clang = myc_find_executable("clang");
     printf("myc 0.1.0\n");
     if (gcc) {
         printf("gcc: %s\n", gcc);
         free(gcc);
     } else {
         printf("gcc: TIDAK DITEMUKAN\n");
+    }
+    if (clang) {
+        printf("clang: %s\n", clang);
+        free(clang);
+    } else {
+        printf("clang: TIDAK DITEMUKAN (verification run --run tidak tersedia)\n");
     }
     return 0;
 }
@@ -298,6 +310,20 @@ int main(int argc, char **argv)
             }
             else if (strcmp(argv[i], "--no-lint") == 0)
                 req.run_lint = 0;
+            else if (strcmp(argv[i], "--run") == 0)
+                req.run = 1;
+            else if (strcmp(argv[i], "--run-stdin") == 0 && i + 1 < argc) {
+                char *buf;
+                size_t len;
+                if (!read_file(argv[++i], &buf, &len)) {
+                    fprintf(stderr, "myc: tidak dapat membaca run-stdin %s\n", argv[i]);
+                    myc_result_free(&res);
+                    return 1;
+                }
+                req.run_stdin = buf;
+                req.run_stdin_len = len;
+                req.run = 1;
+            }
             else if (strcmp(argv[i], "--cwd") == 0 && i + 1 < argc) {
                 req.cwd = argv[++i];
             }
@@ -334,5 +360,7 @@ int main(int argc, char **argv)
         myc_report_text(&res);
 
     myc_result_free(&res);
+    if (req.run_stdin)
+        free((void *)req.run_stdin);
     return res.verdict == MC_OK ? 0 : 1;
 }
