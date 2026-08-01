@@ -16,6 +16,7 @@ Kode keluar 0 = semua cek lulus; 1 = ada kegagalan; 2 = SDK tidak terpasang.
 
 import asyncio
 import os
+import re
 import sys
 import time
 
@@ -612,6 +613,41 @@ async def _run(exe):
                 return 1
             print("[OK] lint ok_lint.c -> OK (tidak ada false VIOLATION)")
 
+            # 24. check + cwd -> fingerprint berubah sesuai cwd
+            # Fingerprint myc memakai req->cwd sebagai bagian hash kanonik
+            # (compile.c: "v7|gcc:...|cwd:%s|..."). Memanggil check dgn cwd
+            # berbeda harus menghasilkan fingerprint berbeda, sementara
+            # verdict tetap OK (tanpa cwd, cwd=test/, cwd=test/fixtures —
+            # semuanya direktori yang pasti ada). Deterministik (tanpa skip).
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            r = await session.call_tool("check", arguments={"source": SAFE_SRC})
+            t1 = _text(r)
+            m1 = re.search(r'"fingerprint":"([0-9a-f]{64})"', t1)
+            r = await session.call_tool(
+                "check",
+                arguments={"source": SAFE_SRC, "cwd": base_dir})
+            t2 = _text(r)
+            m2 = re.search(r'"fingerprint":"([0-9a-f]{64})"', t2)
+            r = await session.call_tool(
+                "check",
+                arguments={"source": SAFE_SRC,
+                           "cwd": os.path.join(base_dir, "fixtures")})
+            t3 = _text(r)
+            m3 = re.search(r'"fingerprint":"([0-9a-f]{64})"', t3)
+            if not m1 or not m2 or not m3 or \
+               '"verdict":"OK"' not in t1 or '"verdict":"OK"' not in t2 or \
+               '"verdict":"OK"' not in t3:
+                print("[FAIL] check cwd: fingerprint/verdict: %s" % t3[:250])
+                return 1
+            if m1.group(1) == m2.group(1) or m2.group(1) == m3.group(1) or \
+               m1.group(1) == m3.group(1):
+                print("[FAIL] check cwd: fingerprint tidak berubah: "
+                      "%s -> %s -> %s" % (m1.group(1)[:12],
+                                           m2.group(1)[:12], m3.group(1)[:12]))
+                return 1
+            print("[OK] check cwd -> fingerprint berubah sesuai cwd "
+                  "(verdict tetap OK)")
+
             return 0
 
 
@@ -627,7 +663,7 @@ def main():
         print("[FAIL] interop SDK gagal: %r" % e)
         return 1
     if rc == 0:
-        n_checks = 24 - SKIPPED_COUNT
+        n_checks = 25 - SKIPPED_COUNT
         suffix = " (%d skip)" % SKIPPED_COUNT if SKIPPED_COUNT else ""
         print("[OK] interop SDK MCP resmi lulus (5 tool, %d cek%s)"
               % (n_checks, suffix))
