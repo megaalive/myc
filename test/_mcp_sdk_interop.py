@@ -31,24 +31,23 @@ def _exe_default():
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "mcp.exe")
 
 
-def _fixture_path(name):
-    """Path file fixture di test/fixtures (relatif ke script ini)."""
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "fixtures", name)
+def _read_source(subdir, name):
+    """Baca isi file source di subdirektori relatif ke test/ (mis. "fixtures"
+    atau "../tests") sebagai teks UTF-8. Membuka file dengan with-block."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        subdir, name)
+    with open(path, "rb") as f:
+        return f.read().decode("utf-8", "replace")
 
 
 def _fixture_source(name):
     """Baca isi fixture di test/fixtures sebagai teks UTF-8."""
-    with open(_fixture_path(name), "rb") as f:
-        return f.read().decode("utf-8", "replace")
+    return _read_source("fixtures", name)
 
 
 def _tests_source(name):
     """Baca isi fixture di tests/ (mis. ok_checked.c) sebagai teks UTF-8."""
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "..", "tests", name)
-    with open(path, "rb") as f:
-        return f.read().decode("utf-8", "replace")
+    return _read_source(os.path.join("..", "tests"), name)
 
 
 SAFE_SRC = (
