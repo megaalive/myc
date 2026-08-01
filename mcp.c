@@ -214,7 +214,8 @@ static void tool_check(json_value *id, json_value *args)
     json_obj_set(result, "content", content);
     json_obj_set(result, "isError", json_new_bool(
         res.verdict == MC_ERROR || res.verdict == MC_TIMEOUT ||
-        res.verdict == MC_CANCELLED ? 1 : 0));
+        res.verdict == MC_CANCELLED || res.verdict == MC_PROVE_VIOLATION ||
+        res.verdict == MC_DRIVER_VIOLATION ? 1 : 0));
 
     send_result(id, result);
 

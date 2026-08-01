@@ -120,15 +120,17 @@ Client contoh tanpa dependensi: `python mcp_client.py` — handshake
 
 Uji interop dengan **SDK MCP Python resmi**: `test/_mcp_sdk_interop.py`
 (`pip install mcp`; memakai `stdio_client` + `ClientSession` — bukan client
-buatan sendiri). Cakupan: 24 cek — handshake/tools/list, semua tool
+buatan sendiri). Cakupan: 25 cek — handshake/tools/list, semua tool
 (check/version/policy/contracts/lint), verdict OK + VIOLATION, isError
-transport (ERROR/TIMEOUT), dan gate opsional `--run` (RUNTIME_VIOLATION,
+transport (ERROR/TIMEOUT, plus PROVE_VIOLATION/DRIVER_VIOLATION sejak
+2026-08-02), dan gate opsional `--run` (RUNTIME_VIOLATION,
 contract-assert, `run_stdin` echo, TIMEOUT), `--prove` (L2 PROVEN /
 PROVE_VIOLATION), `--checked` (L4 SPATIAL / COMPILE_ERROR),
 `--run --checked` (RUNTIME_VIOLATION + kombinasi max-level L4),
-`--driver` (L3 RUNTIME / DRIVER_VIOLATION), `--filc` (L5 FULL / skip), dan
-lint (VIOLATION + tidak ada false-positive pada kode sah). Skip non-blocking
-bila backend gate tidak tersedia.
+`--driver` (L3 RUNTIME / DRIVER_VIOLATION), `--filc` (L5 FULL / skip),
+lint (VIOLATION + tidak ada false-positive pada kode sah), dan `cwd`
+(fingerprint berubah sesuai cwd). Skip non-blocking bila backend gate
+tidak tersedia.
 
 MCP server memanggil pipeline **in-process** (myc.c dibangun dengan
 `-DMYC_NO_MAIN`); tidak ada shell string, source hanya lewat stdin.

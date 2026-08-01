@@ -32,8 +32,11 @@ sebagai server dan memanggil pipeline verifikasi `myc` sebagai tool.
   `contract_ensures`, `truncated`, `stdout_bytes`, `stderr_bytes`, plus
   seksi gate yang berjalan (`run_*`, `checked_*`, `filc_*`, `driver_*`,
   `prove_*`) dan `diagnostics[]`.
-- `isError: true` hanya untuk verdict infrastruktur
-  (`ERROR`/`TIMEOUT`/`CANCELLED`); VIOLATION bukan error transport.
+- `isError: true` untuk verdict infrastruktur
+  (`ERROR`/`TIMEOUT`/`CANCELLED`) **dan pelanggaran hard gate**
+  (`PROVE_VIOLATION` dari `--prove`, `DRIVER_VIOLATION` dari `--driver` —
+  sejak 2026-08-02); VIOLATION lain (lint/runtime) dikirim sebagai hasil
+  teks biasa.
 - **Verdict yang mungkin**: `OK`, `VIOLATION` (lint), `COMPILE_ERROR`,
   `RUNTIME_VIOLATION` (--run), `PROVE_VIOLATION` (--prove),
   `FILC_VIOLATION` (--filc), `DRIVER_VIOLATION` (--driver).
@@ -109,14 +112,16 @@ realloc ke variabel lain (VIOLATION), memcpy/memmove/memset tanpa `sizeof`
   diagnostic — jangan anggap skip sebagai kegagalan.
 - Untuk program yang memakai `MYC_BUF`, gunakan `--checked` untuk L4 SPATIAL.
 - Debug interop resmi: `test/_mcp_sdk_interop.py` (memakai SDK MCP Python
-  resmi, bukan client buatan sendiri). Cakupan: **24 cek** — handshake +
+  resmi, bukan client buatan sendiri). Cakupan: **25 cek** — handshake +
   `tools/list`, kelima tool, verdict OK + VIOLATION, isError transport
-  (ERROR `1MiB+` / TIMEOUT), dan seluruh gate opsional: `--run`
+  (ERROR `1MiB+` / TIMEOUT, plus PROVE_VIOLATION/DRIVER_VIOLATION),
+  dan seluruh gate opsional: `--run`
   (RUNTIME_VIOLATION OOB, contract-assert `bad_contract_pre.c`, `run_stdin`
   echo, TIMEOUT loop), `--prove` (L2 PROVEN / PROVE_VIOLATION),
   `--checked` (L4 SPATIAL / COMPILE_ERROR akses-langsung),
   `--run --checked` (RUNTIME_VIOLATION OOB + kombinasi max-level L4),
   `--driver` (L3 RUNTIME / DRIVER_VIOLATION), `--filc` (L5 FULL / skip),
-  lint (VIOLATION intptr_t + tidak ada false-positive pada `ok_lint.c`).
+  lint (VIOLATION intptr_t + tidak ada false-positive pada `ok_lint.c`),
+  dan `cwd` (fingerprint berubah sesuai cwd).
   Semua gate non-blocking: bila backend hilang (clang/Frama-C/Fil-C/MYC_BUF),
-  cek di-[SKIP] bukan [FAIL].
+  cek di-[SKIP] bukan [FAIL]. Jumlah cek: **25** (n_checks = 25 − skips).

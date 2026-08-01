@@ -283,8 +283,9 @@ async def _run(exe):
             # 13. check --driver (fixture bad_driver_oob.c) -> DRIVER_VIOLATION
             # Fixture ini membaca a[n] dengan n=4 pada kontrak n<=4 -> ASan
             # heap-buffer-overflow pada kasus tepi -> DRIVER_VIOLATION.
-            # Catatan: isError=false (pelanggaran dikirim sebagai hasil teks,
-            # bukan error MCP -- konsisten dgn check #3 RUNTIME_VIOLATION);
+            # Catatan: isError=TRUE (sejak 2026-08-02 verdict pelanggaran hard
+            # gate --prove/--driver ditandai sebagai error MCP -- berubah dari
+            # perilaku awal yang mengirimnya sebagai teks biasa);
             # driver_cases=0 karena ASan meng-abort sebelum harness sempat
             # mencetak "DRIVER run=N" (ran_driver=true membuktikan gate jalan).
             try:
@@ -296,12 +297,14 @@ async def _run(exe):
                 "check",
                 arguments={"source": bad_drv_src, "flags": ["--driver"]})
             t = _text(r)
-            if _is_error(r) or '"verdict":"DRIVER_VIOLATION"' not in t or \
+            if not _is_error(r) or \
+               '"verdict":"DRIVER_VIOLATION"' not in t or \
                '"error":"driver_violation"' not in t or \
                '"ran_driver":true' not in t:
-                print("[FAIL] check --driver bad: %s" % t[:250])
+                print("[FAIL] check --driver bad: isError/verdict: %s" % t[:250])
                 return 1
-            print("[OK] check --driver bad_driver_oob.c -> DRIVER_VIOLATION")
+            print("[OK] check --driver bad_driver_oob.c -> DRIVER_VIOLATION "
+                  "(isError=true)")
 
             # 14. check --prove (fixture ok_prove.c) -> L2 PROVEN bila Frama-C
             # tersedia. Gate prove NON-BLOCKING: bila wsl/frama-c hilang atau
@@ -347,23 +350,25 @@ async def _run(exe):
                 "check",
                 arguments={"source": bad_prove_src, "flags": ["--prove"]})
             t = _text(r)
-            if _is_error(r):
-                print("[FAIL] check --prove bad: isError harus false: %s" % t[:250])
-                return 1
             if '"ran_prove":false' in t:
                 SKIPPED_COUNT += 1
                 print("[SKIP] check --prove bad_prove.c: gate di-skip "
                       "(Frama-C/WSL tidak tersedia / Eva tidak menganalisis)")
             else:
-                # Verdict+error membuktikan PROVE_VIOLATION. Jumlah alarm
-                # TIDAK di-asert sebagai nilai eksak (bisa beda antar versi
+                # Verdict+error membuktikan PROVE_VIOLATION, dan isError harus
+                # TRUE (perilaku 2026-08-02: pelanggaran hard gate --prove/
+                # --driver ditandai sebagai error MCP). Jumlah alarm TIDAK
+                # di-asert sebagai nilai eksak (bisa beda antar versi
                 # Frama-C) -- cukup pastikan > 0 (bukan 0 = Eva bersih).
-                if '"verdict":"PROVE_VIOLATION"' not in t or \
+                if not _is_error(r) or \
+                   '"verdict":"PROVE_VIOLATION"' not in t or \
                    '"error":"prove_violation"' not in t or \
                    '"prove_alarms":0' in t:
-                    print("[FAIL] check --prove bad: verdict/alarms: %s" % t[:250])
+                    print("[FAIL] check --prove bad: isError/verdict/alarms: %s"
+                          % t[:250])
                     return 1
-                print("[OK] check --prove bad_prove.c -> PROVE_VIOLATION (alarms>0)")
+                print("[OK] check --prove bad_prove.c -> PROVE_VIOLATION "
+                      "(isError=true, alarms>0)")
 
             # 16. check --checked (fixture tests/ok_checked.c) -> L4 SPATIAL
             # bila pola MYC_BUF tersedia. Gate checked NON-BLOCKING: bila
