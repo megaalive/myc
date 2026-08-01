@@ -84,11 +84,11 @@ LOOP_SRC = "int main(void){for(;;){}return 0;}\n"
 # dengan MYC_SKIP_SLOW_TIMEOUT=1. Default: dijalankan (bukti isError TIMEOUT).
 SKIP_SLOW_TIMEOUT = os.environ.get("MYC_SKIP_SLOW_TIMEOUT") == "1"
 
-# Jumlah cek yang di-skip (counter; maksimal 7: timeout + prove-ok +
-# prove-bad + checked-ok + checked-bad + contract-pre + run-stdin; dua
-# prove skip bersamaan bila Frama-C/WSL hilang, dua checked skip bersamaan
-# bila pola MYC_BUF hilang); dipakai pesan akhir agar konsisten dgn jumlah
-# [OK] yang benar2 dijalankan.
+# Jumlah cek yang di-skip (counter; maksimal 8: timeout + prove-ok +
+# prove-bad + checked-ok + checked-bad + contract-pre + run-stdin + filc;
+# dua prove skip bersamaan bila Frama-C/WSL hilang, dua checked skip
+# bersamaan bila pola MYC_BUF hilang); dipakai pesan akhir agar konsisten
+# dgn jumlah [OK] yang benar2 dijalankan.
 SKIPPED_COUNT = 0
 
 
@@ -493,6 +493,37 @@ async def _run(exe):
                 print("[OK] check --checked bad_checked.c -> COMPILE_ERROR "
                       "(akses langsung dipaksa gagal)")
 
+            # 20. check --filc (fixture ok_filc.c) -> L5 FULL bila Fil-C
+            # tersedia. Gate --filc NON-BLOCKING: bila filc-clang tidak
+            # ditemukan (PATH native / WSL) atau build gagal, ran_filc=false
+            # -> [SKIP] (assurance statis dipertahankan, bukan error). Bila
+            # berjalan: verdict OK + assurance L5 (FULL) + filc_panics=0
+            # (run bersih, tanpa marker panic).
+            try:
+                filc_src = _fixture_source("ok_filc.c")
+            except OSError as e:
+                print("[FAIL] check --filc: fixture tak terbaca: %r" % e)
+                return 1
+            r = await session.call_tool(
+                "check",
+                arguments={"source": filc_src, "flags": ["--filc"]})
+            t = _text(r)
+            if _is_error(r):
+                print("[FAIL] check --filc: isError harus false: %s" % t[:250])
+                return 1
+            if '"ran_filc":false' in t:
+                SKIPPED_COUNT += 1
+                print("[SKIP] check --filc ok_filc.c: gate di-skip "
+                      "(filc-clang tidak tersedia / build Fil-C gagal)")
+            else:
+                if '"verdict":"OK"' not in t or \
+                   '"assurance":"L5 (FULL)"' not in t or \
+                   '"filc_panics":0' not in t:
+                    print("[FAIL] check --filc: verdict/assurance/panics: %s"
+                          % t[:250])
+                    return 1
+                print("[OK] check --filc ok_filc.c -> L5 FULL (panics=0)")
+
             return 0
 
 
@@ -508,7 +539,7 @@ def main():
         print("[FAIL] interop SDK gagal: %r" % e)
         return 1
     if rc == 0:
-        n_checks = 20 - SKIPPED_COUNT
+        n_checks = 21 - SKIPPED_COUNT
         suffix = " (%d skip)" % SKIPPED_COUNT if SKIPPED_COUNT else ""
         print("[OK] interop SDK MCP resmi lulus (5 tool, %d cek%s)"
               % (n_checks, suffix))
