@@ -189,17 +189,20 @@ typedef struct {
     int  has_lo, has_hi;
 } drv_bounds;
 
-/* Tambah nilai ke daftar kandidat (dedup, batas DRV_MAX_CANDS). */
-static void cand_add(long *cands, int *nc, long v)
+/* Tambah nilai ke daftar kandidat (dedup, batas DRV_MAX_CANDS).
+ * v bertipe long long agar guard range (jaga ukuran literal) bermakna di
+ * semua platform (long 32-bit di Windows -> perbandingan 0x7FFFFFFFLL
+ * selalu false = warning -Wtype-limits bila v long). */
+static void cand_add(long *cands, int *nc, long long v)
 {
     int i;
     if (v < -0x7FFFFFFFLL || v > 0x7FFFFFFFLL)   /* jaga ukuran literal */
         return;
     for (i = 0; i < *nc; i++)
-        if (cands[i] == v)
+        if (cands[i] == (long)v)
             return;
     if (*nc < DRV_MAX_CANDS)
-        cands[(*nc)++] = v;
+        cands[(*nc)++] = (long)v;
 }
 
 /* Terapkan `name OP N` ke bounds. */
@@ -409,13 +412,21 @@ static void parse_param_text(const char *ptext, char *type, size_t typecap,
     /* tipe = bagian sebelum nama (trim kanan), PERTAHANKAN '*' pada
      * pointer (mis. "const int *a" -> "const int *"). Untuk parameter
      * array tanpa '*' ("int buf[8]") tambahkan '*' karena array meluruh
-     * ke pointer saat pemanggilan. */
+     * ke pointer saat pemanggilan. Clamp tl ke typecap-2 pada cabang
+     * "%s*" agar snprintf tidak ter-truncate (-Wformat-truncation). */
     {
         size_t tl = name_start;
         while (tl > 0 && (ptext[tl - 1] == ' ' || ptext[tl - 1] == '\t'))
             tl--;
-        if (tl >= typecap)
-            tl = typecap - 1;
+        if (*is_ptr && strchr(ptext, '[') && strchr(ptext, '*') == NULL) {
+            if (tl >= typecap)
+                tl = typecap - 1;
+            if (tl >= 1 && typecap >= 2)
+                tl = tl > typecap - 2 ? typecap - 2 : tl;
+        } else {
+            if (tl >= typecap)
+                tl = typecap - 1;
+        }
         memcpy(tbuf, ptext, tl);
         tbuf[tl] = '\0';
         if (*is_ptr && strchr(ptext, '[') && strchr(ptext, '*') == NULL)
@@ -423,14 +434,25 @@ static void parse_param_text(const char *ptext, char *type, size_t typecap,
         else
             snprintf(type, typecap, "%s", tbuf);    /* pertahankan "*" pointer */
     }
-    /* ukuran elemen pointer (default 4) */
+    /* ukuran elemen pointer: kenali tipe lebar eksplisit (_t) dan long long
+     * sebelum default; long = sizeof(long) (4 di Windows, 8 di Linux).
+     * Salah ukur di sini => buffer harness salah: int64_t dikecilkan (4)
+     * => false DRIVER_VIOLATION pada kode sah; long dibesarkan (8 di
+     * Windows) => bug OOB pada array long bisa lolos. */
     *elem = 4;
-    if (strstr(type, "char"))
-        *elem = 1;
-    else if (strstr(type, "short"))
-        *elem = 2;
-    else if (strstr(type, "double") || strstr(type, "long"))
+    if (strstr(type, "int64_t") || strstr(type, "uint64_t") ||
+        strstr(type, "long long") || strstr(type, "double"))
         *elem = 8;
+    else if (strstr(type, "int32_t") || strstr(type, "uint32_t"))
+        *elem = 4;
+    else if (strstr(type, "int16_t") || strstr(type, "uint16_t") ||
+             strstr(type, "short"))
+        *elem = 2;
+    else if (strstr(type, "int8_t") || strstr(type, "uint8_t") ||
+             strstr(type, "char"))
+        *elem = 1;
+    else if (strstr(type, "long"))
+        *elem = (int)sizeof(long);
 }
 
 /* Parse daftar parameter (teks di antara kurung) ke f. Menandai
@@ -535,9 +557,10 @@ static int scan_contract_funcs(const char *src, size_t len, drv_func *funcs,
             if (i + 2 < len && src[i + 2] == '@') {
                 size_t j = i + 3;
                 char   kw[32];
-                size_t kwend = j;
+                size_t kwend;
                 while (j < line_end && (src[j] == ' ' || src[j] == '\t'))
                     j++;
+                kwend = j;          /* baca keyword SETELAH spasi dilompati */
                 while (kwend < line_end &&
                        drv_ident_char((unsigned char)src[kwend]))
                     kwend++;
@@ -642,6 +665,18 @@ static int scan_contract_funcs(const char *src, size_t len, drv_func *funcs,
                     f.nreqs = pending_n;
                     if (f.nreqs > DRV_MAX_REQS)
                         f.nreqs = DRV_MAX_REQS;
+                    /* Salin ekspresi requires dari `cur` ke `f` (f di-memset
+                     * nol, jadi reqs[]-nya kosong walau nreqs sudah benar). */
+                    {
+                        int r;
+                        for (r = 0; r < f.nreqs; r++) {
+                            size_t rn = strlen(cur.reqs[r]);
+                            if (rn >= sizeof(f.reqs[r]))
+                                rn = sizeof(f.reqs[r]) - 1;
+                            memcpy(f.reqs[r], cur.reqs[r], rn);
+                            f.reqs[r][rn] = '\0';
+                        }
+                    }
                     funcs[nf] = f;
                     nf++;
                 }
@@ -710,7 +745,7 @@ static char *gen_harness(const char *src, size_t srclen,
     int     f;
     memset(&b, 0, sizeof(b));
 
-    drv_buf_puts(&b, "#include <stdlib.h>\n#include <string.h>\n");
+    drv_buf_puts(&b, "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n");
     drv_buf_puts(&b, "#define main myc_driver_orig_main\n");
     drv_buf_putn(&b, src, srclen);
     drv_buf_puts(&b, "\n#undef main\n\n");
@@ -733,16 +768,30 @@ static char *gen_harness(const char *src, size_t srclen,
          * Tanpa ini, bad_driver_oob (a[4] pada kontrak n<=4) tidak akan
          * terdeteksi: buffer dibuat terlalu besar (8*elem default). */
         {
-            long max_hi = 8;
+            /* max_hi = batas ATAS terbesar yang ditemukan di seluruh
+             * parameter. Default 8 HANYA dipakai bila tidak ada batas
+             * sama sekali (mis. kontrak hanya "a != NULL"); bila ada
+             * batas (mis. "n <= 4") pakai nilai itu, JANGAN di-unggulkan
+             * ke 8 -- kalau tidak, buffer dibuat terlalu besar dan bug
+             * OOB di dalam domain kontrak (a[4] pada n<=4) lolos. */
+            long max_hi = 0;
+            int  have_hi = 0;
             int  pp, ii;
             for (pp = 0; pp < fn->nparams; pp++) {
                 drv_bounds bd;
                 memset(&bd, 0, sizeof(bd));
                 for (ii = 0; ii < fn->nreqs; ii++)
                     parse_bound(fn->reqs[ii], fn->pname[pp], &bd);
-                if (bd.has_hi && bd.hi > max_hi)
-                    max_hi = bd.hi;
+                if (bd.has_hi) {
+                    if (!have_hi || bd.hi > max_hi)
+                        max_hi = bd.hi;
+                    have_hi = 1;
+                }
             }
+            if (!have_hi)
+                max_hi = 8;
+            if (max_hi < 1)
+                max_hi = 1;
             for (p = 0; p < fn->nparams; p++) {
                 psize[p] = fn->is_ptr[p] ? max_hi * fn->elem[p] : 0;
                 if (psize[p] > DRV_BUF_CAP)
@@ -1222,10 +1271,16 @@ out:
         free(exe_path);
     }
     if (tmp_dir) {
-        char *p = drv_join_path(tmp_dir, ASAN_DLL_NAME);
-        if (p) {
-            remove(p);
-            free(p);
+        /* clang -g menghasilkan <exe>.pdb di Windows: hapus semua artefak
+         * agar direktori temp bisa di-rmdir (pola sama dengan run.c). */
+        static const char *const artifacts[] = { ASAN_DLL_NAME, "myc_drv.pdb", NULL };
+        int ai;
+        for (ai = 0; artifacts[ai]; ai++) {
+            char *p = drv_join_path(tmp_dir, artifacts[ai]);
+            if (p) {
+                remove(p);
+                free(p);
+            }
         }
         myc_rmdir(tmp_dir);
         free(tmp_dir);

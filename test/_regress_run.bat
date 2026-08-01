@@ -56,4 +56,15 @@ for %%f in (test\fixtures\ok_driver.c test\fixtures\bad_driver_oob.c) do (
 del %OUT%
 echo --- MCP smoke (P9): mcp.exe harus menjawab JSON-RPC
 call test\_mcp_smoke.bat
+echo --- MCP SDK interop (opsional): hanya bila SDK MCP Python resmi terpasang
+python -m pip show mcp >nul 2>&1
+if errorlevel 1 (
+  echo [SKIP] SDK MCP Python tidak terpasang (pip install mcp)
+) else (
+  python test\_mcp_sdk_interop.py
+  if errorlevel 1 (
+    echo [FAIL] interop SDK MCP resmi gagal
+    exit /b 1
+  )
+)
 exit /b 0

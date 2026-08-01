@@ -1,0 +1,107 @@
+# MCP tools myc — panduan untuk coding agent
+
+`mcp.exe` adalah MCP server (JSON-RPC 2.0 over stdio, newline-delimited —
+satu pesan per baris). Agen yang mendukung MCP dapat menghubungkan `mcp.exe`
+sebagai server dan memanggil pipeline verifikasi `myc` sebagai tool.
+
+## Koneksi
+
+- Transport: stdio (server dijalankan sebagai subproses, `command: mcp.exe`).
+- Protokol: MCP 2024-11-05 (server menerima versi lain via `initialize`).
+- Server mengekspos capabilities `tools` (tanpa listChanged).
+- Handshake: klien kirim `initialize` → server balas `serverInfo`
+  (`{name:"myc", version}`) → klien kirim `notifications/initialized`.
+- Server memanggil pipeline **in-process** (`myc_run`); source hanya lewat
+  stdin. Tidak ada shell string.
+
+## Tools
+
+### 1. `check` — verifikasi source C (pipeline penuh)
+
+- `source` (string, **wajib**): kode C yang akan diperiksa.
+- `flags` (array string, opsional): `--run --prove --checked --filc
+  --driver --analyze --strict --no-lint` (lihat README untuk arti tiap flag).
+- `cwd` (string, opsional): direktori kerja gate (gcc/clang).
+- **Hasil**: satu string teks berisi **JSON lengkap** `myc_result`:
+  `verdict`, `assurance`, `error`, `exit_code`, `duration_ms`,
+  `resolved_gcc`, `fingerprint`, `source_sha256`, `contract_requires`,
+  `contract_ensures`, `truncated`, `stdout_bytes`, `stderr_bytes`, plus
+  seksi gate yang berjalan (`run_*`, `checked_*`, `filc_*`, `driver_*`,
+  `prove_*`) dan `diagnostics[]`.
+- `isError: true` hanya untuk verdict infrastruktur
+  (`ERROR`/`TIMEOUT`/`CANCELLED`); VIOLATION bukan error transport.
+- **Verdict yang mungkin**: `OK`, `VIOLATION` (lint), `COMPILE_ERROR`,
+  `RUNTIME_VIOLATION` (--run), `PROVE_VIOLATION` (--prove),
+  `FILC_VIOLATION` (--filc), `DRIVER_VIOLATION` (--driver).
+- **Assurance ladder**: `L0 RAW` → `L1 SANE` (statis gcc) → `L2 PROVEN`
+  (Frama-C) → `L3 RUNTIME` (ASan/UBSan) → `L4 SPATIAL` (MYC_BUF checked)
+  → `L5 FULL` (Fil-C). Level = yang tertinggi yang DIBUKTIKAN.
+
+Contoh:
+
+```json
+{"name":"check","arguments":{
+  "source":"#include <stdlib.h>\nint main(void){int*p=(int*)malloc(4*sizeof(int));p[0]=1;free(p);return 0;}",
+  "flags":["--run"]}}
+```
+
+### 2. `version` — versi myc + ketersediaan backend
+
+Tanpa argumen. Hasil teks:
+
+```
+myc 0.1.0
+gcc: <path>
+clang: <path> (TIDAK DITEMUKAN bila --run/--driver tidak tersedia)
+```
+
+### 3. `policy` — whitelist header default
+
+Tanpa argumen. Hasil teks:
+
+```
+whitelist header (N):
+  <stdio.h>
+  ...
+```
+
+> Kebijakan (pivot 2026-08-01): whitelist hanyalah *default konservatif*,
+> non-blocking (warning). Bukan daftar larangan mutlak.
+
+### 4. `contracts` — scan kontrak-lite `//@ requires/ensures`
+
+- `source` (string, **wajib**).
+- **Hasil** teks:
+
+```
+contracts: requires=N ensures=M
+  requires n <= 4;
+  ensures  r >= 0;
+```
+
+Tidak menjalankan pipeline; hanya scan kontrak (API `myc_contract_list`).
+
+### 5. `lint` — lint memory-safety myc (heuristik)
+
+- `source` (string, **wajib**).
+- **Hasil** teks:
+
+```
+lint verdict: OK|VIOLATION
+  [line:col] pesan diagnostic...
+```
+
+Pola yang di-flag: cast pointer via `intptr_t`/`uintptr_t` (VIOLATION),
+realloc ke variabel lain (VIOLATION), memcpy/memmove/memset tanpa `sizeof`
+(warning), ukuran alokasi perkalian tanpa `sizeof` (warning).
+
+## Catatan untuk agent
+
+- Selalu cek `verdict`/`assurance`/`error` di hasil `check`, bukan hanya
+  status transport MCP.
+- Gate `--run`/`--prove`/`--filc`/`--driver` bersifat **non-blocking**: bila
+  backend hilang atau kode bukan executable, verdict tetap statis (L1) dengan
+  diagnostic — jangan anggap skip sebagai kegagalan.
+- Untuk program yang memakai `MYC_BUF`, gunakan `--checked` untuk L4 SPATIAL.
+- Debug interop resmi: `test/_mcp_sdk_interop.py` (memakai SDK MCP Python
+  resmi, bukan client buatan sendiri).

@@ -108,9 +108,16 @@ mendukung MCP) dapat memanggil `myc check` sebagai tool. Tool yang tersedia:
 - `lint` — jalankan lint memory-safety myc pada source (verdict +
   diagnostic).
 
-Client contoh (Python, tanpa dependensi): `python mcp_client.py` —
-melakukan handshake `initialize`, `tools/list`, lalu memanggil tool
-`check`/`version`/`contracts`/`lint` lewat stdio.
+**Dokumentasi lengkap tiap tool untuk coding agent**: `docs/mcp-tools.md`
+(argument, bentuk output, verdict/assurance, catatan penggunaan).
+
+Client contoh tanpa dependensi: `python mcp_client.py` — handshake
+`initialize`, `tools/list`, lalu memanggil tool `check`/`version`/
+`contracts`/`lint` lewat stdio.
+
+Uji interop dengan **SDK MCP Python resmi**: `test/_mcp_sdk_interop.py`
+(`pip install mcp`; memakai `stdio_client` + `ClientSession` — bukan client
+buatan sendiri).
 
 MCP server memanggil pipeline **in-process** (myc.c dibangun dengan
 `-DMYC_NO_MAIN`); tidak ada shell string, source hanya lewat stdin.
