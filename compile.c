@@ -8,8 +8,11 @@
  *   4. scan markers (lapis 2)         -> warning (non-blocking)
  *   5. scan calls (lapis 3)           -> warning (non-blocking)
  *   6. gcc -c -O2 (gate, tier dasar memori) -> COMPILE_ERROR
- *   7. (opsional) gcc -c -fanalyzer -o NUL
+ *   7. (opsional) gcc -c -fanalyzer -o <null_device>
  *   8. verdict MC_OK + assurance
+ *
+ * MYC-AUDIT-015: target `-o` memakai device null PORTABEL ("NUL" di
+ * Windows, "/dev/null" di POSIX) -- "NUL" di POSIX adalah file biasa.
  *
  * Tidak pernah menyusun shell string; source tidak pernah jadi argumen.
  * Catatan ownership: req->source dimiliki caller (myc.c); file loading
@@ -44,6 +47,19 @@
  * dengan elem_size/byte_capacity/generation/cookie + checked multiplication.
  * Naikkan saat semantic myc_buf.h berubah agar receipt berubah juga. */
 #define MYC_BUF_RUNTIME_REV 2
+
+/* Device null portabel (MYC-AUDIT-015): "NUL" hanya null device di Windows;
+ * di POSIX itu file biasa (artefak literal `NUL` di repo lama). `/dev/null`
+ * adalah null device yang benar di POSIX. Dipakai sebagai target `-o` pada
+ * gate compile-only (hasil object dibuang). */
+static const char *myc_null_device(void)
+{
+#if defined(_WIN32)
+    return "NUL";
+#else
+    return "/dev/null";
+#endif
+}
 
 /* Tier dasar -- default, nol false-positive pd kode sah, semua -Werror. */
 static const char *const MEMORY_WARNINGS[] = {
@@ -82,7 +98,10 @@ static const char *const ANALYZER_EXTRA[] = {
 };
 
 /* Susun satu array argv gabungan (semua pointer statis, tak perlu bebas).
- * count = jumlah argumen setelah gcc_path. */
+ * count = jumlah argumen setelah gcc_path.
+ * MYC-AUDIT-015: literal "NUL" pada daftar (target -o) diganti dengan
+ * myc_null_device() -- daftar flags tetap statis, device null diresolusi
+ * runtime sesuai platform. */
 static const char **merge_args(const char *const *lists[], size_t nlists,
                                size_t *count)
 {
@@ -96,8 +115,10 @@ static const char **merge_args(const char *const *lists[], size_t nlists,
     if (!out)
         return NULL;
     for (li = 0; li < nlists; li++)
-        for (ai = 0; lists[li][ai]; ai++)
-            out[idx++] = lists[li][ai];
+        for (ai = 0; lists[li][ai]; ai++) {
+            const char *arg = lists[li][ai];
+            out[idx++] = strcmp(arg, "NUL") == 0 ? myc_null_device() : arg;
+        }
     out[idx] = NULL;
     *count = idx;
     return out;

@@ -314,7 +314,7 @@ Setelah reentrancy dan schema hasil diperbaiki, ini dapat menjadi salah satu keu
 | MYC-AUDIT-012 | High | `myc_buf.h` | Element size tidak disimpan; checked access dapat memakai tipe salah | ✅ SELESAI 2026-08-02 (typed member + elem_size/byte_capacity/cookie/generation; cek ukuran tipe compile-time; checked multiplication di MYC_NEW & MYC_AT; fingerprint v12) |
 | MYC-AUDIT-013 | High | proof claims | Eva alarm/summary diperlakukan sebagai proof kontrak umum | ✅ SELESAI 2026-08-02 (label L2 PROVEN→L2 EVA, L5 FULL→L5 FILC; prove memuat mode/version/entry; pesan jujur; FULL dihapus dari README) |
 | MYC-AUDIT-014 | Medium | lint | Heuristik token/text dijadikan hard violation |
-| MYC-AUDIT-015 | Medium | portability | `NUL` dipakai di POSIX dan meninggalkan file literal `NUL` |
+| MYC-AUDIT-015 | Medium | portability | `NUL` dipakai di POSIX dan meninggalkan file literal `NUL` | ✅ SELESAI 2026-08-02 (helper myc_null_device: NUL di Windows, /dev/null di POSIX; literal "NUL" diganti runtime di merge_args) |
 | MYC-AUDIT-016 | Medium | MCP | JSON document dibungkus sebagai string text, status error tidak konsisten |
 | MYC-AUDIT-017 | Medium | output parsing | Marker human-readable mudah spoof dan rapuh terhadap versi/localization |
 | MYC-AUDIT-018 | Medium | test | Test dominan Windows dan tidak menguji concurrency/deadlock/OOM |
@@ -1106,7 +1106,15 @@ Hard failure hanya untuk:
 
 ---
 
-## 5.16. MYC-AUDIT-015 — `NUL` tidak portable
+## 5.16. MYC-AUDIT-015 — `NUL` tidak portable  ✅ SELESAI 2026-08-02
+
+> Status: diperbaiki. Target `-o` pada gate compile-only kini memakai
+> `myc_null_device()` (`compile.c`): "NUL" di Windows, "/dev/null" di
+> POSIX. Literal "NUL" pada daftar flags statis diganti runtime di
+> `merge_args` (satu titik perubahan untuk MEMORY_GATE/ANALYZER_EXTRA/
+> CHECKED_EXTRA). Opsi temporary-object yang dikelola & dihapus TIDAK
+> diambil (lebih kompleks tanpa manfaat untuk compile-only; device null
+> portabel sudah benar di kedua platform).
 
 README dan compile pipeline memakai:
 

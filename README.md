@@ -24,7 +24,7 @@ scan panggilan fungsi denylist    -> warning (non-blocking)
 gcc -c -O2 -Wall -Wextra -Werror -pedantic
   + tier memori (Warray-bounds, stringop-overflow, use-after-free, ...)
                                     -> COMPILE_ERROR
-gcc -c -O2 -fanalyzer -o NUL (--analyze, opsional)
+gcc -c -O2 -fanalyzer -o <null_device> (--analyze, opsional)
                                     -> COMPILE_ERROR
 gcc -c -O2 -DMYC_CHECKED (--checked, opsional)
    myc_buf.h fat-pointer; akses       -> L4 SPATIAL; COMPILE_ERROR bila
