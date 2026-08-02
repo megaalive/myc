@@ -117,6 +117,26 @@ const char *myc_debt_type_name(myc_debt_type t)
     return "unknown";
 }
 
+/* 9.10 Silence Is a Finding: kode finding untuk tiap verification gap.
+ * Bukan security bug pada source -- verification gap. CI dapat memfilter
+ * MYC-INCOMPLETE-* dan memutuskan kebijakan sendiri (--require-complete
+ * menjadikannya kegagalan). */
+const char *myc_debt_code(myc_debt_type t)
+{
+    switch (t) {
+    case MYC_DEBT_GATE_UNAVAILABLE:  return "MYC-INCOMPLETE-GATE-UNAVAILABLE";
+    case MYC_DEBT_GATE_INFRA_FAILED: return "MYC-INCOMPLETE-GATE-INFRA-FAILED";
+    case MYC_DEBT_GATE_INCONCLUSIVE: return "MYC-INCOMPLETE-GATE-INCONCLUSIVE";
+    case MYC_DEBT_NONZERO_CASES:     return "MYC-INCOMPLETE-NONZERO-CASES";
+    case MYC_DEBT_ENSURES_UNPROVED:  return "MYC-INCOMPLETE-ENSURES-UNPROVED";
+    case MYC_DEBT_RAW_BUFFERS:       return "MYC-INCOMPLETE-RAW-BUFFERS";
+    case MYC_DEBT_OUTPUT_TRUNCATED:  return "MYC-INCOMPLETE-OUTPUT-TRUNCATED";
+    case MYC_DEBT_NONE:              return "MYC-INCOMPLETE-NONE";
+    case MYC_DEBT_COUNT:             return "MYC-INCOMPLETE-COUNT";
+    }
+    return "MYC-INCOMPLETE-UNKNOWN";
+}
+
 const char *myc_gate_id_short(myc_gate_id id)
 {
     switch (id) {
@@ -244,6 +264,16 @@ static void myc_build_receipt(myc_result *res)
 
     sha256_hex(buf, off, res->receipt_sha256);
 #undef R_APPEND
+}
+
+/* 9.10: bangun ulang receipt SETELAH enforcement require-complete
+ * mengubah verdict/completeness/finding. HANYA menghash ulang bukti
+ * yang sudah ada -- TIDAK menjalankan reducer lagi (reducer akan
+ * menurunkan verdict dari gate status dan bisa membatalkan flip
+ * INCONCLUSIVE yang dilakukan enforcement). */
+void myc_rebuild_receipt(myc_result *res)
+{
+    myc_build_receipt(res);
 }
 
 /* Bangun daftar unverified debt dari typed gate status + scope counters.

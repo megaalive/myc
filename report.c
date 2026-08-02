@@ -295,12 +295,15 @@ void myc_report_text(const myc_result *res)
     }
 
 if (res->debt_count > 0) {
-         printf("unverified_debt:\n");
+         printf("unverified_debt (verification gap - MYC-INCOMPLETE):\n");
          for (gi = 0; gi < res->debt_count; gi++) {
              const myc_debt_item *d = &res->debt[gi];
-             printf("  [%s] %s\n", myc_debt_type_name(d->type),
+             printf("  [%s] %s\n", myc_debt_code(d->type),
                     d->text ? d->text : "");
          }
+         if (res->require_complete)
+             printf("require_complete: enforced - verification gap "
+                    "menjadikan hasil GAGAL (INCONCLUSIVE)\n");
      }
 
      /* Differential Backend Quorum (#3). */
@@ -337,6 +340,8 @@ if (res->debt_count > 0) {
          if (cap->negative)
              printf("  negative_callsites: %d  negative_deviations: %d\n",
                     cap->negative_callsites, cap->negative_deviations);
+         printf("  require_complete: %s\n",
+                cap->require_complete ? "yes" : "no");
          if (cap->metamorphic) {
              printf("  meta_o0_exit: %d  meta_o2_exit: %d\n",
                     cap->meta_o0_exit, cap->meta_o2_exit);
@@ -386,9 +391,11 @@ char *myc_result_to_json(const myc_result *res)
     json_sb_printf(&b, "\"error\":\"%s\",", myc_error_name(res->err));
     json_sb_printf(&b, "\"exit_code\":%d,", res->exit_code);
     json_sb_printf(&b, "\"duration_ms\":%llu,", (unsigned long long)res->duration_ms);
-    json_sb_printf(&b, "\"receipt_sha256\":");
+        json_sb_printf(&b, "\"receipt_sha256\":");
     json_sb_escape(&b, res->receipt_sha256);
     json_sb_puts(&b, ",");
+    json_sb_printf(&b, "\"require_complete\":%s,",
+                   res->require_complete ? "true" : "false");
     json_sb_printf(&b, "\"resolved_gcc\":");
     json_sb_escape(&b, res->resolved_gcc);
     json_sb_puts(&b, ",");
@@ -528,14 +535,13 @@ char *myc_result_to_json(const myc_result *res)
         json_sb_escape(&b, ev->message ? ev->message : "");
         json_sb_puts(&b, "}");
     }
-    json_sb_puts(&b, "],");
-json_sb_printf(&b, "\"unverified_debt\":[");
+    json_sb_puts(&b, "],");     json_sb_printf(&b, "\"unverified_debt\":[");
      for (i = 0; i < (int)res->debt_count; i++) {
          const myc_debt_item *d = &res->debt[i];
          if (i)
              json_sb_puts(&b, ",");
-         json_sb_printf(&b, "{\"type\":\"%s\",\"text\":",
-                        myc_debt_type_name(d->type));
+         json_sb_printf(&b, "{\"type\":\"%s\",\"code\":\"%s\",\"text\":",
+                        myc_debt_type_name(d->type), myc_debt_code(d->type));
          json_sb_escape(&b, d->text);
          json_sb_puts(&b, "}");
      }
@@ -591,6 +597,8 @@ json_sb_printf(&b, "\"unverified_debt\":[");
              json_sb_printf(&b, "\"negative_deviations\":%d,",
                             cap->negative_deviations);
          }
+         json_sb_printf(&b, "\"require_complete\":%s,",
+                        cap->require_complete ? "true" : "false");
          if (cap->metamorphic) {
              json_sb_printf(&b, "\"meta_o0_exit\":%d,", cap->meta_o0_exit);
              json_sb_printf(&b, "\"meta_o2_exit\":%d,", cap->meta_o2_exit);

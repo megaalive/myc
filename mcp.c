@@ -202,6 +202,8 @@ static void tool_check(json_value *id, json_value *args)
                 req.metamorphic = 1;
             else if (strcmp(f, "--negative") == 0)
                 req.negative = 1;
+            else if (strcmp(f, "--require-complete") == 0)
+                req.require_complete = 1;
         }
     }
 
@@ -433,13 +435,16 @@ static json_value *tools_list_body(void)
         "Verifikasi kode C dengan pipeline myc (memory-safety): verdict, "
         "assurance L0-L5, error, diagnostics, output gate run/prove/checked/"
         "filc. source: kode C (string, wajib). flags: array string opsional "
-        "dari [--run --prove --checked --filc --driver --analyze --strict --no-lint --quorum --metamorphic --negative]. "
+        "dari [--run --prove --checked --filc --driver --analyze --strict --no-lint --quorum --metamorphic --negative --require-complete]. "
         "--quorum: analisis differential backend (bandingkan status semua gate "
         "yang diminta, laporkan konflik/inkonsistensi). "
         "--metamorphic: verifikasi metamorphic (build ganda clang ASan -O0/-O2, "
         "bandingkan hasil; beda = kemungkinan UB/toolchain-sensitive). "
         "--negative: negative-space analysis (observasi konvensi pemeriksaan "
         "hasil alokasi per callsite; HANYA diagnostic + confidence, non-blocking). "
+        "--require-complete: verifikasi harus LENGKAP - verification gap "
+        "(unverified_debt, MYC-INCOMPLETE-*) membuat hasil INCONCLUSIVE "
+        "(gagal di CI), bukan kesunyian. "
         "run_stdin: string stdin untuk program verification (opsional; efektif "
         "bila --run atau --filc diminta). cwd: direktori kerja opsional."));
     {
@@ -461,7 +466,7 @@ static json_value *tools_list_body(void)
         json_obj_set(items, "type", json_new_str("string"));
         json_obj_set(p, "items", items);
         json_obj_set(p, "description", json_new_str(
-            "Flag opsional: --run --prove --checked --filc --driver --analyze --strict --no-lint --quorum --metamorphic --negative"));
+            "Flag opsional: --run --prove --checked --filc --driver --analyze --strict --no-lint --quorum --metamorphic --negative --require-complete"));
         json_obj_set(props, "flags", p);
 
         p = json_new_obj();

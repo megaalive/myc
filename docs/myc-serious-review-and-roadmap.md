@@ -303,13 +303,13 @@ Setelah reentrancy dan schema hasil diperbaiki, ini dapat menjadi salah satu keu
 | MYC-AUDIT-001 | Critical | `proc.c` | Thread drain POSIX tidak di-join; race dan potensi use-after-scope | ✅ SELESAI 2026-08-02 |
 | MYC-AUDIT-002 | Critical | `proc.c` | Menulis seluruh stdin sebelum drain output dapat deadlock | ✅ SELESAI 2026-08-02 |
 | MYC-AUDIT-003 | Critical | `run.c` / `driver.c` | Path executable relatif + `cwd` temp menyebabkan exit `127` | ✅ SELESAI 2026-08-02 (exec-error pipe + temp path abs) |
-| MYC-AUDIT-004 | Critical | verdict | Gate runtime gagal tetapi hasil dapat tetap `OK` | ⏳ TODO |
+| MYC-AUDIT-004 | Critical | verdict | Gate runtime gagal tetapi hasil dapat tetap `OK` | ✅ SELESAI 2026-08-02 (skip-status jujur via 9.10: requested-unavailable → UNAVAILABLE/INCONCLUSIVE + debt; `--require-complete` menegakkan) |
 | MYC-AUDIT-005 | Critical | `compile.c` | `snprintf` length dipakai untuk hash walau buffer terpotong; OOB read | ✅ SELESAI 2026-08-02 |
 | MYC-AUDIT-006 | High | assurance | Scalar L1–L5 menggabungkan bukti yang tidak comparable | ⏳ TODO |
 | MYC-AUDIT-007 | High | API | `file_path` lolos validasi tetapi pipeline memakai `source == NULL` | ✅ SELESAI 2026-08-02 |
 | MYC-AUDIT-008 | High | diagnostics | Static ring buffers membuat hasil tidak reentrant/thread-safe | **? SELESAI 2026-08-02 (arena milik hasil)** |
 | MYC-AUDIT-009 | High | `json.c` | Parser menerima JSON invalid dan embedded NUL memotong string | **? SELESAI 2026-08-02 (parser ketat + corpus)** |
-| MYC-AUDIT-010 | High | backend status | “Unavailable”, “failed”, “inconclusive”, dan “clean” tercampur |
+| MYC-AUDIT-010 | High | backend status | “Unavailable”, “failed”, “inconclusive”, dan “clean” tercampur | ✅ SELESAI 2026-08-02 (Fase 3 typed status + 9.10: filc/prove/driver unavailable kini UNAVAILABLE, bukan NOT_APPLICABLE) |
 | MYC-AUDIT-011 | High | POSIX timeout | `kill(-pid)` tanpa process group tidak menjamin child tree mati |
 | MYC-AUDIT-012 | High | `myc_buf.h` | Element size tidak disimpan; checked access dapat memakai tipe salah |
 | MYC-AUDIT-013 | High | proof claims | Eva alarm/summary diperlakukan sebagai proof kontrak umum |
@@ -2280,7 +2280,7 @@ Ini mungkin terdengar akademik, tetapi justru sangat jujur dan mudah diimplement
 
 ---
 
-## 9.10. Silence Is a Finding
+## 9.10. Silence Is a Finding — ✅ SELESAI 2026-08-02 (flag `--require-complete`; gap → `MYC-INCOMPLETE-*` + INCONCLUSIVE)
 
 Jika gate diminta tetapi:
 

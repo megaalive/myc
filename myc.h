@@ -236,6 +236,10 @@ typedef struct {
                                     observasi pola yang hilang (konvensi
                                     pemeriksaan hasil alokasi); NON-blocking,
                                     HANYA diagnostic + confidence */
+    int         require_complete; /* 9.10 Silence Is a Finding: bila set,
+                                    verification gap (unverified_debt) membuat
+                                    hasil gagal (verdict INCONCLUSIVE, exit 1)
+                                    -- bukan kesunyian */
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
@@ -272,6 +276,7 @@ typedef struct {
     int     driver;
     int     metamorphic;    /* (9.7) flag gate metamorphic */
     int     negative;       /* (9.8) flag gate negative-space */
+    int     require_complete; /* (9.10) flag require-complete */
     /* Execution result */
     myc_verdict verdict;
     int exit_code;
@@ -378,6 +383,11 @@ typedef struct {
     int         negative_callsites;   /* total callsite alokasi terdeteksi */
     int         negative_deviations;  /* jumlah yang tidak memeriksa hasil */
 
+    /* --- 9.10 Silence Is a Finding (--require-complete) --- */
+    /* Apakah require-complete diminta (untuk laporan). Enforcement
+     * dilakukan di myc_run(): gap verifikasi (debt) -> INCONCLUSIVE. */
+    int         require_complete;
+
     /* internal: gate mana yang dijalankan terakhir */
     int         ran_preprocess;
     int         ran_compile;
@@ -445,6 +455,14 @@ typedef struct {
 
 /* Nama debt type (statis). */
 const char *myc_debt_type_name(myc_debt_type t);
+
+/* Kode finding gap verifikasi (9.10): "MYC-INCOMPLETE-XXX" per debt type.
+ * Dipakai laporan teks/JSON agar CI/auditor dapat memfilter gap. */
+const char *myc_debt_code(myc_debt_type t);
+
+/* Bangun ulang receipt (9.10) setelah perubahan verdict pasca-reduce
+ * (mis. enforcement require-complete). Hash ulang saja, bukan reducer. */
+void myc_rebuild_receipt(myc_result *res);
 
 /* --- API --- */
 

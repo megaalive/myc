@@ -228,6 +228,7 @@ static myc_replay_capsule *myc_build_capsule(const myc_request *req,
     cap->driver = req->driver;
     cap->metamorphic = req->metamorphic;
     cap->negative = req->negative;
+    cap->require_complete = req->require_complete;
 
     /* Execution result */
     cap->verdict = res->verdict;
@@ -276,6 +277,28 @@ fail:
     return NULL;
 }
 
+/* 9.10 Silence Is a Finding: enforcement --require-complete.
+ * Verification gap (unverified_debt) menjadikan hasil GAGAL di CI
+ * (verdict INCONCLUSIVE + exit 1), bukan kesunyian. Hanya menaikkan
+ * MC_OK -> INCONCLUSIVE; finding/completeness diselaraskan. Real
+ * finding (VIOLATION) atau error tetap dipertahankan (sudah gagal). */
+static void enforce_require_complete(const myc_request *req, myc_result *res)
+{
+    if (!req->require_complete)
+        return;
+    if (res->debt_count == 0 || res->verdict != MC_OK)
+        return;
+    res->verdict = MC_INCONCLUSIVE;
+    if (res->finding == MYC_FINDING_CLEAN)
+        res->finding = MYC_FINDING_INCONCLUSIVE;
+    if (res->completeness == MYC_COMPLETENESS_COMPLETE)
+        res->completeness = MYC_COMPLETENESS_INCOMPLETE;
+    /* Receipt di-hash di dalam myc_reduce_verdict (akhir pipeline),
+     * SEBELUM flip ini. Bangun ulang agar sidik jari sesuai dengan
+     * hasil akhir (9.10) -- TANPA menjalankan reducer lagi. */
+    myc_rebuild_receipt(res);
+}
+
 void myc_run(const myc_request *req, myc_result *res)
 {
     myc_error_code ve = myc_request_validate(req);
@@ -284,6 +307,7 @@ void myc_run(const myc_request *req, myc_result *res)
         res->err = ve;
         return;
     }
+    res->require_complete = req->require_complete;
 
     /* MYC-AUDIT-007: bila caller memakai file_path tanpa source,
       * load file di sini sebelum masuk pipeline. Pipeline selalu
@@ -330,6 +354,7 @@ void myc_run(const myc_request *req, myc_result *res)
         /* #3: quorum juga dihitung di jalur file_path-only (API/MCP),
          * konsisten dengan jalur source in-memory. */
         myc_quorum_analysis(&req2, res);
+        enforce_require_complete(&req2, res);
         free(buf);
         res->capsule = myc_build_capsule(&req2, res);
         return;
@@ -337,6 +362,7 @@ void myc_run(const myc_request *req, myc_result *res)
 
     myc_pipeline(req, res);
     myc_quorum_analysis(req, res);
+    enforce_require_complete(req, res);
     res->capsule = myc_build_capsule(req, res);
 }
 
@@ -382,7 +408,7 @@ static void usage(void)
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
         "  myc check <file.c> [--json] [--analyze] [--strict] [--no-lint] [--cwd DIR]\n"
-        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--metamorphic] [--negative] [--quorum]\n"
+        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--metamorphic] [--negative] [--quorum] [--require-complete]\n"
         "  myc check -          [--json] [--analyze] [--strict] [--no-lint]\n"
         "                        (source dari stdin)\n"
         "  myc policy\n"
@@ -612,6 +638,8 @@ int main(int argc, char **argv)
                 req.metamorphic = 1;
             else if (strcmp(argv[i], "--negative") == 0)
                 req.negative = 1;
+            else if (strcmp(argv[i], "--require-complete") == 0)
+                req.require_complete = 1;
             else if (strcmp(argv[i], "--run-stdin") == 0 && i + 1 < argc) {
                 char *buf;
                 size_t len;

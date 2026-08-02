@@ -132,6 +132,17 @@ findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] deviation tetap OK (observasi
 myc.exe check tests\negative_dev.c --negative --json > %OUT% 2>&1
 findstr /C:"\"negative_deviations\":1" %OUT% >nul && echo [OK] negative_deviations di JSON || echo [FAIL] negative_deviations hilang di JSON
 del %OUT%
+echo --- Silence Is a Finding (9.10): --require-complete membuat gap gagal
+myc.exe check tests\ok_hello.c --require-complete > %OUT% 2>&1
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] require-complete tanpa gap tetap OK || echo [FAIL] require-complete mengubah hasil bersih
+myc.exe check test\fixtures\ok_contract.c > %OUT% 2>&1
+findstr /C:"MYC-INCOMPLETE-ENSURES-UNPROVED" %OUT% >nul && echo [OK] gap ensures-unproved terlihat (debt berkode) || echo [FAIL] gap ensures tidak muncul
+myc.exe check test\fixtures\ok_contract.c --require-complete > %OUT% 2>&1
+findstr /C:"verdict:   INCONCLUSIVE" %OUT% >nul && echo [OK] require-complete: silent gap -> INCONCLUSIVE || echo [FAIL] gap tidak menggagalkan hasil
+findstr /C:"require_complete: enforced" %OUT% >nul && echo [OK] laporan enforced muncul || echo [FAIL] laporan enforced hilang
+myc.exe check test\fixtures\ok_filc.c --filc > %OUT% 2>&1
+findstr /C:"MYC-INCOMPLETE-GATE-UNAVAILABLE" %OUT% >nul && echo [OK] backend tak tersedia jadi gap (bukan kesunyian) || echo [INFO] filc tersedia (tanpa gap)
+del %OUT%
 echo --- MCP smoke (P9): mcp.exe harus menjawab JSON-RPC
 call test\_mcp_smoke.bat
 echo --- MCP SDK interop (opsional): hanya bila SDK MCP Python resmi terpasang

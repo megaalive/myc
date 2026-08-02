@@ -464,7 +464,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         size_t fp_len;
         myc_policy_hash(policy_hex);
         fp_need = snprintf(NULL, 0,
-                     "v10|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s|src:%s",
+                     "v11|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s;%s|src:%s",
                      gcc_path,
                      req->cwd ? req->cwd : "",
                      policy_hex,
@@ -476,6 +476,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                      req->driver ? "driver" : "nodriver",
                      req->metamorphic ? "meta" : "nometa",
                      req->negative ? "neg" : "noneg",
+                     req->require_complete ? "reqc" : "noreqc",
                      res->source_sha256 ? res->source_sha256 : "");
         if (fp_need > 0) {
             fp_len = (size_t)fp_need;
@@ -483,7 +484,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         }
         if (fp_buf) {
             snprintf(fp_buf, fp_len + 1,
-                     "v10|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s|src:%s",
+                     "v11|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s;%s|src:%s",
                      gcc_path,
                      req->cwd ? req->cwd : "",
                      policy_hex,
@@ -495,6 +496,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                      req->driver ? "driver" : "nodriver",
                      req->metamorphic ? "meta" : "nometa",
                      req->negative ? "neg" : "noneg",
+                     req->require_complete ? "reqc" : "noreqc",
                      res->source_sha256 ? res->source_sha256 : "");
             sha256_hex(fp_buf, fp_len, hex);
             free(fp_buf);
@@ -788,10 +790,26 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_GATE_END,
                                     "Frama-C Eva clean");
         } else {
-            myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_NOT_APPLICABLE,
-                                "Eva tidak menganalisis / di-skip");
-            myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_SKIP,
-                                    "Frama-C Eva di-skip");
+            /* 9.10/AUDIT-004: gate DIMINTA tapi bukti tidak diproduksi
+             * (wsl/frama-c hilang, Eva tidak menganalisis) -> UNAVAILABLE
+             * + debt, BUKAN NOT_APPLICABLE (kesunyian). Assurance statis
+             * tetap dipertahankan (non-blocking), tapi gap terlihat.
+             * Bila prove.c sudah mencatat INFRA_FAILED (gagal infra,
+             * bukan backend hilang), pertahankan status yang lebih
+             * spesifik itu (kode debt berbeda). */
+            const myc_gate_result *pg =
+                myc_gate_get(res, MYC_GATE_PROVE);
+            if (pg && pg->status == MYC_GATE_INFRA_FAILED) {
+                myc_result_add_evidence(res, MYC_GATE_PROVE,
+                                        MYC_EVIDENCE_SKIP,
+                                        "Frama-C Eva infra failed (gap)");
+            } else {
+                myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_UNAVAILABLE,
+                                    "Eva tidak tersedia / tidak menganalisis");
+                myc_result_add_evidence(res, MYC_GATE_PROVE,
+                                        MYC_EVIDENCE_SKIP,
+                                        "Frama-C Eva unavailable (gap)");
+            }
         }
         if (!req->run && !req->filc && !req->driver && !req->metamorphic) {
             free(gcc_path);
@@ -830,10 +848,12 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_GATE_END,
                                     "Fil-C clean");
         } else {
-            myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_NOT_APPLICABLE,
-                                "filc di-skip");
+            /* 9.10/AUDIT-004: gate DIMINTA tapi backend filc-clang tidak
+             * tersedia -> UNAVAILABLE + debt (bukan kesunyian). */
+            myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_UNAVAILABLE,
+                                "filc-clang tidak tersedia");
             myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_SKIP,
-                                    "Fil-C di-skip");
+                                    "Fil-C unavailable (gap)");
         }
         if (!req->run && !req->driver && !req->metamorphic) {
             free(gcc_path);
@@ -961,11 +981,19 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                 "driver clean");
             myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_GATE_END,
                                     "driver: clean");
-        } else {
+        } else if (res->contract_requires == 0) {
+            /* Benar-benar tidak berlaku: source tanpa fungsi ber-kontrak. */
             myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_NOT_APPLICABLE,
-                                "driver di-skip");
+                                "tidak ada fungsi ber-kontrak");
             myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_SKIP,
-                                    "driver di-skip");
+                                    "driver di-skip: tanpa kontrak");
+        } else {
+            /* 9.10/AUDIT-004: kontrak ada tapi backend/harness tidak
+             * memproduksi kasus -> UNAVAILABLE + debt (bukan kesunyian). */
+            myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_UNAVAILABLE,
+                                "driver tidak tersedia / 0 kasus");
+            myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_SKIP,
+                                    "driver unavailable (gap)");
         }
         free(gcc_path);
         myc_reduce_verdict(res);
