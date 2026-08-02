@@ -193,7 +193,8 @@ static int run_filc_exe(const myc_request *req, const char *exe,
         add_diag_filc(res, note);
         return 0;
     }
-    add_diag_filc(res, "filc: run bersih - memory-safe (L5 FULL)");
+    add_diag_filc(res, "filc: run bersih - eksekusi Fil-C bersih (L5 FILC); "
+                        "bukan klaim FULL");
     return 1;
 }
 
@@ -535,7 +536,8 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
             ret = 0;
             goto out_wsl;
         }
-        add_diag_filc(res, "filc: run bersih - memory-safe (L5 FULL)");
+        add_diag_filc(res, "filc: run bersih - eksekusi Fil-C bersih (L5 FILC); "
+                        "bukan klaim FULL");
         myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_COMPLETED_CLEAN,
                             "filc clean");
         myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_GATE_END,

@@ -36,7 +36,44 @@
     "frama-c -eva $t; rc=$?; rm -f $t; exit $rc"
 
 #define WSL_DETECT_CMD \
-    "eval $(opam env) 2>/dev/null; command -v frama-c"
+    "eval $(opam env) 2>/dev/null; command -v frama-c; " \
+    "frama-c -version 2>/dev/null"
+
+/* Parse versi Frama-C dari output DETECT ("command -v frama-c; "
+ * "frama-c -version"): ambil baris pertama yang memuat pola digit.titik.digit
+ * (mis. "33.0 (Arsenic)"). Disimpan ke arena hasil (MYC-AUDIT-013: laporan
+ * jujur harus menyebut tool + versi, bukan sekadar label). */
+static void parse_detect_version(myc_result *res, const char *text)
+{
+    const char *p = text;
+    if (!p)
+        return;
+    while (p && *p) {
+        const char *eol = strchr(p, '\n');
+        size_t      n = eol ? (size_t)(eol - p) : strlen(p);
+        const char *q = p;
+        int         has_version = 0;
+        while (q + 2 < p + n) {
+            if (*q >= '0' && *q <= '9' && q[1] == '.' &&
+                q[2] >= '0' && q[2] <= '9') {
+                has_version = 1;
+                break;
+            }
+            q++;
+        }
+        if (has_version) {
+            while (n > 0 && (p[n - 1] == '\r' || p[n - 1] == ' ' ||
+                             p[n - 1] == '\n'))
+                n--;
+            if (n > 0)
+                res->prove_version = myc_result_arena_dup(res, p, n);
+            return;
+        }
+        if (!eol)
+            break;
+        p = eol + 1;
+    }
+}
 
 /* Tambah diagnostic ringan (string disalin ke pool statis bergilir). */
 static void add_diag_prove(myc_result *res, const char *msg)
@@ -206,6 +243,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
         free(wsl_path);
         return 0;
     }
+    parse_detect_version(res, pres.stdout_data);
     myc_proc_result_free(&pres);
 
     /* 3. Jalankan Eva; source via stdin ke template WSL. */
@@ -255,6 +293,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
     res->prove_stderr_text = pres.stderr_data; pres.stderr_data = NULL;
     myc_proc_result_free(&pres);
     res->ran_prove = 1;
+    res->prove_mode = "eva (abstract interpretation)";
 
     if (eva_exit != 0) {
         /* Gagal parse/analisis (mis. sintaks tak dikenal Frama-C). Bukan
@@ -308,8 +347,12 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
         return 0;
     }
 
-    /* Bersih: 0 alarm + analisis sungguhan. Caller menaikkan ke L2. */
-    add_diag_prove(res, "prove: Eva 0 alarm - kontrak & bounds terbukti (L2)");
+    /* Bersih: 0 alarm + analisis sungguhan. Caller menaikkan ke L2 (EVA).
+     * MYC-AUDIT-013: pesan TIDAK mengklaim "kontrak terbukti" -- Eva adalah
+     * abstract interpretation; 0 alarm hanya berarti tidak ada alarm RTE di
+     * bawah model default (entry main). Proof obligation (WP) tidak dipakai. */
+    add_diag_prove(res, "prove: Eva 0 alarm RTE (abstract interpretation, "
+                        "entry main; bukan proof obligation WP)");
     myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_COMPLETED_CLEAN,
                         "Eva 0 alarm + summary");
     myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_GATE_END,

@@ -40,9 +40,11 @@ sebagai server dan memanggil pipeline verifikasi `myc` sebagai tool.
 - **Verdict yang mungkin**: `OK`, `VIOLATION` (lint), `COMPILE_ERROR`,
   `RUNTIME_VIOLATION` (--run), `PROVE_VIOLATION` (--prove),
   `FILC_VIOLATION` (--filc), `DRIVER_VIOLATION` (--driver).
-- **Assurance ladder**: `L0 RAW` → `L1 SANE` (statis gcc) → `L2 PROVEN`
-  (Frama-C) → `L3 RUNTIME` (ASan/UBSan) → `L4 SPATIAL` (MYC_BUF checked)
-  → `L5 FULL` (Fil-C). Level = yang tertinggi yang DIBUKTIKAN.
+- **Assurance ladder**: `L0 RAW` → `L1 SANE` (statis gcc) → `L2 EVA`
+  (Frama-C Eva: 0 alarm RTE di bawah model, abstract interpretation) →
+  `L3 RUNTIME` (ASan/UBSan) → `L4 SPATIAL` (MYC_BUF checked) →
+  `L5 FILC` (eksekusi Fil-C bersih; label lama "FULL" dihapus — MYC-AUDIT-013).
+  Level = yang tertinggi yang DIBUKTIKAN.
 
 Contoh:
 
@@ -117,10 +119,10 @@ realloc ke variabel lain (VIOLATION), memcpy/memmove/memset tanpa `sizeof`
   (ERROR `1MiB+` / TIMEOUT, plus PROVE_VIOLATION/DRIVER_VIOLATION),
   dan seluruh gate opsional: `--run`
   (RUNTIME_VIOLATION OOB, contract-assert `bad_contract_pre.c`, `run_stdin`
-  echo, TIMEOUT loop), `--prove` (L2 PROVEN / PROVE_VIOLATION),
+  echo, TIMEOUT loop), `--prove` (L2 EVA / PROVE_VIOLATION),
   `--checked` (L4 SPATIAL / COMPILE_ERROR akses-langsung),
   `--run --checked` (RUNTIME_VIOLATION OOB + kombinasi max-level L4),
-  `--driver` (L3 RUNTIME / DRIVER_VIOLATION), `--filc` (L5 FULL / skip),
+  `--driver` (L3 RUNTIME / DRIVER_VIOLATION), `--filc` (L5 FILC / skip),
   lint (VIOLATION intptr_t + tidak ada false-positive pada `ok_lint.c`),
   dan `cwd` (fingerprint berubah sesuai cwd).
   Semua gate non-blocking: bila backend hilang (clang/Frama-C/Fil-C/MYC_BUF),

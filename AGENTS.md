@@ -64,15 +64,16 @@ Poin penting:
 - **Client MCP contoh selesai 2026-08-02**: `mcp_client.py` (Python stdlib,
   tanpa dependensi) — handshake initialize, tools/list, panggil
   check/version/contracts/lint via stdio.
-- **P7 (D3.1) Frama-C Eva selesai 2026-08-01**: gate `--prove` → L2 PROVEN.
-  Frama-C 33.0 (Arsenic) diinstal via opam di WSL Ubuntu-24.04
+- **P7 (D3.1) Frama-C Eva selesai 2026-08-01**: gate `--prove` → L2 EVA
+  (label lama "L2 PROVEN" dihapus MYC-AUDIT-013). Frama-C 33.0 (Arsenic)
+  diinstal via opam di WSL Ubuntu-24.04
   (`/home/megaalive/.opam/default/bin/frama-c`); myc mendeteksi via `wsl.exe`
   dan memanggil `frama-c -eva` dengan source via stdin (template bash tetap,
   tanpa shell string berisi source). Alarm Eva (`[eva:alarm]`, kelas RTE =
   bug pasti) → verdict PROVE_VIOLATION; 0 alarm + analisis sungguhan (cek
-  "ANALYSIS SUMMARY") → L2. Non-blocking: wsl/frama-c hilang atau Eva tidak
-  menganalisis → skip, assurance statis dipertahankan + diagnostic.
-  Fixture: `ok_prove.c` → L2; `bad_prove.c` (OOB via argc opaque) →
+  "ANALYSIS SUMMARY") → L2 EVA. Non-blocking: wsl/frama-c hilang atau Eva
+  tidak menganalisis → skip, assurance statis dipertahankan + diagnostic.
+  Fixture: `ok_prove.c` → L2 EVA; `bad_prove.c` (OOB via argc opaque) →
   PROVE_VIOLATION.
 - Self-dogfooding lolos penuh: 15 source myc dicek myc sendiri → OK.
   (Catatan lama "akan selalu VIOLATION karena windows.h" TIDAK berlaku lagi —
@@ -83,6 +84,7 @@ Poin penting:
 - **Negative-Space Analysis (9.8) selesai 2026-08-02**: gate `--negative` (CLI + MCP tool `check`) → `myc_negative_space()` di `negative.c` (baru, reentrant: tanpa global state — statistik per-fungsi di array lokal berindeks ALLOC_FUNCS, nama = pointer statis, tanpa strdup). Structural mining "pola yang hilang": keluarga pola pertama = konvensi pemeriksaan hasil fungsi alokasi (`malloc/calloc/realloc/strdup/fopen`). Untuk tiap callsite, tentukan apakah hasilnya DIPERIKSA (`== NULL` / `!= NULL` / `!p`), langsung (`(p = malloc()) == NULL`) atau kemudian (forward-scan sampai keluar blok, jendela 4096); LHS dikenali melewati cast eksplisit (`p = (char *)malloc(...)` — bug awal: tanpa itu semua callsite ber-cast terhitung salah). Bila mayoritas memeriksa tetapi ada yang tidak → `project convention deviation` + confidence (0.55–0.98) di diagnostic. **HANYA observasi**: status gate baru `MYC_GATE_COMPLETED_OBSERVATIONS` (ditambahkan ke enum — gate selesai tapi hasilnya bukan finding terkonfirmasi; benign terhadap reducer: tidak menaikkan verdict, tidak menurunkan completeness, tidak menambah debt; quorum memperlakukannya sebagai non-conflict). Verdict tetap OK walau ada deviation (prinsip MYC-AUDIT-014: heuristik teks bukan bukti semantik). Non-blocking: 0 callsite → `NOT_APPLICABLE`, tanpa klaim. Laporan: teks `negative (9.8): callsites=N deviations=M` + `scope:` + JSON `ran_negative`/`negative_callsites`/`negative_deviations` + capsule. Fingerprint `v9`→`v10` (+dimensi `neg`); karena `MYC_GATE_COUNT` bertambah, receipt golden `ok_run --run` berubah → `272d7531...` (`negative_ok --negative` → `6c364f7e...`, deterministik). Fixture: `tests/negative_ok.c` (3 callsite, semua diperiksa → `completed_clean`), `tests/negative_dev.c` (4/5 malloc diperiksa, `make_e()` tidak → `completed_observations` + diagnostic callsite baris + konvensi `4/5 ... confidence 0.81`, verdict tetap OK). Regresi di `test/_regress_run.bat`.
 - **Silence Is a Finding (9.10) selesai 2026-08-02**: flag `--require-complete` (CLI + MCP tool `check`) → **verification gap = kegagalan CI, bukan kesunyian**. Tiap gap verifikasi kini punya kode finding `MYC-INCOMPLETE-XXX` (`myc_debt_code()` di `gate.c`: GATE-UNAVAILABLE / GATE-INFRA-FAILED / GATE-INCONCLUSIVE / NONZERO-CASES / ENSURES-UNPROVED / RAW-BUFFERS / OUTPUT-TRUNCATED) di laporan teks + JSON (field `code` per item debt). Bila flag dipakai dan ada debt (gap) → `enforce_require_complete()` di `myc_run()` menaikkan verdict `OK` → `INCONCLUSIVE` (exit 1; finding/completeness diselaraskan). **Prasyarat AUDIT-004/010 (sekaligus diperbaiki)**: gate DIMINTA yang backend-nya tidak tersedia kini `UNAVAILABLE` + debt (bukan `NOT_APPLICABLE` yang diam-diam lolos) — filc/prove/driver skip → `UNAVAILABLE` (driver tanpa fungsi ber-kontrak tetap `NOT_APPLICABLE` = benar-benar tidak berlaku; checked/negative tanpa pola tetap NA). Konsekuensi: `ok_filc --filc` di sistem tanpa Fil-C kini `INCONCLUSIVE` + debt (dulu OK senyap); quorum ikut lebih jujur (unavailable → inconclusive). Non-blocking tetap: assurance statis dipertahankan (bukan diturunkan). Fingerprint `v10`→`v11` (+dimensi `reqc`); receipt golden `ok_run --run` → `272d7531...` (deterministik). Fixture tanpa flag: `ok_contract.c` → OK exit 0 (gap ensures-unproved terlihat tapi tidak menggagalkan); dengan `--require-complete` → INCONCLUSIVE exit 1. Regresi di `test/_regress_run.bat` (+5 cek).
 - **MYC-AUDIT-012 selesai 2026-08-02** (`myc_buf.h`): checked-buffer kini menjaga **element type + checked multiplication**. Checked mode `MYC_BUF(T)` = struct anonim ber-*member typed* `T *data` + `byte_capacity` (BYTE) + `elem_size` + `generation` + `cookie` (magic, deteksi korupsi metadata). `MYC_AT` memverifikasi **ukuran elemen di COMPILE TIME** via trik array negatif C11 murni `sizeof(char[sizeof(T)==sizeof((b).data[0]) ? 1 : -1])` (tanpa ekstensi, tetap LVALUE — cek diletakkan di argumen helper yang mengembalikan pointer, bukan operator komma) **dan** membandingkan `elem_size` di runtime; `MYC_NEW` menolak `n*sizeof(T) > SIZE_MAX` (trap `MYC_CHECKED: MYC_NEW overflow` — sekaligus menangkap n negatif yang ter-cast ke size_t raksasa); bounds `MYC_AT` memakai `i >= byte_capacity/elem` sehingga `i*elem` dijamin tidak overflow (checked multiplication dalam satu pembandingan). `MYC_FREE` memeriksa cookie (korupsi) dan men-null-kan data (use-after-free terdeteksi). Mismatch tipe ber-ukuran sama (int vs unsigned) sengaja TIDAK dianggap berbahaya (bounds/offset/alignment identik) — jujur di dokumentasi. Batasan: MYC_AT harus lvalue (assignment) sehingga cek tidak bisa dipisah jadi ekspresi komma; `MYC_NEW` pada buffer aktif (re-init) tidak di-trap (baca memori indeterminate pada deklarasi segar). Fingerprint `v11`→`v12` (+dimensi `buf` = revisi runtime checked-header); receipt golden baru: `ok_run --run` → `272d7531...` (deterministik), `ok_hello` → `17b404ab...`, `negative_ok --negative` → `6c364f7e...`. Fixture: `tests/bad_checked_type.c` (MYC_AT tipe ber-ukuran salah pada MYC_BUF(int) → COMPILE_ERROR di checked build), `tests/bad_checked_new_overflow.c` (n opaque via argc sehingga `n*4` overflow SIZE_MAX → `--run --checked` = RUNTIME_VIOLATION dengan marker `MYC_NEW overflow`). Regresi di `test/_regress_run.bat` (+3 cek); `ok_checked`/`dogfood_ring` tetap L4.
+- **MYC-AUDIT-013 selesai 2026-08-02** (klaim Frama-C Eva / label assurance terlalu kuat): label `L2 PROVEN` → **`L2 (EVA)`** dan `L5 FULL` → **`L5 (FILC)`** (enum `MYC_ASSURANCE_L2_EVA`/`MYC_ASSURANCE_L5_FILC`; label lama menyiratkan bukti lebih dari yang dikumpulkan). Eva adalah **abstract interpretation**: L2 EVA = 0 alarm RTE di bawah model default (entry main), BUKAN proof obligation WP, BUKAN "kontrak terbukti" — pesan diagnostic diubah ("prove: Eva 0 alarm RTE (abstract interpretation, entry main; bukan proof obligation WP)"). Laporan prove kini jujur dan berkonteks: `prove:` blok memuat `mode` (`eva (abstract interpretation)`), `version` (diparse dari `frama-c -version` via WSL detect — `33.0 (Arsenic)`), `entry` (main default), `alarms`, dan catatan pembatasan — di teks + JSON (`prove_mode`/`prove_version`). Pesan Fil-C juga dilemahkan ("run bersih - eksekusi Fil-C bersih (L5 FILC); bukan klaim FULL"). Istilah FULL dihapus dari README/docs. Receipt TIDAK berubah (label assurance tidak di-hash) — `ok_run --run` tetap `272d7531...`. Verifikasi: `ok_prove --prove` → L2 (EVA) + version; `bad_prove` → PROVE_VIOLATION; self-dogfooding + regress tetap hijau.
 - **Dogfooding lintas-program tiga tool (2026-08-02)**: `dogfood_ring.c`
   (ring buffer, MYC_BUF → L4), `dogfood_config.c` (parser config key=value,
   idiom realloc aman ke member `cfg->items = tmp` + copy_bounded), dan
@@ -100,13 +102,16 @@ Poin penting:
   L4; `bad_checked.c` → COMPILE_ERROR; `bad_checked_oob.c` →
   RUNTIME_VIOLATION. Dogfooding: `dogfood_ring.c` ditulis ulang memakai
   MYC_BUF → L4.
-- **P8 (D4.1) gate Fil-C selesai 2026-08-01**: `--filc` → **L5 FULL**
-  (backend opsional). Deteksi filc-clang di PATH (native Linux) atau via
+- **P8 (D4.1) gate Fil-C selesai 2026-08-01**: `--filc` → **L5 FILC**
+  (label lama "L5 FULL" dihapus MYC-AUDIT-013 — run Fil-C membuktikan
+  eksekusi terkendali bersih, bukan "full"; backend opsional). Deteksi
+  filc-clang di PATH (native Linux) atau via
   WSL (`command -v filc-clang` / `/opt/fil/bin/filc-clang`); verification
   build + eksekusi terkendali. Marker panic Fil-C (`filc safety error` dll,
   terkonfirmasi dari issue tracker) → verdict **FILC_VIOLATION**. Run
-  bersih → L5. Non-blocking: filc-clang tidak tersedia → skip + diagnostic
-  (assurance statis dipertahankan). Fixture: `ok_filc.c` → L5 bila ada;
+  bersih → L5 FILC. Non-blocking: filc-clang tidak tersedia → skip +
+  diagnostic (assurance statis dipertahankan). Fixture: `ok_filc.c` → L5
+  FILC bila ada;
   `bad_filc_oob.c` → FILC_VIOLATION bila ada. Di sistem ini Fil-C TIDAK
   terpasang → fixture masuk jalur `UNAVAILABLE` (gap terlihat: verdict
   INCONCLUSIVE + debt `MYC-INCOMPLETE-GATE-UNAVAILABLE`, bukan OK senyap

@@ -47,10 +47,16 @@ typedef enum {
     MYC_ASSURANCE_NONE = 0,
     MYC_ASSURANCE_L0_RAW,
     MYC_ASSURANCE_L1_SANE,
-    MYC_ASSURANCE_L2_PROVEN,
+    /* MYC-AUDIT-013: label lama "PROVEN" terlalu kuat. Eva adalah abstract
+     * interpretation: L2 EVA = TIDAK ada alarm RTE di bawah model/default
+     * entry (bukan proof obligation WP, bukan "kontrak terbukti"). Detail
+     * tool/versi/model/entry ada di blok prove laporan. */
+    MYC_ASSURANCE_L2_EVA,
     MYC_ASSURANCE_L3_RUNTIME,
     MYC_ASSURANCE_L4_SPATIAL,
-    MYC_ASSURANCE_L5_FULL
+    /* MYC-AUDIT-013: label lama "FULL" melebihi bukti. Fil-C clean run
+     * membuktikan eksekusi terkendali tertentu bersih, bukan "full". */
+    MYC_ASSURANCE_L5_FILC
 } myc_assurance;
 
 /* ------------------------------------------------------------------ */
@@ -213,12 +219,13 @@ typedef struct {
     int         run;            /* verification build + eksekusi (L3 RUNTIME) */
     const char *run_stdin;      /* stdin untuk program verification (NULL = kosong) */
     size_t      run_stdin_len;
-    int         prove;          /* gate Frama-C Eva (D3.1, L2 PROVEN, via WSL) */
+    int         prove;          /* gate Frama-C Eva (D3.1, L2 EVA, via WSL):
+                                   abstract interpretation RTE, bukan WP proof */
     int         checked;        /* checked-build makro (D1.2, L4 SPATIAL):
                                    bangun 2x (produksi T* + -DMYC_CHECKED fat) */
     const char *checked_header_dir; /* direktori berisi myc_buf.h (biasanya
                                        dir myc.exe); NULL = cari via -I cwd */
-    int         filc;           /* gate Fil-C (D4.1, L5 FULL, opsional):
+    int         filc;           /* gate Fil-C (D4.1, L5 FILC, opsional):
                                    verification build filc-clang + eksekusi */
     int         driver;         /* gate driver-generator (D2.2, opsional):
                                    harness kasus tepi dari fungsi ber-kontrak,
@@ -338,6 +345,8 @@ typedef struct {
     int         prove_alarms;           /* jumlah alarm Eva (RTE) */
     char       *prove_stdout_text;      /* output frama-c -eva */
     char       *prove_stderr_text;
+    char       *prove_version;          /* versi Frama-C dari banner (arena) */
+    const char *prove_mode;             /* adapter: "eva" (abstract interpretation) */
 
     char       *resolved_gcc;           /* canonical executable identity */
     char       *fingerprint;            /* canonical process fingerprint */

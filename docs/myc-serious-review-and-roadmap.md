@@ -312,7 +312,7 @@ Setelah reentrancy dan schema hasil diperbaiki, ini dapat menjadi salah satu keu
 | MYC-AUDIT-010 | High | backend status | “Unavailable”, “failed”, “inconclusive”, dan “clean” tercampur | ✅ SELESAI 2026-08-02 (Fase 3 typed status + 9.10: filc/prove/driver unavailable kini UNAVAILABLE, bukan NOT_APPLICABLE) |
 | MYC-AUDIT-011 | High | POSIX timeout | `kill(-pid)` tanpa process group tidak menjamin child tree mati |
 | MYC-AUDIT-012 | High | `myc_buf.h` | Element size tidak disimpan; checked access dapat memakai tipe salah | ✅ SELESAI 2026-08-02 (typed member + elem_size/byte_capacity/cookie/generation; cek ukuran tipe compile-time; checked multiplication di MYC_NEW & MYC_AT; fingerprint v12) |
-| MYC-AUDIT-013 | High | proof claims | Eva alarm/summary diperlakukan sebagai proof kontrak umum |
+| MYC-AUDIT-013 | High | proof claims | Eva alarm/summary diperlakukan sebagai proof kontrak umum | ✅ SELESAI 2026-08-02 (label L2 PROVEN→L2 EVA, L5 FULL→L5 FILC; prove memuat mode/version/entry; pesan jujur; FULL dihapus dari README) |
 | MYC-AUDIT-014 | Medium | lint | Heuristik token/text dijadikan hard violation |
 | MYC-AUDIT-015 | Medium | portability | `NUL` dipakai di POSIX dan meninggalkan file literal `NUL` |
 | MYC-AUDIT-016 | Medium | MCP | JSON document dibungkus sebagai string text, status error tidak konsisten |
@@ -1017,7 +1017,17 @@ Production macro tetap dapat menjadi raw pointer tanpa overhead.
 
 ---
 
-## 5.14. MYC-AUDIT-013 — Klaim Frama-C Eva terlalu kuat
+## 5.14. MYC-AUDIT-013 — Klaim Frama-C Eva terlalu kuat  ✅ SELESAI 2026-08-02
+
+> Status: diperbaiki. Label `L2 PROVEN` → `L2 (EVA)` dan `L5 FULL` →
+> `L5 (FILC)`. Laporan prove kini memuat `mode` (eva = abstract
+> interpretation), `version` (diparse dari `frama-c -version`), `entry`
+> (main default), dan catatan bahwa 0 alarm ≠ proof obligation WP.
+> Pesan "kontrak & bounds terbukti" dihapus. Adapter WP belum ada dan
+> TIDAK diklaim (separasi klaim: EVA ≠ WP). Istilah FULL dihapus dari
+> README. Batas yang tersisa (belum dikerjakan, jujur): parser teks
+> summary tetap rapuh; output cap masih dapat menyembunyikan alarm di
+> akhir output.
 
 README dan diagnostic menyebut:
 
@@ -2598,7 +2608,7 @@ Ini membuatnya:
 ### Task
 
 - [ ] Tandai README bahwa level assurance lama bersifat eksperimental.
-- [ ] Hapus istilah `FULL`.
+- [x] Hapus istilah `FULL` (MYC-AUDIT-013, 2026-08-02).
 - [ ] Jangan menambah backend baru.
 - [ ] Buat branch `trust-core`.
 - [ ] Tambahkan issue untuk setiap `MYC-AUDIT-*`.
@@ -2885,15 +2895,17 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 
 ### 7.6. Frama-C
 
-- [ ] separate Eva/WP;
+- [x] separate Eva/WP — klaim dipisah: L2 EVA ≠ WP (MYC-AUDIT-013, 2026-08-02);
+      adapter WP belum ada dan TIDAK diklaim.
 - [ ] native POSIX path;
-- [ ] version/model/entry point;
+- [x] version/model/entry point — laporan prove memuat mode/version/entry
+      (MYC-AUDIT-013, 2026-08-02).
 - [ ] machine output if available;
 - [ ] proof obligation counts.
 
 ### 7.7. Fil-C
 
-- [ ] remove `FULL`;
+- [x] remove `FULL` — label `L5 FILC` (MYC-AUDIT-013, 2026-08-02).
 - [ ] fix `run_stdin` under WSL;
 - [ ] version identity;
 - [ ] robust report parser;

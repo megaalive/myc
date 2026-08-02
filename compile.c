@@ -767,10 +767,12 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         }
     }
 
-    /* --- Gate opsional: Frama-C Eva (D3.1, --prove) -> L2 PROVEN ---
+    /* --- Gate opsional: Frama-C Eva (D3.1, --prove) -> L2 EVA ---
      * Non-blocking: bila wsl/frama-c hilang atau Eva tidak menganalisis,
      * assurance statis dipertahankan (bukan error). Bila --run/--filc juga
-     * diminta, jangan return dulu: lanjut ke gate berikut (L5 > L3 > L2). */
+     * diminta, jangan return dulu: lanjut ke gate berikut (L5 > L3 > L2).
+     * MYC-AUDIT-013: L2 EVA = 0 alarm RTE di bawah model Eva (abstract
+     * interpretation), BUKAN proof obligation WP. */
     if (req->prove) {
         int ok = myc_prove_gate(req, src, srclen, res);
         if (res->verdict == MC_TIMEOUT || res->verdict == MC_PROVE_VIOLATION) {
@@ -826,11 +828,13 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         }
     }
 
-    /* --- Gate opsional: Fil-C (D4.1, --filc) -> L5 FULL ---
+    /* --- Gate opsional: Fil-C (D4.1, --filc) -> L5 FILC ---
      * Non-blocking: bila filc-clang tidak tersedia (PATH/WSL), gate di-skip,
      * assurance statis dipertahankan + diagnostic. Bila tersedia dan run
      * bersih (tanpa marker panic) -> L5. Bila --run juga diminta, jangan
-     * return dulu: lanjut ke gate run (L3 > L2; L5 tetap dipertahankan). */
+     * return dulu: lanjut ke gate run (L3 > L2; L5 tetap dipertahankan).
+     * MYC-AUDIT-013: L5 FILC = eksekusi terkendali Fil-C bersih, bukan
+     * "FULL" (label lama melebihi bukti). */
     if (req->filc) {
         int ok = myc_filc_gate(req, src, srclen, res);
         if (res->verdict == MC_TIMEOUT || res->verdict == MC_FILC_VIOLATION) {

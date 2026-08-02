@@ -8,7 +8,7 @@
  * Dua kegunaan (bertahap):
  *   1. myc_contract_scan -- hitung requires/ensures, tandai kontrak yang
  *      tidak terbaca (diagnostic). Data masukan untuk gate Frama-C Eva
- *      (D3.1, L2 PROVEN) nanti.
+ *      (D3.1, L2 EVA) nanti.
  *   2. myc_contract_inject -- salinan source dengan assert(requires)
  *      disisipkan setelah '{' pembuka fungsi yang didahului //@ requires.
  *      Dipakai verification build (--run, L3) sebagai defense-in-depth.

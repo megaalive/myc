@@ -2,9 +2,9 @@
 
 Status: **disetujui 2026-08-01** (arah & fase pertama). Ini dokumen hidup; update
 bila keputusan berubah. **Fase A (P4+P5) SELESAI 2026-08-01. P6 SELESAI 2026-08-01.
-P7 SELESAI 2026-08-01 (D1.5 contract-lite + D3.1 Frama-C Eva → L2 PROVEN).
+P7 SELESAI 2026-08-01 (D1.5 contract-lite + D3.1 Frama-C Eva → L2 EVA).
 P8 SELESAI 2026-08-01 (D1.2 checked-build makro → L4 SPATIAL + D4.1
-gate Fil-C → L5 FULL opsional). P9 SELESAI 2026-08-02 (MCP server +
+gate Fil-C → L5 FILC opsional). P9 SELESAI 2026-08-02 (MCP server +
 soak + corpus abuse → integrasi agent). D2.2 driver-generator SELESAI
 2026-08-02 (gate --driver → L3 RUNTIME / DRIVER_VIOLATION) + tool MCP
 contracts & lint + client MCP contoh (mcp_client.py).**
@@ -68,13 +68,14 @@ DIBUKTIKAN, bukan asumsi.
 ```
 L0 RAW       hanya compile check
 L1 SANE      gcc -Wall -Wextra -Werror -pedantic + implicit-decl + -fanalyzer
-L2 PROVEN    Frama-C Eva (sound utk RTE) pd fungsi @prove
+L2 EVA       Frama-C Eva: 0 alarm RTE di bawah model (abstract interpretation,
+             BUKAN proof obligation WP; label lama "PROVEN" dihapus MYC-AUDIT-013)
 L3 RUNTIME   verification build + eksekusi dgn ASan+UBSan+MSan+Leak
 L4 SPATIAL   transformasi fat-pointer/SoftBound-style (tanpa eksekusi semua jalur)
-L5 FULL      (opsional, bila platform tersedia) Fil-C / CheriABI
+L5 FILC      (opsional) eksekusi Fil-C bersih (label lama "FULL" dihapus)
 ```
 
-Verdict output: `assurance: L2 (PROVEN)` + daftar sisa risiko yang tak dibuktikan.
+Verdict output: `assurance: L2 (EVA)` + daftar sisa risiko yang tak dibuktikan.
 
 ## Bagian D — Paket teknik
 
@@ -115,7 +116,7 @@ myc check foo.c --level L3 --prove bar baz --fuzz qux
 │      + bounds provenance lint (D1.3) + integer data-flow (D1.4)
 ├─ gcc -E
 ├─ gcc -Wall -Wextra -Werror ... -fanalyzer            → L1
-├─ frama-c -eva (hanya @prove)                         → L2 (sound)
+├─ frama-c -eva (hanya @prove)                         → L2 EVA (0 alarm RTE)
 ├─ build verifikasi + sanitizer + driver (D2)          → L3
 ├─ (opsional) fat-pointer transform                    → L4
 ├─ (opsional) filc-clang / cheriabi                    → L5
@@ -132,8 +133,8 @@ assurance wajib, backend L5 tersedia.
 | **P4** | Perluas gcc flags memori (Werror set + -fanalyzer), pisahkan --level | L1 SANE penuh |
 | **P5** | D1.3 bounds provenance lint + D1.4 integer data-flow | alarm presisi spasial/int |
 | **P6** | D2.1 sanitizer build + eksekusi terkendali (run) | L3 RUNTIME — **D2.2 driver generator SELESAI 2026-08-02** |
-| **P7** | D1.5 contract-lite + D3.1 Frama-C Eva integrasi | L2 PROVEN sound — **SELESAI 2026-08-01** |
-| **P8** | D1.2 checked-build makro + D4.1 gate Fil-C — **SELESAI 2026-08-01** | L4 SPATIAL, L5 FULL (ops) |
+| **P7** | D1.5 contract-lite + D3.1 Frama-C Eva integrasi | L2 EVA (0 alarm RTE) — **SELESAI 2026-08-01** |
+| **P8** | D1.2 checked-build makro + D4.1 gate Fil-C — **SELESAI 2026-08-01** | L4 SPATIAL, L5 FILC (ops) |
 | **P9** | MCP server + soak + corpus abuse — **SELESAI 2026-08-02** | integrasi agent |
 
 Setiap fase = dogfooding (aturan AGENTS.md): alat ditulis C murni & diperiksa
@@ -165,8 +166,8 @@ Keputusan: tidak default agar tidak memblokir program sah (filosofi: jaminan,
 bukan pembatas).
 
 ### 4.2 Label jaminan di verdict [DONE]
-- myc.h: enum `myc_assurance { NONE, L0_RAW, L1_SANE, L2_PROVEN, L3_RUNTIME,
-  L4_SPATIAL, L5_FULL }` di myc_result.
+- myc.h: enum `myc_assurance { NONE, L0_RAW, L1_SANE, L2_EVA, L3_RUNTIME,
+  L4_SPATIAL, L5_FILC }` di myc_result.
 - report.c: output teks + JSON tampilkan `assurance` (OK → `L1 (SANE)`).
 - `--strict` / `--level strict` menyalakan tier ketat.
 
@@ -215,7 +216,7 @@ di fase berikutnya (P7).
 Keluar P5: myc menangkap pola UAF/provenance/int obvious di luar gcc, false
 positive terkontrol.
 
-# Rencana Eksekusi — P8 D4.1 (gate Fil-C → L5 FULL, opsional backend) [DONE 2026-08-01]
+# Rencana Eksekusi — P8 D4.1 (gate Fil-C → L5 FILC, opsional backend) [DONE 2026-08-01]
 
 ## 9.1 Deteksi & integrasi [DONE]
 
@@ -230,7 +231,7 @@ positive terkontrol.
 - Marker panic Fil-C (`filc safety error` — terkonfirmasi dari issue
   tracker; plus `Fatal runtime error`, `panicked`, `double free`) pada
   stdout/stderr → **MC_FILC_VIOLATION** (bug memori terbukti).
-- Run bersih (exit 0, tanpa marker) → caller naikkan ke **L5 FULL**.
+- Run bersih (exit 0, tanpa marker) → caller naikkan ke **L5 FILC**.
 - Non-blocking (arah): filc-clang tidak tersedia (PATH/WSL) → skip,
   assurance statis dipertahankan + diagnostic. Build/run gagal tanpa
   marker panic → skip (bukan bukti bug).

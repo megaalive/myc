@@ -306,11 +306,12 @@ async def _run(exe):
             print("[OK] check --driver bad_driver_oob.c -> DRIVER_VIOLATION "
                   "(isError=true)")
 
-            # 14. check --prove (fixture ok_prove.c) -> L2 PROVEN bila Frama-C
-            # tersedia. Gate prove NON-BLOCKING: bila wsl/frama-c hilang atau
-            # Eva tidak menganalisis, ran_prove=false -> [SKIP] (assurance
-            # statis dipertahankan, bukan error). Bila berjalan: verdict OK +
-            # assurance L2 (PROVEN) + prove_alarms=0 (Eva bersih).
+            # 14. check --prove (fixture ok_prove.c) -> L2 EVA bila Frama-C
+            # tersedia (label lama PROVEN dihapus MYC-AUDIT-013). Gate prove
+            # NON-BLOCKING: bila wsl/frama-c hilang atau Eva tidak
+            # menganalisis, ran_prove=false -> [SKIP] (assurance statis
+            # dipertahankan, bukan error). Bila berjalan: verdict OK +
+            # assurance L2 (EVA) + prove_alarms=0 (Eva bersih).
             try:
                 prove_src = _fixture_source("ok_prove.c")
             except OSError as e:
@@ -329,12 +330,12 @@ async def _run(exe):
                       "(Frama-C/WSL tidak tersedia / Eva tidak menganalisis)")
             else:
                 if '"verdict":"OK"' not in t or \
-                   '"assurance":"L2 (PROVEN)"' not in t or \
+                   '"assurance":"L2 (EVA)"' not in t or \
                    '"prove_alarms":0' not in t:
                     print("[FAIL] check --prove: verdict/assurance/alarms: %s"
                           % t[:250])
                     return 1
-                print("[OK] check --prove ok_prove.c -> L2 PROVEN (alarms=0)")
+                print("[OK] check --prove ok_prove.c -> L2 EVA (alarms=0)")
 
             # 15. check --prove (fixture bad_prove.c) -> PROVE_VIOLATION bila
             # Frama-C tersedia. Fixture ini membaca OOB via argc opaque sehingga
@@ -499,12 +500,12 @@ async def _run(exe):
                 print("[OK] check --checked bad_checked.c -> COMPILE_ERROR "
                       "(akses langsung dipaksa gagal)")
 
-            # 20. check --filc (fixture ok_filc.c) -> L5 FULL bila Fil-C
-            # tersedia. Gate --filc NON-BLOCKING: bila filc-clang tidak
-            # ditemukan (PATH native / WSL) atau build gagal, ran_filc=false
-            # -> [SKIP] (assurance statis dipertahankan, bukan error). Bila
-            # berjalan: verdict OK + assurance L5 (FULL) + filc_panics=0
-            # (run bersih, tanpa marker panic).
+            # 20. check --filc (fixture ok_filc.c) -> L5 FILC bila Fil-C
+            # tersedia (label lama FULL dihapus MYC-AUDIT-013). Gate --filc
+            # NON-BLOCKING: bila filc-clang tidak ditemukan (PATH native /
+            # WSL) atau build gagal, ran_filc=false -> [SKIP] (assurance
+            # statis dipertahankan, bukan error). Bila berjalan: verdict OK +
+            # assurance L5 (FILC) + filc_panics=0 (run bersih, tanpa marker).
             try:
                 filc_src = _fixture_source("ok_filc.c")
             except OSError as e:
@@ -523,12 +524,12 @@ async def _run(exe):
                       "(filc-clang tidak tersedia / build Fil-C gagal)")
             else:
                 if '"verdict":"OK"' not in t or \
-                   '"assurance":"L5 (FULL)"' not in t or \
+                   '"assurance":"L5 (FILC)"' not in t or \
                    '"filc_panics":0' not in t:
                     print("[FAIL] check --filc: verdict/assurance/panics: %s"
                           % t[:250])
                     return 1
-                print("[OK] check --filc ok_filc.c -> L5 FULL (panics=0)")
+                print("[OK] check --filc ok_filc.c -> L5 FILC (panics=0)")
 
             # 21. check --run --checked (fixture tests/bad_checked_oob.c) ->
             # RUNTIME_VIOLATION. Fixture memakai MYC_AT dengan indeks OOB

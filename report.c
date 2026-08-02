@@ -64,10 +64,10 @@ const char *myc_assurance_name(myc_assurance a)
     case MYC_ASSURANCE_NONE:      return "L0 (NONE)";
     case MYC_ASSURANCE_L0_RAW:    return "L0 (RAW)";
     case MYC_ASSURANCE_L1_SANE:   return "L1 (SANE)";
-    case MYC_ASSURANCE_L2_PROVEN: return "L2 (PROVEN)";
+    case MYC_ASSURANCE_L2_EVA:    return "L2 (EVA)";
     case MYC_ASSURANCE_L3_RUNTIME:return "L3 (RUNTIME)";
     case MYC_ASSURANCE_L4_SPATIAL:return "L4 (SPATIAL)";
-    case MYC_ASSURANCE_L5_FULL:   return "L5 (FULL)";
+    case MYC_ASSURANCE_L5_FILC:   return "L5 (FILC)";
     }
     return "L? (UNKNOWN)";
 }
@@ -227,7 +227,14 @@ void myc_report_text(const myc_result *res)
 
     if (res->ran_prove) {
         printf("prove:\n");
+        printf("  mode: %s\n", res->prove_mode ? res->prove_mode
+                                               : "eva (abstract interpretation)");
+        if (res->prove_version)
+            printf("  version: %s\n", res->prove_version);
+        printf("  entry: main (default)\n");
         printf("  alarms: %d\n", res->prove_alarms);
+        printf("  note: 0 alarm = tidak ada alarm RTE di bawah model Eva; "
+               "bukan proof obligation WP\n");
         if (res->prove_stdout_text && res->prove_stdout_text[0])
             printf("  prove_stdout:\n%s\n", res->prove_stdout_text);
         if (res->prove_stderr_text && res->prove_stderr_text[0])
@@ -483,6 +490,12 @@ char *myc_result_to_json(const myc_result *res)
     }
     json_sb_printf(&b, "\"ran_prove\":%s,", res->ran_prove ? "true" : "false");
     json_sb_printf(&b, "\"prove_alarms\":%d,", res->prove_alarms);
+    json_sb_printf(&b, "\"prove_mode\":\"%s\",",
+                   res->prove_mode ? res->prove_mode
+                                   : "eva (abstract interpretation)");
+    json_sb_printf(&b, "\"prove_version\":");
+    json_sb_escape(&b, res->prove_version);
+    json_sb_puts(&b, ",");
     if (res->ran_prove) {
         json_sb_printf(&b, "\"prove_stdout\":");
         json_sb_escape(&b, res->prove_stdout_text);

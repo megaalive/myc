@@ -363,10 +363,10 @@ static void myc_build_debt(myc_result *res)
  *
  * Logika:
  *   - MYC_ASSURANCE_NONE → selalu VALID (tidak ada klaim).
- *   - MYC_ASSURANCE_L5_FULL → butuh filc_clean yang sesungguhnya.
+ *   - MYC_ASSURANCE_L5_FILC → butuh filc_clean yang sesungguhnya.
  *   - MYC_ASSURANCE_L4_SPATIAL → butuh checked_clean.
  *   - MYC_ASSURANCE_L3_RUNTIME → butuh runtime_clean atau driver_clean.
- *   - MYC_ASSURANCE_L2_PROVEN → butuh prove_clean.
+ *   - MYC_ASSURANCE_L2_EVA → butuh prove_clean (Eva 0 alarm RTE).
  *   - MYC_ASSURANCE_L1_SANE → butuh compile_clean.
  *   - Jika completeness != COMPLETE → UNVERIFIED.
  *   - Jika assurance lebih tinggi dari bukti → OVERSTATED. */
@@ -377,10 +377,10 @@ myc_claim_status myc_validate_claim(const myc_result *res)
     if (res->completeness != MYC_COMPLETENESS_COMPLETE)
         return MYC_CLAIM_UNVERIFIED;
     switch (res->assurance) {
-    case MYC_ASSURANCE_L5_FULL:
+    case MYC_ASSURANCE_L5_FILC:
     case MYC_ASSURANCE_L4_SPATIAL:
     case MYC_ASSURANCE_L3_RUNTIME:
-    case MYC_ASSURANCE_L2_PROVEN:
+    case MYC_ASSURANCE_L2_EVA:
     case MYC_ASSURANCE_L1_SANE:
         return MYC_CLAIM_VALID;
     default:
@@ -481,13 +481,13 @@ void myc_reduce_verdict(myc_result *res)
     if (has_findings) {
         res->assurance = MYC_ASSURANCE_NONE;
     } else if (has_filc_clean) {
-        res->assurance = MYC_ASSURANCE_L5_FULL;
+        res->assurance = MYC_ASSURANCE_L5_FILC;
     } else if (has_checked_clean) {
         res->assurance = MYC_ASSURANCE_L4_SPATIAL;
     } else if (has_runtime_clean || has_driver_clean) {
         res->assurance = MYC_ASSURANCE_L3_RUNTIME;
     } else if (has_prove_clean) {
-        res->assurance = MYC_ASSURANCE_L2_PROVEN;
+        res->assurance = MYC_ASSURANCE_L2_EVA;
     } else if (has_compile_clean) {
         res->assurance = MYC_ASSURANCE_L1_SANE;
     } else {

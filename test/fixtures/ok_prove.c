@@ -1,5 +1,6 @@
 /* ok_prove.c -- Fixture P7 (D3.1): kode aman + kontrak; --prove harus L2
- * (PROVEN): Eva 0 alarm, preconditions valid. Array diinisialisasi penuh
+ * (EVA): Eva 0 alarm RTE di bawah model (label lama PROVEN dihapus
+ * MYC-AUDIT-013), preconditions valid. Array diinisialisasi penuh
  * (menghindari alarm uninitialized dari loop partition Eva). */
 //@ requires n > 0;
 int twice(int n)

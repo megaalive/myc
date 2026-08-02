@@ -29,7 +29,7 @@ gcc -c -O2 -fanalyzer -o NUL (--analyze, opsional)
 gcc -c -O2 -DMYC_CHECKED (--checked, opsional)
    myc_buf.h fat-pointer; akses       -> L4 SPATIAL; COMPILE_ERROR bila
    langsung b[i] pada MYC_BUF gagal     disiplin fat-struct dilanggar
-filc-clang build + run (--filc,      -> L5 FULL (opsional backend;
+filc-clang build + run (--filc,      -> L5 FILC (opsional backend;
    opsional; native PATH / WSL)         FILC_VIOLATION bila panic Fil-C)
 clang verification build + run      -> L3 RUNTIME (--run, opsional;
    (ASan+UBSan, -O0, eksekusi          RUNTIME_VIOLATION bila ada laporan
@@ -38,7 +38,7 @@ clang verification build + run      -> L3 RUNTIME (--run, opsional;
 harness kasus tepi (--driver,       -> L3 RUNTIME (D2.2; DRIVER_VIOLATION
    D2.2): parse signature fungsi        bila sanitizer menangkap bug pada
    ber-kontrak, generate + run          kasus tepi di dalam domain kontrak)
-OK (assurance: L1 SANE, L2 PROVEN, L3 RUNTIME, L4 SPATIAL, atau L5 FULL)
+OK (assurance: L1 SANE, L2 EVA, L3 RUNTIME, L4 SPATIAL, atau L5 FILC)
 ```
 
 > Catatan: gate memori memakai `-c -O2` karena `-Warray-bounds` dan
@@ -76,7 +76,9 @@ Flag:
   bawah ASan (pelanggaran batas → RUNTIME_VIOLATION).
 - `--filc` (D4.1, P8) — verification build dengan **Fil-C** (memory-safe C,
   driver `filc-clang`, Linux/X86_64; di Windows otomatis lewat WSL). Run
-  bersih tanpa marker panic → assurance **L5 FULL** (backend opsional).
+  bersih tanpa marker panic → assurance **L5 FILC** (backend opsional;
+  label lama "FULL" dihapus — MYC-AUDIT-013: run Fil-C membuktikan eksekusi
+  terkendali bersih, bukan "full").
   Panic Fil-C (`filc safety error` dll) → **FILC_VIOLATION**. Non-blocking:
   bila filc-clang tidak tersedia (PATH/WSL), gate di-skip + diagnostic.
 - `--driver` (D2.2) — **driver-generator**: scan fungsi ber-kontrak
@@ -124,10 +126,10 @@ buatan sendiri). Cakupan: 25 cek — handshake/tools/list, semua tool
 (check/version/policy/contracts/lint), verdict OK + VIOLATION, isError
 transport (ERROR/TIMEOUT, plus PROVE_VIOLATION/DRIVER_VIOLATION sejak
 2026-08-02), dan gate opsional `--run` (RUNTIME_VIOLATION,
-contract-assert, `run_stdin` echo, TIMEOUT), `--prove` (L2 PROVEN /
+contract-assert, `run_stdin` echo, TIMEOUT), `--prove` (L2 EVA /
 PROVE_VIOLATION), `--checked` (L4 SPATIAL / COMPILE_ERROR),
 `--run --checked` (RUNTIME_VIOLATION + kombinasi max-level L4),
-`--driver` (L3 RUNTIME / DRIVER_VIOLATION), `--filc` (L5 FULL / skip),
+`--driver` (L3 RUNTIME / DRIVER_VIOLATION), `--filc` (L5 FILC / skip),
 lint (VIOLATION + tidak ada false-positive pada kode sah), dan `cwd`
 (fingerprint berubah sesuai cwd). Skip non-blocking bila backend gate
 tidak tersedia.
@@ -161,14 +163,15 @@ Gunakan `shell` hanya bila sintaks shell memang dibutuhkan, dan jelaskan.
   memory-safety (intptr_t/realloc), tier memori gcc + `-fanalyzer`,
   assurance L1 SANE, **verification run clang ASan+UBSan → L3 RUNTIME**
   (`--run`, eksekusi terkendali via proc.c, timeout kill pohon proses),
-  contract-lite (D1.5) + **Frama-C Eva → L2 PROVEN** (`--prove`),
+  contract-lite (D1.5) + **Frama-C Eva → L2 EVA** (`--prove`; 0 alarm
+  RTE di bawah model Eva — abstract interpretation, bukan proof WP),
   self-dogfooding (11 source myc OK) + dogfooding lintas-program
   (`dogfood_ring.c` → L3, lalu L4 dengan `--checked`).
 - **P8 D1.2 selesai**: checked-build makro (`myc_buf.h`, `--checked`) →
   assurance **L4 SPATIAL** untuk buffer MYC_BUF; fixture `ok_checked.c` →
   L4, `bad_checked.c` → COMPILE_ERROR, `bad_checked_oob.c` →
   RUNTIME_VIOLATION.
-- **P8 D4.1 selesai**: gate **Fil-C** (`--filc`) → **L5 FULL** bila
+- **P8 D4.1 selesai**: gate **Fil-C** (`--filc`) → **L5 FILC** bila
   filc-clang tersedia (native PATH / WSL) dan run bersih; FILC_VIOLATION
   bila panic. Non-blocking: fixture `ok_filc.c`/`bad_filc_oob.c` di-skip
   bila Fil-C tidak terpasang.

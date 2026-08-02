@@ -1,6 +1,7 @@
 /* ok_filc.c -- Fixture P8 (D4.1): program bersih yang aman di Fil-C.
  * Bila filc-clang tersedia (PATH/WSL) dan run bersih (tanpa marker panic),
- * --filc harus L5 (FULL). Bila Fil-C tidak tersedia, gate di-skip
+ * --filc harus L5 (FILC; label lama FULL dihapus MYC-AUDIT-013). Bila Fil-C
+ * tidak tersedia, gate di-skip
  * (non-blocking) -> assurance statis (L1) + diagnostic. */
 #include <stdio.h>
 #include <stdlib.h>

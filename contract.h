@@ -8,7 +8,7 @@
  * Dua kegunaan (bertahap):
  *   1. Scan & validasi: menghitung requires/ensures, menandai kontrak yang
  *      tidak terbaca (diagnostic). Ini data masukan untuk gate Frama-C Eva
- *      (D3.1, L2 PROVEN) nanti.
+ *      (D3.1, L2 EVA) nanti.
  *   2. Inject runtime: menghasilkan salinan source dengan `assert(expr)`
  *      disisipkan setelah `{` pembuka fungsi yang didahului `//@ requires`.
  *      Dipakai oleh verification build (--run, L3) sebagai defense-in-depth.
