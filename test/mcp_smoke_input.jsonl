@@ -9,3 +9,6 @@
 {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"check","arguments":{}}}
 {"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"contracts","arguments":{"source":"//@ requires n <= 4;\n//@ ensures r >= 0;\nint f(int *a, int n) { return n >= 0 && n <= 4 ? a[n] : 0; }\n"}}}
 {"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"lint","arguments":{"source":"#include <stdint.h>\nint main(void){intptr_t p = (intptr_t)&p; return 0;}\n"}}}
+{"jsonrpc":"1.0","id":11,"method":"ping"}
+{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"check","arguments":{"source":"#include <stdlib.h>\nint main(void){int*p=(int*)malloc(4);free(p);return 0;}\n","flags":["--rnu"]}}}
+{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"check","arguments":{"source":"#include <stdlib.h>\nint main(void){int*p=(int*)malloc(4*sizeof(int));p[0]=1;free(p);return 0;}\n"}}}

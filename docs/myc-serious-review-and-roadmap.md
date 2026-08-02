@@ -315,7 +315,7 @@ Setelah reentrancy dan schema hasil diperbaiki, ini dapat menjadi salah satu keu
 | MYC-AUDIT-013 | High | proof claims | Eva alarm/summary diperlakukan sebagai proof kontrak umum | ✅ SELESAI 2026-08-02 (label L2 PROVEN→L2 EVA, L5 FULL→L5 FILC; prove memuat mode/version/entry; pesan jujur; FULL dihapus dari README) |
 | MYC-AUDIT-014 | Medium | lint | Heuristik token/text dijadikan hard violation |
 | MYC-AUDIT-015 | Medium | portability | `NUL` dipakai di POSIX dan meninggalkan file literal `NUL` | ✅ SELESAI 2026-08-02 (helper myc_null_device: NUL di Windows, /dev/null di POSIX; literal "NUL" diganti runtime di merge_args) |
-| MYC-AUDIT-016 | Medium | MCP | JSON document dibungkus sebagai string text, status error tidak konsisten |
+| MYC-AUDIT-016 | Medium | MCP | JSON document dibungkus sebagai string text, status error tidak konsisten | ✅ SELESAI 2026-08-02 (structuredContent schema myc.result.v1; isError hanya tool/protocol error; JSON-RPC ketat jsonrpc/typed-id/notification; negosiasi strict; unknown flag ditolak) |
 | MYC-AUDIT-017 | Medium | output parsing | Marker human-readable mudah spoof dan rapuh terhadap versi/localization |
 | MYC-AUDIT-018 | Medium | test | Test dominan Windows dan tidak menguji concurrency/deadlock/OOM |
 
@@ -1771,6 +1771,21 @@ dan pastikan setiap jalur:
 
 ## 7.11. `mcp.c`
 
+> Status: diperbaiki (MYC-AUDIT-016). Tool `check` kini mengirim
+> `structuredContent` — hasil penuh sebagai objek JSON dengan
+> `schema: "myc.result.v1"` (content[0].text tetap memuat laporan penuh
+> untuk backward compat; konsumen mesin memakai structuredContent, tidak
+> lagi parse JSON di dalam JSON). `isError` hanya untuk kegagalan
+> tool/protocol (`ERROR`/`TIMEOUT`/`CANCELLED`); PROVE_VIOLATION /
+> DRIVER_VIOLATION adalah finding pada kode → isError=false. JSON-RPC
+> ketat: `jsonrpc` wajib `"2.0"` (selain itu -32600), id hanya
+> string/angka/null (typed, dipertahankan apa adanya), pesan tanpa id =
+> notification → tanpa balasan. Negosiasi protokol strict (initialize
+> selalu mengumumkan versi server). Unknown flag ditolak (-32602), tidak
+> diabaikan. Batas yang tersisa (jujur): concurrency di server tetap
+> serial per-pesan (in-process aman, belum paralel); schema version
+> masih satu (myc.result.v1) tanpa migrasi.
+
 ### Kekuatan
 
 - in-process;
@@ -2840,12 +2855,12 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 - [x] Surrogate pair validation. (lone high/low surrogate tolak)
 - [x] OOM propagation. (semua mutasi return status; sb_reserve OOM -> parse fail)
 - [x] Capacity overflow guard. (sb_reserve / obj_set / arr_push cek SIZE_MAX)
-- [ ] JSON-RPC 2.0 validation.
-- [ ] Notification no-response semantics. (sudah ada di handle_message; verifikasi)
-- [ ] Typed ID preservation.
-- [ ] `structuredContent`.
-- [ ] schema version.
-- [ ] `isError` hanya transport/tool-call error.
+- [x] JSON-RPC 2.0 validation. (jsonrpc wajib "2.0" -> -32600)
+- [x] Notification no-response semantics. (pesan tanpa id tidak dibalas)
+- [x] Typed ID preservation. (id string/angka/null dipertahankan apa adanya)
+- [x] `structuredContent`. (hasil penuh + schema myc.result.v1)
+- [x] schema version. (myc.result.v1)
+- [x] `isError` hanya transport/tool-call error. (ERROR/TIMEOUT/CANCELLED)
 
 ### Acceptance criteria
 

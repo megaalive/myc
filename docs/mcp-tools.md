@@ -7,7 +7,11 @@ sebagai server dan memanggil pipeline verifikasi `myc` sebagai tool.
 ## Koneksi
 
 - Transport: stdio (server dijalankan sebagai subproses, `command: mcp.exe`).
-- Protokol: MCP 2024-11-05 (server menerima versi lain via `initialize`).
+- Protokol: MCP 2024-11-05. Negosiasi STRICT (MYC-AUDIT-016): `initialize`
+  selalu mengumumkan versi server, tidak meng-echo permintaan klien.
+- JSON-RPC 2.0 ketat: field `jsonrpc` wajib `"2.0"` (selain itu → error
+  -32600); `id` hanya string/angka/null; pesan tanpa `id` = notification
+  (diproses tanpa balasan).
 - Server mengekspos capabilities `tools` (tanpa listChanged).
 - Handshake: klien kirim `initialize` → server balas `serverInfo`
   (`{name:"myc", version}`) → klien kirim `notifications/initialized`.
@@ -26,17 +30,19 @@ sebagai server dan memanggil pipeline verifikasi `myc` sebagai tool.
   Fil-C) diminta — konten ini dikirim ke stdin program yang dijalankan gate
   tersebut (pengganti `--run-stdin FILE` di CLI).
 - `cwd` (string, opsional): direktori kerja gate (gcc/clang).
-- **Hasil**: satu string teks berisi **JSON lengkap** `myc_result`:
-  `verdict`, `assurance`, `error`, `exit_code`, `duration_ms`,
+- **Hasil**: `content[0].text` memuat **JSON lengkap** `myc_result`
+  (`verdict`, `assurance`, `error`, `exit_code`, `duration_ms`,
   `resolved_gcc`, `fingerprint`, `source_sha256`, `contract_requires`,
   `contract_ensures`, `truncated`, `stdout_bytes`, `stderr_bytes`, plus
   seksi gate yang berjalan (`run_*`, `checked_*`, `filc_*`, `driver_*`,
-  `prove_*`) dan `diagnostics[]`.
-- `isError: true` untuk verdict infrastruktur
-  (`ERROR`/`TIMEOUT`/`CANCELLED`) **dan pelanggaran hard gate**
-  (`PROVE_VIOLATION` dari `--prove`, `DRIVER_VIOLATION` dari `--driver` —
-  sejak 2026-08-02); VIOLATION lain (lint/runtime) dikirim sebagai hasil
-  teks biasa.
+  `prove_*`) dan `diagnostics[]`). **Dan** objek `structuredContent`
+  (schema `myc.result.v1` = hasil yang sama sebagai JSON terstruktur) —
+  konsumen mesin TIDAK perlu parse JSON di dalam JSON (MYC-AUDIT-016).
+- `isError` HANYA untuk kegagalan tool/protocol: verdict infrastruktur
+  `ERROR` (input terlalu besar dll.), `TIMEOUT`, `CANCELLED` → `true`.
+  Finding pada KODE (`PROVE_VIOLATION`, `DRIVER_VIOLATION`, lint,
+  runtime, compile) dikirim sebagai hasil biasa dengan `isError: false`
+  (verdict membawa maknanya).
 - **Verdict yang mungkin**: `OK`, `VIOLATION` (lint), `COMPILE_ERROR`,
   `RUNTIME_VIOLATION` (--run), `PROVE_VIOLATION` (--prove),
   `FILC_VIOLATION` (--filc), `DRIVER_VIOLATION` (--driver).
@@ -124,6 +130,8 @@ realloc ke variabel lain (VIOLATION), memcpy/memmove/memset tanpa `sizeof`
   `--run --checked` (RUNTIME_VIOLATION OOB + kombinasi max-level L4),
   `--driver` (L3 RUNTIME / DRIVER_VIOLATION), `--filc` (L5 FILC / skip),
   lint (VIOLATION intptr_t + tidak ada false-positive pada `ok_lint.c`),
-  dan `cwd` (fingerprint berubah sesuai cwd).
+  `structuredContent` (schema + verdict), isError yang benar (transport
+  true; PROVE/DRIVER violation false), dan `cwd` (fingerprint berubah
+  sesuai cwd).
   Semua gate non-blocking: bila backend hilang (clang/Frama-C/Fil-C/MYC_BUF),
-  cek di-[SKIP] bukan [FAIL]. Jumlah cek: **25** (n_checks = 25 − skips).
+  cek di-[SKIP] bukan [FAIL]. Jumlah cek: **26** (n_checks = 26 − skips).

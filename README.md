@@ -105,7 +105,12 @@ mendukung MCP) dapat memanggil `myc check` sebagai tool. Tool yang tersedia:
   program verification; efektif dengan `--run` atau `--filc`), `cwd`
   (opsional).
   Hasil: teks JSON lengkap (verdict, assurance L0–L5, error, diagnostics,
-  output gate).
+  output gate) di `content[0].text` **dan** objek `structuredContent`
+  (schema `myc.result.v1`) — konsumen mesin tidak perlu parse JSON di
+  dalam JSON. `isError` hanya untuk kegagalan tool/protocol
+  (ERROR/TIMEOUT/CANCELLED); finding pada kode (PROVE_VIOLATION,
+  DRIVER_VIOLATION, dll.) dikirim sebagai hasil biasa (isError=false).
+  Unknown flag ditolak dengan error -32602 (tidak diabaikan).
 - `version` — versi myc + ketersediaan gcc/clang.
 - `policy` — whitelist header default.
 - `contracts` — scan kontrak-lite `//@ requires/ensures` dan tampilkan
@@ -122,10 +127,11 @@ Client contoh tanpa dependensi: `python mcp_client.py` — handshake
 
 Uji interop dengan **SDK MCP Python resmi**: `test/_mcp_sdk_interop.py`
 (`pip install mcp`; memakai `stdio_client` + `ClientSession` — bukan client
-buatan sendiri). Cakupan: 25 cek — handshake/tools/list, semua tool
-(check/version/policy/contracts/lint), verdict OK + VIOLATION, isError
-transport (ERROR/TIMEOUT, plus PROVE_VIOLATION/DRIVER_VIOLATION sejak
-2026-08-02), dan gate opsional `--run` (RUNTIME_VIOLATION,
+buatan sendiri). Cakupan: 26 cek — handshake/tools/list, semua tool
+(check/version/policy/contracts/lint), verdict OK + VIOLATION,
+`structuredContent` (schema myc.result.v1), isError transport
+(ERROR/TIMEOUT=true; PROVE_VIOLATION/DRIVER_VIOLATION=false sejak
+MYC-AUDIT-016), dan gate opsional `--run` (RUNTIME_VIOLATION,
 contract-assert, `run_stdin` echo, TIMEOUT), `--prove` (L2 EVA /
 PROVE_VIOLATION), `--checked` (L4 SPATIAL / COMPILE_ERROR),
 `--run --checked` (RUNTIME_VIOLATION + kombinasi max-level L4),

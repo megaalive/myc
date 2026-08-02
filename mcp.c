@@ -9,6 +9,17 @@
  *   check   -- jalankan pipeline myc pada source C (verdict/assurance/dll)
  *   version -- versi myc + ketersediaan gcc/clang
  *   policy  -- whitelist header default
+ *
+ * MYC-AUDIT-016 (2026-08-02):
+ *   - JSON-RPC ketat: field "jsonrpc" wajib "2.0", id hanya string/angka/null,
+ *     pesan tanpa id = notification (diproses tanpa balasan).
+ *   - Negosiasi protokol strict: initialize selalu mengumumkan versi server.
+ *   - tool check: hasil juga tersedia sebagai objek structuredContent
+ *     (schema myc.result.v1) -- konsumen mesin tidak perlu parse JSON di
+ *     dalam JSON. isError HANYA untuk kegagalan tool/protocol (ERROR/
+ *     TIMEOUT/CANCELLED), bukan finding pada kode (PROVE/DRIVER_VIOLATION
+ *     dll. dikirim sebagai hasil biasa).
+ *   - Unknown flag pada tool check ditolak (fail-fast), tidak diabaikan.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -204,6 +215,15 @@ static void tool_check(json_value *id, json_value *args)
                 req.negative = 1;
             else if (strcmp(f, "--require-complete") == 0)
                 req.require_complete = 1;
+            else {
+                /* Unknown flags TIDAK diabaikan lagi (MYC-AUDIT-016):
+                 * fail-fast dengan pesan yang menyebut flag. */
+                char fb[160];
+                snprintf(fb, sizeof(fb),
+                         "Invalid params: flag tidak dikenal: %.100s", f);
+                send_error(id, -32602, fb);
+                return;
+            }
         }
     }
 
@@ -212,7 +232,10 @@ static void tool_check(json_value *id, json_value *args)
 
     text = myc_result_to_json(&res);
 
-    /* content: [{type:"text", text:"<json result>"}] */
+    /* content: [{type:"text", text:"<json result>"}] — teks tetap memuat
+     * laporan penuh (backward compatible). Konsumen mesin memakai
+     * structuredContent (MYC-AUDIT-016) sehingga TIDAK perlu parse JSON
+     * di dalam JSON. */
     result = json_new_obj();
     content = json_new_arr();
     item = json_new_obj();
@@ -220,10 +243,28 @@ static void tool_check(json_value *id, json_value *args)
     json_obj_set(item, "text", json_new_str(text ? text : "{}"));
     json_arr_push(content, item);
     json_obj_set(result, "content", content);
+
+    /* structuredContent: hasil parse penuh + schema version. */
+    {
+        json_value *sc = NULL;
+        if (text && json_parse_cstr(text, &sc) && sc->type == JSON_OBJ)
+            json_obj_set(sc, "schema", json_new_str("myc.result.v1"));
+        else {
+            json_free(sc);
+            sc = json_new_obj();
+            if (sc)
+                json_obj_set(sc, "schema", json_new_str("myc.result.v1"));
+        }
+        if (sc)
+            json_obj_set(result, "structuredContent", sc);
+    }
+    /* isError HANYA untuk kegagalan tool/protocol (ERROR input/validasi,
+     * TIMEOUT, CANCELLED). PROVE_VIOLATION/DRIVER_VIOLATION dan finding
+     * lain adalah temuan pada KODE -> isError=false (verdict membawa
+     * maknanya; dua sumbu finding+completeness tetap di hasil). */
     json_obj_set(result, "isError", json_new_bool(
         res.verdict == MC_ERROR || res.verdict == MC_TIMEOUT ||
-        res.verdict == MC_CANCELLED || res.verdict == MC_PROVE_VIOLATION ||
-        res.verdict == MC_DRIVER_VIOLATION ? 1 : 0));
+        res.verdict == MC_CANCELLED ? 1 : 0));
 
     send_result(id, result);
 
@@ -434,7 +475,12 @@ static json_value *tools_list_body(void)
     json_obj_set(t, "description", json_new_str(
         "Verifikasi kode C dengan pipeline myc (memory-safety): verdict, "
         "assurance L0-L5, error, diagnostics, output gate run/prove/checked/"
-        "filc. source: kode C (string, wajib). flags: array string opsional "
+        "filc. Hasil tersedia di content[0].text (JSON penuh) DAN sebagai "
+        "objek structuredContent (schema myc.result.v1) -- konsumen mesin "
+        "tidak perlu parse JSON di dalam JSON. isError=true HANYA untuk "
+        "kegagalan tool/protocol (ERROR/TIMEOUT/CANCELLED); finding pada "
+        "kode (PROVE/DRIVER_VIOLATION dll.) dikirim sebagai hasil biasa. "
+        "source: kode C (string, wajib). flags: array string opsional "
         "dari [--run --prove --checked --filc --driver --analyze --strict --no-lint --quorum --metamorphic --negative --require-complete]. "
         "--quorum: analisis differential backend (bandingkan status semua gate "
         "yang diminta, laporkan konflik/inkonsistensi). "
@@ -602,18 +648,15 @@ static void handle_initialize(json_value *id, json_value *params)
     json_value *caps = json_new_obj();
     json_value *tcaps = json_new_obj();
     json_value *info = json_new_obj();
-    const char *ver = MCP_PROTOCOL;
+    (void)params;
 
-    if (params) {
-        const char *pv = json_get_str(params, "protocolVersion");
-        if (pv && pv[0])
-            ver = pv;
-    }
     json_obj_set(tcaps, "listChanged", json_new_bool(0));
     json_obj_set(caps, "tools", tcaps);
     json_obj_set(info, "name", json_new_str("myc"));
     json_obj_set(info, "version", json_new_str(MCP_VERSION));
-    json_obj_set(result, "protocolVersion", json_new_str(ver));
+    /* Negosiasi STRICT (MYC-AUDIT-016): server mengumumkan versi protokol
+     * yang didukungnya sendiri, bukan meng-echo permintaan klien. */
+    json_obj_set(result, "protocolVersion", json_new_str(MCP_PROTOCOL));
     json_obj_set(result, "capabilities", caps);
     json_obj_set(result, "serverInfo", info);
     send_result(id, result);
@@ -624,19 +667,38 @@ static void handle_message(json_value *msg)
     json_value *m = NULL;
     json_value *id = NULL;
     json_value *params = NULL;
+    json_value *jrpc = NULL;
     const char *method = NULL;
 
     if (!msg || msg->type != JSON_OBJ) {
         send_error(NULL, -32600, "Invalid Request");
         return;
     }
+    /* JSON-RPC 2.0 ketat (MYC-AUDIT-016): "jsonrpc" wajib == "2.0". */
+    jrpc = json_get(msg, "jsonrpc");
+    if (!jrpc || jrpc->type != JSON_STR || strcmp(jrpc->str, "2.0") != 0) {
+        send_error(NULL, -32600, "Invalid Request: jsonrpc harus \"2.0\"");
+        return;
+    }
     m = json_get(msg, "method");
     if (!m || m->type != JSON_STR) {
-        send_error(NULL, -32600, "Invalid Request");
+        send_error(NULL, -32600, "Invalid Request: method wajib string");
         return;
     }
     method = m->str;
     id = json_get(msg, "id");
+    /* Typed ID (JSON-RPC 2.0): hanya string/angka/null yang sah. */
+    if (id && id->type != JSON_STR && id->type != JSON_NUM &&
+        id->type != JSON_NULL) {
+        send_error(NULL, -32600,
+                   "Invalid Request: id harus string/angka/null");
+        return;
+    }
+    /* Semantik notification (JSON-RPC 2.0): pesan tanpa "id" adalah
+     * notification -- diproses TANPA balasan apa pun (termasuk pesan
+     * MCP ber-prefiks "notifications/" yang tidak punya aksi di sini). */
+    if (!id)
+        return;
     params = json_get(msg, "params");
 
     if (strcmp(method, "initialize") == 0) {
@@ -655,14 +717,7 @@ static void handle_message(json_value *msg)
         handle_tools_call(id, params);
         return;
     }
-    /* notification (metode diawali "notifications/", tidak ber-id):
-     * selalu diabaikan tanpa respons (aturan JSON-RPC 2.0). */
-    if (strncmp(method, "notifications/", 14) == 0)
-        return;
-    /* method tak dikenal: error hanya untuk pesan ber-id; notification
-     * tak dikenal dibuang diam-diam. */
-    if (id)
-        send_error(id, -32601, "Method not found");
+    send_error(id, -32601, "Method not found");
 }
 
 int main(int argc, char **argv)

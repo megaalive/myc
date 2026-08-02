@@ -142,6 +142,24 @@ async def _run(exe):
                 return 1
             print("[OK] check (aman) -> verdict OK")
 
+            # 2b. check -> structuredContent (MYC-AUDIT-016): hasil penuh
+            # tersedia sebagai objek JSON (schema myc.result.v1) sehingga
+            # konsumen mesin TIDAK perlu parse JSON di dalam JSON. Bila SDK
+            # lama tidak mengekspos field structuredContent -> [SKIP].
+            sc = (getattr(r, "structuredContent", None) or
+                  getattr(r, "structured_content", None))
+            if sc is None:
+                SKIPPED_COUNT += 1
+                print("[SKIP] structuredContent: SDK tidak mengekspos field")
+            else:
+                if not isinstance(sc, dict) or \
+                   sc.get("schema") != "myc.result.v1" or \
+                   sc.get("verdict") != "OK":
+                    print("[FAIL] check structuredContent: %r" % (sc,))
+                    return 1
+                print("[OK] check -> structuredContent (schema myc.result.v1, "
+                      "verdict OK)")
+
             # 3. check --run (OOB) -> RUNTIME_VIOLATION
             r = await session.call_tool(
                 "check",
@@ -283,11 +301,11 @@ async def _run(exe):
             # 13. check --driver (fixture bad_driver_oob.c) -> DRIVER_VIOLATION
             # Fixture ini membaca a[n] dengan n=4 pada kontrak n<=4 -> ASan
             # heap-buffer-overflow pada kasus tepi -> DRIVER_VIOLATION.
-            # Catatan: isError=TRUE (sejak 2026-08-02 verdict pelanggaran hard
-            # gate --prove/--driver ditandai sebagai error MCP -- berubah dari
-            # perilaku awal yang mengirimnya sebagai teks biasa);
-            # driver_cases=0 karena ASan meng-abort sebelum harness sempat
-            # mencetak "DRIVER run=N" (ran_driver=true membuktikan gate jalan).
+            # Catatan (MYC-AUDIT-016): isError kini HANYA untuk kegagalan
+            # tool/protocol; DRIVER_VIOLATION adalah finding pada KODE ->
+            # isError=false (verdict membawa maknanya). driver_cases=0 karena
+            # ASan meng-abort sebelum harness sempat mencetak "DRIVER run=N"
+            # (ran_driver=true membuktikan gate jalan).
             try:
                 bad_drv_src = _fixture_source("bad_driver_oob.c")
             except OSError as e:
@@ -297,14 +315,14 @@ async def _run(exe):
                 "check",
                 arguments={"source": bad_drv_src, "flags": ["--driver"]})
             t = _text(r)
-            if not _is_error(r) or \
+            if _is_error(r) or \
                '"verdict":"DRIVER_VIOLATION"' not in t or \
                '"error":"driver_violation"' not in t or \
                '"ran_driver":true' not in t:
-                print("[FAIL] check --driver bad: isError/verdict: %s" % t[:250])
+                print("[FAIL] check --driver bad: verdict: %s" % t[:250])
                 return 1
             print("[OK] check --driver bad_driver_oob.c -> DRIVER_VIOLATION "
-                  "(isError=true)")
+                  "(isError=false, finding pada kode)")
 
             # 14. check --prove (fixture ok_prove.c) -> L2 EVA bila Frama-C
             # tersedia (label lama PROVEN dihapus MYC-AUDIT-013). Gate prove
@@ -357,19 +375,20 @@ async def _run(exe):
                       "(Frama-C/WSL tidak tersedia / Eva tidak menganalisis)")
             else:
                 # Verdict+error membuktikan PROVE_VIOLATION, dan isError harus
-                # TRUE (perilaku 2026-08-02: pelanggaran hard gate --prove/
-                # --driver ditandai sebagai error MCP). Jumlah alarm TIDAK
-                # di-asert sebagai nilai eksak (bisa beda antar versi
-                # Frama-C) -- cukup pastikan > 0 (bukan 0 = Eva bersih).
-                if not _is_error(r) or \
+                # FALSE (MYC-AUDIT-016: isError hanya untuk kegagalan
+                # tool/protocol; PROVE_VIOLATION adalah finding pada kode).
+                # Jumlah alarm TIDAK di-asert sebagai nilai eksak (bisa beda
+                # antar versi Frama-C) -- cukup pastikan > 0 (bukan 0 = Eva
+                # bersih).
+                if _is_error(r) or \
                    '"verdict":"PROVE_VIOLATION"' not in t or \
                    '"error":"prove_violation"' not in t or \
                    '"prove_alarms":0' in t:
-                    print("[FAIL] check --prove bad: isError/verdict/alarms: %s"
+                    print("[FAIL] check --prove bad: verdict/alarms: %s"
                           % t[:250])
                     return 1
                 print("[OK] check --prove bad_prove.c -> PROVE_VIOLATION "
-                      "(isError=true, alarms>0)")
+                      "(isError=false, alarms>0)")
 
             # 16. check --checked (fixture tests/ok_checked.c) -> L4 SPATIAL
             # bila pola MYC_BUF tersedia. Gate checked NON-BLOCKING: bila
@@ -669,7 +688,7 @@ def main():
         print("[FAIL] interop SDK gagal: %r" % e)
         return 1
     if rc == 0:
-        n_checks = 25 - SKIPPED_COUNT
+        n_checks = 26 - SKIPPED_COUNT
         suffix = " (%d skip)" % SKIPPED_COUNT if SKIPPED_COUNT else ""
         print("[OK] interop SDK MCP resmi lulus (5 tool, %d cek%s)"
               % (n_checks, suffix))
