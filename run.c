@@ -695,3 +695,355 @@ out:
     free(clang_path);
     return ret;
 }
+
+/* ------------------------------------------------------------------ */
+/* Metamorphic Verification (gagasan pembeda 9.7, --metamorphic)        */
+/* ------------------------------------------------------------------ */
+/*
+ * Bangun source yang SAMA dua kali dengan clang ASan+UBSan pada level
+ * optimisasi berbeda (-O0 vs -O2), jalankan keduanya dengan input yang
+ * sama, lalu bandingkan hasil. Bila salah satu build menemukan sanitizer
+ * finding dan yang lain tidak -> kemungkinan undefined behavior atau bug
+ * yang toolchain-sensitive -> `metamorphic_inconsistent` + verdict
+ * RUNTIME_VIOLATION (finding nyata tetap finding). Bila keduanya bersih ->
+ * COMPLETED_CLEAN (L3 RUNTIME, konsisten dengan gate run).
+ *
+ * Non-blocking: clang hilang / build gagal / canary mati -> gate di-skip
+ * atau INCONCLUSIVE, assurance statis dipertahankan + diagnostic.
+ *
+ * Return: 0 = di-skip/gagal (bukan error), 1 = selesai.
+ */
+int myc_metamorphic_gate(const myc_request *req, const char *source,
+                         size_t source_len, myc_result *res)
+{
+    char *clang_path = NULL;
+    char *tmp_dir = NULL;
+    char *exe0 = NULL;      /* build -O0 */
+    char *exe2 = NULL;      /* build -O2 */
+    char *dll_src = NULL;
+    char *dll_dst = NULL;
+    char *injected = NULL;
+    const char **argv_b = NULL;
+    const char **argv_r = NULL;
+    const char *build_src = source;
+    size_t      build_src_len = source_len;
+    size_t      injected_len = 0;
+    myc_proc_request preq;
+    myc_proc_result  pres;
+    int   ret = 0;
+    int   n, total, bfl;
+    int   step;             /* 0 = -O0, 1 = -O2 */
+    int   canary;
+    size_t max_out = req->max_output_bytes > 0
+                         ? (size_t)req->max_output_bytes
+                         : MYC_MAX_OUTPUT_BYTES;
+
+    static const char *const BASE_FLAGS[] = {
+        "-x", "c", "-", "-std=c11", "-g",
+        "-fsanitize=address,undefined",
+        "-fno-sanitize-recover=all",
+        NULL
+    };
+
+    myc_gate_set_status(res, MYC_GATE_METAMORPHIC, MYC_GATE_NOT_APPLICABLE,
+                        NULL);
+
+    /* 1. Cari clang. */
+    clang_path = myc_find_executable(req->clang_program ? req->clang_program
+                                                        : "clang");
+    if (!clang_path) {
+        res->err = MYC_ERR_CLANG_NOT_FOUND;
+        myc_gate_set_status(res, MYC_GATE_METAMORPHIC, MYC_GATE_UNAVAILABLE,
+                            "clang tidak ditemukan");
+        myc_result_add_evidence(res, MYC_GATE_METAMORPHIC, MYC_EVIDENCE_SKIP,
+                                "metamorphic di-skip: clang tidak ditemukan");
+        return 0;
+    }
+
+    /* 1b. Inject assert(requires) (D1.5) bila ada kontrak. */
+    injected = myc_contract_inject(source, source_len, &injected_len);
+    if (injected) {
+        build_src = injected;
+        build_src_len = injected_len;
+        add_diag_run(res, "metamorphic: kontrak requires di-inject (assert)");
+    }
+
+    /* 2. Direktori temp. */
+    tmp_dir = make_temp_dir();
+    if (!tmp_dir) {
+        res->err = MYC_ERR_INTERNAL;
+        myc_gate_set_status(res, MYC_GATE_METAMORPHIC, MYC_GATE_INFRA_FAILED,
+                            "gagal membuat direktori temp");
+        myc_result_add_evidence(res, MYC_GATE_METAMORPHIC, MYC_EVIDENCE_ERROR,
+                                "metamorphic di-skip: direktori temp gagal");
+        free(clang_path);
+        return 0;
+    }
+    exe0 = exe_path_for(tmp_dir, "meta_o0.exe");
+    exe2 = exe_path_for(tmp_dir, "meta_o2.exe");
+    if (!exe0 || !exe2) {
+        res->err = MYC_ERR_INTERNAL;
+        myc_gate_set_status(res, MYC_GATE_METAMORPHIC, MYC_GATE_INFRA_FAILED,
+                            "gagal membuat path executable");
+        myc_result_add_evidence(res, MYC_GATE_METAMORPHIC, MYC_EVIDENCE_ERROR,
+                                "metamorphic di-skip: path exe gagal");
+        goto out;
+    }
+
+    /* 3. Build -O0 dan -O2 (source via stdin; -DMYC_CHECKED bila diminta). */
+    for (step = 0; step < 2; step++) {
+        const char *exe = step == 0 ? exe0 : exe2;
+        const char *opt = step == 0 ? "-O0" : "-O2";
+        int extra = req->checked ? 3 : 0;
+        n = 0;
+        bfl = 0;
+        total = 1;
+        while (BASE_FLAGS[bfl++])
+            total++;
+        total += 1 + extra + 2 + 1;   /* opt + extra + "-o" exe NULL */
+        bfl = 0;
+        argv_b = (const char **)malloc(sizeof(char *) * (size_t)total);
+        if (!argv_b) {
+            res->err = MYC_ERR_INTERNAL;
+            goto out;
+        }
+        argv_b[n++] = clang_path;
+        for (bfl = 0; BASE_FLAGS[bfl]; bfl++)
+            argv_b[n++] = BASE_FLAGS[bfl];
+        argv_b[n++] = opt;
+        if (req->checked) {
+            argv_b[n++] = "-DMYC_CHECKED=1";
+            argv_b[n++] = "-I";
+            argv_b[n++] = req->checked_header_dir ? req->checked_header_dir
+                                                  : ".";
+        }
+        argv_b[n++] = "-o";
+        argv_b[n++] = exe;
+        argv_b[n] = NULL;
+
+        memset(&preq, 0, sizeof(preq));
+        preq.argv = argv_b;
+        preq.cwd = req->cwd;
+        preq.stdin_data = build_src;
+        preq.stdin_len = build_src_len;
+        preq.timeout_ms = req->timeout_ms;
+        preq.max_output_bytes = max_out;
+        if (!myc_proc_run(&preq, &pres)) {
+            myc_proc_result_free(&pres);
+            free(argv_b);
+            argv_b = NULL;
+            res->err = MYC_ERR_EXECUTE_FAILED;
+            myc_gate_set_status(res, MYC_GATE_METAMORPHIC, MYC_GATE_INFRA_FAILED,
+                                "build launch gagal");
+            myc_result_add_evidence(res, MYC_GATE_METAMORPHIC, MYC_EVIDENCE_ERROR,
+                                    "metamorphic di-skip: build launch gagal");
+            goto out;
+        }
+        res->duration_ms += pres.duration_ms;
+        if (pres.timed_out || pres.exit_code != 0) {
+            /* build verifikasi gagal (mis. tanpa main / link gagal):
+             * bukan pelanggaran; gate di-skip, assurance statis dipertahankan. */
+            char note[512];
+            const char *fe = pres.stderr_data && pres.stderr_data[0]
+                                 ? pres.stderr_data : "build verifikasi gagal";
+            if (strlen(fe) > 400)
+                snprintf(note, sizeof(note),
+                         "metamorphic di-skip (%s): %.*s...", opt, 400, fe);
+            else
+                snprintf(note, sizeof(note),
+                         "metamorphic di-skip (%s): %s", opt, fe);
+            add_diag_run(res, note);
+            myc_gate_set_status(res, MYC_GATE_METAMORPHIC,
+                                MYC_GATE_INFRA_FAILED, note);
+            myc_result_add_evidence(res, MYC_GATE_METAMORPHIC,
+                                    MYC_EVIDENCE_SKIP, note);
+            myc_proc_result_free(&pres);
+            free(argv_b);
+            argv_b = NULL;
+            goto out;
+        }
+        myc_proc_result_free(&pres);
+        free(argv_b);
+        argv_b = NULL;
+    }
+
+    /* 4. Windows: salin runtime DLL ASan ke samping exe. */
+#ifdef _WIN32
+    {
+        dll_src = asan_dll_path(clang_path);
+        if (dll_src) {
+            dll_dst = join_path(tmp_dir, ASAN_DLL_NAME);
+            if (dll_dst && !copy_file(dll_src, dll_dst))
+                add_diag_run(res, "metamorphic: gagal menyalin ASan DLL");
+        } else {
+            add_diag_run(res, "metamorphic: runtime ASan DLL tidak ditemukan");
+        }
+    }
+#endif
+
+    /* 5. Eksekusi -O0 dan -O2 dengan input yang sama. */
+    for (step = 0; step < 2; step++) {
+        const char *exe = step == 0 ? exe0 : exe2;
+        int  *exitp = step == 0 ? &res->meta_o0_exit : &res->meta_o2_exit;
+        int  *findp = step == 0 ? &res->meta_o0_finding : &res->meta_o2_finding;
+        const char *marker;
+
+        argv_r = (const char **)malloc(sizeof(char *) * 2);
+        if (!argv_r) {
+            res->err = MYC_ERR_INTERNAL;
+            goto out;
+        }
+        argv_r[0] = exe;
+        argv_r[1] = NULL;
+
+        memset(&preq, 0, sizeof(preq));
+        preq.argv = argv_r;
+        preq.cwd = tmp_dir;
+        preq.stdin_data = req->run_stdin;
+        preq.stdin_len = req->run_stdin_len;
+        preq.timeout_ms = req->timeout_ms;
+        preq.max_output_bytes = max_out;
+        if (!myc_proc_run(&preq, &pres)) {
+            myc_proc_result_free(&pres);
+            free(argv_r);
+            argv_r = NULL;
+            res->err = MYC_ERR_EXECUTE_FAILED;
+            myc_gate_set_status(res, MYC_GATE_METAMORPHIC, MYC_GATE_INFRA_FAILED,
+                                "exec gagal");
+            myc_result_add_evidence(res, MYC_GATE_METAMORPHIC, MYC_EVIDENCE_ERROR,
+                                    "metamorphic exec gagal");
+            goto out;
+        }
+        res->duration_ms += pres.duration_ms;
+        *exitp = pres.exit_code;
+        if (pres.timed_out)
+            res->meta_timed_out = 1;
+        marker = marker_found(pres.stdout_data, pres.stderr_data);
+        *findp = marker ? 1 : 0;
+        if (marker) {
+            char note[192];
+            snprintf(note, sizeof(note), "metamorphic (%s): sanitizer %s",
+                     step == 0 ? "-O0" : "-O2", marker);
+            add_diag_run(res, note);
+        }
+        myc_proc_result_free(&pres);
+        free(argv_r);
+        argv_r = NULL;
+    }
+    res->ran_metamorphic = 1;
+
+    if (res->meta_timed_out) {
+        res->verdict = MC_TIMEOUT;
+        res->err = MYC_ERR_TIMEOUT;
+        myc_gate_set_status(res, MYC_GATE_METAMORPHIC, MYC_GATE_INCONCLUSIVE,
+                            "metamorphic run timeout");
+        myc_result_add_evidence(res, MYC_GATE_METAMORPHIC, MYC_EVIDENCE_ERROR,
+                                "metamorphic run timeout");
+        goto out;
+    }
+
+    /* 6. Semantic canary (9.9): hasil bersih hanya dipercaya bila backend
+     * ASan sehat. */
+    canary = myc_runtime_canary(clang_path, tmp_dir,
+                                req->checked_header_dir, req->checked,
+                                req->timeout_ms, max_out, req->cwd);
+    if (canary != 1) {
+        char note[192];
+        snprintf(note, sizeof(note),
+                 "backend health: canary ASan %s -> hasil metamorphic TIDAK dipercaya",
+                 canary == 0 ? "clean (tak terdeteksi)" : "gagal dibangun");
+        add_diag_run(res, note);
+        myc_gate_set_status(res, MYC_GATE_METAMORPHIC, MYC_GATE_INCONCLUSIVE,
+                            note);
+        myc_result_add_evidence(res, MYC_GATE_METAMORPHIC, MYC_EVIDENCE_ERROR,
+                                note);
+        res->verdict = MC_INCONCLUSIVE;
+        goto out;
+    }
+    myc_result_add_evidence(res, MYC_GATE_METAMORPHIC, MYC_EVIDENCE_GATE_END,
+                            "semantic canary terdeteksi: backend ASan sehat");
+
+    /* 7. Bandingkan hasil -O0 vs -O2. */
+    if (res->meta_o0_finding || res->meta_o2_finding) {
+        if (res->meta_o0_finding != res->meta_o2_finding) {
+            /* Satu build menemukan, yang lain tidak -> metamorfik konflik. */
+            char note[256];
+            snprintf(note, sizeof(note),
+                     "metamorphic inconsistency: -O0 %s vs -O2 %s "
+                     "(kemungkinan UB / toolchain-sensitive bug)",
+                     res->meta_o0_finding ? "finding" : "clean",
+                     res->meta_o2_finding ? "finding" : "clean");
+            add_diag_run(res, note);
+            res->metamorphic_inconsistent = 1;
+            myc_gate_set_status(res, MYC_GATE_METAMORPHIC,
+                                MYC_GATE_COMPLETED_FINDINGS, note);
+            myc_result_add_evidence(res, MYC_GATE_METAMORPHIC,
+                                    MYC_EVIDENCE_FINDING, note);
+        } else {
+            char note[192];
+            snprintf(note, sizeof(note),
+                     "metamorphic: kedua build menemukan sanitizer "
+                     "(-O0 dan -O2)");
+            add_diag_run(res, note);
+            myc_gate_set_status(res, MYC_GATE_METAMORPHIC,
+                                MYC_GATE_COMPLETED_FINDINGS, note);
+            myc_result_add_evidence(res, MYC_GATE_METAMORPHIC,
+                                    MYC_EVIDENCE_FINDING, note);
+        }
+        res->verdict = MC_RUNTIME_VIOLATION;
+        res->err = MYC_ERR_RUNTIME_VIOLATION;
+        goto out;
+    }
+
+    /* Tanpa sanitizer: exit code berbeda hanya informasional (bukan
+     * finding) -- program bisa berbeda hasilnya karena UB, tapi kami
+     * tidak mengklaim bug tanpa bukti sanitizer. */
+    if (res->meta_o0_exit != res->meta_o2_exit) {
+        char note[192];
+        snprintf(note, sizeof(note),
+                 "metamorphic: exit berbeda tanpa sanitizer (-O0=%d vs -O2=%d) "
+                 "[informasional]",
+                 res->meta_o0_exit, res->meta_o2_exit);
+        add_diag_run(res, note);
+        myc_result_add_evidence(res, MYC_GATE_METAMORPHIC,
+                                MYC_EVIDENCE_DIAGNOSTIC, note);
+    }
+
+    ret = 1;
+    myc_gate_set_status(res, MYC_GATE_METAMORPHIC, MYC_GATE_COMPLETED_CLEAN,
+                        "metamorphic clean (-O0 == -O2)");
+    myc_result_add_evidence(res, MYC_GATE_METAMORPHIC, MYC_EVIDENCE_GATE_END,
+                            "metamorphic: -O0 dan -O2 setuju clean");
+    goto out;
+
+out:
+    if (injected) free(injected);
+    if (dll_dst) free(dll_dst);
+    if (dll_src) free(dll_src);
+    if (exe0) {
+        remove(exe0);
+        free(exe0);
+    }
+    if (exe2) {
+        remove(exe2);
+        free(exe2);
+    }
+    if (tmp_dir) {
+        static const char *const artifacts[] = {
+            ASAN_DLL_NAME, "meta_o0.pdb", "meta_o2.pdb",
+            "myc_canary.exe", "myc_canary.pdb", NULL
+        };
+        int ai;
+        for (ai = 0; artifacts[ai]; ai++) {
+            char *p = join_path(tmp_dir, artifacts[ai]);
+            if (p) {
+                remove(p);
+                free(p);
+            }
+        }
+        myc_rmdir(tmp_dir);
+        free(tmp_dir);
+    }
+    free(clang_path);
+    return ret;
+}

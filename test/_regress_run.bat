@@ -103,6 +103,13 @@ findstr /C:"receipt_sha256:" %OUT% >nul && echo [OK] receipt_sha256 di laporan |
 myc.exe check tests\ok_run.c --run --json > %OUT% 2>&1
 findstr /C:"\"receipt_sha256\"" %OUT% >nul && echo [OK] receipt_sha256 di JSON || echo [FAIL] receipt hilang di JSON
 del %OUT%
+echo --- Metamorphic Verification (9.7): clean setuju vs inconsistent
+myc.exe check tests\ok_run.c --metamorphic > %OUT% 2>&1
+findstr /C:"metamorphic clean" %OUT% >nul && echo [OK] metamorphic agree-clean utk ok_run || echo [FAIL] metamorphic clean tidak muncul
+findstr /C:"assurance: L3 (RUNTIME)" %OUT% >nul && echo [OK] metamorphic clean -> L3 || echo [FAIL] metamorphic clean bukan L3
+myc.exe check tests\bad_run_oob.c --metamorphic > %OUT% 2>&1
+findstr /C:"metamorphic inconsistency" %OUT% >nul && echo [OK] metamorphic inconsistency terdeteksi utk bad_run_oob || echo [FAIL] metamorphic inconsistency tidak muncul
+findstr /C:"verdict:   RUNTIME_VIOLATION" %OUT% >nul && echo [OK] inconsistent -> RUNTIME_VIOLATION || echo [FAIL] inconsistent bukan RUNTIME_VIOLATION
 echo --- Differential Backend Quorum (#3): clean vs conflict vs inconclusive
 myc.exe check tests\ok_run.c --run --quorum > %OUT% 2>&1
 findstr /C:"quorum: clean" %OUT% >nul && echo [OK] quorum clean utk run bersih || echo [FAIL] quorum clean tidak muncul

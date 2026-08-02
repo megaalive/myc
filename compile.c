@@ -434,6 +434,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     myc_gate_set_status(res, MYC_GATE_CHECKED, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_METAMORPHIC, MYC_GATE_NOT_APPLICABLE, NULL);
 
     /* hash source */
     sha256_hex(src, srclen, hex);
@@ -461,7 +462,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         size_t fp_len;
         myc_policy_hash(policy_hex);
         fp_need = snprintf(NULL, 0,
-                     "v8|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s|src:%s",
+                     "v9|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s|src:%s",
                      gcc_path,
                      req->cwd ? req->cwd : "",
                      policy_hex,
@@ -471,6 +472,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                      req->checked ? "checked" : "nochecked",
                      req->filc ? "filc" : "nofilc",
                      req->driver ? "driver" : "nodriver",
+                     req->metamorphic ? "meta" : "nometa",
                      res->source_sha256 ? res->source_sha256 : "");
         if (fp_need > 0) {
             fp_len = (size_t)fp_need;
@@ -478,7 +480,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         }
         if (fp_buf) {
             snprintf(fp_buf, fp_len + 1,
-                     "v8|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s|src:%s",
+                     "v9|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s|src:%s",
                      gcc_path,
                      req->cwd ? req->cwd : "",
                      policy_hex,
@@ -488,6 +490,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                      req->checked ? "checked" : "nochecked",
                      req->filc ? "filc" : "nofilc",
                      req->driver ? "driver" : "nodriver",
+                     req->metamorphic ? "meta" : "nometa",
                      res->source_sha256 ? res->source_sha256 : "");
             sha256_hex(fp_buf, fp_len, hex);
             free(fp_buf);
@@ -708,7 +711,8 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             myc_result_add_evidence(res, MYC_GATE_CHECKED, MYC_EVIDENCE_SKIP,
                                     "checked build di-skip: tanpa MYC_BUF");
         }
-        if (!req->run && !req->prove && !req->filc && !req->driver) {
+        if (!req->run && !req->prove && !req->filc && !req->driver &&
+            !req->metamorphic) {
             free(gcc_path);
             myc_reduce_verdict(res);
             return;
@@ -751,7 +755,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_SKIP,
                                     "Frama-C Eva di-skip");
         }
-        if (!req->run && !req->filc && !req->driver) {
+        if (!req->run && !req->filc && !req->driver && !req->metamorphic) {
             free(gcc_path);
             myc_reduce_verdict(res);
             return;
@@ -793,7 +797,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_SKIP,
                                     "Fil-C di-skip");
         }
-        if (!req->run && !req->driver) {
+        if (!req->run && !req->driver && !req->metamorphic) {
             free(gcc_path);
             myc_reduce_verdict(res);
             return;
@@ -830,6 +834,58 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                 "runtime di-skip");
             myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_SKIP,
                                     "verification run di-skip");
+        }
+        if (!req->driver && !req->metamorphic) {
+            free(gcc_path);
+            myc_reduce_verdict(res);
+            return;
+        }
+    }
+
+    /* --- Gate opsional: Metamorphic Verification (9.7, --metamorphic) ---
+     * Bangun source sama di -O0 dan -O2 (clang ASan+UBSan), jalankan,
+     * bandingkan. Hanya satu build yang menemukan sanitizer -> inconsistent
+     * (kemungkinan UB/toolchain-sensitive) -> RUNTIME_VIOLATION. Keduanya
+     * bersih -> COMPLETED_CLEAN (L3, konsisten dengan gate run).
+     * Non-blocking: clang hilang / build gagal / canary mati -> di-skip
+     * atau INCONCLUSIVE, assurance statis dipertahankan. */
+    if (req->metamorphic) {
+        int ok = myc_metamorphic_gate(req, src, srclen, res);
+        if (res->verdict == MC_TIMEOUT ||
+            res->verdict == MC_RUNTIME_VIOLATION ||
+            res->err == MYC_ERR_EXECUTE_FAILED ||
+            res->err == MYC_ERR_INTERNAL) {
+            if (res->verdict == MC_RUNTIME_VIOLATION) {
+                /* finding nyata (sanitizer pada salah satu/both build) */
+                res->assurance = MYC_ASSURANCE_NONE;
+                myc_gate_set_status(res, MYC_GATE_METAMORPHIC,
+                                    MYC_GATE_COMPLETED_FINDINGS,
+                                    res->run_stderr_text ? res->run_stderr_text
+                                        : "metamorphic finding");
+                myc_result_add_evidence(res, MYC_GATE_METAMORPHIC,
+                                        MYC_EVIDENCE_FINDING,
+                                        "metamorphic: RUNTIME_VIOLATION");
+            } else {
+                myc_gate_set_status(res, MYC_GATE_METAMORPHIC,
+                                    MYC_GATE_INFRA_FAILED,
+                                    "metamorphic infra failed");
+                myc_result_add_evidence(res, MYC_GATE_METAMORPHIC,
+                                        MYC_EVIDENCE_ERROR,
+                                        "metamorphic: infra failed");
+            }
+            free(gcc_path);
+            myc_reduce_verdict(res);
+            return;
+        }
+        if (ok && res->ran_metamorphic && !res->meta_timed_out) {
+            /* status sudah di-set oleh myc_metamorphic_gate */
+        } else {
+            myc_gate_set_status(res, MYC_GATE_METAMORPHIC,
+                                MYC_GATE_INCONCLUSIVE,
+                                "metamorphic di-skip");
+            myc_result_add_evidence(res, MYC_GATE_METAMORPHIC,
+                                    MYC_EVIDENCE_SKIP,
+                                    "metamorphic di-skip");
         }
         if (!req->driver) {
             free(gcc_path);

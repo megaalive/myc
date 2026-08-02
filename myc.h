@@ -76,6 +76,7 @@ typedef enum {
     MYC_GATE_CHECKED,
     MYC_GATE_FILC,
     MYC_GATE_DRIVER,
+    MYC_GATE_METAMORPHIC,    /* (9.7) build ganda -O0/-O2, bandingkan hasil */
     MYC_GATE_COUNT
 } myc_gate_id;
 
@@ -220,6 +221,10 @@ typedef struct {
     int         quorum;         /* gate Differential Backend Quorum (#3):
                                     jalankan semua backend tersedia,
                                     bandingkan hasil, laporkan konflik */
+    int         metamorphic;    /* gate Metamorphic Verification (9.7):
+                                    bangun 2x (clang ASan -O0 dan -O2),
+                                    jalankan, bandingkan hasil; beda =
+                                    kemungkinan UB / toolchain-sensitive */
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
@@ -252,15 +257,21 @@ typedef struct {
     int run_analyzer;
     int run;
     int prove;
-    int checked;
-    int filc;
-    int driver;
+    int checked;    int     filc;
+    int     driver;
+    int     metamorphic;    /* (9.7) flag gate metamorphic */
     /* Execution result */
     myc_verdict verdict;
     int exit_code;
     int timed_out;
     int sanitizer_detected;
     char sanitizer_marker[64];
+    /* Metamorphic (9.7): hasil per-build */
+    int metamorphic_inconsistent; /* hasil -O0 vs -O2 tidak setuju (sanitizer) */
+    int meta_o0_exit;
+    int meta_o2_exit;
+    int meta_o0_finding;   /* 1 = marker sanitizer pada build -O0 */
+    int meta_o2_finding;   /* 1 = marker sanitizer pada build -O2 */
     /* Gate summary (one status per gate) */
     myc_gate_status gate_status[MYC_GATE_COUNT];
     /* Finding / completeness / claim */
@@ -337,6 +348,15 @@ typedef struct {
     int         driver_skipped;         /* jumlah kasus dilewati guard */
     char       *driver_stdout_text;     /* output harness (DRIVER run=...) */
     char       *driver_stderr_text;
+
+    /* --- hasil gate metamorphic (9.7, --metamorphic) --- */
+    int         ran_metamorphic;      /* 1 bila gate metamorphic dijalankan */
+    int         metamorphic_inconsistent; /* hasil -O0 vs -O2 tidak setuju */
+    int         meta_o0_exit;         /* exit code build -O0 */
+    int         meta_o2_exit;         /* exit code build -O2 */
+    int         meta_o0_finding;      /* 1 = marker sanitizer pada -O0 */
+    int         meta_o2_finding;      /* 1 = marker sanitizer pada -O2 */
+    int         meta_timed_out;       /* salah satu run timeout */
 
     /* internal: gate mana yang dijalankan terakhir */
     int         ran_preprocess;

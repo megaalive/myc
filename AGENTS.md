@@ -78,7 +78,8 @@ Poin penting:
   (Catatan lama "akan selalu VIOLATION karena windows.h" TIDAK berlaku lagi —
   policy non-blocking.)
 - **Counterexample Replay Capsule (#2) selesai 2026-08-02**: `myc_replay_capsule` struct di `myc.h` (source_sha256, stdin_sha256, stdin_len, backend identity, flags, verdict, gate_status summary, finding/completeness/claim). Disimpan di `myc_result.capsule`, dibangun di `myc_run()` akhir pipeline, dibebaskan di `myc_result_free()`. Serialisasi JSON + teks di `report.c`. OOM-safe: `goto fail` cleanup di `myc_build_capsule()`. Self-dogfooding `myc.c` lolos `-fanalyzer` (tidak ada lagi leak). Fixture: `ok_run --run --json` memuat `"capsule"` objek dengan semua field; `ok_run --run` mencetak blok `capsule:` di teks.
-- **Differential Backend Quorum (#3) selesai 2026-08-02**: flag `--quorum` (CLI + MCP tool `check`). Setelah pipeline selesai, `myc_quorum_analysis()` (di `compile.c`, dipanggil dari `myc_run()` agar selalu terpanggil walau pipeline early-return) membandingkan status semua gate yang diminta: semua `completed_clean` → `MYC_QUORUM_CLEAN`; campuran findings+clean → `CONFLICT` (backend tidak sepakat); ada gate incomplete/unavailable → `INCONCLUSIVE`; **tidak ada hasil gate sama sekali** (mis. lint memblokir pipeline sebelum gate berjalan) → `INCONCLUSIVE` (jujur, bukan "agree clean"). Status + laporan teks di `quorum_status`/`quorum_report` (teks + JSON + capsule). Bug ditemukan saat menyelesaikan sesi: (1) `quorum_report` dialokasikan dari arena tapi di-`free()` individual setelah arena dibebaskan → invalid free/crash → dihapus (arena yang membebaskan); (2) quorum tidak dipanggil di branch `file_path`-only `myc_run` → ditambahkan; (3) **bug lama**: `myc_result_to_json` kehilangan `}` penutup level teratas sejak capsule #2 → semua output `--json` invalid (MCP interop lolos karena hanya cek substring) → diperbaiki, kini JSON valid ketat; (4) MCP belum mengekspos `--quorum` → ditambahkan. Verifikasi: quorum clean pada `ok_hello`/`ok_run --run`/`ok_driver --driver`, conflict pada `bad_syntax`/`bad_run_oob --run`/`bad_driver_oob --driver`, inconclusive pada lint-violation. Semua regression + self-dogfooding 16 source + MCP smoke tetap hijau; receipt deterministik tetap (`ok_run --run` → `60b7db90...`).
+- **Differential Backend Quorum (#3) selesai 2026-08-02**: flag `--quorum` (CLI + MCP tool `check`). Setelah pipeline selesai, `myc_quorum_analysis()` (di `compile.c`, dipanggil dari `myc_run()` agar selalu terpanggil walau pipeline early-return) membandingkan status semua gate yang diminta: semua `completed_clean` → `MYC_QUORUM_CLEAN`; campuran findings+clean → `CONFLICT` (backend tidak sepakat); ada gate incomplete/unavailable → `INCONCLUSIVE`; **tidak ada hasil gate sama sekali** (mis. lint memblokir pipeline sebelum gate berjalan) → `INCONCLUSIVE` (jujur, bukan "agree clean"). Status + laporan teks di `quorum_status`/`quorum_report` (teks + JSON + capsule). Bug ditemukan saat menyelesaikan sesi: (1) `quorum_report` dialokasikan dari arena tapi di-`free()` individual setelah arena dibebaskan → invalid free/crash → dihapus (arena yang membebaskan); (2) quorum tidak dipanggil di branch `file_path`-only `myc_run` → ditambahkan; (3) **bug lama**: `myc_result_to_json` kehilangan `}` penutup level teratas sejak capsule #2 → semua output `--json` invalid (MCP interop lolos karena hanya cek substring) → diperbaiki, kini JSON valid ketat; (4) MCP belum mengekspos `--quorum` → ditambahkan. Verifikasi: quorum clean pada `ok_hello`/`ok_run --run`/`ok_driver --driver`, conflict pada `bad_syntax`/`bad_run_oob --run`/`bad_driver_oob --driver`, inconclusive pada lint-violation. Semua regression + self-dogfooding 16 source + MCP smoke tetap hijau; receipt deterministik tetap (`ok_run --run` → `d7b00ba2...`).
+- **Metamorphic Verification (9.7) selesai 2026-08-02**: gate `--metamorphic` (CLI + MCP tool `check`) → `myc_metamorphic_gate()` di `run.c` memakai ulang mesin run gate (temp dir, ASan DLL, canary, marker). Source SAMA dibangun 2× dengan clang ASan+UBSan (`-O0` dan `-O2`), dijalankan dengan input sama, hasil dibandingkan: hanya satu build menemukan sanitizer → `metamorphic_inconsistent` + verdict `RUNTIME_VIOLATION` (kemungkinan UB / toolchain-sensitive — fixture `bad_run_oob.c` membuktikan: OOB terdeteksi di `-O0`, hilang di `-O2` karena optimizer); keduanya menemukan → violation konsisten; keduanya bersih → `COMPLETED_CLEAN` (L3 RUNTIME); exit code berbeda tanpa sanitizer → hanya diagnostic informasional (bukan klaim bug). Non-blocking: clang hilang / build gagal / canary mati → di-skip atau INCONCLUSIVE, assurance statis dipertahankan. Fingerprint `v8`→`v9` (+dimensi `meta`), receipt golden baru `d7b00ba2...`. Berinteraksi dengan `--quorum` (gate metamorphic ikut dibandingkan). Regresi di `test/_regress_run.bat`.
 - **Dogfooding lintas-program tiga tool (2026-08-02)**: `dogfood_ring.c`
   (ring buffer, MYC_BUF → L4), `dogfood_config.c` (parser config key=value,
   idiom realloc aman ke member `cfg->items = tmp` + copy_bounded), dan
@@ -247,7 +248,7 @@ Poin penting:
   - Regresi baru `test/stress_threads.c` (8 thread × 200 `myc_run`, cek tidak
     ada race/stale via kestabilan `source_sha256`) ditambahkan ke
     `test/_regress_run.bat`. Self-dogfooding 15 source tetap OK; receipt
-    deterministik tetap (`ok_run --run` → `60b7db90eac4...`).
+    deterministik tetap (`ok_run --run` → `d7b00ba2...`).
 
 - **Fase 6 JSON & MCP ketat selesai 2026-08-02** (MYC-AUDIT-009): parser `json.c`
   kini menolak — leading zero, fraction/exponent tanpa digit, lone
@@ -265,7 +266,7 @@ Poin penting:
   Laporan teks + JSON memuat `finding:` dan `gate_matrix[]` (daftar id +
   status tiap gate = evidence matrix konkret per scope); teks juga menampilkan
   blok `evidence:` ringkas. Receipt deterministik tetap sama untuk input yang
-  sama (`ok_run --run` → `60b7db90eac4...`) karena finding diturunkan dari
+  sama (`ok_run --run` → `d7b00ba2...`) karena finding diturunkan dari
   status gate yang sudah di-hash. Semua regress + soak + corpus + interop
   tetap hijau.
 - **Fase 4 scope certificate selesai 2026-08-02**: laporan teks + JSON kini
@@ -274,7 +275,7 @@ Poin penting:
   kejujuran dijaga: hanya metrik yang BENAR-BENAR diukur yang dimunculkan;
   kolom function/buffer yang tidak diproduksi penganalisis token tidak
   dimunculkan, tidak mengarang angka. Receipt tetap deterministik
-  (`ok_run --run` → `60b7db90...`): scope tidak masuk ke hash.
+  (`ok_run --run` → `d7b00ba2...`): scope tidak masuk ke hash.
 
 ## Dogfooding (keputusan 2026-08-01)
 

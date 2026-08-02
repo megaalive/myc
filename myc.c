@@ -226,12 +226,18 @@ static myc_replay_capsule *myc_build_capsule(const myc_request *req,
     cap->checked = req->checked;
     cap->filc = req->filc;
     cap->driver = req->driver;
+    cap->metamorphic = req->metamorphic;
 
     /* Execution result */
     cap->verdict = res->verdict;
     cap->exit_code = res->exit_code;
     cap->timed_out = res->run_timed_out;
     cap->sanitizer_detected = res->run_sanitizer_detected;
+    cap->metamorphic_inconsistent = res->metamorphic_inconsistent;
+    cap->meta_o0_exit = res->meta_o0_exit;
+    cap->meta_o2_exit = res->meta_o2_exit;
+    cap->meta_o0_finding = res->meta_o0_finding;
+    cap->meta_o2_finding = res->meta_o2_finding;
     if (res->run_sanitizer_detected) {
         size_t slen = strlen(res->run_sanitizer_marker);
         if (slen >= sizeof(cap->sanitizer_marker))
@@ -373,7 +379,7 @@ static void usage(void)
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
         "  myc check <file.c> [--json] [--analyze] [--strict] [--no-lint] [--cwd DIR]\n"
-        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--quorum]\n"
+        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--metamorphic] [--quorum]\n"
         "  myc check -          [--json] [--analyze] [--strict] [--no-lint]\n"
         "                        (source dari stdin)\n"
         "  myc policy\n"
@@ -599,6 +605,8 @@ int main(int argc, char **argv)
                 req.driver = 1;
             else if (strcmp(argv[i], "--quorum") == 0)
                 req.quorum = 1;
+            else if (strcmp(argv[i], "--metamorphic") == 0)
+                req.metamorphic = 1;
             else if (strcmp(argv[i], "--run-stdin") == 0 && i + 1 < argc) {
                 char *buf;
                 size_t len;

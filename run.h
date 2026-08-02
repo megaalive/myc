@@ -22,4 +22,17 @@
 int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
                  myc_result *res);
 
+/*
+ * Gate Metamorphic Verification (9.7, --metamorphic): bangun source sama
+ * dengan clang ASan+UBSan di -O0 dan -O2, jalankan keduanya, bandingkan.
+ * Bila hanya satu build yang melaporkan sanitizer -> inconsistent
+ * (kemungkinan UB / toolchain-sensitive) -> RUNTIME_VIOLATION. Keduanya
+ * bersih -> COMPLETED_CLEAN (L3). Non-blocking: clang hilang / build gagal
+ * -> di-skip, assurance statis dipertahankan.
+ *
+ * Kode kembalian: 0 = gate tidak tersedia/di-skip, 1 = selesai.
+ */
+int myc_metamorphic_gate(const myc_request *req, const char *source,
+                         size_t source_len, myc_result *res);
+
 #endif /* MYC_RUN_H */

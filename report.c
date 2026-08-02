@@ -254,6 +254,17 @@ void myc_report_text(const myc_result *res)
             printf("  driver_stderr:\n%s\n", res->driver_stderr_text);
     }
 
+    if (res->ran_metamorphic) {
+        printf("metamorphic (9.7):\n");
+        printf("  o0_exit: %d  o2_exit: %d\n",
+               res->meta_o0_exit, res->meta_o2_exit);
+        printf("  o0_finding: %s  o2_finding: %s\n",
+               res->meta_o0_finding ? "yes" : "no",
+               res->meta_o2_finding ? "yes" : "no");
+        if (res->metamorphic_inconsistent)
+            printf("  inconsistent: ya (hasil -O0 vs -O2 tidak setuju)\n");
+    }
+
     /* Evidence matrix (Fase 4): ringkasan status per scope, bukan hanya
      * label assurance. Memenuhi prinsip "setiap klaim menyertakan scope". */
     printf("evidence:\n");
@@ -314,6 +325,15 @@ if (res->debt_count > 0) {
          printf("  checked: %s\n", cap->checked ? "yes" : "no");
          printf("  filc: %s\n", cap->filc ? "yes" : "no");
          printf("  driver: %s\n", cap->driver ? "yes" : "no");
+         printf("  metamorphic: %s\n", cap->metamorphic ? "yes" : "no");
+         if (cap->metamorphic) {
+             printf("  meta_o0_exit: %d  meta_o2_exit: %d\n",
+                    cap->meta_o0_exit, cap->meta_o2_exit);
+             printf("  meta_o0_finding: %s  meta_o2_finding: %s  inconsistent: %s\n",
+                    cap->meta_o0_finding ? "yes" : "no",
+                    cap->meta_o2_finding ? "yes" : "no",
+                    cap->metamorphic_inconsistent ? "yes" : "no");
+         }
          printf("  verdict: %s\n", myc_verdict_name(cap->verdict));
          printf("  exit_code: %d\n", cap->exit_code);
          printf("  timed_out: %s\n", cap->timed_out ? "yes" : "no");
@@ -407,6 +427,18 @@ char *myc_result_to_json(const myc_result *res)
     json_sb_printf(&b, "\"driver_funcs\":%d,", res->driver_funcs);
     json_sb_printf(&b, "\"driver_cases\":%d,", res->driver_cases);
     json_sb_printf(&b, "\"driver_skipped\":%d,", res->driver_skipped);
+    json_sb_printf(&b, "\"ran_metamorphic\":%s,",
+                   res->ran_metamorphic ? "true" : "false");
+    if (res->ran_metamorphic) {
+        json_sb_printf(&b, "\"meta_o0_exit\":%d,", res->meta_o0_exit);
+        json_sb_printf(&b, "\"meta_o2_exit\":%d,", res->meta_o2_exit);
+        json_sb_printf(&b, "\"meta_o0_finding\":%s,",
+                       res->meta_o0_finding ? "true" : "false");
+        json_sb_printf(&b, "\"meta_o2_finding\":%s,",
+                       res->meta_o2_finding ? "true" : "false");
+        json_sb_printf(&b, "\"metamorphic_inconsistent\":%s,",
+                       res->metamorphic_inconsistent ? "true" : "false");
+    }
     json_sb_puts(&b, "\"scope\":{");
     json_sb_printf(&b, "\"contract_requires\":%d,", res->contract_requires);
     json_sb_printf(&b, "\"contract_ensures\":%d,", res->contract_ensures);
@@ -530,6 +562,18 @@ json_sb_printf(&b, "\"unverified_debt\":[");
          json_sb_printf(&b, "\"filc\":%s,", cap->filc ? "true" : "false");
          json_sb_printf(&b, "\"driver\":%s,",
                         cap->driver ? "true" : "false");
+         json_sb_printf(&b, "\"metamorphic\":%s,",
+                        cap->metamorphic ? "true" : "false");
+         if (cap->metamorphic) {
+             json_sb_printf(&b, "\"meta_o0_exit\":%d,", cap->meta_o0_exit);
+             json_sb_printf(&b, "\"meta_o2_exit\":%d,", cap->meta_o2_exit);
+             json_sb_printf(&b, "\"meta_o0_finding\":%s,",
+                            cap->meta_o0_finding ? "true" : "false");
+             json_sb_printf(&b, "\"meta_o2_finding\":%s,",
+                            cap->meta_o2_finding ? "true" : "false");
+             json_sb_printf(&b, "\"metamorphic_inconsistent\":%s,",
+                            cap->metamorphic_inconsistent ? "true" : "false");
+         }
          json_sb_printf(&b, "\"verdict\":\"%s\",",
                         myc_verdict_name(cap->verdict));
          json_sb_printf(&b, "\"exit_code\":%d,", cap->exit_code);

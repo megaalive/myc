@@ -128,6 +128,7 @@ const char *myc_gate_id_short(myc_gate_id id)
     case MYC_GATE_CHECKED:    return "checked";
     case MYC_GATE_FILC:       return "filc";
     case MYC_GATE_DRIVER:     return "driver";
+    case MYC_GATE_METAMORPHIC:return "metamorphic";
     default:                  return "?";
     }
 }
@@ -385,6 +386,7 @@ void myc_reduce_verdict(myc_result *res)
         case MYC_GATE_COMPLETED_CLEAN:
             switch (g->id) {
             case MYC_GATE_RUNTIME:    has_runtime_clean = 1; break;
+            case MYC_GATE_METAMORPHIC:has_runtime_clean = 1; break;
             case MYC_GATE_PROVE:      has_prove_clean = 1; break;
             case MYC_GATE_CHECKED:    has_checked_clean = 1; break;
             case MYC_GATE_FILC:       has_filc_clean = 1; break;

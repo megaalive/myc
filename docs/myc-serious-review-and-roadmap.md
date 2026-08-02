@@ -2189,7 +2189,22 @@ Tool yang mengakui konflik lebih disegani daripada tool yang memilih hasil favor
 
 ---
 
-## 9.7. Metamorphic Verification
+## 9.7. Metamorphic Verification ✅ SELESAI 2026-08-02
+
+Implementasi: gate `--metamorphic` (`myc_metamorphic_gate` di `run.c`, CLI +
+MCP tool `check`). Source sama dibangun 2× dengan clang ASan+UBSan (`-O0` dan
+`-O2`), dijalankan dengan input yang sama, hasil dibandingkan:
+- satu build menemukan sanitizer, yang lain tidak → `metamorphic_inconsistent`
+  + verdict `RUNTIME_VIOLATION` (kemungkinan UB / toolchain-sensitive bug);
+  fixture `bad_run_oob.c` membuktikan: OOB terdeteksi di `-O0`, hilang di
+  `-O2` (optimizer membuang akses) → konflik metamorfik asli;
+- keduanya menemukan → violation konsisten; keduanya bersih →
+  `COMPLETED_CLEAN` (L3 RUNTIME);
+- exit code berbeda tanpa sanitizer → diagnostic informasional, bukan klaim
+  bug (jujur: tanpa bukti sanitizer kami tidak menuduh UB).
+Non-blocking: clang hilang / build gagal / canary mati → di-skip atau
+INCONCLUSIVE. Fingerprint `v8`→`v9` (+dimensi `meta`); receipt golden baru
+`d7b00ba2...`. Berinteraksi dengan `--quorum` (gate ikut dibandingkan).
 
 Tanpa fuzzer besar, `myc` dapat membuat beberapa transformasi yang semantically expected-equivalent:
 
@@ -2924,8 +2939,12 @@ Urutan implementasi yang paling memberi reputasi:
        -> CONFLICT, ada incomplete -> INCONCLUSIVE, tanpa hasil gate ->
        INCONCLUSIVE; status+report di teks/JSON/capsule; CLI + MCP tool check;
        bug fix: invalid free arena, top-level `}` hilang di `myc_result_to_json`)
-7. [ ] Scope Certificate
-8. [ ] Metamorphic Verification
+7. [x] Scope Certificate ✅ 2026-08-02 (blok `scope:` / `"scope"` di laporan:
+       contract requires/ensures + driver funcs/cases yang BENAR-BENAR diukur;
+       jangan mengarang angka)
+8. [x] Metamorphic Verification ✅ 2026-08-02 (gate `--metamorphic`: build
+       ganda clang ASan -O0/-O2, bandingkan hasil; beda sanitizer ->
+       inconsistent + RUNTIME_VIOLATION; fingerprint v9)
 9. [ ] Negative-Space Analysis
 
 Jangan implementasikan semuanya sekaligus.
