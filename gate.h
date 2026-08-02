@@ -30,6 +30,7 @@ const myc_gate_result *myc_gate_get(const myc_result *res, myc_gate_id id);
 /* Reducer murni: hitung verdict + completeness dari gate results.
  * Dipanggil di akhir myc_pipeline(), setelah semua gate mengisi status. */
 void myc_reduce_verdict(myc_result *res);
+myc_claim_status myc_validate_claim(const myc_result *res);
 
 /* Tambah event ke evidence ledger (append-only). */
 void myc_result_add_evidence(myc_result *res,

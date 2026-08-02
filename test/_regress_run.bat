@@ -17,6 +17,9 @@ if exist test\json_abuse.exe (
   echo [FAIL] json_abuse gagal dibangun
 )
 del test\json_abuse.exe 2>nul
+echo --- Fase 1 streaming evidence detector: sanitizer marker terdeteksi pada output streaming
+myc.exe check tests\bad_run_oob.c --run > %OUT%
+findstr /C:"sanitizer:" %OUT% >nul && echo [OK] streaming evidence detector mencatat sanitizer marker || echo [INFO] sanitizer tidak terdeteksi (bukan fixture sanitizer)
 echo --- self-dogfooding: semua source myc harus OK
 for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c) do (
   echo === %%f

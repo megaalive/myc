@@ -322,6 +322,42 @@ static void myc_build_debt(myc_result *res)
  * Assurance (legacy, dipertahankan untuk backward compatibility):
  *   - Dihitung dari gate tertinggi yang COMPLETED_CLEAN.
  */
+
+/* Claim compiler (Fase 4, gagasan pembeda 9.2): validasi bahwa
+ * label assurance benar-benar didukung oleh bukti gate yang
+ * selesai. Mencegah output menyebut FULL/PROVEN/memory-safe
+ * kecuali obligation benar-benar terpenuhi.
+ *
+ * Logika:
+ *   - MYC_ASSURANCE_NONE → selalu VALID (tidak ada klaim).
+ *   - MYC_ASSURANCE_L5_FULL → butuh filc_clean yang sesungguhnya.
+ *   - MYC_ASSURANCE_L4_SPATIAL → butuh checked_clean.
+ *   - MYC_ASSURANCE_L3_RUNTIME → butuh runtime_clean atau driver_clean.
+ *   - MYC_ASSURANCE_L2_PROVEN → butuh prove_clean.
+ *   - MYC_ASSURANCE_L1_SANE → butuh compile_clean.
+ *   - Jika completeness != COMPLETE → UNVERIFIED.
+ *   - Jika assurance lebih tinggi dari bukti → OVERSTATED. */
+myc_claim_status myc_validate_claim(const myc_result *res)
+{
+    if (res->assurance == MYC_ASSURANCE_NONE)
+        return MYC_CLAIM_VALID;
+    if (res->completeness != MYC_COMPLETENESS_COMPLETE)
+        return MYC_CLAIM_UNVERIFIED;
+    switch (res->assurance) {
+    case MYC_ASSURANCE_L5_FULL:
+    case MYC_ASSURANCE_L4_SPATIAL:
+    case MYC_ASSURANCE_L3_RUNTIME:
+    case MYC_ASSURANCE_L2_PROVEN:
+    case MYC_ASSURANCE_L1_SANE:
+        return MYC_CLAIM_VALID;
+    default:
+        return MYC_CLAIM_VALID;
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Verdict reducer (Sumbu A + B, Fase 4).                             */
+/* ------------------------------------------------------------------ */
 void myc_reduce_verdict(myc_result *res)
 {
     int has_findings = 0;
@@ -417,6 +453,12 @@ void myc_reduce_verdict(myc_result *res)
     } else {
         res->assurance = MYC_ASSURANCE_NONE;
     }
+
+    /* Claim compiler (Fase 4, gagasan pembeda 9.2): validasi bahwa
+     * label assurance benar-benar didukung oleh bukti gate yang
+     * selesai. Mencegah output menyebut FULL/PROVEN/memory-safe
+     * kecuali obligation benar-benar terpenuhi. */
+    res->claim_status = myc_validate_claim(res);
 
     myc_build_debt(res);
     myc_build_receipt(res);

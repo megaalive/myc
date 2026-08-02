@@ -120,6 +120,17 @@ typedef enum {
     MYC_FINDING_INCONCLUSIVE /* ada gate diminta yang belum selesai */
 } myc_finding;
 
+/* --- Claim compiler (Fase 4, gagasan pembeda 9.2) ---
+ * Validasi bahwa label assurance yang dipakai benar-benar didukung
+ * oleh bukti. Mencegah output menyebut FULL/PROVEN/memory-safe
+ * kecuali obligation benar-benar terpenuhi. */
+typedef enum {
+    MYC_CLAIM_UNKNOWN = 0,
+    MYC_CLAIM_VALID,       /* assurance label didukung oleh bukti */
+    MYC_CLAIM_OVERSTATED,  /* assurance label lebih tinggi dari bukti */
+    MYC_CLAIM_UNVERIFIED   /* bukti tidak cukup untuk menyatakan klaim */
+} myc_claim_status;
+
 /* Unverified debt (Fase 4, gagasan pembeda 9.3): daftar scope yang DIMINTA
  * tetapi tidak benar-benar diselesaikan / diverifikasi. Ini menjadikan
  * "keheningan tidak disalahartikan sebagai keamanan". Setiap kernel debt
@@ -234,6 +245,10 @@ typedef struct {
     size_t      run_shown_stderr_bytes;
     int         run_truncated;
     int         run_timed_out;
+    /* Streaming evidence: sanitizer terdeteksi pada output
+     * streaming (dari proc.c drain thread). */
+    int         run_sanitizer_detected;
+    char        run_sanitizer_marker[64];
 
     /* --- hasil gate prove (D3.1, --prove) --- */
     int         ran_prove;              /* 1 bila gate prove dijalankan */
@@ -293,6 +308,12 @@ typedef struct {
      * MC_OK/MC_VIOLATION; output dua sumbu (finding + completeness). */
     myc_finding finding;
 
+    /* --- Claim compiler (Fase 4, 9.2) ---
+     * Validasi bahwa assurance label benar-benar didukung oleh bukti.
+     * Mencegah output menyebut FULL/PROVEN/memory-safe kecuali
+     * obligation benar-benar terpenuhi. */
+    myc_claim_status claim_status;
+
     /* --- unverified debt (Fase 4) --- */
     myc_debt_item debt[MYC_MAX_DEBT];
     size_t        debt_count;
@@ -345,6 +366,7 @@ const char *myc_error_name(myc_error_code c);
 const char *myc_verdict_name(myc_verdict v);
 const char *myc_assurance_name(myc_assurance a);
 const char *myc_finding_name(myc_finding f);
+const char *myc_claim_status_name(myc_claim_status c);
 
 /* Gate status API (Fase 3). */
 void myc_gate_set_status(myc_result *res,

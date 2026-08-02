@@ -32,6 +32,9 @@ typedef struct {
     size_t stderr_total;
     size_t stderr_shown;
     int    truncated;
+    /* Streaming evidence: sanitizer terdeteksi pada output streaming. */
+    int    sanitizer_detected;
+    char   sanitizer_marker[64];
     unsigned long long duration_ms;
     myc_error_code err;         /* error terakhir, NONE bila lancar */
 } myc_proc_result;

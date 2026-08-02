@@ -163,6 +163,15 @@ Poin penting:
     C-string head+tail kontigu. Flag `truncated` hanya menyala bila
     byte tengah benar-benar dibuang (total > head_cap+tail_cap).
     Regresi: `test/tail_unit.c` (8 kasus, ALL PASS).
+  - **Fase 4 claim compiler + legacy assurance + streaming evidence** (2026-08-02):
+    `myc_validate_claim()` di `gate.c` memvalidasi assurance label
+    terhadap bukti gate; `claim_status` (VALID/OVERSTATED/UNVERIFIED)
+    di `myc_result`; tampil di teks `claim:` dan JSON `"claim"`.
+    Assurance label lama ditandai `[legacy]` di teks; JSON menyertakan
+    `"assurance_legacy":true`. Streaming evidence detector di `proc.c`
+    (`stream_sanitizer_match()`) mendeteksi marker sanitizer (ASan/UBSan/
+    LeakSanitizer) pada output streaming — `sanitizer_detected` +
+    `sanitizer_marker` di `myc_proc_result` dan `myc_result`.
   - Dogfooding: self-check 15/15 source myc OK + 3/3 dogfood/ OK; semua
     regression test + `_regress_run.bat` pass setelah perbaikan.
 

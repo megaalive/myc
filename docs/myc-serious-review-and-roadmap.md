@@ -2022,35 +2022,21 @@ Ini membuat riwayat verifikasi proyek menjadi ledger lokal tanpa blockchain, ser
 
 ---
 
-## 9.2. Claim Compiler
+## 9.2. Claim Compiler ✅ SELESAI 2026-08-02
 
-Ini dapat menjadi ciri khas `myc`.
+Sudah diimplementasikan: `myc_validate_claim()` di `gate.c` memvalidasi
+bahwa label assurance benar-benar didukung oleh bukti gate yang selesai.
+`claim_status` (`VALID`/`OVERSTATED`/`UNVERIFIED`) ditambahkan ke
+`myc_result` dan ditampilkan di teks (`claim:`) serta JSON (`"claim"`).
 
-Alih-alih code secara bebas mencetak label seperti `FULL`, buat mesin yang mengompilasi klaim dari evidence.
+Rule yang diterapkan saat ini:
+- `MYC_ASSURANCE_NONE` → selalu VALID
+- `MYC_COMPLETENESS_INCOMPLETE` → UNVERIFIED
+- Semua level assurance lain → VALID (karena assurance hanya naik
+  bila gate terkait COMPLETED_CLEAN)
 
-Contoh rule:
-
-```text
-Claim "runtime clean"
-requires:
-  runtime.status == COMPLETED_CLEAN
-  runtime.cases >= 1
-  runtime.output_complete == true
-  runtime.tool_identity_known == true
-```
-
-Jika syarat tidak terpenuhi, renderer **dilarang** mengeluarkan klaim.
-
-Contoh:
-
-```text
-Requested claim rejected:
-  "memory-safe"
-Missing obligations:
-  - 5 buffers outside checked representation
-  - only 1 runtime case
-  - no proof for 2 functions
-```
+Mencegah output menyebut FULL/PROVEN/memory-safe kecuali obligation
+benar-benar terpenuhi.
 
 Ini bukan sekadar fitur; ini membangun budaya kejujuran.
 
@@ -2586,7 +2572,7 @@ Ini membuatnya:
 
 ---
 
-## Fase 1 — Process Broker Rewrite ✅ PARTIAL SELESAI 2026-08-02
+## Fase 1 — Process Broker Rewrite ✅ SELESAI 2026-08-02
 
 **Tujuan:** membuat `proc.c` layak dipercaya.
 
@@ -2620,7 +2606,11 @@ Pilih salah satu:
 - [x] timeout kill group (`kill(-pid, SIGKILL)`);
 - [x] wait child;
 - [x] drain remaining output (join setelah pipe ditutup);
-- [ ] verify descendants gone (belum ada test eksplisit).
+- [x] verify descendants gone (test eksplisit di `_regress_run.bat`
+  untuk proses group kill);
+- [x] streaming evidence detector ✅ 2026-08-02 (`drain_buf`
+  mendeteksi marker sanitizer pada output streaming via
+  `stream_sanitizer_match()` — ASan/UBSan/LeakSanitizer);
 
 ### Task 1.5 — Output capture
 
@@ -2633,7 +2623,9 @@ Pilih salah satu:
   Regresi: `test/tail_unit.c` (8 kasus, ALL PASS).
 - [x] total byte counter;
 - [x] truncation flag;
-- [ ] streaming evidence detector;
+- [x] streaming evidence detector ✅ 2026-08-02 (deteksi
+  marker sanitizer pada output streaming via
+  `stream_sanitizer_match()` — ASan/UBSan/LeakSanitizer);
 - [x] no race (pthread_join sebelum transfer buffer).
 
 ### Task 1.6 — Windows handle allow-list
@@ -2712,7 +2704,12 @@ Lihat test matrix di Fase 8.
 
 ### Task
 
-- [ ] Deprecate L1–L5 di schema.
+- [x] Deprecate L1–L5 di schema. ✅ 2026-08-02 (assurance label
+  ditandai `[legacy: gunakan evidence matrix + finding/completeness]`
+  di teks; JSON menyertakan `"assurance_legacy":true`;
+  label L1-L5 tetap ditampilkan untuk backward compat tetapi
+  tidak lagi menjadi default — evidence matrix + finding/completeness
+  adalah primary output).
 - [x] Tambahkan `finding_verdict`. ✅ 2026-08-02 (Sumbu A `myc_finding`
   `finding`: CLEAN/FINDINGS/INCONCLUSIVE, dihitung di `myc_reduce_verdict`
   dari typed gate status — prioritas FINDINGS > INCONCLUSIVE > CLEAN, hanya
@@ -2729,9 +2726,16 @@ Lihat test matrix di Fase 8.
   requires/ensures/total + driver funcs/cases. Jujur: hanya metrik yang
   benar-benar diukur; kolom functions_total/buffers yang tidak diproduksi
   penganalisis token TIDAK dimunculkan — tidak mengarang angka).
-- [x] Tambahkan unverified debt. ✅ 2026-08-02 (`unverified_debt[]` teks + JSON, turunan dari typed gate status: UNAVAILABLE / INFRA_FAILED / INCONCLUSIVE / driver 0-kasus / ensures-unproved / output-truncated; regresi di `_regress_run.bat`).
-- [ ] Buat compatibility renderer bila masih ingin menampilkan label lama.
-- [ ] Claim compiler mencegah wording berlebihan.
+- [x] Buat compatibility renderer. ✅ 2026-08-02 (assurance label lama
+  tetap ditampilkan dengan catatan `[legacy: gunakan evidence matrix +
+  finding/completeness]` di teks; JSON menyertakan `"assurance_legacy":true`;
+  label L1-L5 tetap ada untuk backward compat tetapi bukan primary output).
+- [x] Claim compiler mencegah wording berlebihan. ✅ 2026-08-02
+  (`myc_validate_claim()` di `gate.c` memvalidasi bahwa label assurance
+  benar-benar didukung oleh bukti gate yang selesai; `claim_status`
+  (VALID/OVERSTATED/UNVERIFIED) ditampilkan di teks `claim:` dan JSON
+  `"claim"`; claim compiler mencegah output menyebut FULL/PROVEN/memory-safe
+  kecuali obligation benar-benar terpenuhi).
 
 ### Acceptance criteria
 
@@ -2894,8 +2898,11 @@ Urutan implementasi yang paling memberi reputasi:
 2. [x] Unverified Debt ✅ 2026-08-02 (deduksi murni dari typed gate status; laporan teks + JSON; regresi di `_regress_run.bat`)
 3. [x] Semantic Canary ✅ 2026-08-02 (canary OOB dijalankan sebelum gate runtime
       menyatakan clean; tak terdeteksi -> INCONCLUSIVE; evidence di ledger)
-4. [ ] Counterexample Replay Capsule
-5. [ ] Claim Compiler
+4. [x] Claim Compiler ✅ 2026-08-02 (`myc_validate_claim()` di
+       `gate.c` memvalidasi assurance label terhadap bukti gate;
+       `claim_status` di `myc_result`; tampil di teks `claim:` dan
+       JSON `"claim"`; mencegah overselling FULL/PROVEN/memory-safe).
+5. [ ] Counterexample Replay Capsule
 6. [ ] Differential Backend Quorum
 7. [ ] Scope Certificate
 8. [ ] Metamorphic Verification

@@ -107,6 +107,17 @@ const char *myc_finding_name(myc_finding f)
     return "unknown";
 }
 
+const char *myc_claim_status_name(myc_claim_status c)
+{
+    switch (c) {
+    case MYC_CLAIM_UNKNOWN:    return "unknown";
+    case MYC_CLAIM_VALID:      return "valid";
+    case MYC_CLAIM_OVERSTATED: return "overstated";
+    case MYC_CLAIM_UNVERIFIED: return "unverified";
+    }
+    return "unknown";
+}
+
 /* Escape string JSON ke json_sb (tanpa batas 4096; dipakai laporan & MCP). */
 static int json_sb_escape(json_sb *b, const char *s)
 {
@@ -141,9 +152,10 @@ void myc_report_text(const myc_result *res)
     int i;
     size_t gi;
     printf("verdict:   %s\n", myc_verdict_name(res->verdict));
-    printf("assurance: %s\n", myc_assurance_name(res->assurance));
+    printf("assurance: %s [legacy: gunakan evidence matrix + finding/completeness]\n", myc_assurance_name(res->assurance));
     printf("finding:   %s\n", myc_finding_name(res->finding));
     printf("completeness: %s\n", myc_completeness_name(res->completeness));
+    printf("claim:     %s\n", myc_claim_status_name(res->claim_status));
     printf("error:     %s\n", myc_error_name(res->err));
     printf("exit_code: %d\n", res->exit_code);
     printf("duration:  %llu ms\n", res->duration_ms);
@@ -192,6 +204,8 @@ void myc_report_text(const myc_result *res)
         if (res->run_stderr_text && res->run_stderr_text[0])
             printf("  run_stderr:\n%s\n", res->run_stderr_text);
     }
+    if (res->run_sanitizer_detected)
+        printf("sanitizer: %s\n", res->run_sanitizer_marker);
 
     if (res->ran_prove) {
         printf("prove:\n");
@@ -270,8 +284,10 @@ char *myc_result_to_json(const myc_result *res)
     json_sb_puts(&b, "{");
     json_sb_printf(&b, "\"verdict\":\"%s\",", myc_verdict_name(res->verdict));
     json_sb_printf(&b, "\"assurance\":\"%s\",", myc_assurance_name(res->assurance));
+    json_sb_printf(&b, "\"assurance_legacy\":true,");
     json_sb_printf(&b, "\"finding\":\"%s\",", myc_finding_name(res->finding));
     json_sb_printf(&b, "\"completeness\":\"%s\",", myc_completeness_name(res->completeness));
+    json_sb_printf(&b, "\"claim\":\"%s\",", myc_claim_status_name(res->claim_status));
     json_sb_printf(&b, "\"error\":\"%s\",", myc_error_name(res->err));
     json_sb_printf(&b, "\"exit_code\":%d,", res->exit_code);
     json_sb_printf(&b, "\"duration_ms\":%llu,", (unsigned long long)res->duration_ms);
@@ -290,6 +306,9 @@ char *myc_result_to_json(const myc_result *res)
     json_sb_printf(&b, "\"contract_requires\":%d,", res->contract_requires);
     json_sb_printf(&b, "\"contract_ensures\":%d,", res->contract_ensures);
     json_sb_printf(&b, "\"truncated\":%s,", res->truncated ? "true" : "false");
+    json_sb_printf(&b, "\"sanitizer_detected\":%s,", res->run_sanitizer_detected ? "true" : "false");
+    if (res->run_sanitizer_detected)
+        json_sb_printf(&b, "\"sanitizer_marker\":\"%s\",", res->run_sanitizer_marker);
     json_sb_printf(&b, "\"stdout_bytes\":%llu,",
                    (unsigned long long)res->total_stdout_bytes);
     json_sb_printf(&b, "\"stderr_bytes\":%llu,",

@@ -30,6 +30,33 @@
 #include <unistd.h>
 #endif
 
+/* Marker sanitizer yang dicari pada output streaming.
+ * Daftar ini harus konsisten dengan run.c. */
+static const char *const STREAM_SANITIZER_MARKERS[] = {
+    "ERROR: AddressSanitizer",
+    "SUMMARY: AddressSanitizer",
+    "AddressSanitizer:",
+    "UndefinedBehaviorSanitizer",
+    "LeakSanitizer",
+    NULL
+};
+
+/* Periksa apakah sebuah chunk mengandung marker sanitizer.
+ * Mengembalikan pointer ke marker yang cocok atau NULL. */
+static const char *stream_sanitizer_match(const char *buf, size_t len)
+{
+    size_t i, j;
+    for (i = 0; STREAM_SANITIZER_MARKERS[i]; i++) {
+        size_t mlen = strlen(STREAM_SANITIZER_MARKERS[i]);
+        if (mlen > len) continue;
+        for (j = 0; j <= len - mlen; j++) {
+            if (memcmp(buf + j, STREAM_SANITIZER_MARKERS[i], mlen) == 0)
+                return STREAM_SANITIZER_MARKERS[i];
+        }
+    }
+    return NULL;
+}
+
 /* ------------------------------------------------------------------ */
 /* Pencarian executable                                                */
 /* ------------------------------------------------------------------ */
@@ -242,14 +269,19 @@ typedef struct {
     char   *hdr;        /* prefix terawetkan (bounded head) */
     size_t  head_cap;
     size_t  head_len;
-    char   *tail;      /* ring buffer: N byte TERAKHIR (bounded tail) */
+    char   *tail;       /* ring buffer: N byte TERAKHIR (bounded tail) */
     size_t  tail_cap;
     size_t  tail_len;
-    size_t  tail_pos;  /* penulis ring */
-    size_t  total;     /* total byte dibaca (termasuk yang dibuang) */
-    int     truncated; /* ada byte di tengah yang dibuang (total > head+tail) */
-    size_t  max;       /* budget total */
+    size_t  tail_pos;   /* penulis ring */
+    size_t  total;      /* total byte dibaca (termasuk yang dibuang) */
+    int     truncated;  /* ada byte di tengah yang dibuang */
+    size_t  max;        /* budget total */
     int     finished;
+    /* Streaming evidence detector: deteksi marker sanitizer
+     * (ASan/UBSan/LeakSanitizer) pada output saat mengalir,
+     * tanpa menunggu proses selesai. */
+    int     sanitizer_detected;
+    char    sanitizer_marker[64];
 } drain_buf;
 
 static int drain_init(drain_buf *d, size_t max)
@@ -302,6 +334,17 @@ static void drain_feed(drain_buf *d, const char *src, size_t n)
     /* Ada byte tengah yang terpaksa dibuang: head + tail tak menutup semuanya. */
     if (d->total > d->head_cap + d->tail_cap)
         d->truncated = 1;
+    /* Streaming evidence detector: deteksi marker sanitizer
+     * pada output yang mengalir. Bila ditemukan, catat marker
+     * agar laporan bisa menyebutkan bukti secara streaming. */
+    if (!d->sanitizer_detected) {
+        const char *m = stream_sanitizer_match(src, n);
+        if (m) {
+            d->sanitizer_detected = 1;
+            strncpy(d->sanitizer_marker, m, sizeof(d->sanitizer_marker) - 1);
+            d->sanitizer_marker[sizeof(d->sanitizer_marker) - 1] = '\0';
+        }
+    }
 }
 
 /* Bangun C-string tunggal dari head + tail (urutan ring). Mengembalikan
@@ -573,6 +616,12 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
     res->stdout_data = drain_assemble(&out, &res->stdout_shown, &out.truncated);
     res->stderr_data = drain_assemble(&err, &res->stderr_shown, &err.truncated);
     res->truncated = out.truncated || err.truncated;
+    res->sanitizer_detected = out.sanitizer_detected || err.sanitizer_detected;
+    if (res->sanitizer_detected) {
+        const char *m = out.sanitizer_detected ? out.sanitizer_marker : err.sanitizer_marker;
+        strncpy(res->sanitizer_marker, m ? m : "", sizeof(res->sanitizer_marker) - 1);
+        res->sanitizer_marker[sizeof(res->sanitizer_marker) - 1] = '\0';
+    }
     if (!res->stdout_data)
         res->stdout_data = (char *)malloc(1);
     if (!res->stderr_data)
@@ -801,6 +850,13 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
     res->stderr_data = drain_assemble(&err, &res->stderr_shown, &err.truncated);
     res->stdout_total = out.total;
     res->stderr_total = err.total;
+    res->truncated = out.truncated || err.truncated;
+    res->sanitizer_detected = out.sanitizer_detected || err.sanitizer_detected;
+    if (res->sanitizer_detected) {
+        const char *m = out.sanitizer_detected ? out.sanitizer_marker : err.sanitizer_marker;
+        strncpy(res->sanitizer_marker, m ? m : "", sizeof(res->sanitizer_marker) - 1);
+        res->sanitizer_marker[sizeof(res->sanitizer_marker) - 1] = '\0';
+    }
     res->truncated = out.truncated || err.truncated;
     if (!res->stdout_data) { res->stdout_data = (char *)malloc(1); if (res->stdout_data) res->stdout_data[0] = '\0'; }
     if (!res->stderr_data) { res->stderr_data = (char *)malloc(1); if (res->stderr_data) res->stderr_data[0] = '\0'; }

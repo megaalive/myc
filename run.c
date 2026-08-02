@@ -588,6 +588,10 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
     res->run_shown_stdout_bytes = pres.stdout_shown;
     res->run_shown_stderr_bytes = pres.stderr_shown;
     res->run_truncated = pres.truncated;
+    res->run_sanitizer_detected = pres.sanitizer_detected;
+    strncpy(res->run_sanitizer_marker, pres.sanitizer_marker,
+            sizeof(res->run_sanitizer_marker) - 1);
+    res->run_sanitizer_marker[sizeof(res->run_sanitizer_marker) - 1] = '\0';
     myc_proc_result_free(&pres);
     free(run_argv);
 
