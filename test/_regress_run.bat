@@ -2,7 +2,7 @@
 setlocal
 set OUT=test\_tmp_run_out.txt
 echo --- Fase 5 reentrancy (MYC-AUDIT-008): myc_run paralel bebas race/stale
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\stress_threads.exe test\stress_threads.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c >nul 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\stress_threads.exe test\stress_threads.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c >nul 2>&1
 if exist test\stress_threads.exe (
   test\stress_threads.exe | findstr "no race" >nul && echo [OK] stress_threads deterministik, no race || echo [FAIL] stress_threads race/stale
 ) else (
@@ -21,7 +21,7 @@ echo --- Fase 1 streaming evidence detector: sanitizer marker terdeteksi pada ou
 myc.exe check tests\bad_run_oob.c --run > %OUT%
 findstr /C:"sanitizer:" %OUT% >nul && echo [OK] streaming evidence detector mencatat sanitizer marker || echo [INFO] sanitizer tidak terdeteksi (bukan fixture sanitizer)
 echo --- self-dogfooding: semua source myc harus OK
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c) do (
   echo === %%f
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%
@@ -120,6 +120,17 @@ myc.exe check tests\bad_intptr.c --quorum > %OUT% 2>&1
 findstr /C:"quorum: inconclusive" %OUT% >nul && echo [OK] quorum inconclusive utk tanpa hasil gate || echo [FAIL] quorum inconclusive tidak muncul
 myc.exe check tests\ok_run.c --run --quorum --json > %OUT% 2>&1
 findstr /C:"\"quorum_status\":\"clean\"" %OUT% >nul && echo [OK] quorum_status di JSON || echo [FAIL] quorum_status hilang di JSON
+del %OUT%
+echo --- Negative-Space Analysis (9.8): observasi non-blocking
+myc.exe check tests\negative_ok.c --negative > %OUT% 2>&1
+findstr /C:"negative (9.8): callsites=3 deviations=0" %OUT% >nul && echo [OK] negative clean utk negative_ok || echo [FAIL] negative clean tidak muncul
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] negative tidak mengubah verdict || echo [FAIL] negative mengubah verdict
+myc.exe check tests\negative_dev.c --negative > %OUT% 2>&1
+findstr /C:"deviations=1" %OUT% >nul && echo [OK] negative deviation terdeteksi utk negative_dev || echo [FAIL] negative deviation tidak muncul
+findstr /C:"konvensi proyek 4/5 callsite malloc memeriksa hasil" %OUT% >nul && echo [OK] laporan konvensi + confidence muncul || echo [FAIL] laporan konvensi hilang
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] deviation tetap OK (observasi saja) || echo [FAIL] deviation mengubah verdict
+myc.exe check tests\negative_dev.c --negative --json > %OUT% 2>&1
+findstr /C:"\"negative_deviations\":1" %OUT% >nul && echo [OK] negative_deviations di JSON || echo [FAIL] negative_deviations hilang di JSON
 del %OUT%
 echo --- MCP smoke (P9): mcp.exe harus menjawab JSON-RPC
 call test\_mcp_smoke.bat

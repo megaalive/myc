@@ -2227,7 +2227,7 @@ Dua build tambahan cukup; tidak harus eksplosif.
 
 ---
 
-## 9.8. Negative-Space Analysis
+## 9.8. Negative-Space Analysis — ✅ SELESAI 2026-08-02
 
 Analisis tidak hanya melihat pola yang ada, tetapi pola yang hilang.
 
@@ -2945,7 +2945,7 @@ Urutan implementasi yang paling memberi reputasi:
 8. [x] Metamorphic Verification ✅ 2026-08-02 (gate `--metamorphic`: build
        ganda clang ASan -O0/-O2, bandingkan hasil; beda sanitizer ->
        inconsistent + RUNTIME_VIOLATION; fingerprint v9)
-9. [ ] Negative-Space Analysis
+9. [x] Negative-Space Analysis
 
 Jangan implementasikan semuanya sekaligus.
 

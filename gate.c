@@ -129,6 +129,7 @@ const char *myc_gate_id_short(myc_gate_id id)
     case MYC_GATE_FILC:       return "filc";
     case MYC_GATE_DRIVER:     return "driver";
     case MYC_GATE_METAMORPHIC:return "metamorphic";
+    case MYC_GATE_NEGATIVE:   return "negative";
     default:                  return "?";
     }
 }
@@ -194,6 +195,7 @@ static const char *rc_gate_status(myc_gate_status s)
     case MYC_GATE_INCONCLUSIVE: return "inconclusive";
     case MYC_GATE_COMPLETED_CLEAN: return "completed_clean";
     case MYC_GATE_COMPLETED_FINDINGS: return "completed_findings";
+    case MYC_GATE_COMPLETED_OBSERVATIONS: return "completed_observations";
     }
     return "unknown";
 }
@@ -382,6 +384,12 @@ void myc_reduce_verdict(myc_result *res)
         switch (g->status) {
         case MYC_GATE_COMPLETED_FINDINGS:
             has_findings = 1;
+            break;
+        case MYC_GATE_COMPLETED_OBSERVATIONS:
+            /* Observasi heuristik (negative-space 9.8): selesai tapi
+             * BUKAN finding terkonfirmasi, juga bukan incomplete.
+             * Benign: tidak menaikkan verdict, tidak menurunkan
+             * completeness, tidak menambah debt. */
             break;
         case MYC_GATE_COMPLETED_CLEAN:
             switch (g->id) {

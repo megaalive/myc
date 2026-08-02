@@ -26,6 +26,7 @@
 #include "filc.h"
 #include "gate.h"
 #include "lint.h"
+#include "negative.h"
 #include "policy.h"
 #include "proc.h"
 #include "prove.h"
@@ -435,6 +436,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_METAMORPHIC, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_NEGATIVE, MYC_GATE_NOT_APPLICABLE, NULL);
 
     /* hash source */
     sha256_hex(src, srclen, hex);
@@ -462,7 +464,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         size_t fp_len;
         myc_policy_hash(policy_hex);
         fp_need = snprintf(NULL, 0,
-                     "v9|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s|src:%s",
+                     "v10|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s|src:%s",
                      gcc_path,
                      req->cwd ? req->cwd : "",
                      policy_hex,
@@ -473,6 +475,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                      req->filc ? "filc" : "nofilc",
                      req->driver ? "driver" : "nodriver",
                      req->metamorphic ? "meta" : "nometa",
+                     req->negative ? "neg" : "noneg",
                      res->source_sha256 ? res->source_sha256 : "");
         if (fp_need > 0) {
             fp_len = (size_t)fp_need;
@@ -480,7 +483,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         }
         if (fp_buf) {
             snprintf(fp_buf, fp_len + 1,
-                     "v9|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s|src:%s",
+                     "v10|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s|src:%s",
                      gcc_path,
                      req->cwd ? req->cwd : "",
                      policy_hex,
@@ -491,6 +494,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                      req->filc ? "filc" : "nofilc",
                      req->driver ? "driver" : "nodriver",
                      req->metamorphic ? "meta" : "nometa",
+                     req->negative ? "neg" : "noneg",
                      res->source_sha256 ? res->source_sha256 : "");
             sha256_hex(fp_buf, fp_len, hex);
             free(fp_buf);
@@ -516,6 +520,40 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             free(gcc_path);
             return;
         }
+    }
+
+    /* --- Gate opsional: Negative-Space Analysis (9.8, --negative) ---
+     * Structural mining pola yang hilang: konvensi pemeriksaan hasil
+     * fungsi alokasi per callsite. HANYA observasi (diagnostic +
+     * confidence) -- TIDAK pernah hard verdict (prinsip MYC-AUDIT-014:
+     * heuristik teks bukan bukti semantik). Non-blocking: tanpa callsite
+     * yang cocok -> NOT_APPLICABLE, tidak ada klaim. Status gate:
+     *   - 0 callsite               -> NOT_APPLICABLE
+     *   - semua memeriksa          -> COMPLETED_CLEAN
+     *   - ada yang tidak memeriksa -> COMPLETED_OBSERVATIONS (bukan
+     *     FINDINGS: observasi, bukan finding terkonfirmasi). */
+    if (req->negative) {
+        myc_negative_space(src, srclen, res);
+        res->ran_negative = 1;
+        if (res->negative_callsites == 0) {
+            myc_gate_set_status(res, MYC_GATE_NEGATIVE, MYC_GATE_NOT_APPLICABLE,
+                                "tidak ada callsite alokasi");
+            myc_result_add_evidence(res, MYC_GATE_NEGATIVE, MYC_EVIDENCE_SKIP,
+                                    "negative-space: 0 callsite");
+        } else if (res->negative_deviations == 0) {
+            myc_gate_set_status(res, MYC_GATE_NEGATIVE, MYC_GATE_COMPLETED_CLEAN,
+                                "semua callsite memeriksa hasil");
+            myc_result_add_evidence(res, MYC_GATE_NEGATIVE, MYC_EVIDENCE_GATE_END,
+                                    "negative-space: clean");
+        } else {
+            myc_gate_set_status(res, MYC_GATE_NEGATIVE,
+                                MYC_GATE_COMPLETED_OBSERVATIONS,
+                                "konvensi menyimpang terdeteksi");
+            myc_result_add_evidence(res, MYC_GATE_NEGATIVE,
+                                    MYC_EVIDENCE_DIAGNOSTIC,
+                                    "negative-space: deviation (observasi)");
+        }
+        /* Non-blocking: lanjut pipeline normal (tidak return). */
     }
 
     /* --- gcc -E --- */
@@ -985,6 +1023,12 @@ void myc_quorum_analysis(const myc_request *req, myc_result *res)
                 any_result = 1;
                 break;
             case MYC_GATE_COMPLETED_CLEAN:
+                any_clean = 1;
+                any_result = 1;
+                break;
+            case MYC_GATE_COMPLETED_OBSERVATIONS:
+                /* Observasi (negative-space 9.8): bukan finding
+                 * terkonfirmasi, tidak memecah konsensus backend. */
                 any_clean = 1;
                 any_result = 1;
                 break;

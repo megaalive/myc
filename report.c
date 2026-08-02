@@ -82,6 +82,7 @@ const char *myc_gate_status_name(myc_gate_status s)
     case MYC_GATE_INCONCLUSIVE:    return "inconclusive";
     case MYC_GATE_COMPLETED_CLEAN: return "completed_clean";
     case MYC_GATE_COMPLETED_FINDINGS: return "completed_findings";
+    case MYC_GATE_COMPLETED_OBSERVATIONS: return "completed_observations";
     }
     return "unknown";
 }
@@ -181,6 +182,9 @@ void myc_report_text(const myc_result *res)
     if (res->contract_requires > 0 || res->contract_ensures > 0)
         printf("contracts: requires=%d ensures=%d\n",
                res->contract_requires, res->contract_ensures);
+    if (res->ran_negative)
+        printf("negative (9.8): callsites=%d deviations=%d\n",
+               res->negative_callsites, res->negative_deviations);
 
     /* Scope Certificate (Fase 4, 9.11): daftar persis apa yang diperiksa.
      * Hanya memuat metrik yang BENAR-BENAR diukur; kolom yang tidak diukur
@@ -195,6 +199,9 @@ void myc_report_text(const myc_result *res)
         if (res->driver_funcs > 0)
             printf("  driver: functions=%d cases=%d\n",
                    res->driver_funcs, res->driver_cases);
+        if (res->ran_negative)
+            printf("  negative: callsites=%d deviations=%d\n",
+                   res->negative_callsites, res->negative_deviations);
     }
 
     for (i = 0; i < res->diag_count; i++) {
@@ -326,6 +333,10 @@ if (res->debt_count > 0) {
          printf("  filc: %s\n", cap->filc ? "yes" : "no");
          printf("  driver: %s\n", cap->driver ? "yes" : "no");
          printf("  metamorphic: %s\n", cap->metamorphic ? "yes" : "no");
+         printf("  negative: %s\n", cap->negative ? "yes" : "no");
+         if (cap->negative)
+             printf("  negative_callsites: %d  negative_deviations: %d\n",
+                    cap->negative_callsites, cap->negative_deviations);
          if (cap->metamorphic) {
              printf("  meta_o0_exit: %d  meta_o2_exit: %d\n",
                     cap->meta_o0_exit, cap->meta_o2_exit);
@@ -389,6 +400,11 @@ char *myc_result_to_json(const myc_result *res)
     json_sb_puts(&b, ",");
     json_sb_printf(&b, "\"contract_requires\":%d,", res->contract_requires);
     json_sb_printf(&b, "\"contract_ensures\":%d,", res->contract_ensures);
+    json_sb_printf(&b, "\"ran_negative\":%s,", res->ran_negative ? "true" : "false");
+    if (res->ran_negative) {
+        json_sb_printf(&b, "\"negative_callsites\":%d,", res->negative_callsites);
+        json_sb_printf(&b, "\"negative_deviations\":%d,", res->negative_deviations);
+    }
     json_sb_printf(&b, "\"truncated\":%s,", res->truncated ? "true" : "false");
     json_sb_printf(&b, "\"sanitizer_detected\":%s,", res->run_sanitizer_detected ? "true" : "false");
     if (res->run_sanitizer_detected)
@@ -446,6 +462,9 @@ char *myc_result_to_json(const myc_result *res)
                    res->contract_requires + res->contract_ensures);
     json_sb_printf(&b, "\"driver_funcs\":%d,", res->driver_funcs);
     json_sb_printf(&b, "\"driver_cases\":%d", res->driver_cases);
+    if (res->ran_negative)
+        json_sb_printf(&b, ",\"negative_callsites\":%d,\"negative_deviations\":%d",
+                       res->negative_callsites, res->negative_deviations);
     json_sb_puts(&b, "},");
     if (res->ran_driver) {
         json_sb_printf(&b, "\"driver_stdout\":");
@@ -564,6 +583,14 @@ json_sb_printf(&b, "\"unverified_debt\":[");
                         cap->driver ? "true" : "false");
          json_sb_printf(&b, "\"metamorphic\":%s,",
                         cap->metamorphic ? "true" : "false");
+         json_sb_printf(&b, "\"negative\":%s,",
+                        cap->negative ? "true" : "false");
+         if (cap->negative) {
+             json_sb_printf(&b, "\"negative_callsites\":%d,",
+                            cap->negative_callsites);
+             json_sb_printf(&b, "\"negative_deviations\":%d,",
+                            cap->negative_deviations);
+         }
          if (cap->metamorphic) {
              json_sb_printf(&b, "\"meta_o0_exit\":%d,", cap->meta_o0_exit);
              json_sb_printf(&b, "\"meta_o2_exit\":%d,", cap->meta_o2_exit);

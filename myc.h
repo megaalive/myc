@@ -64,7 +64,12 @@ typedef enum {
     MYC_GATE_INFRA_FAILED,
     MYC_GATE_INCONCLUSIVE,
     MYC_GATE_COMPLETED_CLEAN,
-    MYC_GATE_COMPLETED_FINDINGS
+    MYC_GATE_COMPLETED_FINDINGS,
+    /* Gate selesai tapi hasilnya HANYA observasi (heuristik teks, mis.
+     * negative-space 9.8): bukan finding terkonfirmasi, juga bukan
+     * incomplete. Benign terhadap verdict/assurance; muncul di evidence
+     * matrix agar laporan jujur ("scan selesai, ada catatan"). */
+    MYC_GATE_COMPLETED_OBSERVATIONS
 } myc_gate_status;
 
 typedef enum {
@@ -77,6 +82,8 @@ typedef enum {
     MYC_GATE_FILC,
     MYC_GATE_DRIVER,
     MYC_GATE_METAMORPHIC,    /* (9.7) build ganda -O0/-O2, bandingkan hasil */
+    MYC_GATE_NEGATIVE,       /* (9.8) negative-space: observasi konvensi
+                                callsite (bukan finding, bukan verdict) */
     MYC_GATE_COUNT
 } myc_gate_id;
 
@@ -225,6 +232,10 @@ typedef struct {
                                     bangun 2x (clang ASan -O0 dan -O2),
                                     jalankan, bandingkan hasil; beda =
                                     kemungkinan UB / toolchain-sensitive */
+    int         negative;       /* gate Negative-Space Analysis (9.8):
+                                    observasi pola yang hilang (konvensi
+                                    pemeriksaan hasil alokasi); NON-blocking,
+                                    HANYA diagnostic + confidence */
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
@@ -260,6 +271,7 @@ typedef struct {
     int checked;    int     filc;
     int     driver;
     int     metamorphic;    /* (9.7) flag gate metamorphic */
+    int     negative;       /* (9.8) flag gate negative-space */
     /* Execution result */
     myc_verdict verdict;
     int exit_code;
@@ -272,6 +284,9 @@ typedef struct {
     int meta_o2_exit;
     int meta_o0_finding;   /* 1 = marker sanitizer pada build -O0 */
     int meta_o2_finding;   /* 1 = marker sanitizer pada build -O2 */
+    /* Negative-space (9.8): hasil observasi */
+    int negative_callsites;   /* total callsite alokasi terdeteksi */
+    int negative_deviations;  /* jumlah yang tidak memeriksa hasil */
     /* Gate summary (one status per gate) */
     myc_gate_status gate_status[MYC_GATE_COUNT];
     /* Finding / completeness / claim */
@@ -357,6 +372,11 @@ typedef struct {
     int         meta_o0_finding;      /* 1 = marker sanitizer pada -O0 */
     int         meta_o2_finding;      /* 1 = marker sanitizer pada -O2 */
     int         meta_timed_out;       /* salah satu run timeout */
+
+    /* --- hasil gate negative-space (9.8, --negative) --- */
+    int         ran_negative;         /* 1 bila gate negative dijalankan */
+    int         negative_callsites;   /* total callsite alokasi terdeteksi */
+    int         negative_deviations;  /* jumlah yang tidak memeriksa hasil */
 
     /* internal: gate mana yang dijalankan terakhir */
     int         ran_preprocess;
