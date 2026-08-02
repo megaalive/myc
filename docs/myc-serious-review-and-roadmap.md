@@ -2812,7 +2812,7 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 
 ### 7.2. Runtime sanitizer
 
-- [ ] absolute temp path; *(sebagian selesai Fase 1)*
+- [x] absolute temp path ✅ 2026-08-02 (`make_temp_dir()` fallback ke `/tmp` (POSIX) / `C:/Temp` (Windows), canonicalize via `getcwd` bila base masih relatif).
 - [x] `mkdtemp`; ✅ (temp dir absolut & unik, MyC_AUDIT-003)
 - [ ] explicit sanitizer env;
 - [x] canary ✅ 2026-08-02 (`myc_runtime_canary`: OOB deterministik dijalankan
@@ -3286,11 +3286,11 @@ Ini lebih terhormat daripada `L5 FULL`.
 
 Urutan paling tepat:
 
-1. **Tulis ulang boundary proses POSIX dengan lifecycle yang benar.**
-2. **Perbaiki absolute temp path dan exec-error detection.**
-3. **Buat regression test yang membuktikan fixture buruk benar-benar tertangkap.**
-4. **Pisahkan code verdict dari verification completeness.**
-5. **Ganti L1–L5 dengan evidence matrix.**
+1. **Tulis ulang boundary proses POSIX dengan lifecycle yang benar.** ✅ 2026-08-02
+2. **Perbaiki absolute temp path dan exec-error detection.** ✅ 2026-08-02 (`make_temp_dir()` fallback ke `/tmp`/`C:/Temp`, canonicalize via `getcwd`; exec-error pipe dengan `FD_CLOEXEC` untuk bedakan exec gagal vs exit 127)
+3. **Buat regression test yang membuktikan fixture buruk benar-benar tertangkap.** ✅ 2026-08-02
+4. **Pisahkan code verdict dari verification completeness.** ✅ 2026-08-02 (Sumbu A finding + Sumbu B completeness, `myc_reduce_verdict` pure reducer)
+5. **Ganti L1–L5 dengan evidence matrix.** ✅ 2026-08-02 (finding_verdict, gate_matrix, evidence matrix, scope certificate, claim compiler, legacy assurance renderer)
 6. **Perbaiki fingerprint OOB.**
 7. **Hilangkan static/global diagnostic state.** ✅ 2026-08-02 (Fase 5: arena bump milik hasil; static message ring dihapus di compile/run/prove/filc/driver; global lint state -> `_Thread_local`)
 8. **Perketat JSON dan string length handling.** ✅ 2026-08-02 (Fase 6: strict number grammar, valid UTF-8, surrogate & embedded NUL tolak, overflow guard; corpus json_abuse.c 52 case)
