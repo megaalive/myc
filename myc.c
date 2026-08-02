@@ -43,15 +43,18 @@ struct myc_arena {
     char    data[];           /* payload */
 };
 
-static struct myc_arena *arena_alloc_new(void)
+/* Alokasi blok arena dengan payload eksplisit (MYC-AUDIT-018): payload
+ * bisa melebihi MYC_ARENA_BLOCK (string raksasa) atau lebih kecil (blok
+ * kecil). Overflow dicek di pemanggil. */
+static struct myc_arena *arena_alloc(size_t payload)
 {
     struct myc_arena *a = (struct myc_arena *)malloc(
-        sizeof(struct myc_arena) + MYC_ARENA_BLOCK);
+        sizeof(struct myc_arena) + payload);
     if (!a)
         return NULL;
     a->next = NULL;
     a->cur = a->data;
-    a->end = a->data + MYC_ARENA_BLOCK;
+    a->end = a->data + payload;
     return a;
 }
 
@@ -67,9 +70,24 @@ char *myc_result_arena_dup(myc_result *res, const char *s, size_t string_len)
 {
     struct myc_arena *a = res->arena;
     size_t n = string_len ? string_len : strlen(s);
+    size_t payload;
 
-    if (!a || a->end - a->cur < (ptrdiff_t)(n + 1)) {
-        struct myc_arena *na = arena_alloc_new();
+    /* MYC-AUDIT-018: string_len adalah parameter eksternal — pastikan
+     * n+1 tidak wrap ke 0 (n == SIZE_MAX → memcpy OOB raksasa di blok
+     * kecil). Bila n raksasa, arena mencanangkan blok eksak; bila alokasi
+     * gagal (OOM) → NULL, tidak pernah menulis sebagian. */
+    if (n == SIZE_MAX)
+        return NULL;
+    payload = n + 1;
+    if (!a || (size_t)(a->end - a->cur) < payload) {
+        size_t block = payload > MYC_ARENA_BLOCK ? payload : MYC_ARENA_BLOCK;
+        struct myc_arena *na;
+        /* guard kedua (test oom_guards menangkap): sizeof(arena) + block
+         * sendiri bisa overflow (mis. payload = SIZE_MAX-8) dan wrap ke
+         * ukuran kecil -> malloc sukses lalu memcpy OOB. */
+        if (block > SIZE_MAX - sizeof(struct myc_arena))
+            return NULL;
+        na = arena_alloc(block);
         if (!na)
             return NULL;
         na->next = a;
@@ -79,7 +97,7 @@ char *myc_result_arena_dup(myc_result *res, const char *s, size_t string_len)
         char *slot = a->cur;
         memcpy(slot, s, n);
         slot[n] = '\0';
-        a->cur += n + 1;
+        a->cur += payload;
         return slot;
     }
 }

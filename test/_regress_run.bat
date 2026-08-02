@@ -162,6 +162,17 @@ findstr /C:"require_complete: enforced" %OUT% >nul && echo [OK] laporan enforced
 myc.exe check test\fixtures\ok_filc.c --filc > %OUT% 2>&1
 findstr /C:"MYC-INCOMPLETE-GATE-UNAVAILABLE" %OUT% >nul && echo [OK] backend tak tersedia jadi gap (bukan kesunyian) || echo [INFO] filc tersedia (tanpa gap)
 del %OUT%
+echo --- MYC-AUDIT-018: test portabel concurrency/deadlock/flood/OOM (via bash)
+where bash >nul 2>&1
+if errorlevel 1 (
+  echo [SKIP] bash tidak tersedia (test portabel audit018 dilewati; jalankan test\_audit018.sh di POSIX)
+) else (
+  bash test\_audit018.sh
+  if errorlevel 1 (
+    echo [FAIL] audit018 portable gagal
+    exit /b 1
+  )
+)
 echo --- MCP smoke (P9): mcp.exe harus menjawab JSON-RPC
 call test\_mcp_smoke.bat
 echo --- MCP SDK interop (opsional): hanya bila SDK MCP Python resmi terpasang

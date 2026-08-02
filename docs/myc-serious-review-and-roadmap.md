@@ -317,7 +317,7 @@ Setelah reentrancy dan schema hasil diperbaiki, ini dapat menjadi salah satu keu
 | MYC-AUDIT-015 | Medium | portability | `NUL` dipakai di POSIX dan meninggalkan file literal `NUL` | ✅ SELESAI 2026-08-02 (helper myc_null_device: NUL di Windows, /dev/null di POSIX; literal "NUL" diganti runtime di merge_args) |
 | MYC-AUDIT-016 | Medium | MCP | JSON document dibungkus sebagai string text, status error tidak konsisten | ✅ SELESAI 2026-08-02 (structuredContent schema myc.result.v1; isError hanya tool/protocol error; JSON-RPC ketat jsonrpc/typed-id/notification; negosiasi strict; unknown flag ditolak) |
 | MYC-AUDIT-017 | Medium | output parsing | Marker human-readable mudah spoof dan rapuh terhadap versi/localization | ✅ SELESAI 2026-08-02 (saluran bukti NON-SPOOFABLE: ASan/UBSan `log_path` → report FILE di tmp_dir, dibaca `myc_read_sanitizer_report`; marker teks stdout/stderr hanya bukti sekunder & WAJIB exit != 0; env deterministik `ASAN_OPTIONS`/`UBSAN_OPTIONS`/`LC_ALL=C` via `preq.env`; finding = report || (marker && exit!=0); teks mirip marker dgn exit 0 diabaikan + diagnostic) |
-| MYC-AUDIT-018 | Medium | test | Test dominan Windows dan tidak menguji concurrency/deadlock/OOM |
+| MYC-AUDIT-018 | Medium | test | Test dominan Windows dan tidak menguji concurrency/deadlock/OOM | ✅ SELESAI 2026-08-02 (runner portabel `test/_audit018.sh` — bash di Windows git-bash DAN POSIX; unit test C: `proc_flood` deadlock 1MiB + flood 100MiB prefix+tail + env override, `oom_guards` arena overflow guard + input ekstrem, `oom_alloc` injeksi `--wrap` malloc/calloc/realloc 49 titik OOM, `stress_threads` concurrency; bug ditemukan test: `myc_result_arena_dup` string_len raksasa → memcpy OOB (n+1 wrap) → diperbaiki guard ganda) |
 
 ---
 
@@ -3054,6 +3054,20 @@ correct totals
 - total 100 MB;
 - memory bounded.
 
+> Status: SELESAI 2026-08-02 (MYC-AUDIT-018). Semua skenario section ini
+> diimplementasikan sebagai unit test C portabel `test/proc_flood.c`
+> (dijalankan `test/_audit018.sh` di Windows git-bash DAN POSIX):
+> - DEADLOCK: child tulis 1 MiB stdout → baca 1 MiB stdin → tulis 1 MiB
+>   stderr; parent kirim 1 MiB stdin; selesai tanpa timeout, total byte
+>   persis (mengunci fix MYC-AUDIT-002: drain thread sebelum tulis stdin).
+> - FLOOD: 100 MiB stdout + 100 MiB stderr bersamaan, cap 64 KiB;
+>   prefix + tail ring dipertahankan, truncated=1, memori bounded.
+> - ENV OVERRIDE: override menggantikan key induk, sisanya diwarisi
+>   (mengunci fix MYC-AUDIT-017 build_env_block).
+> OOM: `oom_guards.c` (arena overflow guard + input ekstrem) dan
+> `oom_alloc.c` (injeksi kegagalan malloc/calloc/realloc via `--wrap`,
+> 49 titik OOM tanpa crash) — koncurrency: `stress_threads.c` (8×200).
+
 ### Descendant process
 
 Child spawn grandchild yang sleep.
@@ -3419,9 +3433,9 @@ Jika fondasi tersebut selesai, barulah analisis baru akan memperkuat reputasi. T
 
 ## Lampiran A — Temuan yang Harus Menjadi Regression Test
 
-- [ ] POSIX stdin/stdout deadlock.
-- [ ] POSIX drain thread join.
-- [ ] output complete before result return.
+- [x] POSIX stdin/stdout deadlock. (proc_flood T1, Windows+POSIX; MYC-AUDIT-018)
+- [x] POSIX drain thread join. (dijalankan implisit oleh proc_flood/stress di POSIX — tiap myc_proc_run meng-join drain; MYC-AUDIT-018)
+- [x] output complete before result return. (proc_flood T1 total byte persis; MYC-AUDIT-018)
 - [ ] process group kill.
 - [ ] exec failure vs application exit 127.
 - [ ] absolute temp executable path.
@@ -3429,7 +3443,7 @@ Jika fondasi tersebut selesai, barulah analisis baru akan memperkuat reputasi. T
 - [ ] bad checked runtime cannot retain misleading `L4`.
 - [ ] long fingerprint material cannot OOB.
 - [ ] `file_path`-only request.
-- [ ] two simultaneous `myc_run`.
+- [x] two simultaneous `myc_run`. (stress_threads 8 thread × 200 iterasi; MYC-AUDIT-008/018)
 - [ ] old result diagnostic remains immutable.
 - [ ] strict JSON number grammar.
 - [ ] embedded NUL source via MCP.
@@ -3439,7 +3453,8 @@ Jika fondasi tersebut selesai, barulah analisis baru akan memperkuat reputasi. T
 - [ ] multiple consecutive requires.
 - [ ] long contract expression rejected, not truncated.
 - [ ] Fil-C WSL receives `run_stdin`.
-- [ ] backend output truncation cannot become clean.
+- [x] backend output truncation cannot become clean. (proc_flood T2 truncated=1 + total 100MiB persis; MYC-AUDIT-018)
+- [x] OOM tidak membuat myc crash/hang. (oom_alloc: 49 titik kegagalan alokasi tanpa crash; oom_guards: arena overflow guard; MYC-AUDIT-018)
 - [ ] canary failure invalidates backend.
 - [ ] 0 driver cases cannot become runtime clean.
 - [ ] unknown CLI/MCP flags rejected.

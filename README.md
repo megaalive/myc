@@ -191,6 +191,16 @@ Gunakan `shell` hanya bila sintaks shell memang dibutuhkan, dan jelaskan.
   sendiri `json.c`), **soak** (`test/_soak.bat`), dan **corpus abuse**
   (`test/_corpus_abuse.bat` + `test/corpus/*.c` — input ganas tidak boleh
   membuat myc crash/hang). Smoke test MCP: `test/_mcp_smoke.bat`.
+- **MYC-AUDIT-018 selesai (2026-08-02)**: **test portabel lintas platform**
+  `test/_audit018.sh` (bash — Windows git-bash & POSIX) menguji
+  **concurrency** (`stress_threads.c` 8×200 `myc_run` paralel), **deadlock**
+  (`proc_flood.c`: child tulis 1 MiB stdout → baca 1 MiB stdin → tulis
+  1 MiB stderr; selesai tanpa timeout, total persis), **flood** (100 MiB
+  stdout + stderr cap 64 KiB, prefix+tail ring dipertahankan, memori
+  bounded), **env override**, dan **OOM** (`oom_guards.c` arena overflow
+  guard; `oom_alloc.c` injeksi kegagalan malloc/calloc/realloc via
+  `-Wl,--wrap` — 49 titik OOM tanpa crash). Di-wire ke
+  `test/_regress_run.bat` via `where bash` (tanpa bash → [SKIP]).
 - **D2.2 driver-generator selesai**: gate `--driver` (harness kasus tepi
   dari fungsi ber-kontrak, clang ASan+UBSan) → L3 RUNTIME bila bersih,
   DRIVER_VIOLATION bila sanitizer menangkap bug. Tool MCP tambahan:
