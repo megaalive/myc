@@ -71,7 +71,7 @@ echo === dogfood_ring.c --run --checked
 myc.exe check dogfood\dogfood_ring.c --run --checked > %OUT%
 findstr /B /C:"verdict:" /C:"assurance:" %OUT%
 echo --- checked audit MYC-AUDIT-012: elem_size + checked multiplication
-echo === tests\bad_checked_type.c --checked (tipe elemen salah -> COMPILE_ERROR)
+echo === tests\bad_checked_type.c --checked (tipe elemen salah -^> COMPILE_ERROR)
 myc.exe check tests\bad_checked_type.c --checked > %OUT% 2>&1
 findstr /C:"verdict:   COMPILE_ERROR" %OUT% >nul && echo [OK] bad_checked_type: tipe elemen salah ditolak compile-time || echo [FAIL] tipe salah tidak jadi COMPILE_ERROR
 echo === tests\bad_checked_new_overflow.c --run --checked (RUNTIME_VIOLATION)
@@ -125,10 +125,10 @@ del %OUT%
 echo --- Metamorphic Verification (9.7): clean setuju vs inconsistent
 myc.exe check tests\ok_run.c --metamorphic > %OUT% 2>&1
 findstr /C:"metamorphic clean" %OUT% >nul && echo [OK] metamorphic agree-clean utk ok_run || echo [FAIL] metamorphic clean tidak muncul
-findstr /C:"assurance: L3 (RUNTIME)" %OUT% >nul && echo [OK] metamorphic clean -> L3 || echo [FAIL] metamorphic clean bukan L3
+findstr /C:"assurance: L3 (RUNTIME)" %OUT% >nul && echo [OK] metamorphic clean -^> L3 || echo [FAIL] metamorphic clean bukan L3
 myc.exe check tests\bad_run_oob.c --metamorphic > %OUT% 2>&1
 findstr /C:"metamorphic inconsistency" %OUT% >nul && echo [OK] metamorphic inconsistency terdeteksi utk bad_run_oob || echo [FAIL] metamorphic inconsistency tidak muncul
-findstr /C:"verdict:   RUNTIME_VIOLATION" %OUT% >nul && echo [OK] inconsistent -> RUNTIME_VIOLATION || echo [FAIL] inconsistent bukan RUNTIME_VIOLATION
+findstr /C:"verdict:   RUNTIME_VIOLATION" %OUT% >nul && echo [OK] inconsistent -^> RUNTIME_VIOLATION || echo [FAIL] inconsistent bukan RUNTIME_VIOLATION
 echo --- Differential Backend Quorum (#3): clean vs conflict vs inconclusive
 myc.exe check tests\ok_run.c --run --quorum > %OUT% 2>&1
 findstr /C:"quorum: clean" %OUT% >nul && echo [OK] quorum clean utk run bersih || echo [FAIL] quorum clean tidak muncul
@@ -185,7 +185,7 @@ findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] require-complete tanpa gap te
 myc.exe check test\fixtures\ok_contract.c > %OUT% 2>&1
 findstr /C:"MYC-INCOMPLETE-ENSURES-UNPROVED" %OUT% >nul && echo [OK] gap ensures-unproved terlihat (debt berkode) || echo [FAIL] gap ensures tidak muncul
 myc.exe check test\fixtures\ok_contract.c --require-complete > %OUT% 2>&1
-findstr /C:"verdict:   INCONCLUSIVE" %OUT% >nul && echo [OK] require-complete: silent gap -> INCONCLUSIVE || echo [FAIL] gap tidak menggagalkan hasil
+findstr /C:"verdict:   INCONCLUSIVE" %OUT% >nul && echo [OK] require-complete: silent gap -^> INCONCLUSIVE || echo [FAIL] gap tidak menggagalkan hasil
 findstr /C:"require_complete: enforced" %OUT% >nul && echo [OK] laporan enforced muncul || echo [FAIL] laporan enforced hilang
 myc.exe check test\fixtures\ok_filc.c --filc > %OUT% 2>&1
 findstr /C:"MYC-INCOMPLETE-GATE-UNAVAILABLE" %OUT% >nul && echo [OK] backend tak tersedia jadi gap (bukan kesunyian) || echo [INFO] filc tersedia (tanpa gap)
