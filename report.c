@@ -329,6 +329,7 @@ char *myc_result_to_json(const myc_result *res)
             json_sb_puts(&b, ",");
         json_sb_printf(&b, "{\"gate\":%d,\"type\":%d,\"message\":",
                        (int)ev->gate_id, (int)ev->event_type);
+        json_sb_escape(&b, ev->message ? ev->message : "");
         json_sb_puts(&b, "}");
     }
     json_sb_puts(&b, "],");

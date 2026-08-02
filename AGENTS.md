@@ -191,7 +191,22 @@ Poin penting:
     ada — tanpa backend baru.
   - Regresi debt di `test/_regress_run.bat`: `bad_driver_oob --driver`
     memunculkan debt; `ok_run --run` bersih tanpa debt.
+  - **Bug Fase 3 ditemukan & diperbaiki (2026-08-02)**: `report.c` serialisasi
+    `evidence[]` tidak memakai `json_sb_escape` pada `message` sehingga semua
+    pesan evidence kosong di JSON. Diperbaiki: escape diterapkan. (Ditemukan
+    saat memverifikasi output canary.)
   - Semua regression + interop MCP 24 cek lolos.
+
+- **Semantic Canary selesai 2026-08-02** (gagasan pembeda 9.9, Fase 7.2):
+  Sebelum gate runtime menyatakan `COMPLETED_CLEAN` (L3 RUNTIME), myc
+  mengkompilasi + menjalankan canary kecil yang PASTI membuat out-of-bounds
+  (`myc_runtime_canary` di `run.c`). Bila canary TIDAK terdeteksi (gagal
+  dibangun / clean), backend ASan dianggap tidak layak dipercaya -> gate
+  di-turunkan ke INCONCLUSIVE (bukan COMPLETED_CLEAN) + diagnostic. Bila
+  terdeteksi, evidence `semantic canary terdeteksi: backend ASan sehat`
+  direkam di ledger. Non-blocking terhadap clang hilang (tetap UNAVAILABLE).
+  Dogfooding: `ok_run --run`, `dogfood_ring --run`, `--run --checked` tetap
+  L3/L4 (canary sehat). Regresi di `test/_regress_run.bat`.
 
 ## Dogfooding (keputusan 2026-08-01)
 

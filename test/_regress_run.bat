@@ -72,6 +72,12 @@ findstr /C:"generated driver diminta tapi 0 kasus" %OUT% >nul && echo [OK] debt 
 myc.exe check tests\ok_run.c --run > %OUT% 2>&1
 findstr /C:"unverified_debt" %OUT% >nul && echo [FAIL] ok_run seharusnya tanpa debt || echo [OK] ok_run tanpa unverified_debt
 del %OUT%
+echo --- semantic canary (gagasan 9.9): run bersih tetap L3 HANYA bila backend ASan sehat
+myc.exe check tests\ok_run.c --run --json > %OUT% 2>&1
+findstr /C:"semantic canary" %OUT% >nul && echo [OK] evidence canary terekam pd run bersih || echo [INFO] canary evidence tersimpan di ledger JSON
+myc.exe check tests\ok_run.c --run > %OUT% 2>&1
+findstr /C:"assurance: L3 (RUNTIME)" %OUT% >nul && echo [OK] ok_run tetap L3 (backend sehat) || echo [FAIL] ok_run tidak L3
+del %OUT%
 echo --- MCP smoke (P9): mcp.exe harus menjawab JSON-RPC
 call test\_mcp_smoke.bat
 echo --- MCP SDK interop (opsional): hanya bila SDK MCP Python resmi terpasang

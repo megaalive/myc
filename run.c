@@ -228,14 +228,138 @@ static char *asan_dll_path(const char *clang_path)
     return out;
 }
 
-/* Path eksekutabel hasil build verification di direktori temp. */
-static char *exe_path_for(const char *dir)
+/* Path eksekutabel hasil build dari direktori temp. Nama tanpa ekstensi;
+ * Windows menambahkan .exe. */
+static char *exe_path_for(const char *dir, const char *name)
 {
 #ifdef _WIN32
-    return join_path(dir, "myc_run.exe");
+    static char winname[64];
+    snprintf(winname, sizeof(winname), "%s.exe", name);
+    return join_path(dir, winname);
 #else
-    return join_path(dir, "myc_run");
+    return join_path(dir, name);
 #endif
+}
+
+/* ------------------------------------------------------------------ */
+/* Semantic canary (gagasan pembeda 9.9, Fase 7.2)                     */
+/* ------------------------------------------------------------------ */
+/*
+ * Sebelum mempercayai hasil run 'bersih', verifikasi bahwa backend ASan
+ * benar-benar aktif: kompilasi + jalankan source kecil yang PASTI membuat
+ * out-of-bounds. Bila canary TIDAK terdeteksi (gagal / clean), berarti
+ * sanitizer tidak ter-pasang/link/env menonaktifkan report -> hasil bersih
+ * yang baru diperoleh TIDAK dapat dipercaya -> gate jadi INCONCLUSIVE.
+ *
+ * Return: 1 = canary terdeteksi (backend sehat), 0 = bersih (backend bodoh),
+ *        -1 = infrastruktur canary gagal dibangun/dijalankan.
+ */
+static const char *const CANARY_SRC =
+    "volatile int myc_canary_keep;\n"
+    "int main(void) {\n"
+    "    volatile int a[1];\n"
+    "    a[1] = 7;\n"
+    "    myc_canary_keep = a[1];\n"
+    "    return 0;\n"
+    "}\n";
+
+static int myc_runtime_canary(const char *clang_path, const char *tmp_dir,
+                              const char *checked_dir, int checked,
+                              int timeout_ms, size_t max_out,
+                              const char *cwd)
+{
+    char *can_exe = NULL;
+    const char **bargv = NULL;
+    const char **rargv = NULL;
+    myc_proc_request preq;
+    myc_proc_result  pres;
+    int   n = 0, total, bfl = 0;
+    int   ret = -1;
+
+    static const char *const base_flags[] = {
+        "-x", "c", "-", "-std=c11", "-O0", "-g",
+        "-fsanitize=address,undefined",
+        "-fno-sanitize-recover=all",
+        NULL
+    };
+
+    can_exe = exe_path_for(tmp_dir, "myc_canary.exe");
+    if (!can_exe)
+        return -1;
+
+    {
+        int extra = checked ? 3 : 0;
+        total = 1;
+        while (base_flags[bfl++]) total++;
+        total += extra + 2 + 1;
+        bfl = 0;
+        bargv = (const char **)malloc(sizeof(char *) * (size_t)total);
+        if (!bargv) { free(can_exe); return -1; }
+        bargv[n++] = clang_path;
+        for (bfl = 0; base_flags[bfl]; bfl++) bargv[n++] = base_flags[bfl];
+        if (checked) {
+            bargv[n++] = "-DMYC_CHECKED=1";
+            bargv[n++] = "-I";
+            bargv[n++] = checked_dir ? checked_dir : ".";
+        }
+        bargv[n++] = "-o";
+        bargv[n++] = can_exe;
+        bargv[n] = NULL;
+    }
+
+    memset(&preq, 0, sizeof(preq));
+    preq.argv = bargv;
+    preq.cwd = cwd;
+    preq.stdin_data = CANARY_SRC;
+    preq.stdin_len = strlen(CANARY_SRC);
+    preq.timeout_ms = timeout_ms;
+    preq.max_output_bytes = max_out;
+    if (!myc_proc_run(&preq, &pres)) {
+        myc_proc_result_free(&pres);
+        free(bargv);
+        free(can_exe);
+        return -1;
+    }
+    {
+        int ec = pres.exit_code;
+        int to = pres.timed_out;
+        myc_proc_result_free(&pres);
+        free(bargv);
+        if (to || ec != 0) {
+            /* build/run canary gagal -> backend tak teruji. */
+            free(can_exe);
+            return -1;
+        }
+    }
+
+    /* Jalankan canary; harus ada marker sanitizer (atau exit non-zero). */
+    rargv = (const char **)malloc(sizeof(char *) * 2);
+    if (!rargv) { free(can_exe); return -1; }
+    rargv[0] = can_exe;
+    rargv[1] = NULL;
+
+    memset(&preq, 0, sizeof(preq));
+    preq.argv = rargv;
+    preq.cwd = tmp_dir;
+    preq.stdin_data = NULL;
+    preq.stdin_len = 0;
+    preq.timeout_ms = timeout_ms;
+    preq.max_output_bytes = max_out;
+    if (!myc_proc_run(&preq, &pres)) {
+        myc_proc_result_free(&pres);
+        free(rargv);
+        free(can_exe);
+        return -1;
+    }
+    {
+        const char *m = marker_found(pres.stdout_data, pres.stderr_data);
+        int ec = pres.exit_code;
+        ret = (m || ec != 0) ? 1 : 0;
+        myc_proc_result_free(&pres);
+    }
+    free(rargv);
+    free(can_exe);
+    return ret;
 }
 
 int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
@@ -295,7 +419,7 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
         free(clang_path);
         return 0;
     }
-    exe_path = exe_path_for(tmp_dir);
+    exe_path = exe_path_for(tmp_dir, "myc_run.exe");
     if (!exe_path) {
         res->err = MYC_ERR_INTERNAL;
         myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_INFRA_FAILED,
@@ -512,6 +636,33 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
         }
     }
 
+    /* 6b. Semantic canary (gagasan pembeda 9.9): sebelum mempercayai hasil
+     * 'bersih', verifikasi bahwa backend ASan benar-benar menangkap OOB.
+     * Bila canary tidak terdeteksi, hasil bersih tidak dapat dipercaya ->
+     * gate runtime turun menjadi INCONCLUSIVE (bukan COMPLETED_CLEAN). */
+    {
+        int canary = myc_runtime_canary(clang_path, tmp_dir,
+                                        req->checked_header_dir,
+                                        req->checked,
+                                        req->timeout_ms, max_out, req->cwd);
+        if (canary == 1) {
+            myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_GATE_END,
+                                    "semantic canary terdeteksi: backend ASan sehat");
+        } else {
+            char note[160];
+            snprintf(note, sizeof(note),
+                     "backend health: canary ASan %s -> hasil bersih TIDAK dipercaya",
+                     canary == 0 ? "clean (tak terdeteksi)" : "gagal dibangun");
+            add_diag_run(res, note);
+            myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_INCONCLUSIVE,
+                                note);
+            myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_ERROR,
+                                    note);
+            res->verdict = MC_INCONCLUSIVE;
+            goto out;
+        }
+    }
+
     ret = 1;
     myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_COMPLETED_CLEAN,
                         "run bersih");
@@ -530,7 +681,10 @@ out:
     if (tmp_dir) {
         /* clang -g menghasilkan <exe>.pdb (dan DLL di Windows): hapus semua
          * artefak agar direktori temp bisa di-rmdir. */
-        static const char *const artifacts[] = { ASAN_DLL_NAME, "myc_run.pdb", NULL };
+        static const char *const artifacts[] = {
+            ASAN_DLL_NAME, "myc_run.pdb", "myc_canary.exe", "myc_canary.pdb",
+            NULL
+        };
         int ai;
         for (ai = 0; artifacts[ai]; ai++) {
             char *p = join_path(tmp_dir, artifacts[ai]);

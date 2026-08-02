@@ -2791,10 +2791,11 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 
 ### 7.2. Runtime sanitizer
 
-- [ ] absolute temp path;
-- [ ] `mkdtemp`;
+- [ ] absolute temp path; *(sebagian selesai Fase 1)*
+- [x] `mkdtemp`; ✅ (temp dir absolut & unik, MyC_AUDIT-003)
 - [ ] explicit sanitizer env;
-- [ ] canary;
+- [x] canary ✅ 2026-08-02 (`myc_runtime_canary`: OOB deterministik dijalankan
+      sebelum `COMPLETED_CLEAN`; canary tak terdeteksi -> INCONCLUSIVE)
 - [ ] report channel non-spoofable;
 - [ ] input portfolio.
 
@@ -2872,7 +2873,8 @@ Urutan implementasi yang paling memberi reputasi:
 
 1. [ ] Evidence Receipt
 2. [x] Unverified Debt ✅ 2026-08-02 (deduksi murni dari typed gate status; laporan teks + JSON; regresi di `_regress_run.bat`)
-3. [ ] Semantic Canary
+3. [x] Semantic Canary ✅ 2026-08-02 (canary OOB dijalankan sebelum gate runtime
+      menyatakan clean; tak terdeteksi -> INCONCLUSIVE; evidence di ledger)
 4. [ ] Counterexample Replay Capsule
 5. [ ] Claim Compiler
 6. [ ] Differential Backend Quorum
@@ -3266,7 +3268,7 @@ Urutan paling tepat:
 6. **Perbaiki fingerprint OOB.**
 7. **Hilangkan static/global diagnostic state.**
 8. **Perketat JSON dan string length handling.**
-9. **Tambahkan semantic canary.**
+9. **Tambahkan semantic canary.** ✅ 2026-08-02
 10. **Tambahkan evidence receipt + unverified debt.** (unverified debt ✅ 2026-08-02; evidence receipt = TODO)
 
 ## Penilaian akhir
