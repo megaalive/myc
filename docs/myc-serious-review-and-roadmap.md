@@ -311,7 +311,7 @@ Setelah reentrancy dan schema hasil diperbaiki, ini dapat menjadi salah satu keu
 | MYC-AUDIT-009 | High | `json.c` | Parser menerima JSON invalid dan embedded NUL memotong string | **? SELESAI 2026-08-02 (parser ketat + corpus)** |
 | MYC-AUDIT-010 | High | backend status | “Unavailable”, “failed”, “inconclusive”, dan “clean” tercampur | ✅ SELESAI 2026-08-02 (Fase 3 typed status + 9.10: filc/prove/driver unavailable kini UNAVAILABLE, bukan NOT_APPLICABLE) |
 | MYC-AUDIT-011 | High | POSIX timeout | `kill(-pid)` tanpa process group tidak menjamin child tree mati |
-| MYC-AUDIT-012 | High | `myc_buf.h` | Element size tidak disimpan; checked access dapat memakai tipe salah |
+| MYC-AUDIT-012 | High | `myc_buf.h` | Element size tidak disimpan; checked access dapat memakai tipe salah | ✅ SELESAI 2026-08-02 (typed member + elem_size/byte_capacity/cookie/generation; cek ukuran tipe compile-time; checked multiplication di MYC_NEW & MYC_AT; fingerprint v12) |
 | MYC-AUDIT-013 | High | proof claims | Eva alarm/summary diperlakukan sebagai proof kontrak umum |
 | MYC-AUDIT-014 | Medium | lint | Heuristik token/text dijadikan hard violation |
 | MYC-AUDIT-015 | Medium | portability | `NUL` dipakai di POSIX dan meninggalkan file literal `NUL` |
@@ -952,7 +952,18 @@ Lebih kuat:
 
 ---
 
-## 5.13. MYC-AUDIT-012 — `MYC_BUF` belum menjaga element type
+## 5.13. MYC-AUDIT-012 — `MYC_BUF` belum menjaga element type  ✅ SELESAI 2026-08-02
+
+> Status: diperbaiki. Checked mode `MYC_BUF(T)` kini struct anonim dengan member
+> TYPED `T *data` + `byte_capacity` (BYTE) + `elem_size` + `generation` +
+> `cookie`. `MYC_AT` memverifikasi ukuran elemen di COMPILE TIME (trik array
+> negatif `sizeof(char[...?1:-1])`, C11 murni, tanpa ekstensi, tetap LVALUE)
+> plus `elem_size` di runtime; `MYC_NEW` menolak `n*sizeof(T) > SIZE_MAX`;
+> bounds memakai `i >= byte_capacity/elem` (checked multiplication, bebas
+> overflow). Fixture `bad_checked_type.c` (COMPILE_ERROR) dan
+> `bad_checked_new_overflow.c` (RUNTIME_VIOLATION). Batasan yang didokumentasikan
+> jujur: mismatch tipe ber-ukuran sama tidak dianggap berbahaya; re-init buffer
+> aktif tidak di-trap. Fingerprint v12.
 
 `myc_buf.h` menyimpan pointer dan capacity, tetapi access menerima type kembali dari macro:
 

@@ -70,6 +70,15 @@ findstr /B /C:"verdict:" /C:"assurance:" %OUT%
 echo === dogfood_ring.c --run --checked
 myc.exe check dogfood\dogfood_ring.c --run --checked > %OUT%
 findstr /B /C:"verdict:" /C:"assurance:" %OUT%
+echo --- checked audit MYC-AUDIT-012: elem_size + checked multiplication
+echo === tests\bad_checked_type.c --checked (tipe elemen salah -> COMPILE_ERROR)
+myc.exe check tests\bad_checked_type.c --checked > %OUT% 2>&1
+findstr /C:"verdict:   COMPILE_ERROR" %OUT% >nul && echo [OK] bad_checked_type: tipe elemen salah ditolak compile-time || echo [FAIL] tipe salah tidak jadi COMPILE_ERROR
+echo === tests\bad_checked_new_overflow.c --run --checked (RUNTIME_VIOLATION)
+myc.exe check tests\bad_checked_new_overflow.c --run --checked > %OUT% 2>&1
+findstr /C:"verdict:   RUNTIME_VIOLATION" %OUT% >nul && echo [OK] bad_checked_new_overflow: overflow MYC_NEW terdeteksi runtime || echo [FAIL] overflow MYC_NEW tidak terdeteksi
+findstr /C:"MYC_NEW overflow" %OUT% >nul && echo [OK] marker MYC_NEW overflow muncul || echo [FAIL] marker overflow hilang
+del %OUT%
 echo --- filc fixtures (--filc): di-skip bila Fil-C tak tersedia (non-blocking)
 for %%f in (test\fixtures\ok_filc.c test\fixtures\bad_filc_oob.c) do (
   echo === %%f

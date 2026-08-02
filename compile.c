@@ -39,6 +39,12 @@
 /* Tabel flags gcc terpusat (P4.3).                                    */
 /* ------------------------------------------------------------------ */
 
+/* Revisi runtime checked-buffer (myc_buf.h) yang ikut masuk fingerprint
+ * (MYC-AUDIT-012): 1 = fat-struct D1.2 asli (data/cap); 2 = typed struct
+ * dengan elem_size/byte_capacity/generation/cookie + checked multiplication.
+ * Naikkan saat semantic myc_buf.h berubah agar receipt berubah juga. */
+#define MYC_BUF_RUNTIME_REV 2
+
 /* Tier dasar -- default, nol false-positive pd kode sah, semua -Werror. */
 static const char *const MEMORY_WARNINGS[] = {
     "-Warray-bounds",
@@ -464,7 +470,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         size_t fp_len;
         myc_policy_hash(policy_hex);
         fp_need = snprintf(NULL, 0,
-                     "v11|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s;%s|src:%s",
+                     "v12|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s;%s|buf:%d|src:%s",
                      gcc_path,
                      req->cwd ? req->cwd : "",
                      policy_hex,
@@ -477,6 +483,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                      req->metamorphic ? "meta" : "nometa",
                      req->negative ? "neg" : "noneg",
                      req->require_complete ? "reqc" : "noreqc",
+                     MYC_BUF_RUNTIME_REV,
                      res->source_sha256 ? res->source_sha256 : "");
         if (fp_need > 0) {
             fp_len = (size_t)fp_need;
@@ -484,7 +491,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         }
         if (fp_buf) {
             snprintf(fp_buf, fp_len + 1,
-                     "v11|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s;%s|src:%s",
+                     "v12|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s;%s|buf:%d|src:%s",
                      gcc_path,
                      req->cwd ? req->cwd : "",
                      policy_hex,
@@ -497,6 +504,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                      req->metamorphic ? "meta" : "nometa",
                      req->negative ? "neg" : "noneg",
                      req->require_complete ? "reqc" : "noreqc",
+                     MYC_BUF_RUNTIME_REV,
                      res->source_sha256 ? res->source_sha256 : "");
             sha256_hex(fp_buf, fp_len, hex);
             free(fp_buf);
