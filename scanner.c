@@ -20,12 +20,16 @@
 
 static void add_diag(myc_result *res, int line, int col, const char *msg)
 {
-    if (res->diag_count < MYC_MAX_DIAGNOSTICS) {
-        res->diags[res->diag_count].line = line;
-        res->diags[res->diag_count].col = col;
-        res->diags[res->diag_count].message = msg;
-        res->diag_count++;
-    }
+    char *slot;
+    if (res->diag_count >= MYC_MAX_DIAGNOSTICS)
+        return;
+    slot = myc_result_arena_dup(res, msg, 0);
+    if (!slot)
+        return;
+    res->diags[res->diag_count].line = line;
+    res->diags[res->diag_count].col = col;
+    res->diags[res->diag_count].message = slot;
+    res->diag_count++;
 }
 
 static int is_ident_start(int c)

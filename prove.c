@@ -41,24 +41,16 @@
 /* Tambah diagnostic ringan (string disalin ke pool statis bergilir). */
 static void add_diag_prove(myc_result *res, const char *msg)
 {
+    char *slot;
     if (res->diag_count >= MYC_MAX_DIAGNOSTICS)
         return;
-    {
-        static char pool[MYC_MAX_DIAGNOSTICS][512];
-        static int  idx = 0;
-        char       *slot = pool[idx];
-        size_t      n;
-        idx = (idx + 1) % MYC_MAX_DIAGNOSTICS;
-        n = strlen(msg);
-        if (n > 511)
-            n = 511;
-        memcpy(slot, msg, n);
-        slot[n] = '\0';
-        res->diags[res->diag_count].line = 0;
-        res->diags[res->diag_count].col = 0;
-        res->diags[res->diag_count].message = slot;
-        res->diag_count++;
-    }
+    slot = myc_result_arena_dup(res, msg, 0);
+    if (!slot)
+        return;
+    res->diags[res->diag_count].line = 0;
+    res->diags[res->diag_count].col = 0;
+    res->diags[res->diag_count].message = slot;
+    res->diag_count++;
 }
 
 /* Jalankan perintah WSL via proc.c; 1 sukses, 0 gagal (res->err diisi). */
@@ -125,15 +117,9 @@ static int ingest_eva_alarms(myc_result *res, const char *text)
             }
         }
         if (res->diag_count < MYC_MAX_DIAGNOSTICS) {
-            static char pool2[MYC_MAX_DIAGNOSTICS][512];
-            static int  idx2 = 0;
-            char       *slot = pool2[idx2];
-            size_t      n = strlen(note);
-            idx2 = (idx2 + 1) % MYC_MAX_DIAGNOSTICS;
-            if (n > 511)
-                n = 511;
-            memcpy(slot, note, n);
-            slot[n] = '\0';
+            char *slot = myc_result_arena_dup(res, note, 0);
+            if (!slot)
+                break;
             res->diags[res->diag_count].line = line;
             res->diags[res->diag_count].col = 0;
             res->diags[res->diag_count].message = slot;

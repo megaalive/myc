@@ -124,11 +124,15 @@ static int read_contract_expr(const char *s, size_t i, size_t len,
 static void add_contract_diag(myc_result *res, int line, int col,
                               const char *msg)
 {
+    char *slot;
     if (res->diag_count >= MYC_MAX_DIAGNOSTICS)
+        return;
+    slot = myc_result_arena_dup(res, msg, 0);
+    if (!slot)
         return;
     res->diags[res->diag_count].line = line;
     res->diags[res->diag_count].col = col;
-    res->diags[res->diag_count].message = msg;
+    res->diags[res->diag_count].message = slot;
     res->diag_count++;
 }
 

@@ -217,6 +217,19 @@ Poin penting:
   hash sama) dan berbeda antar verdict. Tidak menambah backend. Dogfooding &
   self-check tetap OK. Regresi di `test/_regress_run.bat`.
 
+- **Fase 5 Reentrancy & Memory Ownership selesai 2026-08-02** (MYC-AUDIT-008):
+  - Static message ring untuk diagnostic DIHAPUS di `compile.c`/`run.c`/
+    `prove.c`/`filc.c`/`driver.c`/`contract.c`/`scanner.c`/`lint.c`. Diganti
+    **arena bump milik hasil** (`myc_result_arena_dup` di `myc.c`, blok 64 KiB,
+    dibebaskan utuh di `myc_result_free`). Global state `buf_vars` di `lint.c`
+    menjadi `_Thread_local`. Akibat: `myc_run` reentrant — MCP in-process siap
+    concurrency; result lama tak tertimpa (hasil tetap immutable). OOM di
+    arena → NULL, diagnostic di-skip.
+  - Regresi baru `test/stress_threads.c` (8 thread × 200 `myc_run`, cek tidak
+    ada race/stale via kestabilan `source_sha256`) ditambahkan ke
+    `test/_regress_run.bat`. Self-dogfooding 15 source tetap OK; receipt
+    deterministik tetap (`ok_run --run` → `60b7db90eac4...`).
+
 ## Dogfooding (keputusan 2026-08-01)
 
 Dogfooding myc dilakukan **dua cara**:

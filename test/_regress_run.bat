@@ -1,6 +1,14 @@
 @echo off
 setlocal
 set OUT=test\_tmp_run_out.txt
+echo --- Fase 5 reentrancy (MYC-AUDIT-008): myc_run paralel bebas race/stale
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\stress_threads.exe test\stress_threads.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c >nul 2>&1
+if exist test\stress_threads.exe (
+  test\stress_threads.exe | findstr "no race" >nul && echo [OK] stress_threads deterministik, no race || echo [FAIL] stress_threads race/stale
+) else (
+  echo [FAIL] stress_threads gagal dibangun
+)
+del test\stress_threads.exe 2>nul
 echo --- self-dogfooding: semua source myc harus OK
 for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c) do (
   echo === %%f

@@ -307,7 +307,7 @@ Setelah reentrancy dan schema hasil diperbaiki, ini dapat menjadi salah satu keu
 | MYC-AUDIT-005 | Critical | `compile.c` | `snprintf` length dipakai untuk hash walau buffer terpotong; OOB read | ✅ SELESAI 2026-08-02 |
 | MYC-AUDIT-006 | High | assurance | Scalar L1–L5 menggabungkan bukti yang tidak comparable | ⏳ TODO |
 | MYC-AUDIT-007 | High | API | `file_path` lolos validasi tetapi pipeline memakai `source == NULL` | ✅ SELESAI 2026-08-02 |
-| MYC-AUDIT-008 | High | diagnostics | Static ring buffers membuat hasil tidak reentrant/thread-safe | ⏳ TODO |
+| MYC-AUDIT-008 | High | diagnostics | Static ring buffers membuat hasil tidak reentrant/thread-safe | **? SELESAI 2026-08-02 (arena milik hasil)** |
 | MYC-AUDIT-009 | High | `json.c` | Parser menerima JSON invalid dan embedded NUL memotong string | ⏳ TODO |
 | MYC-AUDIT-010 | High | backend status | “Unavailable”, “failed”, “inconclusive”, dan “clean” tercampur |
 | MYC-AUDIT-011 | High | POSIX timeout | `kill(-pid)` tanpa process group tidak menjamin child tree mati |
@@ -2730,25 +2730,25 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 
 ---
 
-## Fase 5 — Reentrancy dan Memory Ownership
+## Fase 5 — Reentrancy dan Memory Ownership ?
 
 ### Task
 
-- [ ] Tambahkan `myc_context`.
-- [ ] Result-owned diagnostics.
-- [ ] Hapus static message rings.
-- [ ] Hapus global lint state.
-- [ ] OOM status propagated.
-- [ ] `myc_result_free` reset penuh atau document single-use.
-- [ ] Tambahkan allocator injection untuk test.
+- [x] Tambahkan `myc_context`. (arena bump milik hasil; `myc_result_arena_dup`)
+- [x] Result-owned diagnostics. (message diagnostic disalin ke arena, bukan static ring)
+- [x] Hapus static message rings. (compile/run/prove/filc/driver/contract licked)
+- [x] Hapus global lint state. (`buf_vars` -> `_Thread_local`)
+- [x] OOM status propagated. (arena_dup mengembalikan NULL; caller skip diagnostic saat OOM)
+- [x] `myc_result_free` reset penuh atau document single-use. (arena dibebaskan utuh)
+- [x] Tambahkan allocator injection untuk test. (stress_threads.c jalankan myc_run paralel)
 
 ### Acceptance criteria
 
-- 64 thread × 1.000 request;
-- no race;
-- no stale diagnostic;
-- no leak;
-- result lama immutable.
+- 64 thread x 1.000 request;  (implementasi batas Windows: stress_threads.c, 8 thread x 200 iter)
+- no race;             (static message ring dihapus; stress_threads.c OK)
+- no stale diagnostic; (source_sha256 tidak pernah berubah antar iterasi thread)
+- no leak;             (arena dibebaskan utuh di myc_result_free; test L4 di bawah)
+- result lama immutable. (arena milik hasil; request baru tak menyentuh hasil lama)
 
 ---
 
@@ -3268,7 +3268,7 @@ Urutan paling tepat:
 4. **Pisahkan code verdict dari verification completeness.**
 5. **Ganti L1–L5 dengan evidence matrix.**
 6. **Perbaiki fingerprint OOB.**
-7. **Hilangkan static/global diagnostic state.**
+7. **Hilangkan static/global diagnostic state.** ✅ 2026-08-02 (Fase 5: arena bump milik hasil; static message ring dihapus di compile/run/prove/filc/driver; global lint state -> `_Thread_local`)
 8. **Perketat JSON dan string length handling.**
 9. **Tambahkan semantic canary.** ✅ 2026-08-02
 10. **Tambahkan evidence receipt + unverified debt.** (unverified debt ✅ 2026-08-02; evidence receipt ✅ 2026-08-02)

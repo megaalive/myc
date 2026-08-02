@@ -135,6 +135,8 @@ typedef struct {
 #define MYC_MAX_EVIDENCE   256
 #define MYC_MAX_DEBT       32
 
+#define MYC_ARENA_BLOCK    65536        /* ukuran blok arena per request */
+
 /* Error codes terstruktur (diadaptasi dari Appendix B rencana fpagnt). */
 typedef enum {
     MYC_ERR_NONE = 0,
@@ -279,12 +281,19 @@ typedef struct {
     myc_debt_item debt[MYC_MAX_DEBT];
     size_t        debt_count;
 
-    /* --- evidence receipt (gagasan pembeda 9.1) --- */
+/* --- evidence receipt (gagasan pembeda 9.1) --- */
     /* Hash deterministik atas bukti terkumpul (verdict, completeness, setiap
      * gate por padanya status, debt, fingerprint, source_sha). Bukan klaim
      * keamanan — melainkan sidik jari hasil agar CI/auditor dapat membandingkan
      * dua receipt tanpa membaca prose. Kosong bila request gagal sebelum reduce. */
     char receipt_sha256[65];
+
+    /* --- arena bump milik hasil (Fase 5, MYC-AUDIT-008) --- */
+    /* Penyimpanan teks yang dimiliki hasil: diagnostic message, dst. Seluruhnya
+     * dibebaskan oleh myc_result_free. Menghapus static message ring
+     * (penyebab data race + hasil basi). NULL bila arena belum dialokasikan.
+     * Jangan disentuh langsung oleh caller. */
+    struct myc_arena *arena;
 } myc_result;
 
 /* Nama debt type (statis). */
@@ -301,6 +310,12 @@ myc_error_code myc_request_validate(const myc_request *req);
 /* Siapkan result dengan alokasi internal. Harus dibebaskan myc_result_free. */
 void myc_result_init(myc_result *res);
 void myc_result_free(myc_result *res);
+
+/* Arena milik hasil (Fase 5, MYC-AUDIT-008): alokasikan buffer di arena yang
+ * dimiliki res; dibebaskan bersamaan dengan myc_result_free. Mengembalikan
+ * NULL_out bila OOM. string_len = 0 menyalin sampai NUL (seperti strdup).
+ * Dipakai modul internal supaya tidak menyimpan diagnostic ke static ring. */
+char *myc_result_arena_dup(myc_result *res, const char *s, size_t string_len);
 
 /* Jalankan pipeline penuh pada request. Mengisi res. */
 void myc_run(const myc_request *req, myc_result *res);

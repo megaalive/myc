@@ -99,24 +99,16 @@ static const char **merge_args(const char *const *lists[], size_t nlists,
  * Pesan disalin ke slot statis bergilir (cukup untuk laporan). */
 static void add_diag_copy(myc_result *res, int line, int col, const char *msg)
 {
+    char *copy;
     if (res->diag_count >= MYC_MAX_DIAGNOSTICS)
         return;
-    {
-        static char pool[MYC_MAX_DIAGNOSTICS][256];
-        static int  idx = 0;
-        char       *slot = pool[idx];
-        size_t      n;
-        idx = (idx + 1) % MYC_MAX_DIAGNOSTICS;
-        n = strlen(msg);
-        if (n > 255)
-            n = 255;
-        memcpy(slot, msg, n);
-        slot[n] = '\0';
-        res->diags[res->diag_count].line = line;
-        res->diags[res->diag_count].col = col;
-        res->diags[res->diag_count].message = slot;
-        res->diag_count++;
-    }
+    copy = myc_result_arena_dup(res, msg, 0);
+    if (!copy)
+        return;
+    res->diags[res->diag_count].line = line;
+    res->diags[res->diag_count].col = col;
+    res->diags[res->diag_count].message = copy;
+    res->diag_count++;
 }
 
 /* Tambah diagnostic dari stderr gcc (parsing baris sederhana).

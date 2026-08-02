@@ -901,24 +901,16 @@ static char *gen_harness(const char *src, size_t srclen,
 
 static void add_diag_drv(myc_result *res, const char *msg)
 {
+    char *slot;
     if (res->diag_count >= MYC_MAX_DIAGNOSTICS)
         return;
-    {
-        static char pool[MYC_MAX_DIAGNOSTICS][512];
-        static int  idx = 0;
-        char       *slot = pool[idx];
-        size_t      n;
-        idx = (idx + 1) % MYC_MAX_DIAGNOSTICS;
-        n = strlen(msg);
-        if (n > 511)
-            n = 511;
-        memcpy(slot, msg, n);
-        slot[n] = '\0';
-        res->diags[res->diag_count].line = 0;
-        res->diags[res->diag_count].col = 0;
-        res->diags[res->diag_count].message = slot;
-        res->diag_count++;
-    }
+    slot = myc_result_arena_dup(res, msg, 0);
+    if (!slot)
+        return;
+    res->diags[res->diag_count].line = 0;
+    res->diags[res->diag_count].col = 0;
+    res->diags[res->diag_count].message = slot;
+    res->diag_count++;
 }
 
 static char *drv_join_path(const char *dir, const char *name)

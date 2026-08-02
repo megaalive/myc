@@ -34,6 +34,55 @@
 /* Implementasi kontrak inti myc                                       */
 /* ------------------------------------------------------------------ */
 
+/* Arena bump milik hasil (Fase 5, MYC-AUDIT-008). */
+struct myc_arena {
+    struct myc_arena *next;   /* blok berikutnya (list) */
+    char   *cur;              /* posisi alokasi berikutnya */
+    char   *end;              /* ujung blok */
+    char    data[];           /* payload */
+};
+
+static struct myc_arena *arena_alloc_new(void)
+{
+    struct myc_arena *a = (struct myc_arena *)malloc(
+        sizeof(struct myc_arena) + MYC_ARENA_BLOCK);
+    if (!a)
+        return NULL;
+    a->next = NULL;
+    a->cur = a->data;
+    a->end = a->data + MYC_ARENA_BLOCK;
+    return a;
+}
+
+void myc_result_init(myc_result *res)
+{
+    memset(res, 0, sizeof(*res));
+    res->verdict = MC_ERROR;
+    res->err = MYC_ERR_NONE;
+    res->completeness = MYC_COMPLETENESS_UNKNOWN;
+}
+
+char *myc_result_arena_dup(myc_result *res, const char *s, size_t string_len)
+{
+    struct myc_arena *a = res->arena;
+    size_t n = string_len ? string_len : strlen(s);
+
+    if (!a || a->end - a->cur < (ptrdiff_t)(n + 1)) {
+        struct myc_arena *na = arena_alloc_new();
+        if (!na)
+            return NULL;
+        na->next = a;
+        res->arena = a = na;
+    }
+    {
+        char *slot = a->cur;
+        memcpy(slot, s, n);
+        slot[n] = '\0';
+        a->cur += n + 1;
+        return slot;
+    }
+}
+
 void myc_request_init(myc_request *req)
 {
     memset(req, 0, sizeof(*req));
@@ -53,17 +102,10 @@ myc_error_code myc_request_validate(const myc_request *req)
     return MYC_ERR_NONE;
 }
 
-void myc_result_init(myc_result *res)
-{
-    memset(res, 0, sizeof(*res));
-    res->verdict = MC_ERROR;
-    res->err = MYC_ERR_NONE;
-    res->completeness = MYC_COMPLETENESS_UNKNOWN;
-}
-
 void myc_result_free(myc_result *res)
 {
     size_t i;
+    struct myc_arena *a;
     if (!res)
         return;
     free(res->stdout_text);
@@ -100,6 +142,14 @@ void myc_result_free(myc_result *res)
     res->evidence_count = 0;
     res->debt_count = 0;
     res->completeness = MYC_COMPLETENESS_UNKNOWN;
+    /* bebaskan arena utuh (Fase 5) */
+    a = res->arena;
+    while (a) {
+        struct myc_arena *nxt = a->next;
+        free(a);
+        a = nxt;
+    }
+    res->arena = NULL;
 }
 
 void myc_run(const myc_request *req, myc_result *res)
