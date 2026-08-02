@@ -13,14 +13,18 @@
 #include "myc.h"
 
 /*
- * Pindai source C mentah untuk pola memory-safety berisiko:
+ * Pindai source C mentah untuk pola memory-safety berisiko (heuristik):
  *   - pointer diubah via intptr_t/uintptr_t (provenance tidak diverifikasi)
  *   - realloc hasil disimpan ke variabel berbeda yang masih memakai pointer lama
  *   - memcpy/memmove/memset dengan ukuran bukan dari sizeof (bounds tak terbukti)
  *   - ukuran alokasi yang bisa overflow integer (malloc(a*b) tanpa sizeof)
+ *   - akses langsung b[i] pada variabel MYC_BUF (checked gate = hard)
  *
- * Mengembalikan 1 bila aman, 0 bila ditemukan pelanggaran lint (res diisi
- * diagnostic). Catatan: ini lint heuristik -- lihat komentar header.
+ * MYC-AUDIT-014: TIDAK pernah hard verdict -- hasil HANYA observasi
+ * (diagnostic ber-confidence) dan NON-blocking. Mengembalikan jumlah
+ * observasi (0 = bersih). Hard violation ditangani gate SEMANTIK:
+ * gcc -Wuse-after-free / -fanalyzer, sanitizer runtime, checked build,
+ * Frama-C Eva, Fil-C. Lihat komentar header.
  */
 int myc_lint_source(const char *source, size_t len, myc_result *res);
 

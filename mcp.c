@@ -396,8 +396,9 @@ static void tool_lint(json_value *id, json_value *args)
     }
 
     myc_result_init(&res);
-    /* Catatan: myc_lint_source TIDAK mengisi res->verdict; verdict
-     * disimpulkan dari nilai kembalian (0 = VIOLATION, 1 = OK). */
+    /* MYC-AUDIT-014: myc_lint_source mengembalikan JUMLAH OBSERVASI
+     * (heuristik teks), bukan verdict. Lint NON-blocking: tidak pernah
+     * menolak kode; hard evidence dari gate semantik. */
     {
         int lv = myc_lint_source(source, strlen(source), &res);
         if (!json_sb_init(&b)) {
@@ -405,11 +406,13 @@ static void tool_lint(json_value *id, json_value *args)
             myc_result_free(&res);
             return;
         }
-        json_sb_printf(&b, "lint verdict: %s\n", lv ? "OK" : "VIOLATION");
+        json_sb_printf(&b, "lint: %d observasi (heuristik teks, "
+                            "NON-blocking -- MYC-AUDIT-014)\n", lv);
     }
     for (i = 0; i < res.diag_count; i++) {
         const myc_diagnostic *d = &res.diags[i];
-        json_sb_printf(&b, "  [%d:%d] %s\n", d->line, d->col,
+        json_sb_printf(&b, "  [%d:%d] [%s] %s\n", d->line, d->col,
+                       myc_confidence_name(d->confidence),
                        d->message ? d->message : "");
     }
     json_sb_putc(&b, '\0');

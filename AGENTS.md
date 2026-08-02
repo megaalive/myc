@@ -34,9 +34,11 @@ Poin penting:
 
 - Arah baru **sudah diimplementasikan (Fase A, P4+P5, selesai 2026-08-01)**.
 - Keputusan user: **policy = non-blocking warning**. Header & fungsi denylist
-  tidak lagi menolak program sah. Satu-satunya gate hard = **lint
-  memory-safety** (lint.c: intptr_t cast, realloc invalidasi) **+ gate gcc**
-  (tier memori `-Werror`, `-fanalyzer`).
+  tidak lagi menolak program sah. Sejak **MYC-AUDIT-014** (2026-08-02),
+  lint memory-safety juga TIDAK lagi hard (heuristik teks = observasi +
+  confidence, non-blocking); satu-satunya gate hard = **gate gcc**
+  (tier memori `-Werror`, `-fanalyzer` = bukti semantik) + gate runtime
+  (sanitizer), proof (Eva), checked (L4), Fil-C.
 - **P6 selesai 2026-08-01**: gate verification run opsional (`--run`) dengan
   clang ASan+UBSan (`-O0`, source via stdin, DLL runtime disalin, eksekusi
   via proc.c) → assurance **L3 RUNTIME**. Non-blocking: bila clang hilang /
@@ -88,6 +90,32 @@ Poin penting:
 - **MYC-AUDIT-016 selesai 2026-08-02** (MCP schema & JSON-RPC ketat): tool `check` kini mengirim **`structuredContent`** — hasil `myc_result` penuh sebagai objek JSON (`schema: "myc.result.v1"`) di samping `content[0].text` (JSON string, tetap ada untuk backward compat) — konsumen mesin TIDAK lagi perlu parse JSON di dalam JSON. **`isError` hanya untuk kegagalan tool/protocol** (`ERROR` input/validasi, `TIMEOUT`, `CANCELLED`); `PROVE_VIOLATION`/`DRIVER_VIOLATION` dll. adalah finding pada KODE → isError=false (sebelumnya dicampur, tidak konsisten dengan verdict). **JSON-RPC ketat**: field `jsonrpc` wajib `"2.0"` (selain itu → -32600), `id` hanya string/angka/null (typed ID, nilai dipertahankan apa adanya), pesan tanpa `id` = notification → diproses tanpa balasan (semantik JSON-RPC 2.0). **Negosiasi protokol strict**: `initialize` selalu mengumumkan versi server (`2024-11-05`), tidak meng-echo permintaan klien. **Unknown flag ditolak** (fail-fast -32602 dengan nama flag), tidak diabaikan. Tidak menyentuh `myc_result` → fingerprint/receipt TIDAK berubah (`ok_run --run` tetap `272d7531...`). Verifikasi: smoke MCP 13 respons (incl. -32600, unknown flag, structuredContent+schema), interop SDK resmi 26 cek (incl. isError=false untuk PROVE/DRIVER violation + structuredContent), semua suite regress hijau.
 - **MYC-AUDIT-017 selesai 2026-08-02** (saluran laporan sanitizer non-spoofable): marker teks pada stdout/stderr mudah dipalsukan program (fixture `spoof_marker_run.c` / `bad_driver_spoof.c` mencetak teks mirip marker sendiri, exit 0). Kini bukti UTAMA = FILE report yang ditulis runtime sanitizer sendiri: env deterministik per gate (`preq.env` di proc.c — `ASAN_OPTIONS=log_path=<base>:abort_on_error=1:halt_on_error=1`, `UBSAN_OPTIONS=log_path=<base>:halt_on_error=1:print_stacktrace=1`, `LC_ALL=C`) → runtime menulis `<base>.<pid>` di tmp_dir; myc membacanya via `myc_read_sanitizer_report()` dan membersihkan via `myc_remove_sanitizer_reports()` (glob `<base>.*`). Finding = report file ADA **atau** (marker teks && exit code != 0). Teks mirip marker dengan exit 0 diabaikan + diagnostic (program bisa mencetaknya sendiri). Berlaku konsisten di gate run (L3), canary, metamorphic, driver, dan filc (panic Fil-C hanya finding bila exit != 0; marker tanpa exit = diagnostic). `log_path` relatif (path absolut dengan `:` memecah parsing ASAN_OPTIONS di Windows ASan; CWD child = tmp_dir unik). **Bug ditemukan & diperbaiki saat uji**: env metamorphic dibuat di blok stack lokal yang keluar scope sebelum `myc_proc_run` (use-after-scope → segfault; gdb backtrace: `strlen` di `proc_run_win`); diperbaiki dengan buffer di scope fungsi (`meta_env_asan/ubsan[2][160]`, `meta_env[2][4]`). **Bug review lanjutan**: (1) `build_env_block` Windows hanya menambahkan override yang key-nya TIDAK ada di induk → override yang menggantikan key induk (mis. `ASAN_OPTIONS` bila user set) DROP total; diperbaiki: semua override ditambahkan (entri induk ter-override sudah di-skip loop atas). (2) `child_env` POSIX bocor di jalur sukses → di-free sebelum return. (3) filc `panics>0 && exit==0`: jalur native vs WSL tidak konsisten (WSL set COMPLETED_CLEAN tapi ret=0 → pipeline menimpa jadi UNAVAILABLE); kini kedua jalur treat sebagai run bersih (`filc_panics` di-reset + ret=1 → L5 diklaim, teks diabaikan jadi diagnostic). Verifikasi: `bad_run_oob --run` tetap RUNTIME_VIOLATION (via report log_path), `spoof_marker_run --run` → OK + diagnostic, `bad_run_oob --metamorphic` → inconsistency via report (-O0 finding vs -O2 clean), `ok_driver --driver` tetap OK, `ok_run --run` receipt tetap `272d7531...`; regress 63 [OK] 0 [FAIL]; soak + MCP interop hijau.
 - **MYC-AUDIT-018 selesai 2026-08-02** (test portabel: concurrency/deadlock/OOM): runner lintas-platform **`test/_audit018.sh`** (bash — jalan di Windows git-bash DAN POSIX, di-wire ke `_regress_run.bat` via `where bash`; tanpa bash → [SKIP]) membangun + menjalankan 4 unit test C baru: (1) **`proc_flood.c`** — deadlock (child tulis 1 MiB stdout → baca 1 MiB stdin → tulis 1 MiB stderr; parent kirim 1 MiB stdin; tanpa timeout, total persis — mengunci fix MYC-AUDIT-002), flood 100 MiB stdout + 100 MiB stderr cap 64 KiB (prefix+tail ring dipertahankan, truncated=1, memori bounded — mengunci Fase 1.5), env override (key induk diganti, sisanya diwarisi — mengunci fix AUDIT-017 build_env_block); (2) **`oom_guards.c`** — arena overflow guard + input ekstrem (source >1MiB → INPUT_TOO_LARGE, NUL → NUL_IN_INPUT, request kosong → INVALID_REQUEST); (3) **`oom_alloc.c`** — **allocator injection** via `-Wl,--wrap=malloc,calloc,realloc` (GNU ld, MinGW & glibc): 49 titik kegagalan alokasi pada myc_run tanpa crash/hang, verdict selalu valid, kontrol OK; (4) **`stress_threads.c`** — concurrency 8×200 (kini juga di POSIX). **Bug nyata ditemukan test ini**: `myc_result_arena_dup` dengan `string_len` raksasa (SIZE_MAX-9) → `n+1` wrap ke 0 → `memcpy` OOB raksasa; diperbaiki guard ganda (n==SIZE_MAX tolak + blok alokasi dicek `block > SIZE_MAX - sizeof(arena)` → NULL). Regress naik ke **92 [OK] 0 [FAIL]**; receipt golden tetap `272d7531...`.
+- **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
+  seluruh rule lint.c (intptr_t/uintptr_t cast, realloc ke variabel lain,
+  memcpy/memset tanpa sizeof, ukuran alokasi perkalian tanpa sizeof, akses
+  langsung `b[i]` pada MYC_BUF) kini menghasilkan **observasi ber-confidence**
+  (`myc_confidence`: OBSERVATION/SUSPICIOUS/LIKELY/CONFIRMED) dan
+  **NON-blocking** — `myc_lint_source` mengembalikan jumlah observasi,
+  `MYC_ERR_LINT_VIOLATION` tidak lagi dipicu, verdict tidak pernah turun
+  karena lint. Gate baru **`MYC_GATE_LINT`** (completed_clean /
+  completed_observations) masuk evidence matrix + assurance vector (dimensi
+  COMPILE; observations benign — C1 tetap selama gcc -c bersih) + quorum
+  (observations = non-conflict) + capsule. `myc_diagnostic.confidence`
+  diisi di semua setter: CONFIRMED untuk bukti semantik (gcc/sanitizer/Eva/
+  Fil-C/checked), OBSERVATION/SUSPICIOUS untuk heuristik teks (lint,
+  negative, scanner, contract). Laporan teks menampilkan `[confidence]` pada
+  diagnostic heuristik + ringkasan `lint (14): N observasi`; JSON memuat
+  `"confidence"` per diagnostic + `"lint_observations"`. Tool MCP `lint`
+  ikut non-blocking (`lint: N observasi`). Hard violation HANYA dari bukti
+  semantik: `bad_realloc.c` → COMPILE_ERROR via gcc `-Werror=use-after-free`
+  (AST/dataflow), `bad_intptr.c` → OK + 2 observasi (cast eksplisit tidak
+  ditangkap kompiler — jujur). Regresi: section AUDIT-014 di
+  `test/_regress_run.bat` (+7 cek, quorum bad_intptr diperbarui ke clean).
+  Receipt berubah (gate baru masuk hash) → `ok_run --run` → `8224c23a...`
+  (deterministik). Catatan: semua golden receipt yang disebut entri audit
+  LAMA (`272d7531...` dll) adalah nilai SAAT ITU — sejak AUDIT-014 receipt
+  bergeser karena `MYC_GATE_LINT` selalu masuk hash; nilai berlaku sekarang
+  = yang tertera di entri ini.
 - **MYC-AUDIT-015 selesai 2026-08-02** (portability `NUL`): target `-o` pada gate compile-only kini memakai device null PORTABEL — helper `myc_null_device()` di `compile.c` ("NUL" di Windows, "/dev/null" di POSIX; literal "NUL" di POSIX adalah file biasa, artefak repo lama). Literal "NUL" pada daftar flags statis (MEMORY_GATE/ANALYZER_EXTRA/CHECKED_EXTRA) diganti runtime di `merge_args` — satu titik perubahan, daftar tetap statis. Opsi temporary-object yang dikelola & dihapus TIDAK diambil (lebih kompleks tanpa manfaat untuk compile-only). Fingerprint/receipt TIDAK berubah (target -o tidak masuk hash) — `ok_run --run` tetap `272d7531...`. Verifikasi: ok_hello L1, bad_syntax COMPILE_ERROR, ok_checked L4 (gate compile + checked bekerja dengan device null); self-dogfooding + regress hijau.
 - **Dogfooding lintas-program tiga tool (2026-08-02)**: `dogfood_ring.c`
   (ring buffer, MYC_BUF → L4), `dogfood_config.c` (parser config key=value,
@@ -130,8 +158,10 @@ Poin penting:
     L1. Diperbaiki: panjang inject dipakai hanya bila non-NULL; contract.c
     tidak lagi menyentuh `*out_len` saat NULL.
 - Perubahan perilaku: `bad_system.c`, `bad_fopen.c`, `bad_include.c`,
-  `bad_macro.c` kini **OK** (hanya warning policy). `bad_intptr.c`,
-  `bad_realloc.c` tetap VIOLATION (lint). Fixture P6: `ok_run.c` → L3;
+  `bad_macro.c` kini **OK** (hanya warning policy). Sejak MYC-AUDIT-014:
+  `bad_intptr.c` → OK + 2 observasi lint (cast eksplisit lolos gcc),
+  `bad_realloc.c` → **COMPILE_ERROR** via gcc `-Werror=use-after-free`
+  (bukti semantik). Fixture P6: `ok_run.c` → L3;
   `bad_run_oob.c`/`bad_run_uaf.c`/`bad_run_intovf.c` → RUNTIME_VIOLATION.
 - Fixture P8 (D1.2): `ok_checked.c` → L4 (SPATIAL); `bad_checked.c` →
   COMPILE_ERROR (akses langsung pada MYC_BUF); `bad_checked_oob.c` →

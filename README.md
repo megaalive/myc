@@ -17,7 +17,9 @@ masuk ke shell string. Source hanya lewat stdin, gcc dipanggil dengan
 
 ```
 scan include mentah (whitelist)   -> warning (non-blocking)
-lint memory-safety (lint.c)       -> LINT_VIOLATION  (gate hard)
+lint memory-safety (lint.c)       -> observasi + confidence
+                                    (MYC-AUDIT-014: heuristik teks
+                                    NON-blocking, bukan gate hard)
 gcc -E (argv eksak, via stdin)    -> preprocessed output
 scan penanda "# 1" (depth 2)      -> warning (non-blocking)
 scan panggilan fungsi denylist    -> warning (non-blocking)
@@ -127,8 +129,9 @@ mendukung MCP) dapat memanggil `myc check` sebagai tool. Tool yang tersedia:
 - `policy` — whitelist header default.
 - `contracts` — scan kontrak-lite `//@ requires/ensures` dan tampilkan
   semua ekspresi kontrak.
-- `lint` — jalankan lint memory-safety myc pada source (verdict +
-  diagnostic).
+- `lint` — jalankan lint memory-safety myc pada source. MYC-AUDIT-014:
+  hasil = jumlah **observasi** ber-confidence (heuristik teks,
+  NON-blocking — bukan verdict).
 
 **Dokumentasi lengkap tiap tool untuk coding agent**: `docs/mcp-tools.md`
 (argument, bentuk output, verdict/assurance, catatan penggunaan).
@@ -148,7 +151,7 @@ contract-assert, `run_stdin` echo, TIMEOUT), `--prove` (L2 EVA /
 PROVE_VIOLATION), `--checked` (L4 SPATIAL / COMPILE_ERROR),
 `--run --checked` (RUNTIME_VIOLATION + kombinasi max-level L4),
 `--driver` (L3 RUNTIME / DRIVER_VIOLATION), `--filc` (L5 FILC / skip),
-lint (VIOLATION + tidak ada false-positive pada kode sah), dan `cwd`
+lint (observasi ber-confidence, non-blocking — MYC-AUDIT-014), dan `cwd`
 (fingerprint berubah sesuai cwd). Skip non-blocking bila backend gate
 tidak tersedia.
 
@@ -165,8 +168,11 @@ pustaka).
 - **Denylist fungsi** (`system`, `exec*`, `spawn*`, `fork`, `popen`, file I/O,
   jaringan, `mmap`, env, utas) tetap dilaporkan sebagai warning (safety
   tambahan), bukan penghalang.
-- **Gate hard = lint memory-safety** (intptr_t cast → VIOLATION, realloc
-  invalidasi → VIOLATION) **+ gate gcc** (tier memori, `-Werror`).
+- **Gate hard HANYA dari bukti semantik** — gcc (tier memori `-Werror`,
+  `-fanalyzer`), sanitizer runtime, Frama-C Eva, checked build, Fil-C.
+  Lint memory-safety (intptr_t cast, realloc invalidasi) sejak
+  MYC-AUDIT-014 = **observasi ber-confidence, non-blocking** (heuristik
+  teks tidak boleh jadi verdict tanpa konfirmasi semantik).
 - Fungsi tak dikenal ditangkap gcc via `-Werror=implicit-function-declaration`.
 
 ## Aturan untuk coding agent
@@ -178,7 +184,8 @@ Gunakan `shell` hanya bila sintaks shell memang dibutuhkan, dan jelaskan.
 ## Status
 
 - P0–P7 selesai: `myc check` end-to-end, policy non-blocking, lint
-  memory-safety (intptr_t/realloc), tier memori gcc + `-fanalyzer`,
+  memory-safety (sejak MYC-AUDIT-014: observasi non-blocking),
+  tier memori gcc + `-fanalyzer`,
   assurance L1 SANE, **verification run clang ASan+UBSan → L3 RUNTIME**
   (`--run`, eksekusi terkendali via proc.c, timeout kill pohon proses),
   contract-lite (D1.5) + **Frama-C Eva → L2 EVA** (`--prove`; 0 alarm
@@ -198,6 +205,15 @@ Gunakan `shell` hanya bila sintaks shell memang dibutuhkan, dan jelaskan.
   sendiri `json.c`), **soak** (`test/_soak.bat`), dan **corpus abuse**
   (`test/_corpus_abuse.bat` + `test/corpus/*.c` — input ganas tidak boleh
   membuat myc crash/hang). Smoke test MCP: `test/_mcp_smoke.bat`.
+- **MYC-AUDIT-014 selesai (2026-08-02)**: lint heuristik TIDAK lagi hard
+  verdict. Semua rule lint.c → **observasi + confidence**
+  (OBSERVATION/SUSPICIOUS/LIKELY/CONFIRMED), gate baru `MYC_GATE_LINT`
+  (clean/observations, benign), `myc_lint_source` mengembalikan jumlah
+  observasi, `MYC_ERR_LINT_VIOLATION` tak lagi dipicu. Hard violation
+  hanya dari bukti semantik: `bad_realloc.c` → COMPILE_ERROR via gcc
+  `-Werror=use-after-free`; `bad_intptr.c` → OK + 2 observasi. Confidence
+  tampil di teks (`[suspicious]`) + JSON (`"confidence"`,
+  `"lint_observations"`); MCP `lint` tool ikut non-blocking.
 - **MYC-AUDIT-011 selesai (2026-08-02)**: timeout POSIX membunuh **seluruh
   pohon proses** — child `setpgid(0,0)` + parent race-safe
   `setpgid(pid,pid)` (window kill(-pid) tertutup), `kill(-pid, SIGKILL)`;

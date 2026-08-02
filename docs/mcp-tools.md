@@ -40,12 +40,13 @@ sebagai server dan memanggil pipeline verifikasi `myc` sebagai tool.
   konsumen mesin TIDAK perlu parse JSON di dalam JSON (MYC-AUDIT-016).
 - `isError` HANYA untuk kegagalan tool/protocol: verdict infrastruktur
   `ERROR` (input terlalu besar dll.), `TIMEOUT`, `CANCELLED` → `true`.
-  Finding pada KODE (`PROVE_VIOLATION`, `DRIVER_VIOLATION`, lint,
+  Finding pada KODE (`PROVE_VIOLATION`, `DRIVER_VIOLATION`,
   runtime, compile) dikirim sebagai hasil biasa dengan `isError: false`
   (verdict membawa maknanya).
-- **Verdict yang mungkin**: `OK`, `VIOLATION` (lint), `COMPILE_ERROR`,
+- **Verdict yang mungkin**: `OK`, `COMPILE_ERROR`,
   `RUNTIME_VIOLATION` (--run), `PROVE_VIOLATION` (--prove),
   `FILC_VIOLATION` (--filc), `DRIVER_VIOLATION` (--driver).
+  (Lint tidak menghasilkan verdict — hanya observasi, MYC-AUDIT-014.)
 - **Assurance ladder**: `L0 RAW` → `L1 SANE` (statis gcc) → `L2 EVA`
   (Frama-C Eva: 0 alarm RTE di bawah model, abstract interpretation) →
   `L3 RUNTIME` (ASan/UBSan) → `L4 SPATIAL` (MYC_BUF checked) →
@@ -97,19 +98,24 @@ contracts: requires=N ensures=M
 
 Tidak menjalankan pipeline; hanya scan kontrak (API `myc_contract_list`).
 
-### 5. `lint` — lint memory-safety myc (heuristik)
+### 5. `lint` — lint memory-safety myc (heuristik, NON-blocking)
 
 - `source` (string, **wajib**).
 - **Hasil** teks:
 
 ```
-lint verdict: OK|VIOLATION
-  [line:col] pesan diagnostic...
+lint: N observasi (heuristik teks, NON-blocking -- MYC-AUDIT-014)
+  [line:col] [confidence] pesan diagnostic...
 ```
 
-Pola yang di-flag: cast pointer via `intptr_t`/`uintptr_t` (VIOLATION),
-realloc ke variabel lain (VIOLATION), memcpy/memmove/memset tanpa `sizeof`
-(warning), ukuran alokasi perkalian tanpa `sizeof` (warning).
+MYC-AUDIT-014: heuristik teks TIDAK menghasilkan verdict — hanya observasi
+ber-confidence (`observation`/`suspicious`). Hard violation ditangani bukti
+semantik (gcc `-Wuse-after-free`, `-fanalyzer`, sanitizer, checked).
+Pola yang di-observasi: cast pointer via `intptr_t`/`uintptr_t` (suspicious
+bila operand jelas pointer, observation bila tidak), realloc ke variabel
+lain (suspicious), memcpy/memmove/memset tanpa `sizeof` (observation),
+ukuran alokasi perkalian tanpa `sizeof` (observation), akses langsung
+`b[i]` pada variabel `MYC_BUF` (observation; hard = checked gate).
 
 ## Catatan untuk agent
 
@@ -129,7 +135,8 @@ realloc ke variabel lain (VIOLATION), memcpy/memmove/memset tanpa `sizeof`
   `--checked` (L4 SPATIAL / COMPILE_ERROR akses-langsung),
   `--run --checked` (RUNTIME_VIOLATION OOB + kombinasi max-level L4),
   `--driver` (L3 RUNTIME / DRIVER_VIOLATION), `--filc` (L5 FILC / skip),
-  lint (VIOLATION intptr_t + tidak ada false-positive pada `ok_lint.c`),
+  lint (observasi suspicious utk intptr_t + 0 observasi utk `ok_lint.c`,
+  MYC-AUDIT-014 non-blocking),
   `structuredContent` (schema + verdict), isError yang benar (transport
   true; PROVE/DRIVER violation false), dan `cwd` (fingerprint berubah
   sesuai cwd).

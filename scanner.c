@@ -29,6 +29,7 @@ static void add_diag(myc_result *res, int line, int col, const char *msg)
     res->diags[res->diag_count].line = line;
     res->diags[res->diag_count].col = col;
     res->diags[res->diag_count].message = slot;
+    res->diags[res->diag_count].confidence = MYC_CONF_OBSERVATION;
     res->diag_count++;
 }
 

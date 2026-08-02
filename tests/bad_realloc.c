@@ -1,6 +1,9 @@
 /*
  * bad_realloc.c -- fixture P5: realloc disimpan ke variabel lain, pointer
- * lama tetap dipakai -> lint harus menolak (VIOLATION lint, use-after-free).
+ * lama tetap dipakai -> MYC-AUDIT-014: lint memberi observasi SUSPICIOUS
+ * (non-blocking), TAPI gcc menangkapnya secara SEMANTIK
+ * (-Werror=use-after-free) -> verdict COMPILE_ERROR. Hard evidence dari
+ * compiler dataflow, bukan heuristik teks.
  */
 #include <stdlib.h>
 

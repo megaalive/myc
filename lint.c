@@ -1,11 +1,18 @@
 /*
  * lint.c -- Lint memory-safety myc (heuristik, tingkat token).
  *
- * Deteksi pola berisiko yang biasanya lolos gcc (lihat header):
- *   1. Pointer diubah via (intptr_t)/(uintptr_t)  -> VIOLATION (ok=0)
- *   2. realloc disimpan ke variabel lain          -> VIOLATION (ok=0)
- *   3. memcpy/memmove/memset tanpa sizeof          -> warning (ok=1)
- *   4. malloc/calloc ukuran berpotensi overflow    -> warning (ok=1)
+ * MYC-AUDIT-014 (roadmap 5.15): heuristik teks TIDAK boleh menjadi hard
+ * verdict kecuali dikonfirmasi bukti semantik. Seluruh rule lint kini
+ * menghasilkan OBSERVASI + confidence (bukan VIOLATION):
+ *   1. Pointer diubah via (intptr_t)/(uintptr_t)  -> SUSPICIOUS/OBSERVATION
+ *   2. realloc disimpan ke variabel lain          -> SUSPICIOUS
+ *   3. memcpy/memmove/memset tanpa sizeof          -> OBSERVATION
+ *   4. malloc/calloc ukuran berpotensi overflow    -> OBSERVATION
+ *   5. akses langsung b[i] pada variabel MYC_BUF   -> OBSERVATION
+ *
+ * Kembalian = jumlah observasi (0 = bersih). Hard violation ditangani gate
+ * semantik: gcc -Wuse-after-free (realloc), gcc -fanalyzer, sanitizer
+ * runtime, checked build (b[i] = COMPILE_ERROR), Frama-C, Fil-C.
  *
  * Scanner bekerja pada source mentah (bukan -E): melewati komentar, string,
  * char literal, dan baris preprocessor. Ini heuristik -- lihat rencana.
@@ -15,18 +22,23 @@
 #include <ctype.h>
 #include <string.h>
 
-static void add_diag(myc_result *res, int line, int col, const char *msg)
+/* Tambah diagnostic; return 1 bila benar-benar tersimpan (agar hitungan
+ * observasi akurat -- add_diag bisa diam saat cap/OOM). */
+static int add_diag(myc_result *res, int line, int col,
+                    myc_confidence conf, const char *msg)
 {
     char *slot;
     if (res->diag_count >= MYC_MAX_DIAGNOSTICS)
-        return;
+        return 0;
     slot = myc_result_arena_dup(res, msg, 0);
     if (!slot)
-        return;
+        return 0;
     res->diags[res->diag_count].line = line;
     res->diags[res->diag_count].col = col;
     res->diags[res->diag_count].message = slot;
+    res->diags[res->diag_count].confidence = conf;
     res->diag_count++;
+    return 1;
 }
 
 static int is_ident_start(int c)
@@ -349,7 +361,7 @@ int myc_lint_source(const char *source, size_t len, myc_result *res)
     size_t i = 0;
     size_t line = 1;
     size_t col = 1;
-    int    ok = 1;
+    int    observations = 0;
 
     buf_var_count = 0;                  /* reset per pemanggilan */
 
@@ -489,25 +501,49 @@ int myc_lint_source(const char *source, size_t len, myc_result *res)
                 while (j < len && (source[j] == ' ' || source[j] == '\t'))
                     j++;
                 if (j < len && source[j] == '[') {
-                    add_diag(res, (int)line, (int)tokcol,
-                             "warning: akses langsung [..] pada variabel "
-                             "MYC_BUF -- gunakan MYC_AT agar checked build "
-                             "(L4 SPATIAL) berlaku");
+                    observations += add_diag(res, (int)line, (int)tokcol,
+                                             MYC_CONF_OBSERVATION,
+                                             "akses langsung [..] pada variabel "
+                                             "MYC_BUF -- gunakan MYC_AT agar "
+                                             "checked build (L4 SPATIAL) berlaku "
+                                             "(observasi; hard = checked gate)");
                 }
             }
 
-            /* --- 1. cast pointer -> integer --- */
+            /* --- 1. cast pointer -> integer ---
+             * MYC-AUDIT-014: heuristik token tidak bisa memverifikasi tipe
+             * operand. Operand jelas pointer (`&x` / `*x`) -> SUSPICIOUS;
+             * selain itu -> OBSERVATION. Bukan hard verdict. */
             if (strcmp(tok, "intptr_t") == 0 || strcmp(tok, "uintptr_t") == 0) {
                 /* cast bila diawali '(' dan diakhiri ')' (setelah nama tipe) */
                 if (prev_sig(source, start) == '(') {
                     size_t j = i;
+                    size_t k;
                     while (j < len && (source[j] == ' ' || source[j] == '\t'))
                         j++;
                     if (j < len && source[j] == ')') {
-                        add_diag(res, (int)line, (int)tokcol,
-                                 "provenance pointer diubah via integer cast "
-                                 "(tidak dapat diverifikasi)");
-                        ok = 0;
+                        k = j + 1;
+                        while (k < len && (source[k] == ' ' ||
+                                           source[k] == '\t'))
+                            k++;
+                        /* Hanya '&' = jelas pointer (address-of tak ambigu);
+                         * '*' bisa berarti perkalian ((intptr_t)n * 2), jadi
+                         * tidak dianggap bukti pointer (MYC-AUDIT-014). */
+                        if (k < len && source[k] == '&') {
+                            observations += add_diag(res, (int)line, (int)tokcol,
+                                                     MYC_CONF_SUSPICIOUS,
+                                                     "cast pointer -> integer "
+                                                     "(operand jelas pointer); "
+                                                     "provenance tak dapat "
+                                                     "diverifikasi (observasi)");
+                        } else {
+                            observations += add_diag(res, (int)line, (int)tokcol,
+                                                     MYC_CONF_OBSERVATION,
+                                                     "cast ke intptr_t/uintptr_t: "
+                                                     "tipe operand tidak "
+                                                     "diverifikasi (observasi "
+                                                     "heuristik)");
+                        }
                     }
                 }
                 continue;
@@ -536,10 +572,15 @@ int myc_lint_source(const char *source, size_t len, myc_result *res)
                                  * arg1 disinkronkan (arg1 = target) di kemudian
                                  * hari -> bukan UAF. */
                                 if (!reassign_after(source, len, i, arg1, target)) {
-                                    add_diag(res, (int)line, (int)tokcol,
-                                             "realloc ke variabel lain: pointer "
-                                             "lama berpotensi use-after-free");
-                                    ok = 0;
+                                    observations += add_diag(res, (int)line,
+                                                        (int)tokcol,
+                                                        MYC_CONF_SUSPICIOUS,
+                                                        "realloc ke variabel "
+                                                        "lain: pointer lama "
+                                                        "berpotensi "
+                                                        "use-after-free (observasi "
+                                                        "heuristik; hard = gcc "
+                                                        "-Wuse-after-free)");
                                 }
                             }
                         }
@@ -558,9 +599,12 @@ int myc_lint_source(const char *source, size_t len, myc_result *res)
                 if (j < len && source[j] == '(') {
                     find_call_args(source, len, j, &argstart, &argstop);
                     if (!region_has_sizeof(source, argstart, argstop)) {
-                        add_diag(res, (int)line, (int)tokcol,
-                                 "warning: memcpy/memmove/memset tanpa sizeof "
-                                 "-- bounds tidak dibuktikan statis");
+                        observations += add_diag(res, (int)line, (int)tokcol,
+                                                 MYC_CONF_OBSERVATION,
+                                                 "memcpy/memmove/memset tanpa "
+                                                 "sizeof -- bounds tidak "
+                                                 "dibuktikan statis (observasi; "
+                                                 "ukuran eksplisit bisa valid)");
                     }
                 }
                 continue;
@@ -576,9 +620,12 @@ int myc_lint_source(const char *source, size_t len, myc_result *res)
                     find_call_args(source, len, j, &argstart, &argstop);
                     if (region_has_mul(source, argstart, argstop) &&
                         !region_has_sizeof(source, argstart, argstop)) {
-                        add_diag(res, (int)line, (int)tokcol,
-                                 "warning: ukuran alokasi memuat perkalian "
-                                 "tanpa sizeof -- potensi integer overflow");
+                        observations += add_diag(res, (int)line, (int)tokcol,
+                                                 MYC_CONF_OBSERVATION,
+                                                 "ukuran alokasi memuat "
+                                                 "perkalian tanpa sizeof -- "
+                                                 "potensi integer overflow "
+                                                 "(observasi)");
                     }
                 }
                 continue;
@@ -591,5 +638,5 @@ int myc_lint_source(const char *source, size_t len, myc_result *res)
         col++;
     }
 
-    return ok;
+    return observations;
 }

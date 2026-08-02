@@ -313,7 +313,7 @@ Setelah reentrancy dan schema hasil diperbaiki, ini dapat menjadi salah satu keu
 | MYC-AUDIT-011 | High | POSIX timeout | `kill(-pid)` tanpa process group tidak menjamin child tree mati | ✅ SELESAI 2026-08-02 (setpgid child + parent race-safe setpgid(pid,pid); kill(-pid) timeout + cleanup; Windows Job Object; enabler: _strdup → myc_strdup portabel + _POSIX_C_SOURCE; test POSIX `verify_descendants.c` di-wire ke _audit018.sh — grandchild mati oleh group-kill, negatif kontrol gagal tanpa fix) |
 | MYC-AUDIT-012 | High | `myc_buf.h` | Element size tidak disimpan; checked access dapat memakai tipe salah | ✅ SELESAI 2026-08-02 (typed member + elem_size/byte_capacity/cookie/generation; cek ukuran tipe compile-time; checked multiplication di MYC_NEW & MYC_AT; fingerprint v12) |
 | MYC-AUDIT-013 | High | proof claims | Eva alarm/summary diperlakukan sebagai proof kontrak umum | ✅ SELESAI 2026-08-02 (label L2 PROVEN→L2 EVA, L5 FULL→L5 FILC; prove memuat mode/version/entry; pesan jujur; FULL dihapus dari README) |
-| MYC-AUDIT-014 | Medium | lint | Heuristik token/text dijadikan hard violation |
+| MYC-AUDIT-014 | Medium | lint | Heuristik token/text dijadikan hard violation | ✅ SELESAI 2026-08-02 (lint heuristik TIDAK lagi hard: seluruh rule lint → observasi + confidence OBSERVATION/SUSPICIOUS; gate baru MYC_GATE_LINT (completed_clean/completed_observations, benign thd verdict); hard violation HANYA dari bukti semantik — bad_realloc kini ditangkap gcc -Wuse-after-free (COMPILE_ERROR), bad_intptr OK + observasi; confidence di diagnostic teks+JSON + MCP lint tool non-blocking) |
 | MYC-AUDIT-015 | Medium | portability | `NUL` dipakai di POSIX dan meninggalkan file literal `NUL` | ✅ SELESAI 2026-08-02 (helper myc_null_device: NUL di Windows, /dev/null di POSIX; literal "NUL" diganti runtime di merge_args) |
 | MYC-AUDIT-016 | Medium | MCP | JSON document dibungkus sebagai string text, status error tidak konsisten | ✅ SELESAI 2026-08-02 (structuredContent schema myc.result.v1; isError hanya tool/protocol error; JSON-RPC ketat jsonrpc/typed-id/notification; negosiasi strict; unknown flag ditolak) |
 | MYC-AUDIT-017 | Medium | output parsing | Marker human-readable mudah spoof dan rapuh terhadap versi/localization | ✅ SELESAI 2026-08-02 (saluran bukti NON-SPOOFABLE: ASan/UBSan `log_path` → report FILE di tmp_dir, dibaca `myc_read_sanitizer_report`; marker teks stdout/stderr hanya bukti sekunder & WAJIB exit != 0; env deterministik `ASAN_OPTIONS`/`UBSAN_OPTIONS`/`LC_ALL=C` via `preq.env`; finding = report || (marker && exit!=0); teks mirip marker dgn exit 0 diabaikan + diagnostic) |
@@ -1124,7 +1124,25 @@ Jangan gunakan kata `PROVEN` tanpa menyebut:
 
 ---
 
-## 5.15. MYC-AUDIT-014 — Heuristik lint terlalu keras
+## 5.15. MYC-AUDIT-014 — Heuristik lint terlalu keras  ✅ SELESAI 2026-08-02
+
+> Status: diperbaiki. Seluruh rule lint (intptr_t cast, realloc ke variabel
+> lain, memcpy/memset tanpa sizeof, malloc overflow, akses langsung MYC_BUF)
+> kini menghasilkan OBSERVASI ber-confidence, TIDAK pernah hard verdict.
+> Gate baru `MYC_GATE_LINT` (completed_clean / completed_observations;
+> benign terhadap verdict/assurance/finding/debt/quorum — sama dengan gate
+> negative-space). Diagnostic heuristik diberi label confidence
+> (OBSERVATION/SUSPICIOUS/LIKELY/CONFIRMED) di laporan teks + JSON;
+> `myc_diagnostic.confidence` = CONFIRMED untuk bukti semantik (gcc,
+> sanitizer, Eva, Fil-C, checked). `myc_lint_source` mengembalikan jumlah
+> observasi (0 = bersih); `MYC_ERR_LINT_VIOLATION` tidak lagi dipicu.
+> Hard violation tetap dari bukti SEMANTIK: `bad_realloc.c` ditangkap gcc
+> `-Werror=use-after-free` (COMPILE_ERROR, AST/dataflow), `bad_intptr.c`
+> OK + 2 observasi (cast eksplisit tidak ditangkap kompiler — jujur,
+> bukan klaim palsu). Catatan jujur: heuristik realloc (jendela teks) dan
+> pelacakan MYC_BUF (tidak scope-aware) masih bisa false-positive/negative
+> sebagai OBSERVASI — tidak berbahaya karena non-blocking; perbaikan akurasi
+> = pekerjaan AST/CFG (di luar cakupan audit ini).
 
 Contoh rule:
 

@@ -267,6 +267,8 @@ static void add_diag_neg(myc_result *res, int line, const char *msg)
     res->diags[res->diag_count].line = line;
     res->diags[res->diag_count].col = 0;
     res->diags[res->diag_count].message = slot;
+    /* MYC-AUDIT-014: heuristik teks = OBSERVATION, bukan bukti semantik. */
+    res->diags[res->diag_count].confidence = MYC_CONF_OBSERVATION;
     res->diag_count++;
 }
 

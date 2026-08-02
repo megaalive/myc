@@ -150,6 +150,7 @@ const char *myc_gate_id_short(myc_gate_id id)
     case MYC_GATE_DRIVER:     return "driver";
     case MYC_GATE_METAMORPHIC:return "metamorphic";
     case MYC_GATE_NEGATIVE:   return "negative";
+    case MYC_GATE_LINT:       return "lint";
     default:                  return "?";
     }
 }
@@ -378,14 +379,17 @@ static int dim_priority(myc_dim_status s)
  * tidak menambah bukti, hanya mengagregasi per dimensi. */
 static void myc_build_assurance_vector(myc_result *res)
 {
-    static const myc_gate_id dim_gates[MYC_DIM_COUNT][2] = {
-        { MYC_GATE_PREPROCESS, MYC_GATE_COMPILE },      /* COMPILE   */
-        { MYC_GATE_ANALYZER,   MYC_GATE_COUNT },        /* STATIC    */
-        { MYC_GATE_RUNTIME,    MYC_GATE_METAMORPHIC },  /* RUNTIME   */
-        { MYC_GATE_CHECKED,    MYC_GATE_COUNT },        /* CHECKED   */
-        { MYC_GATE_PROVE,      MYC_GATE_COUNT },        /* PROOF     */
-        { MYC_GATE_DRIVER,     MYC_GATE_COUNT },        /* DRIVER    */
-        { MYC_GATE_FILC,       MYC_GATE_COUNT }         /* FILC      */
+    /* Dimensi COMPILE kini memuat gate lint (MYC-AUDIT-014): lint heuristik
+     * OBSERVATIONS = benign (prioritas lebih rendah dari CLEAN), jadi
+     * compile dim tetap C1 selama gcc -c bersih. */
+    static const myc_gate_id dim_gates[MYC_DIM_COUNT][3] = {
+        { MYC_GATE_LINT,      MYC_GATE_PREPROCESS, MYC_GATE_COMPILE }, /* COMPILE */
+        { MYC_GATE_ANALYZER,  MYC_GATE_COUNT,      MYC_GATE_COUNT },   /* STATIC  */
+        { MYC_GATE_RUNTIME,   MYC_GATE_METAMORPHIC, MYC_GATE_COUNT },  /* RUNTIME */
+        { MYC_GATE_CHECKED,   MYC_GATE_COUNT,      MYC_GATE_COUNT },   /* CHECKED */
+        { MYC_GATE_PROVE,     MYC_GATE_COUNT,      MYC_GATE_COUNT },   /* PROOF   */
+        { MYC_GATE_DRIVER,    MYC_GATE_COUNT,      MYC_GATE_COUNT },   /* DRIVER  */
+        { MYC_GATE_FILC,      MYC_GATE_COUNT,      MYC_GATE_COUNT }    /* FILC    */
     };
     size_t d;
 
@@ -395,7 +399,7 @@ static void myc_build_assurance_vector(myc_result *res)
     for (d = 0; d < MYC_DIM_COUNT; d++) {
         myc_dim_status best = MYC_DIM_NOT_REQUESTED;
         size_t gi;
-        for (gi = 0; gi < 2; gi++) {
+        for (gi = 0; gi < 3; gi++) {
             const myc_gate_result *g;
             myc_gate_id gid = dim_gates[d][gi];
             myc_dim_status cur;
@@ -498,6 +502,9 @@ void myc_reduce_verdict(myc_result *res)
             case MYC_GATE_COMPILE:
             case MYC_GATE_ANALYZER:
             case MYC_GATE_PREPROCESS: has_compile_clean = 1; break;
+            case MYC_GATE_LINT:       /* lint bersih: benign, tidak
+                                         menaikkan/menurunkan assurance */
+            case MYC_GATE_NEGATIVE:
             default: break;
             }
             break;

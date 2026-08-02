@@ -206,13 +206,14 @@ async def _run(exe):
                 return 1
             print("[OK] contracts (requires=1 ensures=1)")
 
-            # 7. lint (intptr_t) -> VIOLATION
+            # 7. lint (intptr_t) -> observasi suspicious (MYC-AUDIT-014:
+            #    heuristik teks non-blocking, bukan verdict VIOLATION)
             r = await session.call_tool("lint", arguments={"source": LINT_SRC})
             t = _text(r)
-            if "VIOLATION" not in t:
+            if "observasi" not in t or "suspicious" not in t:
                 print("[FAIL] lint: %s" % t[:200])
                 return 1
-            print("[OK] lint (intptr_t) -> VIOLATION")
+            print("[OK] lint (intptr_t) -> observasi suspicious (non-blocking)")
 
             # 8. contracts -- argumen INVALID (source hilang) -> error -32602
             try:
@@ -620,11 +621,11 @@ async def _run(exe):
                 print("[OK] check combo gate ok_checked.c --run --checked "
                       "-> L4 SPATIAL (max level)")
 
-            # 23. lint (fixture tests/ok_lint.c) -> OK (bukan false VIOLATION)
-            # Fixture P5: source bersih (malloc + memcpy dengan sizeof eksplisit).
-            # Lint memory-safety HARUS diam (verdict OK) -- membuktikan tidak
-            # ada false positive VIOLATION pada idiom aman. Berlawanan dengan
-            # cek #7 (lint intptr_t -> VIOLATION). Deterministik (tanpa skip).
+            # 23. lint (fixture tests/ok_lint.c) -> 0 observasi (bukan false
+            #    positive). Fixture P5: source bersih (malloc + memcpy dengan
+            #    sizeof eksplisit). MYC-AUDIT-014: lint heuristik non-blocking;
+            #    kode bersih = "lint: 0 observasi". Berlawanan dengan cek #7
+            #    (lint intptr_t -> observasi suspicious). Deterministik.
             try:
                 ok_lint_src = _tests_source("ok_lint.c")
             except OSError as e:
@@ -632,11 +633,10 @@ async def _run(exe):
                 return 1
             r = await session.call_tool("lint", arguments={"source": ok_lint_src})
             t = _text(r)
-            if _is_error(r) or "lint verdict: OK" not in t or \
-               "VIOLATION" in t:
+            if _is_error(r) or "lint: 0 observasi" not in t:
                 print("[FAIL] lint ok: %s" % t[:250])
                 return 1
-            print("[OK] lint ok_lint.c -> OK (tidak ada false VIOLATION)")
+            print("[OK] lint ok_lint.c -> 0 observasi (tidak ada false positive)")
 
             # 24. check + cwd -> fingerprint berubah sesuai cwd
             # Fingerprint myc memakai req->cwd sebagai bagian hash kanonik

@@ -136,7 +136,8 @@ findstr /C:"all backends agree: clean" %OUT% >nul && echo [OK] laporan quorum ag
 myc.exe check tests\bad_run_oob.c --run --quorum > %OUT% 2>&1
 findstr /C:"quorum: conflict" %OUT% >nul && echo [OK] quorum conflict utk runtime OOB || echo [FAIL] quorum conflict tidak muncul
 myc.exe check tests\bad_intptr.c --quorum > %OUT% 2>&1
-findstr /C:"quorum: inconclusive" %OUT% >nul && echo [OK] quorum inconclusive utk tanpa hasil gate || echo [FAIL] quorum inconclusive tidak muncul
+findstr /C:"quorum: clean" %OUT% >nul && echo [OK] quorum clean utk lint observasi (non-blocking, backend jalan) || echo [FAIL] quorum tidak clean utk lint observasi
+findstr /C:"all backends agree: clean" %OUT% >nul && echo [OK] quorum agree-clean utk lint observasi || echo [FAIL] quorum agree-clean hilang
 myc.exe check tests\ok_run.c --run --quorum --json > %OUT% 2>&1
 findstr /C:"\"quorum_status\":\"clean\"" %OUT% >nul && echo [OK] quorum_status di JSON || echo [FAIL] quorum_status hilang di JSON
 del %OUT%
@@ -162,6 +163,21 @@ findstr /C:"konvensi proyek 4/5 callsite malloc memeriksa hasil" %OUT% >nul && e
 findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] deviation tetap OK (observasi saja) || echo [FAIL] deviation mengubah verdict
 myc.exe check tests\negative_dev.c --negative --json > %OUT% 2>&1
 findstr /C:"\"negative_deviations\":1" %OUT% >nul && echo [OK] negative_deviations di JSON || echo [FAIL] negative_deviations hilang di JSON
+del %OUT%
+echo --- MYC-AUDIT-014: lint heuristik NON-blocking (observasi + confidence)
+myc.exe check tests\bad_intptr.c > %OUT% 2>&1
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] bad_intptr OK (lint observasi, bukan VIOLATION) || echo [FAIL] bad_intptr bukan OK
+findstr /C:"lint (14): 2 observasi" %OUT% >nul && echo [OK] ringkasan 2 observasi lint muncul || echo [FAIL] ringkasan observasi lint hilang
+findstr /C:"[suspicious]" %OUT% >nul && echo [OK] confidence suspicious muncul di teks || echo [FAIL] confidence suspicious hilang
+myc.exe check tests\bad_intptr.c --json > %OUT% 2>&1
+findstr /C:"\"confidence\":\"suspicious\"" %OUT% >nul && echo [OK] confidence suspicious di JSON || echo [FAIL] confidence suspicious hilang di JSON
+findstr /C:"\"lint_observations\":2" %OUT% >nul && echo [OK] lint_observations di JSON || echo [FAIL] lint_observations hilang di JSON
+myc.exe check tests\bad_realloc.c > %OUT% 2>&1
+findstr /C:"verdict:   COMPILE_ERROR" %OUT% >nul && echo [OK] bad_realloc COMPILE_ERROR (gcc -Wuse-after-free, bukti semantik) || echo [FAIL] bad_realloc bukan COMPILE_ERROR
+findstr /C:"use-after-free" %OUT% >nul && echo [OK] diagnostic gcc use-after-free terekam || echo [FAIL] diagnostic gcc hilang
+myc.exe check tests\ok_lint.c > %OUT% 2>&1
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] ok_lint tetap OK || echo [FAIL] ok_lint bukan OK
+findstr /C:"lint         completed_clean" %OUT% >nul && echo [OK] gate lint completed_clean utk source bersih || echo [FAIL] gate lint tidak clean
 del %OUT%
 echo --- Silence Is a Finding (9.10): --require-complete membuat gap gagal
 myc.exe check tests\ok_hello.c --require-complete > %OUT% 2>&1

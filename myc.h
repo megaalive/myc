@@ -123,6 +123,9 @@ typedef enum {
     MYC_GATE_METAMORPHIC,    /* (9.7) build ganda -O0/-O2, bandingkan hasil */
     MYC_GATE_NEGATIVE,       /* (9.8) negative-space: observasi konvensi
                                 callsite (bukan finding, bukan verdict) */
+    MYC_GATE_LINT,           /* (14) lint memory-safety heuristik: HANYA
+                                observasi + confidence (MYC-AUDIT-014),
+                                non-blocking -- bukan finding terkonfirmasi */
     MYC_GATE_COUNT
 } myc_gate_id;
 
@@ -231,11 +234,26 @@ typedef enum {
     MYC_ERR_INTERNAL
 } myc_error_code;
 
+/* Confidence diagnostic heuristik teks (MYC-AUDIT-014, roadmap 5.15):
+ * scanner/lint berbasis token/text TIDAK boleh menghasilkan hard verdict
+ * kecuali dikonfirmasi bukti SEMANTIK. Skala keyakinan:
+ *   OBSERVATION < SUSPICIOUS < LIKELY < CONFIRMED
+ * Hard failure hanya dari bukti semantik (compiler AST/dataflow, sanitizer,
+ * proof counterexample, checked runtime) atau rule syntactic yang benar-benar
+ * unambiguous. Diagnostic dari gcc = CONFIRMED; lint/negative = observasi. */
+typedef enum {
+    MYC_CONF_OBSERVATION = 0, /* pola terlihat, belum tentu masalah */
+    MYC_CONF_SUSPICIOUS,      /* indikasi nyata, butuh konfirmasi semantik */
+    MYC_CONF_LIKELY,          /* hampir pasti, belum bukti */
+    MYC_CONF_CONFIRMED        /* bukti semantik / syntactic pasti */
+} myc_confidence;
+
 /* Satu pelanggaran / diagnostic yang ditemukan scanner atau gcc. */
 typedef struct {
-    int         line;       /* 1-based; 0 bila tidak tersedia */
-    int         col;        /* 1-based; 0 bila tidak tersedia */
-    const char *message;    /* string statis, tidak dimiliki struct ini */
+    int            line;       /* 1-based; 0 bila tidak tersedia */
+    int            col;        /* 1-based; 0 bila tidak tersedia */
+    const char    *message;    /* string statis, tidak dimiliki struct ini */
+    myc_confidence confidence; /* tingkat keyakinan (heuristik vs semantik) */
 } myc_diagnostic;
 
 typedef struct {
@@ -425,6 +443,12 @@ typedef struct {
     int         negative_callsites;   /* total callsite alokasi terdeteksi */
     int         negative_deviations;  /* jumlah yang tidak memeriksa hasil */
 
+    /* --- hasil lint memory-safety heuristik (P5; MYC-AUDIT-014) --- */
+    /* Jumlah observasi heuristik (bukan finding terkonfirmasi).
+     * Non-blocking: lint TIDAK pernah menurunkan verdict; hard evidence
+     * hanya dari gate semantik (gcc AST/dataflow, sanitizer, dll). */
+    int         lint_observations;
+
     /* --- 9.10 Silence Is a Finding (--require-complete) --- */
     /* Apakah require-complete diminta (untuk laporan). Enforcement
      * dilakukan di myc_run(): gap verifikasi (debt) -> INCONCLUSIVE. */
@@ -552,6 +576,10 @@ const char *myc_assurance_name(myc_assurance a);
 const char *myc_finding_name(myc_finding f);
 const char *myc_claim_status_name(myc_claim_status c);
 const char *myc_dim_status_name(myc_dim_status s);
+
+/* Nama confidence diagnostic (MYC-AUDIT-014): "observation"/"suspicious"
+ * /"likely"/"confirmed" (statis). */
+const char *myc_confidence_name(myc_confidence c);
 
 /* Gate status API (Fase 3). */
 void myc_gate_set_status(myc_result *res,

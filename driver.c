@@ -919,6 +919,8 @@ static void add_diag_drv(myc_result *res, const char *msg)
     res->diags[res->diag_count].line = 0;
     res->diags[res->diag_count].col = 0;
     res->diags[res->diag_count].message = slot;
+    /* fakta eksekusi/sanitizer harness = bukti semantik (MYC-AUDIT-014) */
+    res->diags[res->diag_count].confidence = MYC_CONF_CONFIRMED;
     res->diag_count++;
 }
 

@@ -87,6 +87,8 @@ static void add_diag_prove(myc_result *res, const char *msg)
     res->diags[res->diag_count].line = 0;
     res->diags[res->diag_count].col = 0;
     res->diags[res->diag_count].message = slot;
+    /* fakta Eva = bukti semantik (MYC-AUDIT-014) */
+    res->diags[res->diag_count].confidence = MYC_CONF_CONFIRMED;
     res->diag_count++;
 }
 
@@ -160,6 +162,8 @@ static int ingest_eva_alarms(myc_result *res, const char *text)
             res->diags[res->diag_count].line = line;
             res->diags[res->diag_count].col = 0;
             res->diags[res->diag_count].message = slot;
+            /* alarm Eva = bukti semantik (MYC-AUDIT-014) */
+            res->diags[res->diag_count].confidence = MYC_CONF_CONFIRMED;
             res->diag_count++;
         }
         count++;

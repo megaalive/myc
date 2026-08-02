@@ -28,7 +28,9 @@ findstr /C:"structuredContent" %OUT% >nul || ( echo [FAIL] structuredContent & e
 findstr /C:"myc.result.v1" %OUT% >nul || ( echo [FAIL] schema version & exit /b 1 )
 findstr /C:"tools" %OUT% >nul || ( echo [FAIL] tools/list & exit /b 1 )
 findstr /C:"contracts: requires=1 ensures=1" %OUT% >nul || ( echo [FAIL] tool contracts & exit /b 1 )
-findstr /C:"VIOLATION" %OUT% | findstr /C:"lint" >nul || ( echo [FAIL] tool lint & exit /b 1 )
+rem MYC-AUDIT-014: tool lint = observasi ber-confidence (non-blocking),
+rem bukan verdict VIOLATION.
+findstr /C:"observasi" %OUT% | findstr /C:"lint" >nul || ( echo [FAIL] tool lint & exit /b 1 )
 echo [OK] mcp smoke lulus
 del %OUT%
 exit /b 0

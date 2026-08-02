@@ -3,7 +3,8 @@
  *
  * Urutan (pivot memory-safety 2026-08-01: policy NON-BLOCKING):
  *   1. scan include mentah (lapis 1)  -> warning (non-blocking)
- *   2. lint memory-safety (P5, D1.3+D1.4) -> LINT_VIOLATION stop (gate hard)
+ *   2. lint memory-safety (P5, D1.3+D1.4) -> observasi + confidence
+ *      (MYC-AUDIT-014: heuristik teks TIDAK pernah hard verdict)
  *   3. gcc -E (argv eksak, source via stdin) -> output preprocessed
  *   4. scan markers (lapis 2)         -> warning (non-blocking)
  *   5. scan calls (lapis 3)           -> warning (non-blocking)
@@ -125,7 +126,8 @@ static const char **merge_args(const char *const *lists[], size_t nlists,
 }
 
 /* helper agar add_diag bisa menerima pesan dinamis dari stderr gcc.
- * Pesan disalin ke slot statis bergilir (cukup untuk laporan). */
+ * Confidence = CONFIRMED: gcc diagnostic adalah bukti SEMANTIK
+ * (AST/dataflow), bukan heuristik teks (MYC-AUDIT-014). */
 static void add_diag_copy(myc_result *res, int line, int col, const char *msg)
 {
     char *copy;
@@ -137,6 +139,7 @@ static void add_diag_copy(myc_result *res, int line, int col, const char *msg)
     res->diags[res->diag_count].line = line;
     res->diags[res->diag_count].col = col;
     res->diags[res->diag_count].message = copy;
+    res->diags[res->diag_count].confidence = MYC_CONF_CONFIRMED;
     res->diag_count++;
 }
 
@@ -464,6 +467,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_METAMORPHIC, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_NEGATIVE, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_LINT, MYC_GATE_NOT_APPLICABLE, NULL);
 
     /* hash source */
     sha256_hex(src, srclen, hex);
@@ -542,14 +546,27 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     /* --- Scan kontrak //@ requires/ensures (D1.5; info, non-blocking) --- */
     myc_contract_scan(src, srclen, res);
 
-    /* --- Lint memory-safety (P5; default aktif, mati via --no-lint) --- */
+    /* --- Lint memory-safety (P5; default aktif, mati via --no-lint) ---
+     * MYC-AUDIT-014: heuristik teks TIDAK boleh hard verdict. Hasil lint
+     * = observasi + confidence (OBSERVATION/SUSPICIOUS), NON-blocking.
+     * Gate status: COMPLETED_CLEAN bila tanpa observasi, COMPLETED_
+     * OBSERVATIONS bila ada -- benign terhadap verdict/assurance/finding
+     * (sama dengan negative-space 9.8). Hard evidence tetap dari gate
+     * semantik: gcc -Wuse-after-free / -fanalyzer, sanitizer, dst. */
     if (req->run_lint) {
-        if (!myc_lint_source(src, srclen, res)) {
-            res->verdict = MC_VIOLATION;
-            res->err = MYC_ERR_LINT_VIOLATION;
-            res->exit_code = 1;
-            free(gcc_path);
-            return;
+        res->lint_observations = myc_lint_source(src, srclen, res);
+        if (res->lint_observations > 0) {
+            myc_gate_set_status(res, MYC_GATE_LINT,
+                                MYC_GATE_COMPLETED_OBSERVATIONS,
+                                "lint heuristik: observasi (non-blocking)");
+            myc_result_add_evidence(res, MYC_GATE_LINT,
+                                    MYC_EVIDENCE_DIAGNOSTIC,
+                                    "lint: observasi heuristik (bukan finding)");
+        } else {
+            myc_gate_set_status(res, MYC_GATE_LINT, MYC_GATE_COMPLETED_CLEAN,
+                                "lint bersih");
+            myc_result_add_evidence(res, MYC_GATE_LINT, MYC_EVIDENCE_GATE_END,
+                                    "lint: bersih");
         }
     }
 

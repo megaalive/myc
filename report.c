@@ -143,6 +143,19 @@ const char *myc_dim_status_name(myc_dim_status s)
     }
 }
 
+/* Nama confidence diagnostic (MYC-AUDIT-014): label heuristik teks vs
+ * bukti semantik. Dipakai laporan teks + JSON. */
+const char *myc_confidence_name(myc_confidence c)
+{
+    switch (c) {
+    case MYC_CONF_OBSERVATION: return "observation";
+    case MYC_CONF_SUSPICIOUS:  return "suspicious";
+    case MYC_CONF_LIKELY:      return "likely";
+    case MYC_CONF_CONFIRMED:   return "confirmed";
+    }
+    return "unknown";
+}
+
 /* Digit kompak per dimensi untuk ringkasan assurance vector:
  * 0=n/a 1=clean 2=findings 3=inconclusive 4=observations */
 static char dim_digit(myc_dim_status s)
@@ -230,6 +243,11 @@ void myc_report_text(const myc_result *res)
     if (res->ran_negative)
         printf("negative (9.8): callsites=%d deviations=%d\n",
                res->negative_callsites, res->negative_deviations);
+    /* MYC-AUDIT-014: lint heuristik NON-blocking -- jumlah observasi. */
+    if (res->lint_observations > 0)
+        printf("lint (14): %d observasi (heuristik teks, NON-blocking; "
+               "hard hanya dari bukti semantik)\n",
+               res->lint_observations);
 
     /* Scope Certificate (Fase 4, 9.11): daftar persis apa yang diperiksa.
      * Hanya memuat metrik yang BENAR-BENAR diukur; kolom yang tidak diukur
@@ -251,8 +269,16 @@ void myc_report_text(const myc_result *res)
 
     for (i = 0; i < res->diag_count; i++) {
         const myc_diagnostic *d = &res->diags[i];
-        printf("  [%d:%d] %s\n", d->line, d->col,
-               d->message ? d->message : "");
+        /* Confidence ditampilkan hanya untuk heuristik teks; bukti
+         * semantik (gcc/sanitizer/proof) = confirmed, label dihilangkan
+         * agar output tetap ringkas (MYC-AUDIT-014). */
+        if (d->confidence == MYC_CONF_CONFIRMED)
+            printf("  [%d:%d] %s\n", d->line, d->col,
+                   d->message ? d->message : "");
+        else
+            printf("  [%d:%d] [%s] %s\n", d->line, d->col,
+                   myc_confidence_name(d->confidence),
+                   d->message ? d->message : "");
     }
 
     if (res->stderr_text && res->stderr_text[0])
@@ -482,6 +508,8 @@ char *myc_result_to_json(const myc_result *res)
         json_sb_printf(&b, "\"negative_callsites\":%d,", res->negative_callsites);
         json_sb_printf(&b, "\"negative_deviations\":%d,", res->negative_deviations);
     }
+    /* MYC-AUDIT-014: jumlah observasi lint heuristik (non-blocking). */
+    json_sb_printf(&b, "\"lint_observations\":%d,", res->lint_observations);
     json_sb_printf(&b, "\"truncated\":%s,", res->truncated ? "true" : "false");
     json_sb_printf(&b, "\"sanitizer_detected\":%s,", res->run_sanitizer_detected ? "true" : "false");
     if (res->run_sanitizer_detected)
@@ -572,8 +600,10 @@ char *myc_result_to_json(const myc_result *res)
         const myc_diagnostic *d = &res->diags[i];
         if (i)
             json_sb_puts(&b, ",");
-        json_sb_printf(&b, "{\"line\":%d,\"col\":%d,\"message\":",
-                       d->line, d->col);
+        json_sb_printf(&b,
+                       "{\"line\":%d,\"col\":%d,\"confidence\":\"%s\","
+                       "\"message\":",
+                       d->line, d->col, myc_confidence_name(d->confidence));
         json_sb_escape(&b, d->message);
         json_sb_puts(&b, "}");
     }
