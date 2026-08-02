@@ -310,7 +310,7 @@ Setelah reentrancy dan schema hasil diperbaiki, ini dapat menjadi salah satu keu
 | MYC-AUDIT-008 | High | diagnostics | Static ring buffers membuat hasil tidak reentrant/thread-safe | **? SELESAI 2026-08-02 (arena milik hasil)** |
 | MYC-AUDIT-009 | High | `json.c` | Parser menerima JSON invalid dan embedded NUL memotong string | **? SELESAI 2026-08-02 (parser ketat + corpus)** |
 | MYC-AUDIT-010 | High | backend status | “Unavailable”, “failed”, “inconclusive”, dan “clean” tercampur | ✅ SELESAI 2026-08-02 (Fase 3 typed status + 9.10: filc/prove/driver unavailable kini UNAVAILABLE, bukan NOT_APPLICABLE) |
-| MYC-AUDIT-011 | High | POSIX timeout | `kill(-pid)` tanpa process group tidak menjamin child tree mati |
+| MYC-AUDIT-011 | High | POSIX timeout | `kill(-pid)` tanpa process group tidak menjamin child tree mati | ✅ SELESAI 2026-08-02 (setpgid child + parent race-safe setpgid(pid,pid); kill(-pid) timeout + cleanup; Windows Job Object; enabler: _strdup → myc_strdup portabel + _POSIX_C_SOURCE; test POSIX `verify_descendants.c` di-wire ke _audit018.sh — grandchild mati oleh group-kill, negatif kontrol gagal tanpa fix) |
 | MYC-AUDIT-012 | High | `myc_buf.h` | Element size tidak disimpan; checked access dapat memakai tipe salah | ✅ SELESAI 2026-08-02 (typed member + elem_size/byte_capacity/cookie/generation; cek ukuran tipe compile-time; checked multiplication di MYC_NEW & MYC_AT; fingerprint v12) |
 | MYC-AUDIT-013 | High | proof claims | Eva alarm/summary diperlakukan sebagai proof kontrak umum | ✅ SELESAI 2026-08-02 (label L2 PROVEN→L2 EVA, L5 FULL→L5 FILC; prove memuat mode/version/entry; pesan jujur; FULL dihapus dari README) |
 | MYC-AUDIT-014 | Medium | lint | Heuristik token/text dijadikan hard violation |
@@ -977,6 +977,31 @@ Lebih kuat:
 - gunakan resource limit;
 - Windows tetap gunakan Job Object;
 - verifikasi descendant helper benar-benar mati.
+
+### Implementasi (2026-08-02)
+
+- `proc.c` child: `setpgid(0, 0)` sebelum exec (sudah sejak Fase 1).
+- **Baru — parent race-safe**: segera setelah `fork()`, parent memanggil
+  `setpgid(pid, pid)` — menutup window antara fork dan eksekusi setpgid
+  child; siapa menang, group terbentuk sedini mungkin; yang kalah dapat
+  EACCES/ESRCH (diabaikan). `kill(-pid, SIGKILL)` di jalur timeout dan
+  cleanup kini benar-benar menarget group child, termasuk descendant.
+- Windows tetap Job Object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` +
+  `TerminateJobObject`).
+- **Enabler portability (bug nyata ditemukan saat mengerjakan ini)**:
+  `_strdup` adalah MSVC/MinGW-only dan dipakai di 6 file — build POSIX
+  myc/proc.c rusak. Diganti `myc_strdup()` (implementasi di `proc.c`
+  agar ikut ter-link test unit yang hanya men-link proc.c), plus
+  `#define _POSIX_C_SOURCE 200809L` di proc.c sebelum include sistem
+  (clock_gettime/setpgid butuh itu di -std=c11).
+- **Test nyata**: `test/verify_descendants.c` (sebelumnya orphan, tidak pernah jalan) ditulis ulang: child meng-fork grandchild (tulis pid +
+  marker `desc.survived` setelah 5 s) lalu tidur 120 s; myc timeout 1500
+  ms → group-kill harus mematikan grandchild juga; harness menunggu 6 s
+  dan memastikan marker TIDAK ada (kalau group-kill gagal, grandchild
+  jadi yatim dan menulis marker). POSIX-only (fork) → di `_audit018.sh`
+  dengan guard uname (MINGW/MSYS/CYGWIN = SKIP). Verifikasi: WSL Ubuntu
+  → 4/4 OK; **negatif kontrol** (kill(-pid) dinonaktifkan) → test GAGAL
+  sesuai harapan.
 
 ---
 

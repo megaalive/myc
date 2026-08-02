@@ -467,7 +467,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
 
     /* hash source */
     sha256_hex(src, srclen, hex);
-    res->source_sha256 = _strdup(hex);
+    res->source_sha256 = myc_strdup(hex);
 
     /* cari gcc */
     gcc_path = myc_find_executable(req->gcc_program ? req->gcc_program : "gcc");
@@ -476,7 +476,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         res->verdict = MC_ERROR;
         return;
     }
-    res->resolved_gcc = _strdup(gcc_path);
+    res->resolved_gcc = myc_strdup(gcc_path);
 
     /* fingerprint kanonik
      * Perbaikan MYC-AUDIT-005: snprintf() mengembalikan panjang yang
@@ -533,7 +533,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             /* alokasi gagal: hash string kosong sebagai fallback */
             sha256_hex("", 0, hex);
         }
-        res->fingerprint = _strdup(hex);
+        res->fingerprint = myc_strdup(hex);
     }
 
     /* --- Lapis 1: include mentah (warning, non-blocking) --- */

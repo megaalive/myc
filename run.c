@@ -250,7 +250,7 @@ static char *asan_dll_path(const char *clang_path)
         myc_proc_result_free(&pres);
         return NULL;
     }
-    out = _strdup(pres.stdout_data);
+    out = myc_strdup(pres.stdout_data);
     myc_proc_result_free(&pres);
     return out;
 }

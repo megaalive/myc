@@ -206,7 +206,7 @@ static myc_replay_capsule *myc_build_capsule(const myc_request *req,
 
     /* Source identity */
     if (res->source_sha256) {
-        cap->source_sha256 = _strdup(res->source_sha256);
+        cap->source_sha256 = myc_strdup(res->source_sha256);
         if (!cap->source_sha256) goto fail;
     }
 
@@ -215,22 +215,22 @@ static myc_replay_capsule *myc_build_capsule(const myc_request *req,
     if (req->run_stdin && req->run_stdin_len > 0) {
         char hex[65];
         sha256_hex(req->run_stdin, req->run_stdin_len, hex);
-        cap->stdin_sha256 = _strdup(hex);
+        cap->stdin_sha256 = myc_strdup(hex);
         if (!cap->stdin_sha256) goto fail;
         cap->stdin_len = req->run_stdin_len;
     }
 
     /* Backend identity */
     if (req->clang_program) {
-        cap->clang_path = _strdup(req->clang_program);
+        cap->clang_path = myc_strdup(req->clang_program);
         if (!cap->clang_path) goto fail;
     }
     if (req->gcc_program) {
-        cap->gcc_path = _strdup(req->gcc_program);
+        cap->gcc_path = myc_strdup(req->gcc_program);
         if (!cap->gcc_path) goto fail;
     }
     if (req->cwd) {
-        cap->cwd = _strdup(req->cwd);
+        cap->cwd = myc_strdup(req->cwd);
         if (!cap->cwd) goto fail;
     }
 
@@ -390,7 +390,7 @@ void myc_run(const myc_request *req, myc_result *res)
  * oleh MCP server (P9, mcp.exe). */
 char *myc_exe_dirname(const char *argv0)
 {
-    char *self = _strdup(argv0);
+    char *self = myc_strdup(argv0);
     char *slash;
     char *fwd;
     char *last;
@@ -404,7 +404,7 @@ char *myc_exe_dirname(const char *argv0)
         *last = '\0';
     else {
         free(self);
-        return _strdup(".");
+        return myc_strdup(".");
     }
     dir = self;
     /* samakan separator ke '/' agar aman sebagai argumen gcc/clang */
@@ -505,7 +505,7 @@ static int cmd_probe(const char *argv0)
     int        rc;
 
     /* cari dirname dari argv0 */
-    self = _strdup(argv0);
+    self = myc_strdup(argv0);
     if (!self)
         return 2;
     {

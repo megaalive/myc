@@ -6,9 +6,16 @@
  * seluruh pohon proses. stdout/stderr di-drain dari thread terpisah
  * untuk menghindari deadlock. stdin ditulis sebagai data byte mentah.
  *
- * POSIX: fork + execvp, pembatasan sementara hanya via alarm (timeout
- * menyeluruh); drain serupa. Implementasi POSIX disederhanakan.
+ * POSIX: fork + execvp + setpgid (process group, MYC-AUDIT-011) agar
+ * timeout membunuh seluruh pohon child; drain serupa. Implementasi
+ * POSIX memakai clock_gettime/setpgid yang butuh _POSIX_C_SOURCE.
  */
+#ifndef _WIN32
+/* Harus SEBELUM include sistem apa pun: clock_gettime, setpgid, strdup
+ * (via myc_strdup di myc.h), nanosleep. -std=c11 menonaktifkan POSIX
+ * extension glibc; gnu11 atau define ini wajib. */
+#define _POSIX_C_SOURCE 200809L
+#endif
 #include "proc.h"
 
 #include <stdio.h>
@@ -213,6 +220,27 @@ void myc_remove_sanitizer_reports(const char *dir, const char *base)
 }
 
 /* ------------------------------------------------------------------ */
+/* myc_strdup (portability MYC-AUDIT-011 enabler)                      */
+/* ------------------------------------------------------------------ */
+/* _strdup adalah MSVC/MinGW-only; POSIX memakai strdup (butuh
+ * _POSIX_C_SOURCE/gnu11). Implementasi diletakkan di proc.c karena
+ * modul ini selalu di-link (myc.exe, mcp.exe, dan test unit proc_flood /
+ * verify_descendants yang hanya men-link proc.c). Memeriksa hasil malloc
+ * (idiom aman, lolos lint myc). */
+char *myc_strdup(const char *s)
+{
+    size_t n;
+    char  *r;
+    if (!s)
+        return NULL;
+    n = strlen(s) + 1;
+    r = (char *)malloc(n);
+    if (r)
+        memcpy(r, s, n);
+    return r;
+}
+
+/* ------------------------------------------------------------------ */
 /* Pencarian executable                                                */
 /* ------------------------------------------------------------------ */
 
@@ -260,7 +288,7 @@ char *myc_find_executable(const char *program)
 
     /* Bila ada separator, pakai langsung (tanpa scan PATH). */
     if (has_sep(program)) {
-        cand = _strdup(program);
+        cand = myc_strdup(program);
         if (!cand)
             return NULL;
         attrs = GetFileAttributesA(cand);
@@ -276,7 +304,7 @@ char *myc_find_executable(const char *program)
         return NULL;
 
     {
-        char *dup = _strdup(path_env);
+        char *dup = myc_strdup(path_env);
         char *save = NULL;
         char *tok = strtok_s(dup, ";", &save);
         while (tok) {
@@ -302,11 +330,11 @@ char *myc_find_executable(const char *program)
     /* POSIX: gunakan execvp yang mencari PATH sendiri. */
     if (has_sep(program)) {
         if (access(program, X_OK) == 0)
-            return _strdup(program);
+            return myc_strdup(program);
         return NULL;
     }
     /* Delegasikan pencarian PATH ke execvp; tandai butuh PATH search. */
-    return _strdup(program);
+    return myc_strdup(program);
 #endif
 }
 
@@ -755,7 +783,7 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
     cmdline = build_cmdline(req->argv);
     if (!cmdline) { res->err = MYC_ERR_INTERNAL; goto cleanup; }
     /* CreateProcessA dapat mengubah buffer; salin. */
-    cmdline_copy = _strdup(cmdline);
+    cmdline_copy = myc_strdup(cmdline);
     if (!cmdline_copy) { res->err = MYC_ERR_INTERNAL; goto cleanup; }
     /* Env override (MYC-AUDIT-017): blok env induk + override. */
     if (req->env) {
@@ -1023,6 +1051,15 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
     }
 
     /* === PARENT === */
+    /* MYC-AUDIT-011 (race-safe): child memanggil setpgid(0,0) di atas, TAPI
+     * ada window antara fork() dan eksekusi setpgid child. Bila timeout
+     * sangat pendek menembak kill(-pid) di window itu, group belum terbentuk
+     * -> ESRCH (kill gagal) atau salah group. Panggilan setpgid(pid,pid)
+     * dari PARENT menutup window: siapa yang menang (parent atau child),
+     * group terbentuk sedini mungkin; yang kalah mendapat EACCES/ESRCH
+     * (wajar, diabaikan). */
+    (void)setpgid(pid, pid);
+
     /* Tutup sisi child dari semua pipe. */
     close(in_pipe[0]);  in_pipe[0] = -1;
     close(out_pipe[1]); out_pipe[1] = -1;

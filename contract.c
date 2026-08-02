@@ -212,7 +212,7 @@ int myc_contract_scan(const char *source, size_t len, myc_result *res)
 static int collect_expr(char ***out, int *n, const char *expr)
 {
     char **na;
-    char  *s = _strdup(expr);
+    char  *s = myc_strdup(expr);
     if (!s)
         return 0;
     na = (char **)realloc(*out, sizeof(char *) * (size_t)(*n + 1));

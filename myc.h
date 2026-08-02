@@ -530,6 +530,14 @@ void myc_result_free(myc_result *res);
  * Dipakai modul internal supaya tidak menyimpan diagnostic ke static ring. */
 char *myc_result_arena_dup(myc_result *res, const char *s, size_t string_len);
 
+/* Portability: _strdup adalah MSVC/MinGW-only; POSIX memakai strdup (yang
+ * butuh _DEFAULT_SOURCE/gnu11). Helper ini menggantikan seluruh pemakaian
+ * _strdup agar myc ikut ter-build di POSIX (diperlukan test MYC-AUDIT-011
+ * verify_descendants yang POSIX-only). Implementasi di myc.c; memeriksa
+ * hasil malloc (idiom aman, lolos lint). Mengembalikan malloc'd copy atau
+ * NULL bila OOM / s NULL. */
+char *myc_strdup(const char *s);
+
 /* Jalankan pipeline penuh pada request. Mengisi res. */
 void myc_run(const myc_request *req, myc_result *res);
 

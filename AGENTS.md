@@ -159,7 +159,21 @@ Poin penting:
   - **MYC-AUDIT-011 diperbaiki** (`proc.c`): process group POSIX belum
     dibentuk sehingga `kill(-pid, SIGKILL)` tidak menjamin membunuh seluruh
     pohon child. Perbaikan: `setpgid(0, 0)` di child sebelum `execvp`;
-    parent memakai `kill(-pid, ...)` ke group baru.
+    parent memakai `kill(-pid, ...)` ke group baru. **Lengkap 2026-08-02**:
+    parent juga panggil race-safe `setpgid(pid, pid)` segera setelah fork
+    (menutup window kill(-pid) sebelum setpgid child dieksekusi);
+    **enabler portability** — `_strdup` (MSVC/MinGW-only, dipakai 6 file)
+    diganti `myc_strdup()` (implementasi di `proc.c` agar ter-link unit
+    test yang hanya men-link proc.c) + `#define _POSIX_C_SOURCE 200809L`
+    di proc.c sebelum include sistem (clock_gettime/setpgid di -std=c11);
+    **test nyata** `test/verify_descendants.c` (sebelumnya orphan, tak
+    pernah jalan) ditulis ulang: child fork grandchild (pid + marker
+    `desc.survived` setelah 5 s) lalu tidur 120 s; myc timeout 1500 ms →
+    group-kill harus mematikan grandchild; harness cek marker TIDAK ada.
+    POSIX-only → `_audit018.sh` guard uname (MINGW/MSYS/CYGWIN = SKIP).
+    Verifikasi: WSL Ubuntu 4/4 OK; negatif kontrol (kill(-pid) mati) →
+    test GAGAL (grandchild selamat & menulis marker). Windows regress 97
+    [OK] 0 [FAIL]; receipt golden `272d7531...` utuh.
   - **MYC-AUDIT-003 partial** (`proc.c`): tidak bisa bedakan `execvp` gagal
     dari program yang memang exit 127. Perbaikan: exec-error pipe dengan
     `FD_CLOEXEC` — child write errno saat `execvp` gagal, parent baca untuk

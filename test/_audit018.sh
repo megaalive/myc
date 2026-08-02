@@ -70,8 +70,28 @@ else
     FAIL=1
 fi
 
+# --- 5. verify_descendants: MYC-AUDIT-011 (POSIX-only: butuh fork) ---
+# Grandchild yang di-fork child harus ikut mati saat myc membunuh process
+# group pada timeout. MinGW/MSYS/CYGWIN tidak menyediakan fork() -> skip.
+case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*)
+        echo "[SKIP] audit018 verify_descendants (POSIX-only, fork tak tersedia)"
+        ;;
+    *)
+        if $CC -O2 -std=c11 -Wall -Wextra -I. -o test/verify_descendants \
+               test/verify_descendants.c proc.c 2>/dev/null; then
+            run_built "audit018 verify_descendants (group kill mematikan descendant)" \
+                      test/verify_descendants
+        else
+            echo "[FAIL] audit018 verify_descendants gagal dibangun"
+            FAIL=1
+        fi
+        ;;
+esac
+
 rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \
-      test/oom_alloc test/oom_alloc.exe test/stress_threads test/stress_threads.exe
+      test/oom_alloc test/oom_alloc.exe test/stress_threads test/stress_threads.exe \
+      test/verify_descendants test/verify_descendants.exe
 
 echo "audit018: $([ $FAIL -eq 0 ] && echo SELESAI OK || echo GAGAL)"
 exit $FAIL

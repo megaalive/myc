@@ -198,6 +198,14 @@ Gunakan `shell` hanya bila sintaks shell memang dibutuhkan, dan jelaskan.
   sendiri `json.c`), **soak** (`test/_soak.bat`), dan **corpus abuse**
   (`test/_corpus_abuse.bat` + `test/corpus/*.c` — input ganas tidak boleh
   membuat myc crash/hang). Smoke test MCP: `test/_mcp_smoke.bat`.
+- **MYC-AUDIT-011 selesai (2026-08-02)**: timeout POSIX membunuh **seluruh
+  pohon proses** — child `setpgid(0,0)` + parent race-safe
+  `setpgid(pid,pid)` (window kill(-pid) tertutup), `kill(-pid, SIGKILL)`;
+  Windows Job Object. Portability enabler: `_strdup` → `myc_strdup()` +
+  `_POSIX_C_SOURCE` agar myc ikut ter-build di POSIX. Test
+  `verify_descendants.c` (POSIX-only, via `_audit018.sh`): grandchild yang
+  di-fork child mati oleh group-kill saat timeout (negatif kontrol gagal
+  tanpa fix).
 - **MYC-AUDIT-018 selesai (2026-08-02)**: **test portabel lintas platform**
   `test/_audit018.sh` (bash — Windows git-bash & POSIX) menguji
   **concurrency** (`stress_threads.c` 8×200 `myc_run` paralel), **deadlock**
