@@ -77,6 +77,7 @@ Poin penting:
 - Self-dogfooding lolos penuh: 15 source myc dicek myc sendiri → OK.
   (Catatan lama "akan selalu VIOLATION karena windows.h" TIDAK berlaku lagi —
   policy non-blocking.)
+- **Counterexample Replay Capsule (#2) selesai 2026-08-02**: `myc_replay_capsule` struct di `myc.h` (source_sha256, stdin_sha256, stdin_len, backend identity, flags, verdict, gate_status summary, finding/completeness/claim). Disimpan di `myc_result.capsule`, dibangun di `myc_run()` akhir pipeline, dibebaskan di `myc_result_free()`. Serialisasi JSON + teks di `report.c`. OOM-safe: `goto fail` cleanup di `myc_build_capsule()`. Self-dogfooding `myc.c` lolos `-fanalyzer` (tidak ada lagi leak). Fixture: `ok_run --run --json` memuat `"capsule"` objek dengan semua field; `ok_run --run` mencetak blok `capsule:` di teks.
 - **Dogfooding lintas-program tiga tool (2026-08-02)**: `dogfood_ring.c`
   (ring buffer, MYC_BUF → L4), `dogfood_config.c` (parser config key=value,
   idiom realloc aman ke member `cfg->items = tmp` + copy_bounded), dan
