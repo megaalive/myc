@@ -2718,6 +2718,12 @@ Lihat test matrix di Fase 8.
   JSON + blok `evidence:` ringkas di teks = per-scope status konkret; tidak
   bergantung pada label assurance L1–L5).
 - [ ] Tambahkan scope certificate.
+- [ ] Tambahkan scope certificate done-pruning-rewritten.
+- [x] Tambahkan scope certificate. ✅ 2026-08-02 (blok `scope:` di teks +
+  objek `"scope"` di JSON — daftar persis apa yang diperiksa: counts kontrak
+  requires/ensures/total + driver funcs/cases. Jujur: hanya metrik yang
+  benar-benar diukur; kolom functions_total/buffers yang tidak diproduksi
+  penganalisis token TIDAK dimunculkan — tidak mengarang angka).
 - [x] Tambahkan unverified debt. ✅ 2026-08-02 (`unverified_debt[]` teks + JSON, turunan dari typed gate status: UNAVAILABLE / INFRA_FAILED / INCONCLUSIVE / driver 0-kasus / ensures-unproved / output-truncated; regresi di `_regress_run.bat`).
 - [ ] Buat compatibility renderer bila masih ingin menampilkan label lama.
 - [ ] Claim compiler mencegah wording berlebihan.

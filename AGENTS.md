@@ -249,6 +249,13 @@ Poin penting:
   sama (`ok_run --run` → `60b7db90eac4...`) karena finding diturunkan dari
   status gate yang sudah di-hash. Semua regress + soak + corpus + interop
   tetap hijau.
+- **Fase 4 scope certificate selesai 2026-08-02**: laporan teks + JSON kini
+  memuat blok `scope:` / `"scope"` = daftar persis apa yang diperiksa (counts
+  kontrak requires/ensures/total + driver funcs/cases) sesuai 9.11. Prinsip
+  kejujuran dijaga: hanya metrik yang BENAR-BENAR diukur yang dimunculkan;
+  kolom function/buffer yang tidak diproduksi penganalisis token tidak
+  dimunculkan, tidak mengarang angka. Receipt tetap deterministik
+  (`ok_run --run` → `60b7db90...`): scope tidak masuk ke hash.
 
 ## Dogfooding (keputusan 2026-08-01)
 

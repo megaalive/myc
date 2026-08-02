@@ -159,6 +159,21 @@ void myc_report_text(const myc_result *res)
         printf("contracts: requires=%d ensures=%d\n",
                res->contract_requires, res->contract_ensures);
 
+    /* Scope Certificate (Fase 4, 9.11): daftar persis apa yang diperiksa.
+     * Hanya memuat metrik yang BENAR-BENAR diukur; kolom yang tidak diukur
+     * tidak dimunculkan (tidak mengarang angka). */
+    if (res->contract_requires > 0 || res->contract_ensures > 0 ||
+        res->driver_funcs > 0) {
+        printf("scope:\n");
+        if (res->contract_requires > 0 || res->contract_ensures > 0)
+            printf("  contracts: requires=%d ensures=%d (total=%d)\n",
+                   res->contract_requires, res->contract_ensures,
+                   res->contract_requires + res->contract_ensures);
+        if (res->driver_funcs > 0)
+            printf("  driver: functions=%d cases=%d\n",
+                   res->driver_funcs, res->driver_cases);
+    }
+
     for (i = 0; i < res->diag_count; i++) {
         const myc_diagnostic *d = &res->diags[i];
         printf("  [%d:%d] %s\n", d->line, d->col,
@@ -309,6 +324,14 @@ char *myc_result_to_json(const myc_result *res)
     json_sb_printf(&b, "\"driver_funcs\":%d,", res->driver_funcs);
     json_sb_printf(&b, "\"driver_cases\":%d,", res->driver_cases);
     json_sb_printf(&b, "\"driver_skipped\":%d,", res->driver_skipped);
+    json_sb_puts(&b, "\"scope\":{");
+    json_sb_printf(&b, "\"contract_requires\":%d,", res->contract_requires);
+    json_sb_printf(&b, "\"contract_ensures\":%d,", res->contract_ensures);
+    json_sb_printf(&b, "\"contract_total\":%d,",
+                   res->contract_requires + res->contract_ensures);
+    json_sb_printf(&b, "\"driver_funcs\":%d,", res->driver_funcs);
+    json_sb_printf(&b, "\"driver_cases\":%d", res->driver_cases);
+    json_sb_puts(&b, "},");
     if (res->ran_driver) {
         json_sb_printf(&b, "\"driver_stdout\":");
         json_sb_escape(&b, res->driver_stdout_text);
