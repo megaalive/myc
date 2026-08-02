@@ -135,6 +135,8 @@ void myc_report_text(const myc_result *res)
     printf("error:     %s\n", myc_error_name(res->err));
     printf("exit_code: %d\n", res->exit_code);
     printf("duration:  %llu ms\n", res->duration_ms);
+    if (res->receipt_sha256[0])
+        printf("receipt_sha256: %s\n", res->receipt_sha256);
     if (res->resolved_gcc)
         printf("gcc:       %s\n", res->resolved_gcc);
     if (res->fingerprint)
@@ -235,6 +237,9 @@ char *myc_result_to_json(const myc_result *res)
     json_sb_printf(&b, "\"error\":\"%s\",", myc_error_name(res->err));
     json_sb_printf(&b, "\"exit_code\":%d,", res->exit_code);
     json_sb_printf(&b, "\"duration_ms\":%llu,", (unsigned long long)res->duration_ms);
+    json_sb_printf(&b, "\"receipt_sha256\":");
+    json_sb_escape(&b, res->receipt_sha256);
+    json_sb_puts(&b, ",");
     json_sb_printf(&b, "\"resolved_gcc\":");
     json_sb_escape(&b, res->resolved_gcc);
     json_sb_puts(&b, ",");

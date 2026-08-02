@@ -278,6 +278,13 @@ typedef struct {
     /* --- unverified debt (Fase 4) --- */
     myc_debt_item debt[MYC_MAX_DEBT];
     size_t        debt_count;
+
+    /* --- evidence receipt (gagasan pembeda 9.1) --- */
+    /* Hash deterministik atas bukti terkumpul (verdict, completeness, setiap
+     * gate por padanya status, debt, fingerprint, source_sha). Bukan klaim
+     * keamanan — melainkan sidik jari hasil agar CI/auditor dapat membandingkan
+     * dua receipt tanpa membaca prose. Kosong bila request gagal sebelum reduce. */
+    char receipt_sha256[65];
 } myc_result;
 
 /* Nama debt type (statis). */

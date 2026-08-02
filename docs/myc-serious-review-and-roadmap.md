@@ -2871,7 +2871,9 @@ Tidak ada release tanpa lulus seluruh trust-core suite.
 
 Urutan implementasi yang paling memberi reputasi:
 
-1. [ ] Evidence Receipt
+1. [x] Evidence Receipt ✅ 2026-08-02 (`receipt_sha256`: hash deterministik atas
+      verdict+completeness+gate status+debt+fingerprint+source_sha; determinis
+      utk input sama, berbeda antar verdict; teks+JSON; regresi di `_regress_run`)
 2. [x] Unverified Debt ✅ 2026-08-02 (deduksi murni dari typed gate status; laporan teks + JSON; regresi di `_regress_run.bat`)
 3. [x] Semantic Canary ✅ 2026-08-02 (canary OOB dijalankan sebelum gate runtime
       menyatakan clean; tak terdeteksi -> INCONCLUSIVE; evidence di ledger)
@@ -3269,7 +3271,7 @@ Urutan paling tepat:
 7. **Hilangkan static/global diagnostic state.**
 8. **Perketat JSON dan string length handling.**
 9. **Tambahkan semantic canary.** ✅ 2026-08-02
-10. **Tambahkan evidence receipt + unverified debt.** (unverified debt ✅ 2026-08-02; evidence receipt = TODO)
+10. **Tambahkan evidence receipt + unverified debt.** (unverified debt ✅ 2026-08-02; evidence receipt ✅ 2026-08-02)
 
 ## Penilaian akhir
 

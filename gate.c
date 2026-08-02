@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "sha256.h"
+
 /* ------------------------------------------------------------------ */
 /* Gate status management                                              */
 /* ------------------------------------------------------------------ */
@@ -149,6 +151,96 @@ static int myc_debt_present(myc_result *res, myc_debt_type t)
             return 1;
     }
     return 0;
+}
+
+/* Bangun kanonikal evidence receipt (gagasan pembeda 9.1): hash deterministik
+ * dari verifikasi yang terekan (verdict, completeness, gate+status, debt,
+ * fingerprint, source_sha). Bukan klaim keamanan; melainkan sidik jari
+ * hasil agar dua receipt dapat dibandingkan tanpa membaca prose. */
+static const char *rc_verdict(myc_verdict v)
+{
+    switch (v) {
+    case MC_OK: return "OK";
+    case MC_INCONCLUSIVE: return "INCONCLUSIVE";
+    case MC_VIOLATION: return "VIOLATION";
+    case MC_COMPILE_ERROR: return "COMPILE_ERROR";
+    case MC_ERROR: return "ERROR";
+    case MC_TIMEOUT: return "TIMEOUT";
+    case MC_CANCELLED: return "CANCELLED";
+    case MC_RUNTIME_VIOLATION: return "RUNTIME_VIOLATION";
+    case MC_PROVE_VIOLATION: return "PROVE_VIOLATION";
+    case MC_FILC_VIOLATION: return "FILC_VIOLATION";
+    case MC_DRIVER_VIOLATION: return "DRIVER_VIOLATION";
+    }
+    return "UNKNOWN";
+}
+static const char *rc_complete(myc_completeness c)
+{
+    switch (c) {
+    case MYC_COMPLETENESS_UNKNOWN: return "unknown";
+    case MYC_COMPLETENESS_COMPLETE: return "complete";
+    case MYC_COMPLETENESS_INCOMPLETE: return "incomplete";
+    }
+    return "unknown";
+}
+static const char *rc_gate_status(myc_gate_status s)
+{
+    switch (s) {
+    case MYC_GATE_NOT_REQUESTED: return "not_requested";
+    case MYC_GATE_NOT_APPLICABLE: return "not_applicable";
+    case MYC_GATE_UNAVAILABLE: return "unavailable";
+    case MYC_GATE_INFRA_FAILED: return "infra_failed";
+    case MYC_GATE_INCONCLUSIVE: return "inconclusive";
+    case MYC_GATE_COMPLETED_CLEAN: return "completed_clean";
+    case MYC_GATE_COMPLETED_FINDINGS: return "completed_findings";
+    }
+    return "unknown";
+}
+static void myc_build_receipt(myc_result *res)
+{
+    static const char *const VERSION = "myc.receipt.v1|";
+    char   buf[4096];
+    size_t off = 0;
+    size_t i;
+
+    if (!res)
+        return;
+
+#define R_APPEND(s) do { \
+        const char *_p = (s); \
+        size_t _l = _p ? strlen(_p) : 0; \
+        if (off + _l + 1 >= sizeof(buf)) _l = sizeof(buf) - off - 1; \
+        if (_l) { memcpy(buf + off, _p, _l); off += _l; } \
+        buf[off] = '\0'; \
+    } while (0)
+
+    R_APPEND(VERSION);
+    R_APPEND(rc_verdict(res->verdict));
+    R_APPEND("|");
+    R_APPEND(rc_complete(res->completeness));
+    R_APPEND("|");
+
+    for (i = 0; i < res->gate_count; i++) {
+        const myc_gate_result *g = &res->gates[i];
+        char gbuf[64];
+        snprintf(gbuf, sizeof(gbuf), "%d:%s|", (int)g->id,
+                 rc_gate_status(g->status));
+        R_APPEND(gbuf);
+    }
+
+    R_APPEND("debt=");
+    for (i = 0; i < res->debt_count; i++) {
+        R_APPEND(myc_debt_type_name(res->debt[i].type));
+        R_APPEND("|");
+    }
+    R_APPEND("fp=");
+    R_APPEND(res->fingerprint ? res->fingerprint : "");
+    R_APPEND("|sha=");
+    R_APPEND(res->source_sha256 ? res->source_sha256 : "");
+    R_APPEND("|");
+
+    sha256_hex(buf, off, res->receipt_sha256);
+#undef R_APPEND
 }
 
 /* Bangun daftar unverified debt dari typed gate status + scope counters.
@@ -316,4 +408,5 @@ void myc_reduce_verdict(myc_result *res)
     }
 
     myc_build_debt(res);
+    myc_build_receipt(res);
 }

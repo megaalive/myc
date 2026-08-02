@@ -208,6 +208,15 @@ Poin penting:
   Dogfooding: `ok_run --run`, `dogfood_ring --run`, `--run --checked` tetap
   L3/L4 (canary sehat). Regresi di `test/_regress_run.bat`.
 
+- **Evidence Receipt selesai 2026-08-02** (gagasan pembeda 9.1): laporan teks +
+  JSON kini memuat `receipt_sha256` — hash deterministik SHA-256 dari bukti
+  terkumpul (`myc_build_receipt` di `gate.c`): version receipt, verdict,
+  completeness, tiap gate id+status, debt, fingerprint, source_sha. Bukan
+  klaim keamanan — melainkan sidik jari hasil agar CI/auditor dapat
+  membandingkan dua receipt tanpa membaca prose. Deterministik (input sama →
+  hash sama) dan berbeda antar verdict. Tidak menambah backend. Dogfooding &
+  self-check tetap OK. Regresi di `test/_regress_run.bat`.
+
 ## Dogfooding (keputusan 2026-08-01)
 
 Dogfooding myc dilakukan **dua cara**:
