@@ -31,17 +31,27 @@ void json_sb_free(json_sb *b)
     b->len = b->cap = 0;
 }
 
-/* Pastikan ada ruang ekstra >= need (di luar len, plus NUL). */
+/* Pastikan ada ruang ekstra >= need (di luar len, plus NUL).
+ * Guard overflow: bila len+need+1 meluap size_t, gagal (bukan UB/korup). */
 static int sb_reserve(json_sb *b, size_t need)
 {
     size_t want = b->len + need + 1;
+    if (want <= b->len)                     /* overflow size_t */
+        return 0;
     if (want <= b->cap)
         return 1;
     {
         size_t ncap = b->cap ? b->cap : 256;
         char  *nb;
-        while (ncap < want)
+        if (ncap > (SIZE_MAX / 2))
+            return 0;
+        while (ncap < want) {
+            if (ncap > (SIZE_MAX / 2)) {
+                ncap = want;
+                break;
+            }
             ncap *= 2;
+        }
         nb = (char *)realloc(b->buf, ncap);
         if (!nb)
             return 0;
@@ -119,6 +129,51 @@ static json_value *val_new(json_type t)
 
 static json_value *parse_value(jp *j);
 
+/* Validasi satu urutan UTF-8 mulai dari p (byte pertama harus memulai
+ * urutan valid). Majukan p melewati seluruh codepoint bila valid dan
+ * mengembalikan panjang (1..4); kembalikan 0 bila invalid/terpotong.
+ * Menolak: overlong, byte kontinu tanpa lead, lead terpotong di akhir,
+ * surrogate U+D800..DFFF yang di-encode sebagai UTF-8. */
+static size_t utf8_valid(const char *p, const char *end)
+{
+    const unsigned char *u = (const unsigned char *)p;
+    size_t n;
+    unsigned long cp;
+    if (u >= (const unsigned char *)end)
+        return 0;
+    if (u[0] < 0x80)
+        return 1;
+    if (u[0] >= 0xC2 && u[0] <= 0xDF) {
+        n = 2;
+        cp = (unsigned long)(u[0] & 0x1F);
+    } else if (u[0] >= 0xE0 && u[0] <= 0xEF) {
+        n = 3;
+        cp = (unsigned long)(u[0] & 0x0F);
+    } else if (u[0] >= 0xF0 && u[0] <= 0xF4) {
+        n = 4;
+        cp = (unsigned long)(u[0] & 0x07);
+    } else {
+        return 0;                       /* byte kontinu / 0xC0/0xC1 / 0xF5+ */
+    }
+    if (end - p < (ptrdiff_t)n)
+        return 0;                       /* terpotong di akhir */
+    {
+        size_t k;
+        for (k = 1; k < n; k++) {
+            if ((u[k] & 0xC0) != 0x80)
+                return 0;
+            cp = (cp << 6) | (unsigned long)(u[k] & 0x3F);
+        }
+    }
+    /* cegah overlong: cp >= nilai minimum utk n byte */
+    if (n == 2 && cp < 0x80) return 0;
+    if (n == 3 && cp < 0x800) return 0;
+    if (n == 4 && cp < 0x10000) return 0;
+    /* cek surrogate (U+D800..UDPFF) tak boleh lewat UTF-8 */
+    if (cp >= 0xD800 && cp <= 0xDFFF) return 0;
+    return n;
+}
+
 /* string JSON: '"' ... '"' dengan escape dan \uXXXX (incl. surrogate pair).
  * Mengembalikan json_value tipe JSON_STR atau NULL (set failed). */
 static json_value *parse_string(jp *j)
@@ -180,26 +235,49 @@ static json_value *parse_string(jp *j)
                     }
                 }
                 /* surrogate pair */
-                if (cp >= 0xD800 && cp <= 0xDBFF &&
-                    j->end - j->p >= 6 && j->p[0] == '\\' && j->p[1] == 'u') {
-                    const char   *save = j->p;
-                    unsigned long lo = 0;
-                    int ok = 1;
-                    j->p += 2;
-                    for (k = 0; k < 4; k++) {
-                        unsigned char h;
-                        if (j->p >= j->end) { ok = 0; break; }
-                        h = (unsigned char)*j->p++;
-                        lo <<= 4;
-                        if (h >= '0' && h <= '9') lo |= (unsigned long)(h - '0');
-                        else if (h >= 'a' && h <= 'f') lo |= (unsigned long)(h - 'a' + 10);
-                        else if (h >= 'A' && h <= 'F') lo |= (unsigned long)(h - 'A' + 10);
-                        else { ok = 0; break; }
+                if (cp >= 0xD800 && cp <= 0xDBFF) {
+                    /* high surrogate: WAJIB diikuti '\u' + low surrogate;
+                     * lone high-surrogate invalid. */
+                    if (j->end - j->p >= 6 && j->p[0] == '\\' && j->p[1] == 'u') {
+                        const char   *save = j->p;
+                        unsigned long lo = 0;
+                        int ok = 1;
+                        j->p += 2;
+                        for (k = 0; k < 4; k++) {
+                            unsigned char h;
+                            if (j->p >= j->end) { ok = 0; break; }
+                            h = (unsigned char)*j->p++;
+                            lo <<= 4;
+                            if (h >= '0' && h <= '9') lo |= (unsigned long)(h - '0');
+                            else if (h >= 'a' && h <= 'f') lo |= (unsigned long)(h - 'a' + 10);
+                            else if (h >= 'A' && h <= 'F') lo |= (unsigned long)(h - 'A' + 10);
+                            else { ok = 0; break; }
+                        }
+                        if (ok && lo >= 0xDC00 && lo <= 0xDFFF) {
+                            cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                        } else {
+                            /* bukan low surrogate --> lone high surrogate */
+                            j->p = save;
+                            j->failed = 1;
+                            json_sb_free(&sb);
+                            return NULL;
+                        }
+                    } else {
+                        j->failed = 1;
+                        json_sb_free(&sb);
+                        return NULL;
                     }
-                    if (ok && lo >= 0xDC00 && lo <= 0xDFFF)
-                        cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
-                    else
-                        j->p = save;
+                } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
+                    /* lone low surrogate tanpa high: invalid */
+                    j->failed = 1;
+                    json_sb_free(&sb);
+                    return NULL;
+                } else if (cp == 0) {
+                    /* \u0000 = embedded NUL: consumer memakai strlen sehingga
+                     * string akan terpotong diam-diam --> tolak. */
+                    j->failed = 1;
+                    json_sb_free(&sb);
+                    return NULL;
                 }
                 /* encode UTF-8 */
                 if (cp < 0x80)
@@ -228,6 +306,24 @@ static json_value *parse_string(jp *j)
             j->failed = 1;
             json_sb_free(&sb);
             return NULL;
+        } else if (c >= 0x80) {
+            /* byte multibyte: harus berupa urutan UTF-8 valid, dan
+             * salin SEMUA byte urutan itu (bukan hanya lead byte). */
+            size_t nb = utf8_valid(j->p, j->end);
+            size_t k;
+            if (nb == 0) {
+                j->failed = 1;
+                json_sb_free(&sb);
+                return NULL;
+            }
+            for (k = 0; k < nb; k++) {
+                if (!json_sb_putc(&sb, (char)j->p[k])) {
+                    j->failed = 1;
+                    json_sb_free(&sb);
+                    return NULL;
+                }
+            }
+            j->p += nb;
         } else {
             json_sb_putc(&sb, (char)c);
             j->p++;
@@ -270,28 +366,55 @@ static json_value *parse_number(jp *j)
         neg = 1;
         s++;
     }
-    while (s < j->end && *s >= '0' && *s <= '9') {
-        unsigned d = (unsigned)(*s - '0');
-        if (acc > (UINT64_MAX - d) / 10)
-            acc = UINT64_MAX;       /* saturasi */
-        else
-            acc = acc * 10 + d;
-        digits++;
+    /* Strict (RFC 8259): "0" polos TANPA leading zero; angka >1 digit
+     * harus diawali digit 1-9. */
+    if (s < j->end && *s == '0') {
+        /* "0" boleh, tetapi "0x" / "01" TIDAK: digit berikutnya harus bukan
+         * angka (diproses nanti oleh caller sebagai delimiter). */
+        acc = 0;
+        digits = 1;
         s++;
+    } else {
+        while (s < j->end && *s >= '0' && *s <= '9') {
+            unsigned d = (unsigned)(*s - '0');
+            if (acc > (UINT64_MAX - d) / 10)
+                acc = UINT64_MAX;       /* saturasi */
+            else
+                acc = acc * 10 + d;
+            digits++;
+            s++;
+        }
     }
     if (!digits) {
         j->failed = 1;
         return NULL;
     }
+    /* Strict: bila int dimulai dengan '0' dan kini diikuti digit lain
+     * (mis. "01": s memunjuk '1'), tolak (leading zero). */
+    if (digits == 1 && s - j->p - (neg ? 1 : 0) == 1 &&
+        s[-1] == '0' && s < j->end && *s >= '0' && *s <= '9') {
+        j->failed = 1;
+        return NULL;
+    }
     if (s < j->end && *s == '.') {
+        /* Strict: fraction WAJIB minimal satu digit setelah '.'. */
         s++;
+        if (s >= j->end || *s < '0' || *s > '9') {
+            j->failed = 1;
+            return NULL;
+        }
         while (s < j->end && *s >= '0' && *s <= '9')
             s++;
     }
     if (s < j->end && (*s == 'e' || *s == 'E')) {
+        /* Strict: exponent WAJIB minimal satu digit setelah [sign]. */
         s++;
         if (s < j->end && (*s == '+' || *s == '-'))
             s++;
+        if (s >= j->end || *s < '0' || *s > '9') {
+            j->failed = 1;
+            return NULL;
+        }
         while (s < j->end && *s >= '0' && *s <= '9')
             s++;
     }
@@ -639,9 +762,15 @@ void json_obj_set(json_value *obj, const char *key, json_value *val)
         }
     }
     if (obj->mlen == obj->mcap) {
-        size_t      ncap = obj->mcap ? obj->mcap * 2 : 8;
-        json_member *nm = (json_member *)realloc(obj->members,
-                                                 ncap * sizeof(*nm));
+        size_t      ncap = obj->mcap ? obj->mcap : 8;
+        json_member *nm;
+        if (ncap > (SIZE_MAX / 2)) {
+            json_free(val);
+            return;
+        }
+        ncap *= 2;
+        nm = (json_member *)realloc(obj->members,
+                                    ncap * sizeof(*nm));
         if (!nm) {
             json_free(val);
             return;
@@ -665,9 +794,14 @@ void json_arr_push(json_value *arr, json_value *v)
         return;
     }
     if (arr->len == arr->cap) {
-        size_t      ncap = arr->cap ? arr->cap * 2 : 8;
-        json_value **ni = (json_value **)realloc(arr->items,
-                                                 ncap * sizeof(*ni));
+        size_t          ncap = arr->cap ? arr->cap : 8;
+        json_value    **ni;
+        if (ncap > (SIZE_MAX / 2)) {
+            json_free(v);
+            return;
+        }
+        ncap *= 2;
+        ni = (json_value **)realloc(arr->items, ncap * sizeof(*ni));
         if (!ni) {
             json_free(v);
             return;

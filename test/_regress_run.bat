@@ -9,6 +9,14 @@ if exist test\stress_threads.exe (
   echo [FAIL] stress_threads gagal dibangun
 )
 del test\stress_threads.exe 2>nul
+echo --- Fase 6 JSON ketat (MYC-AUDIT-009): corpus valid/invalid tak crash
+gcc -O2 -std=c11 -Wall -Wextra -I. -o test\json_abuse.exe test\json_abuse.c json.c >nul 2>&1
+if exist test\json_abuse.exe (
+  test\json_abuse.exe | findstr "OK" >nul && echo [OK] json_abuse corpus ketat lulus || echo [FAIL] json_abuse corpus gagal
+) else (
+  echo [FAIL] json_abuse gagal dibangun
+)
+del test\json_abuse.exe 2>nul
 echo --- self-dogfooding: semua source myc harus OK
 for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c) do (
   echo === %%f

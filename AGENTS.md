@@ -230,6 +230,16 @@ Poin penting:
     `test/_regress_run.bat`. Self-dogfooding 15 source tetap OK; receipt
     deterministik tetap (`ok_run --run` → `60b7db90eac4...`).
 
+- **Fase 6 JSON & MCP ketat selesai 2026-08-02** (MYC-AUDIT-009): parser `json.c`
+  kini menolak — leading zero, fraction/exponent tanpa digit, lone
+  high/low surrogate, embedded NUL (`\u0000`), dan raw UTF-8 invalid
+  (overlong/continuation/terpotong). Kapasitas dilindungi overflow guard di
+  `sb_reserve`/`json_obj_set`/`json_arr_push`.
+- Corpus `test/json_abuse.c` (52 kasus valid/invalid, termasuk re-parse
+  idempoten hasil serialize) ditambahkan ke `test/_regress_run.bat`; semua
+  regress + soak + MCP interop (24 cek) tetap hijau. Verdict JSON tidak
+  terpengaruh (parser hanya dipakai MCP transport).
+
 ## Dogfooding (keputusan 2026-08-01)
 
 Dogfooding myc dilakukan **dua cara**:

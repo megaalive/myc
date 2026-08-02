@@ -3,6 +3,9 @@
  *
  * Tidak bergantung pustaka eksternal. Mendukung objek, array, string
  * (dengan escape + \uXXXX, termasuk surrogate pair), integer, true/false/null.
+ * Parser KETAT (Fase 6, MYC-AUDIT-009): menolak leading zero, fraction/
+ * exponent tanpa digit, lone surrogate, embedded NUL, dan raw UTF-8 invalid;
+ * string length-aware (bukan strlen) dan kapasitas dilindungi overflow.
  * Depth dibatasi (JSON_MAX_DEPTH) untuk menolak input ganas tanpa stack
  * overflow. Angka disimpan sebagai int64 (bagian pecahan dibuang).
  *

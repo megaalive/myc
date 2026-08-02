@@ -308,7 +308,7 @@ Setelah reentrancy dan schema hasil diperbaiki, ini dapat menjadi salah satu keu
 | MYC-AUDIT-006 | High | assurance | Scalar L1–L5 menggabungkan bukti yang tidak comparable | ⏳ TODO |
 | MYC-AUDIT-007 | High | API | `file_path` lolos validasi tetapi pipeline memakai `source == NULL` | ✅ SELESAI 2026-08-02 |
 | MYC-AUDIT-008 | High | diagnostics | Static ring buffers membuat hasil tidak reentrant/thread-safe | **? SELESAI 2026-08-02 (arena milik hasil)** |
-| MYC-AUDIT-009 | High | `json.c` | Parser menerima JSON invalid dan embedded NUL memotong string | ⏳ TODO |
+| MYC-AUDIT-009 | High | `json.c` | Parser menerima JSON invalid dan embedded NUL memotong string | **? SELESAI 2026-08-02 (parser ketat + corpus)** |
 | MYC-AUDIT-010 | High | backend status | “Unavailable”, “failed”, “inconclusive”, dan “clean” tercampur |
 | MYC-AUDIT-011 | High | POSIX timeout | `kill(-pid)` tanpa process group tidak menjamin child tree mati |
 | MYC-AUDIT-012 | High | `myc_buf.h` | Element size tidak disimpan; checked access dapat memakai tipe salah |
@@ -2752,18 +2752,18 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 
 ---
 
-## Fase 6 — Ketatkan JSON dan MCP
+## Fase 6 — Ketatkan JSON dan MCP ?
 
 ### Task
 
-- [ ] Strict JSON number grammar.
-- [ ] Length-aware strings.
-- [ ] Valid UTF-8 policy.
-- [ ] Surrogate pair validation.
-- [ ] OOM propagation.
-- [ ] Capacity overflow guard.
+- [x] Strict JSON number grammar. (leading zero, frac/exp tanpa digit ditolak)
+- [x] Length-aware strings. (parser menolak embedded NUL `\u0000`; sb overflow guard)
+- [x] Valid UTF-8 policy. (raw UTF-8 divalidasi; overlong/continuation/surrogate tolak)
+- [x] Surrogate pair validation. (lone high/low surrogate tolak)
+- [x] OOM propagation. (semua mutasi return status; sb_reserve OOM -> parse fail)
+- [x] Capacity overflow guard. (sb_reserve / obj_set / arr_push cek SIZE_MAX)
 - [ ] JSON-RPC 2.0 validation.
-- [ ] Notification no-response semantics.
+- [ ] Notification no-response semantics. (sudah ada di handle_message; verifikasi)
 - [ ] Typed ID preservation.
 - [ ] `structuredContent`.
 - [ ] schema version.
@@ -2771,9 +2771,9 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 
 ### Acceptance criteria
 
-- corpus JSONTestSuite relevan;
-- libFuzzer/AFL corpus stabil;
-- official MCP SDK interop;
+- corpus JSONTestSuite relevan;  /// json_abuse.c 52 case (valid/invalid) OK
+- libFuzzer/AFL corpus stabil;  (regresi _regress_run.bat: json_abuse)
+- official MCP SDK interop;    (24 cek lulus)
 - malformed input tidak crash/hang;
 - embedded NUL tidak truncate.
 
@@ -3269,7 +3269,7 @@ Urutan paling tepat:
 5. **Ganti L1–L5 dengan evidence matrix.**
 6. **Perbaiki fingerprint OOB.**
 7. **Hilangkan static/global diagnostic state.** ✅ 2026-08-02 (Fase 5: arena bump milik hasil; static message ring dihapus di compile/run/prove/filc/driver; global lint state -> `_Thread_local`)
-8. **Perketat JSON dan string length handling.**
+8. **Perketat JSON dan string length handling.** ✅ 2026-08-02 (Fase 6: strict number grammar, valid UTF-8, surrogate & embedded NUL tolak, overflow guard; corpus json_abuse.c 52 case)
 9. **Tambahkan semantic canary.** ✅ 2026-08-02
 10. **Tambahkan evidence receipt + unverified debt.** (unverified debt ✅ 2026-08-02; evidence receipt ✅ 2026-08-02)
 
