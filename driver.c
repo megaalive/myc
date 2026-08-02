@@ -60,6 +60,15 @@
 
 #define ASAN_DLL_NAME "clang_rt.asan_dynamic-x86_64.dll"
 
+/* Env deterministik untuk harness (MYC-AUDIT-017): ASan/UBSan menulis
+ * report ke FILE unik (log_path) di tmp_dir — saluran non-spoofable. */
+static const char *const DRV_RUN_ENV[] = {
+    "ASAN_OPTIONS=log_path=myc_drv_asan_rpt:abort_on_error=1:halt_on_error=1",
+    "UBSAN_OPTIONS=log_path=myc_drv_ubsan_rpt:halt_on_error=1:print_stacktrace=1",
+    "LC_ALL=C",
+    NULL
+};
+
 /* Marker laporan sanitizer (sama dengan gate run). */
 static const char *const DRV_MARKERS[] = {
     "ERROR: AddressSanitizer",
@@ -1218,6 +1227,7 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
     preq.cwd = tmp_dir;
     preq.timeout_ms = req->timeout_ms;
     preq.max_output_bytes = max_out;
+    preq.env = DRV_RUN_ENV;
     if (!myc_proc_run(&preq, &pres)) {
         if (pres.timed_out) {
             res->verdict = MC_TIMEOUT;
@@ -1282,15 +1292,41 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
                                 "driver: run timeout");
         goto out;
     }
-    if (drv_marker_found(res->driver_stdout_text, res->driver_stderr_text)) {
-        add_diag_drv(res, "driver: sanitizer menangkap bug pada kasus tepi");
-        res->verdict = MC_DRIVER_VIOLATION;
-        res->err = MYC_ERR_DRIVER_VIOLATION;
-        myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_COMPLETED_FINDINGS,
-                            "sanitizer menangkap bug pada kasus tepi");
-        myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_FINDING,
-                                "driver: DRIVER_VIOLATION");
-        goto out;
+    /* 8b. Finding = bukti FILE report sanitizer (log_path, non-spoofable)
+     * ATAU marker teks yang terkonfirmasi exit != 0 (MYC-AUDIT-017).
+     * Teks mirip marker dengan exit 0 diabaikan (bukan bukti). */
+    {
+        char *asan_rpt = myc_read_sanitizer_report(tmp_dir,
+                                                   "myc_drv_asan_rpt");
+        char *ubsan_rpt = myc_read_sanitizer_report(tmp_dir,
+                                                    "myc_drv_ubsan_rpt");
+        int   report_evidence = (asan_rpt != NULL) || (ubsan_rpt != NULL);
+        int   omarker = drv_marker_found(res->driver_stdout_text,
+                                         res->driver_stderr_text);
+        free(asan_rpt);
+        free(ubsan_rpt);
+        myc_remove_sanitizer_reports(tmp_dir, "myc_drv_asan_rpt");
+        myc_remove_sanitizer_reports(tmp_dir, "myc_drv_ubsan_rpt");
+        if (report_evidence || (omarker && res->exit_code != 0)) {
+            add_diag_drv(res, "driver: sanitizer menangkap bug pada kasus tepi");
+            res->verdict = MC_DRIVER_VIOLATION;
+            res->err = MYC_ERR_DRIVER_VIOLATION;
+            myc_gate_set_status(res, MYC_GATE_DRIVER,
+                                MYC_GATE_COMPLETED_FINDINGS,
+                                "sanitizer menangkap bug pada kasus tepi");
+            myc_result_add_evidence(res, MYC_GATE_DRIVER,
+                                    MYC_EVIDENCE_FINDING,
+                                    "driver: DRIVER_VIOLATION "
+                                    "(report sanitizer / marker + exit != 0)");
+            goto out;
+        }
+        if (omarker) {
+            add_diag_drv(res, "driver: teks mirip marker sanitizer tetapi "
+                              "exit 0 — diabaikan (bukan bukti finding)");
+            myc_result_add_evidence(res, MYC_GATE_DRIVER,
+                                    MYC_EVIDENCE_DIAGNOSTIC,
+                                    "driver: marker teks diabaikan (exit 0)");
+        }
     }
     if (res->exit_code != 0) {
         /* keluar non-zero tanpa marker: bukan bukti bug memori */

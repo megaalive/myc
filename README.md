@@ -64,6 +64,11 @@ Flag:
 - `--run` — verification build (clang ASan+UBSan, `-O0`) + eksekusi
   terkendali. Bersih (exit 0, tanpa laporan sanitizer) → assurance **L3
   RUNTIME**. `--run-stdin FILE` memberi stdin untuk program hasil build.
+  Bukti sanitizer memakai **saluran non-spoofable** (MYC-AUDIT-017): env
+  `ASAN_OPTIONS`/`UBSAN_OPTIONS` diarahkan ke `log_path` (report FILE di tmp
+  dir, ditulis runtime sanitizer sendiri); marker teks stdout/stderr hanya
+  bukti sekunder yang wajib exit code != 0 — teks mirip marker dengan exit 0
+  diabaikan (program bisa mencetaknya sendiri).
 - `--run` bersifat **opsional & non-blocking**: bila clang tidak tersedia atau
   kode bukan program executable (tanpa `main`), myc tetap memberi verdict
   statis (L1) plus diagnostic, tidak menahan.

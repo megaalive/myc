@@ -20,6 +20,7 @@
 #include <windows.h>
 #include <process.h>
 #else
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -55,6 +56,160 @@ static const char *stream_sanitizer_match(const char *buf, size_t len)
         }
     }
     return NULL;
+}
+
+/* ------------------------------------------------------------------ */
+/* Saluran laporan sanitizer (MYC-AUDIT-017)                            */
+/* ------------------------------------------------------------------ */
+/* ASan/UBSan dengan log_path=<base> menulis report ke "<base>.<pid>" di
+ * direktori kerja child. Baca file pertama yang cocok <dir>/<base>.* dan
+ * non-kosong. Path dibangun dinamis (panjang TEMP tak terbatas). */
+char *myc_read_sanitizer_report(const char *dir, const char *base)
+{
+    char *content = NULL;
+#ifdef _WIN32
+    WIN32_FIND_DATAA fd;
+    HANDLE           h;
+    size_t           plen = strlen(dir) + 1 + strlen(base) + 2 + 1;
+    char            *pattern = (char *)malloc(plen);
+    if (!pattern)
+        return NULL;
+    snprintf(pattern, plen, "%s/%s.*", dir, base);
+    h = FindFirstFileA(pattern, &fd);
+    free(pattern);
+    if (h == INVALID_HANDLE_VALUE)
+        return NULL;
+    do {
+        size_t pathlen = strlen(dir) + 1 + strlen(fd.cFileName) + 1;
+        char  *path = (char *)malloc(pathlen);
+        FILE  *f;
+        long   sz;
+        if (!path)
+            break;
+        snprintf(path, pathlen, "%s/%s", dir, fd.cFileName);
+        f = fopen(path, "rb");
+        free(path);
+        if (!f)
+            continue;
+        if (fseek(f, 0, SEEK_END) == 0) {
+            sz = ftell(f);
+            fseek(f, 0, SEEK_SET);
+        } else {
+            sz = 0;
+        }
+        if (sz > 0) {
+            content = (char *)malloc((size_t)sz + 1);
+            if (content) {
+                if (fread(content, 1, (size_t)sz, f) == (size_t)sz) {
+                    content[sz] = '\0';
+                } else {
+                    free(content);
+                    content = NULL;
+                }
+            }
+        }
+        fclose(f);
+        if (content)
+            break;
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+#else
+    DIR           *d = opendir(dir);
+    struct dirent *e;
+    size_t         bl = strlen(base);
+    if (!d)
+        return NULL;
+    while ((e = readdir(d)) != NULL) {
+        size_t nlen = strlen(e->d_name);
+        size_t pathlen;
+        char  *path;
+        FILE  *f;
+        long   sz;
+        if (nlen < bl + 2 || memcmp(e->d_name, base, bl) != 0 ||
+            e->d_name[bl] != '.')
+            continue;
+        pathlen = strlen(dir) + 1 + nlen + 1;
+        path = (char *)malloc(pathlen);
+        if (!path)
+            break;
+        snprintf(path, pathlen, "%s/%s", dir, e->d_name);
+        f = fopen(path, "rb");
+        free(path);
+        if (!f)
+            continue;
+        if (fseek(f, 0, SEEK_END) == 0) {
+            sz = ftell(f);
+            fseek(f, 0, SEEK_SET);
+        } else {
+            sz = 0;
+        }
+        if (sz > 0) {
+            content = (char *)malloc((size_t)sz + 1);
+            if (content) {
+                if (fread(content, 1, (size_t)sz, f) == (size_t)sz) {
+                    content[sz] = '\0';
+                } else {
+                    free(content);
+                    content = NULL;
+                }
+            }
+        }
+        fclose(f);
+        if (content)
+            break;
+    }
+    closedir(d);
+#endif
+    return content;
+}
+
+void myc_remove_sanitizer_reports(const char *dir, const char *base)
+{
+#ifdef _WIN32
+    WIN32_FIND_DATAA fd;
+    HANDLE           h;
+    size_t           plen = strlen(dir) + 1 + strlen(base) + 2 + 1;
+    char            *pattern = (char *)malloc(plen);
+    if (!pattern)
+        return;
+    snprintf(pattern, plen, "%s/%s.*", dir, base);
+    h = FindFirstFileA(pattern, &fd);
+    free(pattern);
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+    do {
+        size_t pathlen = strlen(dir) + 1 + strlen(fd.cFileName) + 1;
+        char  *path = (char *)malloc(pathlen);
+        if (path) {
+            snprintf(path, pathlen, "%s/%s", dir, fd.cFileName);
+            DeleteFileA(path);
+            free(path);
+        }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+#else
+    DIR           *d = opendir(dir);
+    struct dirent *e;
+    size_t         bl = strlen(base);
+    if (!d)
+        return;
+    while ((e = readdir(d)) != NULL) {
+        size_t nlen = strlen(e->d_name);
+        size_t pathlen;
+        char  *path;
+        if (nlen < bl + 2 || memcmp(e->d_name, base, bl) != 0 ||
+            e->d_name[bl] != '.')
+            continue;
+        pathlen = strlen(dir) + 1 + nlen + 1;
+        path = (char *)malloc(pathlen);
+        if (path) {
+            snprintf(path, pathlen, "%s/%s", dir, e->d_name);
+            unlink(path);
+            free(path);
+        }
+    }
+    closedir(d);
+#endif
 }
 
 /* ------------------------------------------------------------------ */
@@ -154,6 +309,115 @@ char *myc_find_executable(const char *program)
     return _strdup(program);
 #endif
 }
+
+/* ------------------------------------------------------------------ */
+/* Override environment (MYC-AUDIT-017)                                 */
+/* ------------------------------------------------------------------ */
+/* Bangun environment block Windows dari blok induk + override
+ * "KEY=VALUE" (nilai dengan key yang sama MENGGANTI; sisanya diwarisi).
+ * Mengembalikan malloc'd "K=V\0K=V\0\0"; NULL bila gagal. */
+#ifdef _WIN32
+static char *build_env_block(const char *const *overrides)
+{
+    char  *parent = GetEnvironmentStringsA();
+    char  *out = NULL;
+    size_t len = 0, need = 1;
+    int    o;
+    if (!parent)
+        return NULL;
+    {
+        char *p = parent;
+        while (*p) {
+            need += strlen(p) + 1;
+            p += strlen(p) + 1;
+        }
+        for (o = 0; overrides[o]; o++)
+            need += strlen(overrides[o]) + 1;
+    }
+    out = (char *)malloc(need);
+    if (!out) {
+        FreeEnvironmentStringsA(parent);
+        return NULL;
+    }
+    /* salin entri induk, ganti yang di-override */
+    {
+        char *p = parent;
+        while (*p) {
+            const char *eq = strchr(p, '=');
+            size_t      klen = eq ? (size_t)(eq - p) : strlen(p);
+            int         replaced = 0;
+            for (o = 0; overrides[o]; o++) {
+                const char *oeq = strchr(overrides[o], '=');
+                if (oeq && (size_t)(oeq - overrides[o]) == klen &&
+                    memcmp(p, overrides[o], klen) == 0) {
+                    replaced = 1;
+                    break;
+                }
+            }
+            if (!replaced) {
+                size_t n = strlen(p) + 1;
+                memcpy(out + len, p, n);
+                len += n;
+            }
+            p += strlen(p) + 1;
+        }
+    }
+    /* Tambahkan SEMUA override: entri induk yang key-nya di-override sudah
+     * di-skip di loop atas, jadi menambahkan semua override di sini = ganti
+     * (bukan duplikat). BUG YANG DIPERBAIKI (review MYC-AUDIT-017): versi
+     * lama hanya menambahkan override yang key-nya TIDAK ada di induk,
+     * sehingga override yang menggantikan key induk (mis. ASAN_OPTIONS bila
+     * user set di env) DROP total -- child malah kehilangan variabel. */
+    for (o = 0; overrides[o]; o++) {
+        size_t n = strlen(overrides[o]) + 1;
+        memcpy(out + len, overrides[o], n);
+        len += n;
+    }
+    out[len] = '\0';
+    FreeEnvironmentStringsA(parent);
+    return out;
+}
+#else
+/* environ: di-deklarasi unistd.h pada sebagian sistem; pastikan tersedia. */
+extern char **environ;
+
+/* Bangun env array baru: environ + override (malloc'd; child meng-assign
+ * ke `environ` sebelum execvp -- tanpa alokasi di dalam child). */
+static char **build_env_array(const char *const *overrides)
+{
+    int   n = 0, n_ov = 0, i, k = 0;
+    char **out;
+    while (environ[n])
+        n++;
+    for (i = 0; overrides && overrides[i]; i++)
+        n_ov++;
+    out = (char **)malloc(sizeof(char *) * ((size_t)n + (size_t)n_ov + 1));
+    if (!out)
+        return NULL;
+    for (i = 0; i < n; i++) {
+        const char *eq = strchr(environ[i], '=');
+        int         replaced = 0;
+        if (eq) {
+            size_t klen = (size_t)(eq - environ[i]);
+            int    o;
+            for (o = 0; o < n_ov; o++) {
+                const char *oeq = strchr(overrides[o], '=');
+                if (oeq && (size_t)(oeq - overrides[o]) == klen &&
+                    memcmp(environ[i], overrides[o], klen) == 0) {
+                    replaced = 1;
+                    break;
+                }
+            }
+        }
+        if (!replaced)
+            out[k++] = environ[i];
+    }
+    for (i = 0; i < n_ov; i++)
+        out[k++] = (char *)overrides[i];
+    out[k] = NULL;
+    return out;
+}
+#endif /* _WIN32 */
 
 /* ------------------------------------------------------------------ */
 /* Konstruksi command line Windows (aturan CommandLineToArgvW)          */
@@ -447,6 +711,7 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
     STARTUPINFOA si;
     char    *cmdline = NULL;
     char    *cmdline_copy = NULL;
+    char    *env_block = NULL;
     drain_buf out = {0}, err = {0};
     unsigned long long t0;
     BOOL    started;
@@ -492,6 +757,11 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
     /* CreateProcessA dapat mengubah buffer; salin. */
     cmdline_copy = _strdup(cmdline);
     if (!cmdline_copy) { res->err = MYC_ERR_INTERNAL; goto cleanup; }
+    /* Env override (MYC-AUDIT-017): blok env induk + override. */
+    if (req->env) {
+        env_block = build_env_block(req->env);
+        if (!env_block) { res->err = MYC_ERR_INTERNAL; goto cleanup; }
+    }
 
     t0 = now_ms();
     started = CreateProcessA(
@@ -499,7 +769,7 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
         cmdline_copy,
         NULL, NULL, TRUE,             /* bInheritHandles = TRUE */
         CREATE_NO_WINDOW,
-        NULL,
+        env_block,                    /* NULL = warisi env induk */
         req->cwd,
         &si, &pi);
 
@@ -652,6 +922,7 @@ cleanup_pi:
 cleanup:
     free(cmdline);
     free(cmdline_copy);
+    free(env_block);
     if (done) {
         /* hasil sudah disalin */
     }
@@ -668,6 +939,7 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
     int     out_pipe[2] = {-1,-1};
     int     err_pipe[2] = {-1,-1};
     int     exec_pipe[2] = {-1,-1}; /* MYC-AUDIT-003: deteksi execvp gagal */
+    char  **child_env = NULL;
     pid_t   pid = -1;
     drain_buf out = {0}, err = {0};
     pthread_t to = 0, te = 0;
@@ -694,6 +966,16 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
         int fl = fcntl(exec_pipe[1], F_GETFD, 0);
         if (fl >= 0)
             fcntl(exec_pipe[1], F_SETFD, fl | FD_CLOEXEC);
+    }
+
+    /* Bangun env override SEBELUM fork (alokasi di parent; child hanya
+     * meng-assign pointer ke `environ` -- tanpa malloc di dalam child). */
+    if (req->env) {
+        child_env = build_env_array(req->env);
+        if (!child_env) {
+            res->err = MYC_ERR_INTERNAL;
+            goto cleanup_pipes;
+        }
     }
 
     t0 = now_ms();
@@ -729,6 +1011,8 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
                 _exit(127);
             }
         }
+        if (child_env)
+            environ = child_env;
         execvp(req->argv[0], (char *const *)req->argv);
         /* execvp gagal: kirim errno ke parent. */
         {
@@ -866,6 +1150,7 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
     free(out.tail); out.tail = NULL;
     free(err.hdr); err.hdr = NULL;
     free(err.tail); err.tail = NULL;
+    free(child_env);  /* env array dibangun di parent; bebas di jalur sukses */
     return res->ok ? 1 : 0;
 
 cleanup_kill:
@@ -889,6 +1174,7 @@ cleanup_pipes:
     if (exec_pipe[1] >= 0) close(exec_pipe[1]);
     free(out.hdr); free(out.tail);
     free(err.hdr); free(err.tail);
+    free(child_env);
     return 0;
 }
 

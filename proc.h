@@ -18,6 +18,12 @@ typedef struct {
     size_t      stdin_len;
     int         timeout_ms;     /* 0 = tanpa batas */
     size_t      max_output_bytes;
+    /* Override env "KEY=VALUE" (MYC-AUDIT-017): NULL = warisi seluruh env
+     * induk. Bila diisi, entri yang dipakai MENGGANTI nilai induk dengan
+     * key yang sama; sisanya diwarisi. Dipakai gate run/driver untuk
+     * mengarahkan ASAN_OPTIONS/UBSAN_OPTIONS ke log_path unik (saluran
+     * laporan sanitizer non-spoofable) dan menstabilkan locale (LC_ALL=C). */
+    const char *const *env;
 } myc_proc_request;
 
 typedef struct {
@@ -46,5 +52,20 @@ void myc_proc_result_free(myc_proc_result *res);
 /* Cari executable "gcc" via PATH + extension .exe di Windows. */
 /* Mengembalikan string yang dialokasikan, atau NULL bila tidak ditemukan. */
 char *myc_find_executable(const char *program);
+
+/* --- Saluran laporan sanitizer (MYC-AUDIT-017) ---
+ * ASan/UBSan dengan ASAN_OPTIONS/UBSAN_OPTIONS log_path=<base> menulis
+ * report ke file "<base>.<pid>" di direktori kerja child. Helper berikut
+ * membaca/membersihkan file tersebut di <dir> (pola "<dir>/<base>.*").
+ * Ini saluran bukti yang TIDAK bisa dipalsukan program secara tidak
+ * sengaja (report ditulis oleh runtime sanitizer sendiri, bukan stdout/
+ * stderr program). */
+
+/* Baca isi file report sanitizer pertama yang cocok <dir>/<base>.* dan
+ * non-kosong; NULL bila tidak ada. Hasil malloc'd (caller membebaskan). */
+char *myc_read_sanitizer_report(const char *dir, const char *base);
+
+/* Hapus semua file <dir>/<base>.* (cleanup artefak report). */
+void myc_remove_sanitizer_reports(const char *dir, const char *base);
 
 #endif /* MYC_PROC_H */

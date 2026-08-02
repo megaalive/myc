@@ -67,6 +67,41 @@ static const char *const SANITIZER_MARKERS[] = {
     NULL
 };
 
+/* Env deterministik untuk program verification (MYC-AUDIT-017):
+ * ASan/UBSan diarahkan menulis report ke FILE unik (log_path=<base>,
+ * relatif terhadap cwd child = tmp_dir; ASan menambah .<pid>) — saluran
+ * bukti yang TIDAK bisa dipalsukan program secara tidak sengaja (report
+ * ditulis runtime sanitizer sendiri, bukan stdout/stderr program).
+ * LC_ALL=C menstabilkan output lintas locale. Nama base dipilih unik per
+ * fase agar tidak tabrakan antar run di tmp_dir yang sama. */
+static const char *const RUN_ENV[] = {
+    "ASAN_OPTIONS=log_path=myc_run_asan_rpt:abort_on_error=1:halt_on_error=1",
+    "UBSAN_OPTIONS=log_path=myc_run_ubsan_rpt:halt_on_error=1:print_stacktrace=1",
+    "LC_ALL=C",
+    NULL
+};
+
+static const char *const CANARY_RUN_ENV[] = {
+    "ASAN_OPTIONS=log_path=myc_canary_asan_rpt:abort_on_error=1:halt_on_error=1",
+    "UBSAN_OPTIONS=log_path=myc_canary_ubsan_rpt:halt_on_error=1:print_stacktrace=1",
+    "LC_ALL=C",
+    NULL
+};
+
+/* Ekstrak marker standar dari isi report sanitizer (untuk evidence).
+ * NULL bila tidak ada marker dikenal (report tetap bukti). */
+static const char *report_marker_of(const char *rpt)
+{
+    int i;
+    if (!rpt)
+        return NULL;
+    for (i = 0; SANITIZER_MARKERS[i]; i++) {
+        if (strstr(rpt, SANITIZER_MARKERS[i]))
+            return SANITIZER_MARKERS[i];
+    }
+    return NULL;
+}
+
 static const char *marker_found(const char *out, const char *err)
 {
     int i;
@@ -337,6 +372,7 @@ static int myc_runtime_canary(const char *clang_path, const char *tmp_dir,
     preq.stdin_len = 0;
     preq.timeout_ms = timeout_ms;
     preq.max_output_bytes = max_out;
+    preq.env = CANARY_RUN_ENV;
     if (!myc_proc_run(&preq, &pres)) {
         myc_proc_result_free(&pres);
         free(rargv);
@@ -345,8 +381,15 @@ static int myc_runtime_canary(const char *clang_path, const char *tmp_dir,
     }
     {
         const char *m = marker_found(pres.stdout_data, pres.stderr_data);
+        char       *rpt = myc_read_sanitizer_report(tmp_dir,
+                                                    "myc_canary_asan_rpt");
+        if (!rpt)
+            rpt = myc_read_sanitizer_report(tmp_dir, "myc_canary_ubsan_rpt");
         int ec = pres.exit_code;
-        ret = (m || ec != 0) ? 1 : 0;
+        ret = (rpt || m || ec != 0) ? 1 : 0;
+        free(rpt);
+        myc_remove_sanitizer_reports(tmp_dir, "myc_canary_asan_rpt");
+        myc_remove_sanitizer_reports(tmp_dir, "myc_canary_ubsan_rpt");
         myc_proc_result_free(&pres);
     }
     free(rargv);
@@ -552,6 +595,7 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
     preq.stdin_len = req->run_stdin_len;
     preq.timeout_ms = req->timeout_ms;
     preq.max_output_bytes = max_out;
+    preq.env = RUN_ENV;
     if (!myc_proc_run(&preq, &pres)) {
         if (pres.timed_out) {
             res->verdict = MC_TIMEOUT;
@@ -601,24 +645,80 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
         goto out;
     }
 
-    /* 6. Deteksi laporan sanitizer. */
+    /* 6. Deteksi laporan sanitizer — saluran NON-SPOOFABLE (MYC-AUDIT-017).
+     * Bukti utama = FILE report yang ditulis runtime sanitizer (log_path,
+     * dibaca dari tmp_dir); program tidak bisa memalsukannya secara tidak
+     * sengaja. Marker teks pada stdout/stderr hanya bukti SEKUNDER dan
+     * WAJIB dikonfirmasi exit code != 0 (mekanisme myc sendiri -- assert
+     * kontrak & trap MYC_CHECKED -- menulis ke stderr + abort, jadi tetap
+     * terdeteksi via marker + exit != 0). Teks mirip marker dengan exit 0
+     * diabaikan (bukan bukti; kemungkinan program mencetaknya sendiri). */
     {
-        const char *marker = marker_found(res->run_stdout_text, res->run_stderr_text);
-        if (marker) {
+        char        *asan_rpt = myc_read_sanitizer_report(tmp_dir,
+                                                          "myc_run_asan_rpt");
+        char        *ubsan_rpt = myc_read_sanitizer_report(tmp_dir,
+                                                           "myc_run_ubsan_rpt");
+        const char  *rpt = asan_rpt ? asan_rpt : ubsan_rpt;
+        const char  *omarker = marker_found(res->run_stdout_text,
+                                            res->run_stderr_text);
+        int          report_evidence = (asan_rpt != NULL) ||
+                                       (ubsan_rpt != NULL);
+
+        if (report_evidence || (omarker && res->exit_code != 0)) {
+            /* finding: bukti saluran report, atau marker terkonfirmasi
+             * exit != 0. Marker evidence diambil dari report bila ada. */
             char note[512];
-            snprintf(note, sizeof(note), "sanitizer runtime: %s", marker);
+            const char *ev = report_evidence ? report_marker_of(rpt)
+                                             : omarker;
+            if (report_evidence) {
+                res->run_sanitizer_detected = 1;
+                if (ev)
+                    strncpy(res->run_sanitizer_marker, ev,
+                            sizeof(res->run_sanitizer_marker) - 1);
+                res->run_sanitizer_marker[
+                    sizeof(res->run_sanitizer_marker) - 1] = '\0';
+                snprintf(note, sizeof(note),
+                         "sanitizer runtime: %s (report: log_path di tmp dir)",
+                         ev ? ev : "laporan sanitizer");
+            } else {
+                snprintf(note, sizeof(note), "sanitizer runtime: %s",
+                         omarker ? omarker : "marker sanitizer");
+            }
             add_diag_run(res, note);
             res->verdict = MC_RUNTIME_VIOLATION;
             res->err = MYC_ERR_RUNTIME_VIOLATION;
-            myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_COMPLETED_FINDINGS,
-                                note);
-            myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_FINDING,
-                                    note);
+            myc_gate_set_status(res, MYC_GATE_RUNTIME,
+                                MYC_GATE_COMPLETED_FINDINGS, note);
+            myc_result_add_evidence(res, MYC_GATE_RUNTIME,
+                                    MYC_EVIDENCE_FINDING, note);
+            free(asan_rpt);
+            free(ubsan_rpt);
+            myc_remove_sanitizer_reports(tmp_dir, "myc_run_asan_rpt");
+            myc_remove_sanitizer_reports(tmp_dir, "myc_run_ubsan_rpt");
             goto out;
         }
+        free(asan_rpt);
+        free(ubsan_rpt);
+        myc_remove_sanitizer_reports(tmp_dir, "myc_run_asan_rpt");
+        myc_remove_sanitizer_reports(tmp_dir, "myc_run_ubsan_rpt");
+        if (omarker) {
+            /* teks mirip marker tetapi exit 0: BUKAN bukti (kemungkinan
+             * program mencetaknya sendiri / spoof) — bersihkan flag agar
+             * laporan tidak menyiratkan finding. */
+            char note[256];
+            snprintf(note, sizeof(note),
+                     "output memuat teks mirip marker sanitizer (%s) tetapi "
+                     "exit=0 — diabaikan (bukan bukti finding; kemungkinan "
+                     "program mencetaknya sendiri)", omarker);
+            add_diag_run(res, note);
+            myc_result_add_evidence(res, MYC_GATE_RUNTIME,
+                                    MYC_EVIDENCE_DIAGNOSTIC, note);
+            res->run_sanitizer_detected = 0;
+            res->run_sanitizer_marker[0] = '\0';
+        }
         if (res->exit_code != 0) {
-            /* keluar non-zero tanpa laporan sanitizer: bukan bukti bug
-             * memori, tapi run tidak bersih -> verification incomplete. */
+            /* keluar non-zero tanpa laporan sanitizer & tanpa marker:
+             * bukan bukti bug memori, tapi run tidak bersih. */
             char note[128];
             snprintf(note, sizeof(note),
                      "verification run: exit=%d (tanpa laporan sanitizer)",
@@ -737,6 +837,13 @@ int myc_metamorphic_gate(const myc_request *req, const char *source,
     size_t max_out = req->max_output_bytes > 0
                          ? (size_t)req->max_output_bytes
                          : MYC_MAX_OUTPUT_BYTES;
+
+    /* Env per step untuk eksekusi (MYC-AUDIT-017): buffer di SCOPE FUNGSI
+     * (bukan blok) agar preq.env tetap valid saat myc_proc_run dipanggil —
+     * buffer stack blok yang keluar scope = use-after-scope (segfault). */
+    char        meta_env_asan[2][160];
+    char        meta_env_ubsan[2][160];
+    const char *meta_env[2][4];
 
     static const char *const BASE_FLAGS[] = {
         "-x", "c", "-", "-std=c11", "-g",
@@ -903,6 +1010,19 @@ int myc_metamorphic_gate(const myc_request *req, const char *source,
         preq.stdin_len = req->run_stdin_len;
         preq.timeout_ms = req->timeout_ms;
         preq.max_output_bytes = max_out;
+        /* Env dengan log_path unik per build (-O0/-O2); buffer di scope
+         * fungsi (meta_env_*) agar tetap hidup selama myc_proc_run. */
+        snprintf(meta_env_asan[step], sizeof(meta_env_asan[step]),
+                 "ASAN_OPTIONS=log_path=myc_meta%d_asan_rpt:"
+                 "abort_on_error=1:halt_on_error=1", step);
+        snprintf(meta_env_ubsan[step], sizeof(meta_env_ubsan[step]),
+                 "UBSAN_OPTIONS=log_path=myc_meta%d_ubsan_rpt:"
+                 "halt_on_error=1:print_stacktrace=1", step);
+        meta_env[step][0] = meta_env_asan[step];
+        meta_env[step][1] = meta_env_ubsan[step];
+        meta_env[step][2] = "LC_ALL=C";
+        meta_env[step][3] = NULL;
+        preq.env = meta_env[step];
         if (!myc_proc_run(&preq, &pres)) {
             myc_proc_result_free(&pres);
             free(argv_r);
@@ -919,12 +1039,32 @@ int myc_metamorphic_gate(const myc_request *req, const char *source,
         if (pres.timed_out)
             res->meta_timed_out = 1;
         marker = marker_found(pres.stdout_data, pres.stderr_data);
-        *findp = marker ? 1 : 0;
-        if (marker) {
-            char note[192];
-            snprintf(note, sizeof(note), "metamorphic (%s): sanitizer %s",
-                     step == 0 ? "-O0" : "-O2", marker);
-            add_diag_run(res, note);
+        {
+            char base_asan[64], base_ubsan[64];
+            char *rpt;
+            snprintf(base_asan, sizeof(base_asan), "myc_meta%d_asan_rpt", step);
+            snprintf(base_ubsan, sizeof(base_ubsan), "myc_meta%d_ubsan_rpt", step);
+            rpt = myc_read_sanitizer_report(tmp_dir, base_asan);
+            if (!rpt)
+                rpt = myc_read_sanitizer_report(tmp_dir, base_ubsan);
+            *findp = (rpt != NULL || (marker && pres.exit_code != 0)) ? 1 : 0;
+            if (rpt) {
+                const char *rm = report_marker_of(rpt);
+                char note[192];
+                snprintf(note, sizeof(note),
+                         "metamorphic (%s): sanitizer report %s",
+                         step == 0 ? "-O0" : "-O2",
+                         rm ? rm : "(laporan sanitizer)");
+                add_diag_run(res, note);
+            } else if (marker) {
+                char note[192];
+                snprintf(note, sizeof(note), "metamorphic (%s): sanitizer %s",
+                         step == 0 ? "-O0" : "-O2", marker);
+                add_diag_run(res, note);
+            }
+            free(rpt);
+            myc_remove_sanitizer_reports(tmp_dir, base_asan);
+            myc_remove_sanitizer_reports(tmp_dir, base_ubsan);
         }
         myc_proc_result_free(&pres);
         free(argv_r);

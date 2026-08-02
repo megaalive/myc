@@ -173,7 +173,10 @@ static int run_filc_exe(const myc_request *req, const char *exe,
 
     panics = count_panics(res->filc_stdout_text, res->filc_stderr_text);
     res->filc_panics = panics;
-    if (panics > 0) {
+    if (panics > 0 && exit_code != 0) {
+        /* Finding hanya bila marker panic TERKONFIRMASI exit != 0
+         * (MYC-AUDIT-017: panic Fil-C meng-abort -> non-zero; teks marker
+         * tanpa exit non-zero bukan bukti / bisa spoof). */
         char note[192];
         snprintf(note, sizeof(note),
                  "filc: %d panic (marker Fil-C) -> bug memori terbukti",
@@ -182,6 +185,16 @@ static int run_filc_exe(const myc_request *req, const char *exe,
         res->verdict = MC_FILC_VIOLATION;
         res->err = MYC_ERR_FILC_VIOLATION;
         return 0;
+    }
+    if (panics > 0) {
+        /* marker panic tetapi exit 0: bukan bukti (kemungkinan program
+         * mencetak teksnya sendiri) -- diabaikan. Run TETAP BERSIH (exit 0)
+         * -> L5 diklaim konsisten dengan WSL path (MYC-AUDIT-017). */
+        add_diag_filc(res, "filc: teks marker panic tetapi exit 0 -- "
+                           "diabaikan (bukan bukti bug; kemungkinan program "
+                           "mencetaknya sendiri)");
+        res->filc_panics = 0;   /* teks bukan panic terkonfirmasi */
+        return 1;
     }
     if (exit_code != 0) {
         /* keluar non-zero tanpa marker panic: bukan bukti bug memori,
@@ -507,7 +520,7 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
         res->ran_filc = 1;
         panics = count_panics(res->filc_stdout_text, res->filc_stderr_text);
         res->filc_panics = panics;
-        if (panics > 0) {
+        if (panics > 0 && exit_code != 0) {
             char note[192];
             snprintf(note, sizeof(note),
                      "filc: %d panic (marker Fil-C) -> bug memori terbukti",
@@ -519,6 +532,17 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
                                 note);
             myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_FINDING, note);
             ret = 0;
+            goto out_wsl;
+        }
+        if (panics > 0) {
+            /* marker panic tanpa exit non-zero: bukan bukti (MYC-AUDIT-017)
+             * -- diabaikan. Run TETAP BERSIH (exit 0) -> pipeline menaikkan
+             * gate COMPLETED_CLEAN + L5, sama seperti native path. */
+            add_diag_filc(res, "filc: teks marker panic tetapi exit 0 -- "
+                               "diabaikan (bukan bukti bug; kemungkinan "
+                               "program mencetaknya sendiri)");
+            res->filc_panics = 0;
+            ret = 1;
             goto out_wsl;
         }
         if (exit_code != 0) {

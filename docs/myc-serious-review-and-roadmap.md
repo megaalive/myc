@@ -316,7 +316,7 @@ Setelah reentrancy dan schema hasil diperbaiki, ini dapat menjadi salah satu keu
 | MYC-AUDIT-014 | Medium | lint | Heuristik token/text dijadikan hard violation |
 | MYC-AUDIT-015 | Medium | portability | `NUL` dipakai di POSIX dan meninggalkan file literal `NUL` | ✅ SELESAI 2026-08-02 (helper myc_null_device: NUL di Windows, /dev/null di POSIX; literal "NUL" diganti runtime di merge_args) |
 | MYC-AUDIT-016 | Medium | MCP | JSON document dibungkus sebagai string text, status error tidak konsisten | ✅ SELESAI 2026-08-02 (structuredContent schema myc.result.v1; isError hanya tool/protocol error; JSON-RPC ketat jsonrpc/typed-id/notification; negosiasi strict; unknown flag ditolak) |
-| MYC-AUDIT-017 | Medium | output parsing | Marker human-readable mudah spoof dan rapuh terhadap versi/localization |
+| MYC-AUDIT-017 | Medium | output parsing | Marker human-readable mudah spoof dan rapuh terhadap versi/localization | ✅ SELESAI 2026-08-02 (saluran bukti NON-SPOOFABLE: ASan/UBSan `log_path` → report FILE di tmp_dir, dibaca `myc_read_sanitizer_report`; marker teks stdout/stderr hanya bukti sekunder & WAJIB exit != 0; env deterministik `ASAN_OPTIONS`/`UBSAN_OPTIONS`/`LC_ALL=C` via `preq.env`; finding = report || (marker && exit!=0); teks mirip marker dgn exit 0 diabaikan + diagnostic) |
 | MYC-AUDIT-018 | Medium | test | Test dominan Windows dan tidak menguji concurrency/deadlock/OOM |
 
 ---
@@ -1422,10 +1422,10 @@ Jangan hash ambient environment seluruhnya; gunakan canonical whitelist agar rep
 
 - path executable POSIX;
 - failure disamarkan sebagai skip;
-- marker detection dengan `strstr`;
-- application output dapat memalsukan marker;
-- report setelah output cap dapat hilang;
-- ambient `ASAN_OPTIONS` / `UBSAN_OPTIONS` memengaruhi hasil;
+- marker detection dengan `strstr` (kini bukti SEKUNDER; ✅ MYC-AUDIT-017);
+- application output dapat memalsukan marker (✅ MYC-AUDIT-017: report file);
+- report setelah output cap dapat hilang (✅ Fase 1: prefix+tail capture);
+- ambient `ASAN_OPTIONS` / `UBSAN_OPTIONS` memengaruhi hasil (✅ MYC-AUDIT-017: env di-override);
 - tidak merekam tool version dan exact flags;
 - satu input dianggap cukup untuk label tinggi;
 - temp name predictable dan cleanup error diabaikan;
@@ -1445,6 +1445,16 @@ LC_ALL=C
 Lebih baik, gunakan sanitizer log path yang unik dan parse file report, sehingga stdout aplikasi tidak dapat spoof.
 
 Jika itu tidak portable, gunakan delimiter/token yang diinject oleh harness, tetapi jangan menganggap pencarian string generik sebagai bukti kuat.
+
+> Status: SELESAI 2026-08-02 (MYC-AUDIT-017). Implementasi mengambil jalur
+> pertama: env deterministik per gate (`ASAN_OPTIONS`/`UBSAN_OPTIONS` dengan
+> `log_path=<base>` + `LC_ALL=C` via `preq.env` di proc.c) → report sanitizer
+> ditulis runtime ke `<base>.<pid>` di tmp_dir, dibaca `myc_read_sanitizer_report()`
+> (file = bukti utama, tidak bisa dipalsukan program). Marker teks stdout/stderr
+> kini hanya bukti SEKUNDER dan wajib dikonfirmasi exit code != 0; teks mirip
+> marker dengan exit 0 diabaikan + diagnostic (fixture `spoof_marker_run.c`).
+> Berlaku konsisten di run/canary/metamorphic/driver/filc (panic Fil-C hanya
+> finding bila exit != 0).
 
 ---
 
@@ -2889,7 +2899,8 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 - [ ] explicit sanitizer env;
 - [x] canary ✅ 2026-08-02 (`myc_runtime_canary`: OOB deterministik dijalankan
       sebelum `COMPLETED_CLEAN`; canary tak terdeteksi -> INCONCLUSIVE)
-- [ ] report channel non-spoofable;
+- [x] report channel non-spoofable ✅ 2026-08-02 (MYC-AUDIT-017: `log_path`
+      report file di tmp_dir sebagai bukti utama; marker teks sekunder wajib exit != 0);
 - [ ] input portfolio.
 
 ### 7.3. Checked buffer

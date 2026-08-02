@@ -91,6 +91,16 @@ for %%f in (test\fixtures\ok_driver.c test\fixtures\bad_driver_oob.c) do (
   myc.exe check "%%f" --driver > %OUT%
   findstr /B /C:"verdict:" /C:"assurance:" /C:"driver:" /C:"  funcs:" /C:"  cases:" %OUT%
 )
+echo --- MYC-AUDIT-017: saluran report sanitizer non-spoofable
+myc.exe check tests\bad_run_oob.c --run > %OUT% 2>&1
+findstr /C:"verdict:   RUNTIME_VIOLATION" %OUT% >nul && echo [OK] bad_run_oob tetap RUNTIME_VIOLATION (report sanitizer) || echo [FAIL] bad_run_oob tidak jadi violation
+findstr /C:"sanitizer:" %OUT% >nul && echo [OK] evidence sanitizer (dari report log_path) terekam || echo [FAIL] evidence sanitizer hilang
+myc.exe check tests\spoof_marker_run.c --run > %OUT% 2>&1
+findstr /C:"RUNTIME_VIOLATION" %OUT% >nul && echo [FAIL] spoof marker jadi RUNTIME_VIOLATION || echo [OK] spoof marker --run TIDAK jadi violation
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] spoof marker tetap OK (exit 0, tanpa report) || echo [FAIL] spoof marker bukan OK
+findstr /C:"diabaikan" %OUT% >nul && echo [OK] diagnostic teks marker diabaikan muncul || echo [FAIL] diagnostic spoof hilang
+myc.exe check tests\bad_driver_spoof.c --driver > %OUT% 2>&1
+findstr /C:"DRIVER_VIOLATION" %OUT% >nul && echo [FAIL] spoof driver jadi DRIVER_VIOLATION || echo [OK] spoof driver TIDAK jadi violation
 del %OUT%
 echo --- unverified debt (Fase 4): debt hanya muncul utk scope yg TIDAK lengkap
 set DEBT=none
