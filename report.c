@@ -265,20 +265,63 @@ void myc_report_text(const myc_result *res)
             printf("\n");
     }
 
-    if (res->debt_count > 0) {
-        printf("unverified_debt:\n");
-        for (gi = 0; gi < res->debt_count; gi++) {
-            const myc_debt_item *d = &res->debt[gi];
-            printf("  [%s] %s\n", myc_debt_type_name(d->type),
-                   d->text ? d->text : "");
-        }
-    }
-}
+if (res->debt_count > 0) {
+         printf("unverified_debt:\n");
+         for (gi = 0; gi < res->debt_count; gi++) {
+             const myc_debt_item *d = &res->debt[gi];
+             printf("  [%s] %s\n", myc_debt_type_name(d->type),
+                    d->text ? d->text : "");
+         }
+     }
+
+     /* Counterexample Replay Capsule (#2). */
+     if (res->capsule) {
+         const myc_replay_capsule *cap = res->capsule;
+         printf("capsule:\n");
+         printf("  source_sha256: %s\n",
+                cap->source_sha256 ? cap->source_sha256 : "");
+         if (cap->stdin_sha256)
+             printf("  stdin_sha256: %s (len=%zu)\n",
+                    cap->stdin_sha256, cap->stdin_len);
+         printf("  clang: %s\n", cap->clang_path ? cap->clang_path : "");
+         printf("  gcc: %s\n", cap->gcc_path ? cap->gcc_path : "");
+         printf("  cwd: %s\n", cap->cwd ? cap->cwd : "");
+         printf("  timeout_ms: %d\n", cap->timeout_ms);
+         printf("  max_output_bytes: %d\n", cap->max_output_bytes);
+         printf("  strict: %s\n", cap->strict ? "yes" : "no");
+         printf("  run_analyzer: %s\n", cap->run_analyzer ? "yes" : "no");
+         printf("  run: %s\n", cap->run ? "yes" : "no");
+         printf("  prove: %s\n", cap->prove ? "yes" : "no");
+         printf("  checked: %s\n", cap->checked ? "yes" : "no");
+         printf("  filc: %s\n", cap->filc ? "yes" : "no");
+         printf("  driver: %s\n", cap->driver ? "yes" : "no");
+         printf("  verdict: %s\n", myc_verdict_name(cap->verdict));
+         printf("  exit_code: %d\n", cap->exit_code);
+         printf("  timed_out: %s\n", cap->timed_out ? "yes" : "no");
+         printf("  sanitizer_detected: %s\n",
+                cap->sanitizer_detected ? "yes" : "no");
+         if (cap->sanitizer_detected)
+             printf("  sanitizer_marker: %s\n", cap->sanitizer_marker);
+         printf("  gate_status:\n");
+         for (gi = 0; gi < MYC_GATE_COUNT; gi++) {
+             if (cap->gate_status[gi] != MYC_GATE_NOT_REQUESTED)
+                 printf("    %s: %s\n",
+                        myc_gate_id_short((myc_gate_id)gi),
+                        myc_gate_status_name(cap->gate_status[gi]));
+         }
+         printf("  finding: %s\n", myc_finding_name(cap->finding));
+         printf("  completeness: %s\n",
+                myc_completeness_name(cap->completeness));
+         printf("  claim: %s\n",
+                myc_claim_status_name(cap->claim_status));
+     }
+ }
 
 char *myc_result_to_json(const myc_result *res)
 {
     json_sb b;
     int     i;
+    int     gi;
     if (!json_sb_init(&b))
         return NULL;
     json_sb_puts(&b, "{");
@@ -414,20 +457,92 @@ char *myc_result_to_json(const myc_result *res)
         json_sb_puts(&b, "}");
     }
     json_sb_puts(&b, "],");
-    json_sb_printf(&b, "\"unverified_debt\":[");
-    for (i = 0; i < (int)res->debt_count; i++) {
-        const myc_debt_item *d = &res->debt[i];
-        if (i)
-            json_sb_puts(&b, ",");
-        json_sb_printf(&b, "{\"type\":\"%s\",\"text\":",
-                       myc_debt_type_name(d->type));
-        json_sb_escape(&b, d->text);
-        json_sb_puts(&b, "}");
-    }
-    json_sb_puts(&b, "]}");
-    json_sb_putc(&b, '\0');
-    return b.buf;
-}
+json_sb_printf(&b, "\"unverified_debt\":[");
+     for (i = 0; i < (int)res->debt_count; i++) {
+         const myc_debt_item *d = &res->debt[i];
+         if (i)
+             json_sb_puts(&b, ",");
+         json_sb_printf(&b, "{\"type\":\"%s\",\"text\":",
+                        myc_debt_type_name(d->type));
+         json_sb_escape(&b, d->text);
+         json_sb_puts(&b, "}");
+     }
+     json_sb_puts(&b, "],");
+
+     /* Counterexample Replay Capsule (#2). */
+     json_sb_printf(&b, "\"capsule\":");
+     if (res->capsule) {
+         const myc_replay_capsule *cap = res->capsule;
+         json_sb_puts(&b, "{");
+         json_sb_printf(&b, "\"source_sha256\":");
+         json_sb_escape(&b, cap->source_sha256);
+         json_sb_puts(&b, ",");
+         json_sb_printf(&b, "\"stdin_sha256\":");
+         json_sb_escape(&b, cap->stdin_sha256);
+         json_sb_printf(&b, ",\"stdin_len\":%zu,", cap->stdin_len);
+         json_sb_printf(&b, "\"clang\":");
+         json_sb_escape(&b, cap->clang_path);
+         json_sb_puts(&b, ",");
+         json_sb_printf(&b, "\"gcc\":");
+         json_sb_escape(&b, cap->gcc_path);
+         json_sb_puts(&b, ",");
+         json_sb_printf(&b, "\"cwd\":");
+         json_sb_escape(&b, cap->cwd);
+         json_sb_puts(&b, ",");
+         json_sb_printf(&b, "\"timeout_ms\":%d,", cap->timeout_ms);
+         json_sb_printf(&b, "\"max_output_bytes\":%d,",
+                        cap->max_output_bytes);
+         json_sb_printf(&b, "\"strict\":%s,", cap->strict ? "true" : "false");
+         json_sb_printf(&b, "\"run_analyzer\":%s,",
+                        cap->run_analyzer ? "true" : "false");
+         json_sb_printf(&b, "\"run\":%s,", cap->run ? "true" : "false");
+         json_sb_printf(&b, "\"prove\":%s,", cap->prove ? "true" : "false");
+         json_sb_printf(&b, "\"checked\":%s,",
+                        cap->checked ? "true" : "false");
+         json_sb_printf(&b, "\"filc\":%s,", cap->filc ? "true" : "false");
+         json_sb_printf(&b, "\"driver\":%s,",
+                        cap->driver ? "true" : "false");
+         json_sb_printf(&b, "\"verdict\":\"%s\",",
+                        myc_verdict_name(cap->verdict));
+         json_sb_printf(&b, "\"exit_code\":%d,", cap->exit_code);
+         json_sb_printf(&b, "\"timed_out\":%s,",
+                        cap->timed_out ? "true" : "false");
+         json_sb_printf(&b, "\"sanitizer_detected\":%s,",
+                        cap->sanitizer_detected ? "true" : "false");
+         if (cap->sanitizer_detected) {
+             json_sb_printf(&b, "\"sanitizer_marker\":\"%s\",",
+                            cap->sanitizer_marker);
+         }
+         json_sb_puts(&b, "\"gate_status\":{");
+         {
+             int first = 1;
+             for (gi = 0; gi < MYC_GATE_COUNT; gi++) {
+                 if (cap->gate_status[gi] != MYC_GATE_NOT_REQUESTED) {
+                     if (!first)
+                         json_sb_puts(&b, ",");
+                     json_sb_printf(&b, "\"%s\":\"%s\"",
+                                    myc_gate_id_short((myc_gate_id)gi),
+                                    myc_gate_status_name(
+                                        cap->gate_status[gi]));
+                     first = 0;
+                 }
+             }
+         }
+         json_sb_puts(&b, "},");
+         json_sb_printf(&b, "\"finding\":\"%s\",",
+                        myc_finding_name(cap->finding));
+         json_sb_printf(&b, "\"completeness\":\"%s\",",
+                        myc_completeness_name(cap->completeness));
+         json_sb_printf(&b, "\"claim\":\"%s\"",
+                        myc_claim_status_name(cap->claim_status));
+         json_sb_puts(&b, "}");
+     } else {
+         json_sb_puts(&b, "null");
+     }
+
+     json_sb_putc(&b, '\0');
+     return b.buf;
+ }
 
 void myc_report_json(const myc_result *res)
 {

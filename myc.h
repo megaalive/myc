@@ -219,11 +219,50 @@ typedef struct {
     const char *gcc_program;    /* NULL = cari "gcc" via PATH */
 } myc_request;
 
+/* --- Counterexample Replay Capsule (#2) ---
+ * Captures all information needed to replay a specific verification
+ * run: source identity, stdin identity, backend, flags, and result.
+ * Stored in myc_result; freed by myc_result_free(). */
 typedef struct {
+    /* Source identity */
+    char *source_sha256;
+    /* Stdin identity (hash of data fed to program under test;
+     * NULL if no --run-stdin was provided). */
+    char *stdin_sha256;
+    size_t stdin_len;
+    /* Backend identity */
+    char *clang_path;
+    char *gcc_path;
+    char *cwd;
+    /* Request parameters */
+    int timeout_ms;
+    int max_output_bytes;
+    int strict;
+    int run_analyzer;
+    int run;
+    int prove;
+    int checked;
+    int filc;
+    int driver;
+    /* Execution result */
     myc_verdict verdict;
-    myc_assurance assurance;    /* level jaminan yang DIBUKTIKAN */
-    int         exit_code;              /* exit code dari gate terakhir */
-    myc_error_code err;                 /* kode error utama (NONE bila ok) */
+    int exit_code;
+    int timed_out;
+    int sanitizer_detected;
+    char sanitizer_marker[64];
+    /* Gate summary (one status per gate) */
+    myc_gate_status gate_status[MYC_GATE_COUNT];
+    /* Finding / completeness / claim */
+    myc_finding finding;
+    myc_completeness completeness;
+    myc_claim_status claim_status;
+} myc_replay_capsule;
+
+typedef struct {
+     myc_verdict verdict;
+     myc_assurance assurance;    /* level jaminan yang DIBUKTIKAN */
+     int         exit_code;              /* exit code dari gate terakhir */
+     myc_error_code err;                 /* kode error utama (NONE bila ok) */
 
     char       *stdout_text;            /* output -E (debug) / stdout gate */
     char       *stderr_text;            /* diagnostik gcc */
@@ -325,12 +364,18 @@ typedef struct {
      * dua receipt tanpa membaca prose. Kosong bila request gagal sebelum reduce. */
     char receipt_sha256[65];
 
-    /* --- arena bump milik hasil (Fase 5, MYC-AUDIT-008) --- */
+/* --- arena bump milik hasil (Fase 5, MYC-AUDIT-008) --- */
     /* Penyimpanan teks yang dimiliki hasil: diagnostic message, dst. Seluruhnya
-     * dibebaskan oleh myc_result_free. Menghapus static message ring
-     * (penyebab data race + hasil basi). NULL bila arena belum dialokasikan.
-     * Jangan disentuh langsung oleh caller. */
+      * dibebaskan oleh myc_result_free. Menghapus static message ring
+      * (penyebab data race + hasil basi). NULL bila arena belum dialokasikan.
+      * Jangan disentuh langsung oleh caller. */
     struct myc_arena *arena;
+
+    /* --- Counterexample Replay Capsule (#2) --- */
+    /* Informasi lengkap untuk mereplay satu verifikasi run.
+     * NULL bila capsule belum dibangun (request gagal sebelum pipeline).
+     * Dibebaskan oleh myc_result_free(). */
+    myc_replay_capsule *capsule;
 } myc_result;
 
 /* Nama debt type (statis). */

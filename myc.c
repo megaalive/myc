@@ -29,6 +29,7 @@
 #include "policy.h"
 #include "proc.h"
 #include "report.h"
+#include "sha256.h"
 
 /* ------------------------------------------------------------------ */
 /* Implementasi kontrak inti myc                                       */
@@ -150,6 +151,114 @@ void myc_result_free(myc_result *res)
         a = nxt;
     }
     res->arena = NULL;
+    /* bebaskan capsule (#2) */
+    if (res->capsule) {
+        free(res->capsule->source_sha256);
+        free(res->capsule->stdin_sha256);
+        free(res->capsule->clang_path);
+        free(res->capsule->gcc_path);
+        free(res->capsule->cwd);
+        free(res->capsule);
+        res->capsule = NULL;
+    }
+}
+
+/* ================================================================== */
+/* Counterexample Replay Capsule (#2)                             */
+/* ================================================================== */
+/*
+ * Bangun capsule yang berisi semua informasi untuk mereplay
+ * satu verifikasi run: source identity, stdin identity, backend,
+ * flags, dan hasil eksekusi. Dibebaskan oleh myc_result_free().
+ */
+static myc_replay_capsule *myc_build_capsule(const myc_request *req,
+                                             const myc_result *res)
+{
+    myc_replay_capsule *cap;
+    size_t i;
+
+    cap = (myc_replay_capsule *)calloc(1, sizeof(*cap));
+    if (!cap)
+        return NULL;
+
+    /* Source identity */
+    if (res->source_sha256) {
+        cap->source_sha256 = _strdup(res->source_sha256);
+        if (!cap->source_sha256) goto fail;
+    }
+
+    /* Stdin identity: hash dari data yang diberikan ke program
+     * verification via --run-stdin. NULL bila tidak ada stdin. */
+    if (req->run_stdin && req->run_stdin_len > 0) {
+        char hex[65];
+        sha256_hex(req->run_stdin, req->run_stdin_len, hex);
+        cap->stdin_sha256 = _strdup(hex);
+        if (!cap->stdin_sha256) goto fail;
+        cap->stdin_len = req->run_stdin_len;
+    }
+
+    /* Backend identity */
+    if (req->clang_program) {
+        cap->clang_path = _strdup(req->clang_program);
+        if (!cap->clang_path) goto fail;
+    }
+    if (req->gcc_program) {
+        cap->gcc_path = _strdup(req->gcc_program);
+        if (!cap->gcc_path) goto fail;
+    }
+    if (req->cwd) {
+        cap->cwd = _strdup(req->cwd);
+        if (!cap->cwd) goto fail;
+    }
+
+    /* Request parameters */
+    cap->timeout_ms = req->timeout_ms;
+    cap->max_output_bytes = req->max_output_bytes;
+    cap->strict = req->strict;
+    cap->run_analyzer = req->run_analyzer;
+    cap->run = req->run;
+    cap->prove = req->prove;
+    cap->checked = req->checked;
+    cap->filc = req->filc;
+    cap->driver = req->driver;
+
+    /* Execution result */
+    cap->verdict = res->verdict;
+    cap->exit_code = res->exit_code;
+    cap->timed_out = res->run_timed_out;
+    cap->sanitizer_detected = res->run_sanitizer_detected;
+    if (res->run_sanitizer_detected) {
+        size_t slen = strlen(res->run_sanitizer_marker);
+        if (slen >= sizeof(cap->sanitizer_marker))
+            slen = sizeof(cap->sanitizer_marker) - 1;
+        memcpy(cap->sanitizer_marker, res->run_sanitizer_marker, slen);
+        cap->sanitizer_marker[slen] = '\0';
+    } else {
+        cap->sanitizer_marker[0] = '\0';
+    }
+
+    /* Gate summary: salin status setiap gate yang diminta. */
+    for (i = 0; i < res->gate_count; i++) {
+        const myc_gate_result *g = &res->gates[i];
+        if (g->id < MYC_GATE_COUNT)
+            cap->gate_status[g->id] = g->status;
+    }
+
+    /* Finding / completeness / claim */
+    cap->finding = res->finding;
+    cap->completeness = res->completeness;
+    cap->claim_status = res->claim_status;
+
+    return cap;
+
+fail:
+    free(cap->source_sha256);
+    free(cap->stdin_sha256);
+    free(cap->clang_path);
+    free(cap->gcc_path);
+    free(cap->cwd);
+    free(cap);
+    return NULL;
 }
 
 void myc_run(const myc_request *req, myc_result *res)
@@ -162,8 +271,8 @@ void myc_run(const myc_request *req, myc_result *res)
     }
 
     /* MYC-AUDIT-007: bila caller memakai file_path tanpa source,
-     * load file di sini sebelum masuk pipeline. Pipeline selalu
-     * menerima source in-memory; tidak ada NULL dereference di bawah. */
+      * load file di sini sebelum masuk pipeline. Pipeline selalu
+      * menerima source in-memory; tidak ada NULL dereference di bawah. */
     if (!req->source && req->file_path) {
         FILE  *f = fopen(req->file_path, "rb");
         long   sz;
@@ -204,10 +313,12 @@ void myc_run(const myc_request *req, myc_result *res)
         req2.source_len = (size_t)sz;
         myc_pipeline(&req2, res);
         free(buf);
+        res->capsule = myc_build_capsule(&req2, res);
         return;
     }
 
     myc_pipeline(req, res);
+    res->capsule = myc_build_capsule(req, res);
 }
 
 /* Direktori yang memuat myc.exe (tempat myc_buf.h diharapkan ada).
