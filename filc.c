@@ -40,6 +40,7 @@
 #define myc_getpid() getpid()
 #endif
 
+#include "gate.h"
 #include "proc.h"
 
 /* Nama driver Fil-C. */
@@ -265,6 +266,8 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
     myc_proc_result pres;
     int   ret = 0;
 
+    myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_NOT_APPLICABLE, NULL);
+
     /* 1. Cari filc-clang native di PATH (Linux / setup lokal). */
     filc_path = myc_find_executable(FILC_DRIVER);
     if (filc_path) {
@@ -276,6 +279,10 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
         if (!tmp_dir) {
             res->err = MYC_ERR_INTERNAL;
             free(filc_path);
+            myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INFRA_FAILED,
+                                "gagal membuat direktori temp");
+            myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
+                                    "filc: temp dir gagal");
             return 0;
         }
 #ifdef _WIN32
@@ -306,10 +313,18 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
                 res->err = MYC_ERR_TIMEOUT;
                 res->duration_ms += pres.duration_ms;
                 myc_proc_result_free(&pres);
+                myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INCONCLUSIVE,
+                                    "filc build timeout");
+                myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
+                                        "filc build timeout");
                 goto out;
             }
             add_diag_filc(res, "gate Fil-C di-skip: gagal menjalankan "
                                "filc-clang");
+            myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INFRA_FAILED,
+                                "gagal menjalankan filc-clang");
+            myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
+                                    "filc build exec failed");
             myc_proc_result_free(&pres);
             goto out;
         }
@@ -318,6 +333,10 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
             res->verdict = MC_TIMEOUT;
             res->err = MYC_ERR_TIMEOUT;
             myc_proc_result_free(&pres);
+            myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INCONCLUSIVE,
+                                "filc build timeout");
+            myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
+                                    "filc build timeout");
             goto out;
         }
         if (pres.exit_code != 0) {
@@ -332,6 +351,8 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
             else
                 snprintf(note, sizeof(note), "gate Fil-C di-skip: %s", fe);
             add_diag_filc(res, note);
+            myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INFRA_FAILED, note);
+            myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_SKIP, note);
             myc_proc_result_free(&pres);
             goto out;
         }
@@ -347,6 +368,10 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
         add_diag_filc(res, "gate Fil-C di-skip: filc-clang tidak ditemukan "
                            "di PATH, dan wsl.exe tidak ada "
                            "(Fil-C hanya Linux/X86_64)");
+        myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_UNAVAILABLE,
+                            "filc-clang dan wsl.exe tidak ada");
+        myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_SKIP,
+                                "Fil-C di-skip: tidak ada filc-clang/wsl");
         return 0;
     }
 
@@ -376,10 +401,18 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
                 res->duration_ms += pres.duration_ms;
                 myc_proc_result_free(&pres);
                 free(wsl_path);
+                myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INCONCLUSIVE,
+                                    "WSL detect timeout");
+                myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
+                                        "filc WSL detect timeout");
                 return 0;
             }
             add_diag_filc(res, "gate Fil-C di-skip: gagal memeriksa "
                                "filc-clang di WSL");
+            myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INFRA_FAILED,
+                                "gagal memeriksa filc-clang di WSL");
+            myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
+                                    "filc WSL detect infra failed");
             myc_proc_result_free(&pres);
             free(wsl_path);
             return 0;
@@ -390,6 +423,10 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
             res->err = MYC_ERR_TIMEOUT;
             myc_proc_result_free(&pres);
             free(wsl_path);
+            myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INCONCLUSIVE,
+                                "WSL detect timeout");
+            myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
+                                    "filc WSL detect timeout");
             return 0;
         }
         if (pres.exit_code != 0 ||
@@ -398,6 +435,10 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
             add_diag_filc(res, "gate Fil-C di-skip: filc-clang tidak "
                                "ditemukan di WSL (instal Fil-C, atau letakkan "
                                "di /opt/fil/bin)");
+            myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_UNAVAILABLE,
+                                "filc-clang tidak ditemukan di WSL");
+            myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_SKIP,
+                                    "Fil-C di-skip: filc-clang hilang di WSL");
             myc_proc_result_free(&pres);
             free(wsl_path);
             return 0;
@@ -433,10 +474,18 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
                 res->duration_ms += pres.duration_ms;
                 myc_proc_result_free(&pres);
                 free(wsl_path);
+                myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INCONCLUSIVE,
+                                    "WSL filc timeout");
+                myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
+                                        "filc WSL run timeout");
                 return 0;
             }
             add_diag_filc(res, "gate Fil-C di-skip: gagal menjalankan "
                                "template WSL Fil-C");
+            myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INFRA_FAILED,
+                                "gagal menjalankan template WSL Fil-C");
+            myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
+                                    "filc WSL run exec failed");
             myc_proc_result_free(&pres);
             free(wsl_path);
             return 0;
@@ -447,6 +496,10 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
             res->err = MYC_ERR_TIMEOUT;
             myc_proc_result_free(&pres);
             free(wsl_path);
+            myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INCONCLUSIVE,
+                                "WSL filc timeout");
+            myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
+                                    "filc WSL run timeout");
             return 0;
         }
     }
@@ -469,12 +522,13 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
             add_diag_filc(res, note);
             res->verdict = MC_FILC_VIOLATION;
             res->err = MYC_ERR_FILC_VIOLATION;
+            myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_COMPLETED_FINDINGS,
+                                note);
+            myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_FINDING, note);
             ret = 0;
             goto out_wsl;
         }
         if (exit_code != 0) {
-            /* build gagal / run non-zero tanpa marker: skip, assurance
-             * statis dipertahankan. */
             char note[512];
             const char *fe = res->filc_stdout_text && res->filc_stdout_text[0]
                                  ? res->filc_stdout_text
@@ -484,10 +538,16 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
             else
                 snprintf(note, sizeof(note), "gate Fil-C di-skip: %s", fe);
             add_diag_filc(res, note);
+            myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INCONCLUSIVE, note);
+            myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_SKIP, note);
             ret = 0;
             goto out_wsl;
         }
         add_diag_filc(res, "filc: run bersih - memory-safe (L5 FULL)");
+        myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_COMPLETED_CLEAN,
+                            "filc clean");
+        myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_GATE_END,
+                                "Fil-C clean");
         ret = 1;
         goto out_wsl;
     }

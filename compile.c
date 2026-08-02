@@ -24,6 +24,7 @@
 #include "contract.h"
 #include "driver.h"
 #include "filc.h"
+#include "gate.h"
 #include "lint.h"
 #include "policy.h"
 #include "proc.h"
@@ -431,6 +432,16 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     src = req->source;
     srclen = req->source_len;
 
+    /* Inisialisasi gate status (Fase 3). */
+    myc_gate_set_status(res, MYC_GATE_PREPROCESS, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_COMPILE, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_ANALYZER, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_CHECKED, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_NOT_APPLICABLE, NULL);
+
     /* hash source */
     sha256_hex(src, srclen, hex);
     res->source_sha256 = _strdup(hex);
@@ -521,6 +532,11 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         res->err = MYC_ERR_TIMEOUT;
         myc_proc_result_free(&pr);
         free(gcc_path);
+        myc_gate_set_status(res, MYC_GATE_PREPROCESS, MYC_GATE_INCONCLUSIVE,
+                            "preprocess timeout");
+        myc_result_add_evidence(res, MYC_GATE_PREPROCESS, MYC_EVIDENCE_ERROR,
+                                "gcc -E timeout");
+        myc_reduce_verdict(res);
         return;
     }
     res->ran_preprocess = 1;
@@ -531,11 +547,20 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         /* preprocess gagal (mis. makro rusak) */
         res->verdict = MC_COMPILE_ERROR;
         res->err = MYC_ERR_PREPROCESS_ERROR;
+        myc_gate_set_status(res, MYC_GATE_PREPROCESS, MYC_GATE_COMPLETED_FINDINGS,
+                            res->stderr_text ? res->stderr_text : "preprocess error");
+        myc_result_add_evidence(res, MYC_GATE_PREPROCESS, MYC_EVIDENCE_FINDING,
+                                "preprocess gagal");
         if (res->stderr_text)
             ingest_gcc_diagnostics(res, res->stderr_text);
         free(gcc_path);
+        myc_reduce_verdict(res);
         return;
     }
+    myc_gate_set_status(res, MYC_GATE_PREPROCESS, MYC_GATE_COMPLETED_CLEAN,
+                        "preprocess clean");
+    myc_result_add_evidence(res, MYC_GATE_PREPROCESS, MYC_EVIDENCE_GATE_END,
+                            "gcc -E clean");
 
     /* --- Lapis 2 + 3: markers & calls (warning, non-blocking) --- */
     {
@@ -572,6 +597,11 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         res->err = MYC_ERR_TIMEOUT;
         myc_proc_result_free(&pr);
         free(gcc_path);
+        myc_gate_set_status(res, MYC_GATE_COMPILE, MYC_GATE_INCONCLUSIVE,
+                            "compile timeout");
+        myc_result_add_evidence(res, MYC_GATE_COMPILE, MYC_EVIDENCE_ERROR,
+                                "gcc -c timeout");
+        myc_reduce_verdict(res);
         return;
     }
     res->ran_compile = 1;
@@ -581,11 +611,20 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     if (res->exit_code != 0) {
         res->verdict = MC_COMPILE_ERROR;
         res->err = MYC_ERR_COMPILE_ERROR;
+        myc_gate_set_status(res, MYC_GATE_COMPILE, MYC_GATE_COMPLETED_FINDINGS,
+                            res->stderr_text ? res->stderr_text : "compile error");
+        myc_result_add_evidence(res, MYC_GATE_COMPILE, MYC_EVIDENCE_FINDING,
+                                "compile gagal");
         if (res->stderr_text)
             ingest_gcc_diagnostics(res, res->stderr_text);
         free(gcc_path);
+        myc_reduce_verdict(res);
         return;
     }
+    myc_gate_set_status(res, MYC_GATE_COMPILE, MYC_GATE_COMPLETED_CLEAN,
+                        "compile clean");
+    myc_result_add_evidence(res, MYC_GATE_COMPILE, MYC_EVIDENCE_GATE_END,
+                            "gcc -c clean");
 
     /* --- Gate opsional: -fanalyzer --- */
     if (req->run_analyzer) {
@@ -610,6 +649,11 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             res->err = MYC_ERR_TIMEOUT;
             myc_proc_result_free(&pr);
             free(gcc_path);
+            myc_gate_set_status(res, MYC_GATE_ANALYZER, MYC_GATE_INCONCLUSIVE,
+                                "analyzer timeout");
+            myc_result_add_evidence(res, MYC_GATE_ANALYZER, MYC_EVIDENCE_ERROR,
+                                    "gcc -fanalyzer timeout");
+            myc_reduce_verdict(res);
             return;
         }
         res->ran_analyzer = 1;
@@ -617,12 +661,21 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             res->verdict = MC_COMPILE_ERROR;
             res->err = MYC_ERR_COMPILE_ERROR;
             adopt_proc(res, &pr);
+            myc_gate_set_status(res, MYC_GATE_ANALYZER, MYC_GATE_COMPLETED_FINDINGS,
+                                res->stderr_text ? res->stderr_text : "analyzer finding");
+            myc_result_add_evidence(res, MYC_GATE_ANALYZER, MYC_EVIDENCE_FINDING,
+                                    "gcc -fanalyzer finding");
             if (res->stderr_text)
                 ingest_gcc_diagnostics(res, res->stderr_text);
             myc_proc_result_free(&pr);
             free(gcc_path);
+            myc_reduce_verdict(res);
             return;
         }
+        myc_gate_set_status(res, MYC_GATE_ANALYZER, MYC_GATE_COMPLETED_CLEAN,
+                            "analyzer clean");
+        myc_result_add_evidence(res, MYC_GATE_ANALYZER, MYC_EVIDENCE_GATE_END,
+                                "gcc -fanalyzer clean");
         myc_proc_result_free(&pr);
     }
 
@@ -637,23 +690,34 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         run_checked_gate(req, gcc_path, src, srclen, max_out, res);
         if (res->verdict == MC_TIMEOUT || res->verdict == MC_COMPILE_ERROR ||
             res->verdict == MC_ERROR) {
+            myc_gate_set_status(res, MYC_GATE_CHECKED,
+                                res->verdict == MC_COMPILE_ERROR
+                                    ? MYC_GATE_COMPLETED_FINDINGS
+                                    : MYC_GATE_INCONCLUSIVE,
+                                res->stderr_text ? res->stderr_text : "checked build error");
+            myc_result_add_evidence(res, MYC_GATE_CHECKED,
+                                    res->verdict == MC_COMPILE_ERROR
+                                        ? MYC_EVIDENCE_FINDING
+                                        : MYC_EVIDENCE_ERROR,
+                                    "checked build gagal/timeout");
             free(gcc_path);
+            myc_reduce_verdict(res);
             return;
         }
         if (res->checked_build_ok) {
-            res->verdict = MC_OK;
-            res->err = MYC_ERR_NONE;
-            res->exit_code = 0;
-            res->assurance = MYC_ASSURANCE_L4_SPATIAL;
+            myc_gate_set_status(res, MYC_GATE_CHECKED, MYC_GATE_COMPLETED_CLEAN,
+                                "checked build OK");
+            myc_result_add_evidence(res, MYC_GATE_CHECKED, MYC_EVIDENCE_GATE_END,
+                                    "checked build lolos");
         } else {
-            /* di-skip (tanpa pola MYC_BUF): pertahankan level statis */
-            res->verdict = MC_OK;
-            res->err = MYC_ERR_NONE;
-            if (res->assurance < MYC_ASSURANCE_L1_SANE)
-                res->assurance = MYC_ASSURANCE_L1_SANE;
+            myc_gate_set_status(res, MYC_GATE_CHECKED, MYC_GATE_NOT_APPLICABLE,
+                                "tidak ada pola MYC_BUF");
+            myc_result_add_evidence(res, MYC_GATE_CHECKED, MYC_EVIDENCE_SKIP,
+                                    "checked build di-skip: tanpa MYC_BUF");
         }
         if (!req->run && !req->prove && !req->filc && !req->driver) {
             free(gcc_path);
+            myc_reduce_verdict(res);
             return;
         }
     }
@@ -667,26 +731,36 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         if (res->verdict == MC_TIMEOUT || res->verdict == MC_PROVE_VIOLATION) {
             /* violation = bug terbukti -> assurance turun ke NONE
              * (konsisten dengan fixture bad_run_* -> L0) */
-            if (res->verdict == MC_PROVE_VIOLATION)
+            if (res->verdict == MC_PROVE_VIOLATION) {
                 res->assurance = MYC_ASSURANCE_NONE;
+                myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_COMPLETED_FINDINGS,
+                                    res->prove_stderr_text ? res->prove_stderr_text : "prove violation");
+                myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_FINDING,
+                                        "Frama-C Eva: PROVE_VIOLATION");
+            } else {
+                myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_INCONCLUSIVE,
+                                    "prove timeout");
+                myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
+                                        "Frama-C Eva timeout");
+            }
             free(gcc_path);
+            myc_reduce_verdict(res);
             return;
         }
         if (ok && res->ran_prove && res->prove_alarms == 0) {
-            res->verdict = MC_OK;
-            res->err = MYC_ERR_NONE;
-            /* jangan turunkan L4 (checked) ke L2 -- max(level) */
-            if (res->assurance < MYC_ASSURANCE_L2_PROVEN)
-                res->assurance = MYC_ASSURANCE_L2_PROVEN;
+            myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_COMPLETED_CLEAN,
+                                "Eva: 0 alarm");
+            myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_GATE_END,
+                                    "Frama-C Eva clean");
         } else {
-            /* di-skip: pertahankan level statis (L1) */
-            res->verdict = MC_OK;
-            res->err = MYC_ERR_NONE;
-            if (res->assurance < MYC_ASSURANCE_L1_SANE)
-                res->assurance = MYC_ASSURANCE_L1_SANE;
+            myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_NOT_APPLICABLE,
+                                "Eva tidak menganalisis / di-skip");
+            myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_SKIP,
+                                    "Frama-C Eva di-skip");
         }
         if (!req->run && !req->filc && !req->driver) {
             free(gcc_path);
+            myc_reduce_verdict(res);
             return;
         }
     }
@@ -699,26 +773,36 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     if (req->filc) {
         int ok = myc_filc_gate(req, src, srclen, res);
         if (res->verdict == MC_TIMEOUT || res->verdict == MC_FILC_VIOLATION) {
-            if (res->verdict == MC_FILC_VIOLATION)
+            if (res->verdict == MC_FILC_VIOLATION) {
                 res->assurance = MYC_ASSURANCE_NONE;
+                myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_COMPLETED_FINDINGS,
+                                    res->filc_stderr_text ? res->filc_stderr_text : "filc violation");
+                myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_FINDING,
+                                        "Fil-C: VIOLATION");
+            } else {
+                myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INCONCLUSIVE,
+                                    "filc timeout");
+                myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
+                                        "Fil-C timeout");
+            }
             free(gcc_path);
+            myc_reduce_verdict(res);
             return;
         }
         if (ok && res->ran_filc && res->filc_panics == 0) {
-            res->verdict = MC_OK;
-            res->err = MYC_ERR_NONE;
-            /* jangan turunkan L5 -- max(level) */
-            if (res->assurance < MYC_ASSURANCE_L5_FULL)
-                res->assurance = MYC_ASSURANCE_L5_FULL;
+            myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_COMPLETED_CLEAN,
+                                "filc clean");
+            myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_GATE_END,
+                                    "Fil-C clean");
         } else {
-            /* di-skip: pertahankan level statis */
-            res->verdict = MC_OK;
-            res->err = MYC_ERR_NONE;
-            if (res->assurance < MYC_ASSURANCE_L1_SANE)
-                res->assurance = MYC_ASSURANCE_L1_SANE;
+            myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_NOT_APPLICABLE,
+                                "filc di-skip");
+            myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_SKIP,
+                                    "Fil-C di-skip");
         }
         if (!req->run && !req->driver) {
             free(gcc_path);
+            myc_reduce_verdict(res);
             return;
         }
     }
@@ -730,27 +814,33 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             res->err == MYC_ERR_EXECUTE_FAILED || res->err == MYC_ERR_INTERNAL) {
             /* violation = bug terbukti -> assurance turun ke NONE
              * (konsisten dengan fixture bad_run_* -> L0) */
-            if (res->verdict == MC_RUNTIME_VIOLATION)
+            if (res->verdict == MC_RUNTIME_VIOLATION) {
                 res->assurance = MYC_ASSURANCE_NONE;
+                myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_COMPLETED_FINDINGS,
+                                    res->run_stderr_text ? res->run_stderr_text : "runtime violation");
+                myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_FINDING,
+                                        "verification run: RUNTIME_VIOLATION");
+            } else {
+                myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_INFRA_FAILED,
+                                    "runtime infra failed");
+                myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_ERROR,
+                                        "verification run: infra failed");
+            }
             free(gcc_path);
+            myc_reduce_verdict(res);
             return;
         }
         if (ok && res->ran_runtime && !res->run_timed_out) {
-            res->verdict = MC_OK;
-            res->err = MYC_ERR_NONE;
-            /* jangan turunkan L4 (checked) ke L3 -- max(level) */
-            if (res->assurance < MYC_ASSURANCE_L3_RUNTIME)
-                res->assurance = MYC_ASSURANCE_L3_RUNTIME;
+            /* clean run: gate status sudah di-set oleh myc_run_gate */
         } else {
-            /* gate di-skip (build gagal / clang hilang): pertahankan assurance
-             * yang sudah terbukti (jangan turunkan L2 dari prove ke L1) */
-            res->verdict = MC_OK;
-            res->err = MYC_ERR_NONE;
-            if (res->assurance < MYC_ASSURANCE_L1_SANE)
-                res->assurance = MYC_ASSURANCE_L1_SANE;
+            myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_INCONCLUSIVE,
+                                "runtime di-skip");
+            myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_SKIP,
+                                    "verification run di-skip");
         }
         if (!req->driver) {
             free(gcc_path);
+            myc_reduce_verdict(res);
             return;
         }
     }
@@ -763,33 +853,38 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     if (req->driver) {
         int ok = myc_driver_gate(req, src, srclen, res);
         if (res->verdict == MC_TIMEOUT || res->verdict == MC_DRIVER_VIOLATION) {
-            if (res->verdict == MC_DRIVER_VIOLATION)
+            if (res->verdict == MC_DRIVER_VIOLATION) {
                 res->assurance = MYC_ASSURANCE_NONE;
+                myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_COMPLETED_FINDINGS,
+                                    res->driver_stderr_text ? res->driver_stderr_text : "driver violation");
+                myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_FINDING,
+                                        "driver: DRIVER_VIOLATION");
+            } else {
+                myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_INCONCLUSIVE,
+                                    "driver timeout");
+                myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_ERROR,
+                                        "driver timeout");
+            }
             free(gcc_path);
+            myc_reduce_verdict(res);
             return;
         }
         if (ok && res->ran_driver && res->driver_cases > 0) {
-            res->verdict = MC_OK;
-            res->err = MYC_ERR_NONE;
-            /* jangan turunkan L5/L4 ke L3 -- max(level) */
-            if (res->assurance < MYC_ASSURANCE_L3_RUNTIME)
-                res->assurance = MYC_ASSURANCE_L3_RUNTIME;
+            myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_COMPLETED_CLEAN,
+                                "driver clean");
+            myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_GATE_END,
+                                    "driver: clean");
         } else {
-            /* di-skip: pertahankan level statis */
-            res->verdict = MC_OK;
-            res->err = MYC_ERR_NONE;
-            if (res->assurance < MYC_ASSURANCE_L1_SANE)
-                res->assurance = MYC_ASSURANCE_L1_SANE;
+            myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_NOT_APPLICABLE,
+                                "driver di-skip");
+            myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_SKIP,
+                                    "driver di-skip");
         }
         free(gcc_path);
+        myc_reduce_verdict(res);
         return;
     }
 
-    res->verdict = MC_OK;
-    res->err = MYC_ERR_NONE;
-    res->exit_code = 0;
-    if (res->assurance < MYC_ASSURANCE_L1_SANE)
-        res->assurance = MYC_ASSURANCE_L1_SANE;
-
+    myc_reduce_verdict(res);
     free(gcc_path);
 }

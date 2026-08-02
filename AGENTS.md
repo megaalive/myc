@@ -174,6 +174,25 @@ Poin penting:
     garbage, unclosed comment/string, deep nesting, huge line, macro ganas,
     rekursi dalam): myc harus tetap memberi verdict, tidak crash/hang.
 
+- **Fase 3 typed-gate + evidence + unverified debt selesai 2026-08-02**:
+  - Typed gate status (`myc_gate_status`), gate result per gate, dan
+    verdict reducer PURE (`myc_reduce_verdict` di `gate.c`) mengganti
+    logika boolean global. Verdict + assurance kini *diturunkan* dari status
+    gate COMPLETED_CLEAN — bukan "level maksimum yang dipilih".
+  - Evidence ledger append-only (`myc_result_add_evidence`).
+  - Sumbu B completeness (`myc_completeness`: COMPLETE / INCOMPLETE) muncul
+    di laporan teks + JSON.
+  - **Unverified debt (gagasan pembeda 9.3, Fase 4 partial)**: laporan kini
+    memuat `unverified_debt[]` (teks + JSON) hanya untuk scope yang diminta
+    tapi TIDAK selesai: backend tidak tersedia (UNAVAILABLE), gagal infra
+    (INFRA_FAILED), hasil tidak lengkap (INCONCLUSIVE), generated driver 0
+    kasus, klausa `ensures` diparse tapi tidak dibuktikan, dan output
+    backend terpotong. Debt dibangun murni dari typed gate status yang sudah
+    ada — tanpa backend baru.
+  - Regresi debt di `test/_regress_run.bat`: `bad_driver_oob --driver`
+    memunculkan debt; `ok_run --run` bersih tanpa debt.
+  - Semua regression + interop MCP 24 cek lolos.
+
 ## Dogfooding (keputusan 2026-08-01)
 
 Dogfooding myc dilakukan **dua cara**:

@@ -58,10 +58,12 @@ void myc_result_init(myc_result *res)
     memset(res, 0, sizeof(*res));
     res->verdict = MC_ERROR;
     res->err = MYC_ERR_NONE;
+    res->completeness = MYC_COMPLETENESS_UNKNOWN;
 }
 
 void myc_result_free(myc_result *res)
 {
+    size_t i;
     if (!res)
         return;
     free(res->stdout_text);
@@ -77,6 +79,10 @@ void myc_result_free(myc_result *res)
     free(res->resolved_gcc);
     free(res->fingerprint);
     free(res->source_sha256);
+    for (i = 0; i < res->gate_count; i++)
+        free(res->gates[i].output);
+    for (i = 0; i < res->evidence_count; i++)
+        free(res->evidence[i].message);
     res->stdout_text = NULL;
     res->stderr_text = NULL;
     res->run_stdout_text = NULL;
@@ -90,6 +96,10 @@ void myc_result_free(myc_result *res)
     res->resolved_gcc = NULL;
     res->fingerprint = NULL;
     res->source_sha256 = NULL;
+    res->gate_count = 0;
+    res->evidence_count = 0;
+    res->debt_count = 0;
+    res->completeness = MYC_COMPLETENESS_UNKNOWN;
 }
 
 void myc_run(const myc_request *req, myc_result *res)

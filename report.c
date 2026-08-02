@@ -9,20 +9,22 @@
 
 #include "json.h"
 #include "myc.h"
+#include "gate.h"
 
 const char *myc_verdict_name(myc_verdict v)
 {
     switch (v) {
-    case MC_OK:            return "OK";
-    case MC_VIOLATION:     return "VIOLATION";
-    case MC_COMPILE_ERROR: return "COMPILE_ERROR";
-    case MC_ERROR:         return "ERROR";
-    case MC_TIMEOUT:       return "TIMEOUT";
-    case MC_CANCELLED:     return "CANCELLED";
+    case MC_OK:                return "OK";
+    case MC_INCONCLUSIVE:      return "INCONCLUSIVE";
+    case MC_VIOLATION:         return "VIOLATION";
+    case MC_COMPILE_ERROR:     return "COMPILE_ERROR";
+    case MC_ERROR:             return "ERROR";
+    case MC_TIMEOUT:           return "TIMEOUT";
+    case MC_CANCELLED:         return "CANCELLED";
     case MC_RUNTIME_VIOLATION: return "RUNTIME_VIOLATION";
-    case MC_PROVE_VIOLATION:    return "PROVE_VIOLATION";
-    case MC_FILC_VIOLATION:     return "FILC_VIOLATION";
-    case MC_DRIVER_VIOLATION:   return "DRIVER_VIOLATION";
+    case MC_PROVE_VIOLATION:   return "PROVE_VIOLATION";
+    case MC_FILC_VIOLATION:    return "FILC_VIOLATION";
+    case MC_DRIVER_VIOLATION:  return "DRIVER_VIOLATION";
     }
     return "UNKNOWN";
 }
@@ -70,6 +72,30 @@ const char *myc_assurance_name(myc_assurance a)
     return "L? (UNKNOWN)";
 }
 
+const char *myc_gate_status_name(myc_gate_status s)
+{
+    switch (s) {
+    case MYC_GATE_NOT_REQUESTED:   return "not_requested";
+    case MYC_GATE_NOT_APPLICABLE:  return "not_applicable";
+    case MYC_GATE_UNAVAILABLE:     return "unavailable";
+    case MYC_GATE_INFRA_FAILED:    return "infra_failed";
+    case MYC_GATE_INCONCLUSIVE:    return "inconclusive";
+    case MYC_GATE_COMPLETED_CLEAN: return "completed_clean";
+    case MYC_GATE_COMPLETED_FINDINGS: return "completed_findings";
+    }
+    return "unknown";
+}
+
+const char *myc_completeness_name(myc_completeness c)
+{
+    switch (c) {
+    case MYC_COMPLETENESS_UNKNOWN:   return "unknown";
+    case MYC_COMPLETENESS_COMPLETE:  return "complete";
+    case MYC_COMPLETENESS_INCOMPLETE: return "incomplete";
+    }
+    return "unknown";
+}
+
 /* Escape string JSON ke json_sb (tanpa batas 4096; dipakai laporan & MCP). */
 static int json_sb_escape(json_sb *b, const char *s)
 {
@@ -102,8 +128,10 @@ static int json_sb_escape(json_sb *b, const char *s)
 void myc_report_text(const myc_result *res)
 {
     int i;
+    size_t gi;
     printf("verdict:   %s\n", myc_verdict_name(res->verdict));
     printf("assurance: %s\n", myc_assurance_name(res->assurance));
+    printf("completeness: %s\n", myc_completeness_name(res->completeness));
     printf("error:     %s\n", myc_error_name(res->err));
     printf("exit_code: %d\n", res->exit_code);
     printf("duration:  %llu ms\n", res->duration_ms);
@@ -171,6 +199,27 @@ void myc_report_text(const myc_result *res)
         if (res->driver_stderr_text && res->driver_stderr_text[0])
             printf("  driver_stderr:\n%s\n", res->driver_stderr_text);
     }
+
+    printf("gates:\n");
+    for (gi = 0; gi < res->gate_count; gi++) {
+        const myc_gate_result *g = &res->gates[gi];
+        printf("  %s: %s",
+               g->id < MYC_GATE_COUNT ? myc_gate_id_short(g->id) : "?",
+               myc_gate_status_name(g->status));
+        if (g->output && g->output[0])
+            printf(" (%s)\n", g->output);
+        else
+            printf("\n");
+    }
+
+    if (res->debt_count > 0) {
+        printf("unverified_debt:\n");
+        for (gi = 0; gi < res->debt_count; gi++) {
+            const myc_debt_item *d = &res->debt[gi];
+            printf("  [%s] %s\n", myc_debt_type_name(d->type),
+                   d->text ? d->text : "");
+        }
+    }
 }
 
 char *myc_result_to_json(const myc_result *res)
@@ -182,6 +231,7 @@ char *myc_result_to_json(const myc_result *res)
     json_sb_puts(&b, "{");
     json_sb_printf(&b, "\"verdict\":\"%s\",", myc_verdict_name(res->verdict));
     json_sb_printf(&b, "\"assurance\":\"%s\",", myc_assurance_name(res->assurance));
+    json_sb_printf(&b, "\"completeness\":\"%s\",", myc_completeness_name(res->completeness));
     json_sb_printf(&b, "\"error\":\"%s\",", myc_error_name(res->err));
     json_sb_printf(&b, "\"exit_code\":%d,", res->exit_code);
     json_sb_printf(&b, "\"duration_ms\":%llu,", (unsigned long long)res->duration_ms);
@@ -257,6 +307,39 @@ char *myc_result_to_json(const myc_result *res)
         json_sb_printf(&b, "{\"line\":%d,\"col\":%d,\"message\":",
                        d->line, d->col);
         json_sb_escape(&b, d->message);
+        json_sb_puts(&b, "}");
+    }
+    json_sb_puts(&b, "],");
+    json_sb_printf(&b, "\"gates\":[");
+    for (i = 0; i < (int)res->gate_count; i++) {
+        const myc_gate_result *g = &res->gates[i];
+        if (i)
+            json_sb_puts(&b, ",");
+        json_sb_printf(&b, "{\"id\":%d,\"status\":\"%s\",\"requested\":%s,\"output\":",
+                       (int)g->id, myc_gate_status_name(g->status),
+                       g->requested ? "true" : "false");
+        json_sb_escape(&b, g->output ? g->output : "");
+        json_sb_puts(&b, "}");
+    }
+    json_sb_puts(&b, "],");
+    json_sb_printf(&b, "\"evidence\":[");
+    for (i = 0; i < (int)res->evidence_count; i++) {
+        const myc_evidence_event *ev = &res->evidence[i];
+        if (i)
+            json_sb_puts(&b, ",");
+        json_sb_printf(&b, "{\"gate\":%d,\"type\":%d,\"message\":",
+                       (int)ev->gate_id, (int)ev->event_type);
+        json_sb_puts(&b, "}");
+    }
+    json_sb_puts(&b, "],");
+    json_sb_printf(&b, "\"unverified_debt\":[");
+    for (i = 0; i < (int)res->debt_count; i++) {
+        const myc_debt_item *d = &res->debt[i];
+        if (i)
+            json_sb_puts(&b, ",");
+        json_sb_printf(&b, "{\"type\":\"%s\",\"text\":",
+                       myc_debt_type_name(d->type));
+        json_sb_escape(&b, d->text);
         json_sb_puts(&b, "}");
     }
     json_sb_puts(&b, "]}");

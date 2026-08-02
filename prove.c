@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "gate.h"
 #include "proc.h"
 
 /* Template tetap yang dijalankan di dalam WSL. Source mengalir via stdin
@@ -156,12 +157,18 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
     myc_proc_result pres;
     int   alarms = 0;
 
+    myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_NOT_APPLICABLE, NULL);
+
     /* 1. Cari wsl.exe. Tidak ada -> SKIP (non-blocking, pola clang P6):
      * diagnostic + return 0, assurance statis dipertahankan caller. */
     wsl_path = myc_find_executable("wsl.exe");
     if (!wsl_path) {
         add_diag_prove(res, "gate Eva di-skip: wsl.exe tidak ditemukan "
                             "(Frama-C hanya tersedia via WSL di Windows)");
+        myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_UNAVAILABLE,
+                            "wsl.exe tidak ditemukan");
+        myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_SKIP,
+                                "Eva di-skip: wsl.exe hilang");
         return 0;
     }
 
@@ -174,9 +181,17 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
             res->duration_ms += pres.duration_ms;
             myc_proc_result_free(&pres);
             free(wsl_path);
+            myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_INCONCLUSIVE,
+                                "detect frama-c timeout");
+            myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
+                                    "Eva detect timeout");
             return 0;
         }
         add_diag_prove(res, "gate Eva di-skip: gagal memeriksa frama-c di WSL");
+        myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_INFRA_FAILED,
+                            "gagal memeriksa frama-c di WSL");
+        myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
+                                "Eva detect infra failed");
         myc_proc_result_free(&pres);
         free(wsl_path);
         return 0;
@@ -187,12 +202,20 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
         res->err = MYC_ERR_TIMEOUT;
         myc_proc_result_free(&pres);
         free(wsl_path);
+        myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_INCONCLUSIVE,
+                            "detect frama-c timeout");
+        myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
+                                "Eva detect timeout");
         return 0;
     }
     if (pres.exit_code != 0 ||
         !(pres.stdout_data && strstr(pres.stdout_data, "frama-c"))) {
         add_diag_prove(res, "gate Eva di-skip: frama-c tidak ditemukan di WSL "
                             "(instal: opam install -y frama-c)");
+        myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_UNAVAILABLE,
+                            "frama-c tidak ditemukan di WSL");
+        myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_SKIP,
+                                "Eva di-skip: frama-c hilang");
         myc_proc_result_free(&pres);
         free(wsl_path);
         return 0;
@@ -209,9 +232,17 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
             res->duration_ms += pres.duration_ms;
             myc_proc_result_free(&pres);
             free(wsl_path);
+            myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_INCONCLUSIVE,
+                                "frama-c -eva timeout");
+            myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
+                                    "Eva timeout");
             return 0;
         }
         add_diag_prove(res, "gate Eva di-skip: gagal menjalankan frama-c -eva");
+        myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_INFRA_FAILED,
+                            "gagal menjalankan frama-c -eva");
+        myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
+                                "Eva exec failed");
         myc_proc_result_free(&pres);
         free(wsl_path);
         return 0;
@@ -222,6 +253,10 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
         res->err = MYC_ERR_TIMEOUT;
         myc_proc_result_free(&pres);
         free(wsl_path);
+        myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_INCONCLUSIVE,
+                            "frama-c -eva timeout");
+        myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
+                                "Eva timeout");
         return 0;
     }
     {
@@ -247,6 +282,8 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
         else
             snprintf(note, sizeof(note), "gate Eva di-skip: %s", fe);
         add_diag_prove(res, note);
+        myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_INCONCLUSIVE, note);
+        myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_SKIP, note);
         free(wsl_path);
         return 0;
     }
@@ -263,6 +300,9 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
         add_diag_prove(res, note);
         res->verdict = MC_PROVE_VIOLATION;
         res->err = MYC_ERR_PROVE_VIOLATION;
+        myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_COMPLETED_FINDINGS,
+                            note);
+        myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_FINDING, note);
         free(wsl_path);
         return 0;
     }
@@ -274,12 +314,20 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
           strstr(res->prove_stdout_text, "ANALYSIS SUMMARY"))) {
         add_diag_prove(res, "gate Eva di-skip: Eva tidak menganalisis apa pun "
                             "(tidak ada summary) - assurance statis dipertahankan");
+        myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_NOT_APPLICABLE,
+                            "Eva tidak menganalisis (no summary)");
+        myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_SKIP,
+                                "Eva di-skip: tidak ada ANALYSIS SUMMARY");
         free(wsl_path);
         return 0;
     }
 
     /* Bersih: 0 alarm + analisis sungguhan. Caller menaikkan ke L2. */
     add_diag_prove(res, "prove: Eva 0 alarm - kontrak & bounds terbukti (L2)");
+    myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_COMPLETED_CLEAN,
+                        "Eva 0 alarm + summary");
+    myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_GATE_END,
+                            "Frama-C Eva clean");
     free(wsl_path);
     return 1;
     }

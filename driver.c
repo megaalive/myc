@@ -48,6 +48,8 @@
 
 #include "proc.h"
 
+#include "gate.h"
+
 #define DRV_MAX_FUNCS  8
 #define DRV_MAX_PARAMS 6
 #define DRV_MAX_REQS   4
@@ -1057,10 +1059,16 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
         NULL
     };
 
+    myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_NOT_APPLICABLE, NULL);
+
     /* 1. Scan fungsi ber-kontrak. */
     nfuncs = scan_contract_funcs(source, source_len, funcs, DRV_MAX_FUNCS);
     if (nfuncs == 0) {
         add_diag_drv(res, "driver di-skip: tidak ada fungsi ber-kontrak (//@ requires)");
+        myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_NOT_APPLICABLE,
+                            "tidak ada fungsi ber-kontrak");
+        myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_SKIP,
+                                "driver di-skip: tanpa //@ requires");
         return 0;
     }
 
@@ -1068,6 +1076,10 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
     harness = gen_harness(source, source_len, funcs, nfuncs, &harness_len);
     if (!harness) {
         add_diag_drv(res, "driver di-skip: gagal generate harness");
+        myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_INFRA_FAILED,
+                            "gagal generate harness");
+        myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_ERROR,
+                                "driver: harness generation failed");
         return 0;
     }
 
@@ -1076,6 +1088,10 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
     if (!clang_path) {
         res->err = MYC_ERR_CLANG_NOT_FOUND;
         add_diag_drv(res, "driver di-skip: clang tidak ditemukan");
+        myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_UNAVAILABLE,
+                            "clang tidak ditemukan");
+        myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_SKIP,
+                                "driver di-skip: clang hilang");
         free(harness);
         return 0;
     }
@@ -1084,6 +1100,10 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
     tmp_dir = drv_make_temp_dir();
     if (!tmp_dir) {
         res->err = MYC_ERR_INTERNAL;
+        myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_INFRA_FAILED,
+                            "gagal membuat direktori temp");
+        myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_ERROR,
+                                "driver: temp dir gagal");
         free(harness);
         free(clang_path);
         return 0;
@@ -1091,6 +1111,10 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
     exe_path = drv_join_path(tmp_dir, "myc_drv.exe");
     if (!exe_path) {
         res->err = MYC_ERR_INTERNAL;
+        myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_INFRA_FAILED,
+                            "gagal membuat path exe");
+        myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_ERROR,
+                                "driver: exe path gagal");
         free(harness);
         free(clang_path);
         free(tmp_dir);
@@ -1130,9 +1154,17 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
                 res->duration_ms += pres.duration_ms;
                 myc_proc_result_free(&pres);
                 free(build_argv);
+                myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_INCONCLUSIVE,
+                                    "build harness timeout");
+                myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_ERROR,
+                                        "driver: build timeout");
                 goto out;
             }
             res->err = MYC_ERR_EXECUTE_FAILED;
+            myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_INFRA_FAILED,
+                                "build harness exec failed");
+            myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_ERROR,
+                                    "driver: build exec failed");
             free(build_argv);
             goto out;
         }
@@ -1142,6 +1174,10 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
             res->err = MYC_ERR_TIMEOUT;
             myc_proc_result_free(&pres);
             free(build_argv);
+            myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_INCONCLUSIVE,
+                                "build harness timeout");
+            myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_ERROR,
+                                    "driver: build timeout");
             goto out;
         }
         if (pres.exit_code != 0) {
@@ -1153,6 +1189,8 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
             else
                 snprintf(note, sizeof(note), "driver di-skip: build harness gagal: %s", fe);
             add_diag_drv(res, note);
+            myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_INFRA_FAILED, note);
+            myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_SKIP, note);
             myc_proc_result_free(&pres);
             free(build_argv);
             goto out_skip;
@@ -1195,9 +1233,17 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
             res->duration_ms += pres.duration_ms;
             myc_proc_result_free(&pres);
             free(run_argv);
+            myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_INCONCLUSIVE,
+                                "driver run timeout");
+            myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_ERROR,
+                                    "driver: run timeout");
             goto out;
         }
         res->err = MYC_ERR_EXECUTE_FAILED;
+        myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_INFRA_FAILED,
+                            "driver run exec failed");
+        myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_ERROR,
+                                "driver: run exec failed");
         free(run_argv);
         goto out;
     }
@@ -1238,25 +1284,45 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
     if (res->run_timed_out) {
         res->verdict = MC_TIMEOUT;
         res->err = MYC_ERR_TIMEOUT;
+        myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_INCONCLUSIVE,
+                            "driver run timeout");
+        myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_ERROR,
+                                "driver: run timeout");
         goto out;
     }
     if (drv_marker_found(res->driver_stdout_text, res->driver_stderr_text)) {
         add_diag_drv(res, "driver: sanitizer menangkap bug pada kasus tepi");
         res->verdict = MC_DRIVER_VIOLATION;
         res->err = MYC_ERR_DRIVER_VIOLATION;
+        myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_COMPLETED_FINDINGS,
+                            "sanitizer menangkap bug pada kasus tepi");
+        myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_FINDING,
+                                "driver: DRIVER_VIOLATION");
         goto out;
     }
     if (res->exit_code != 0) {
         /* keluar non-zero tanpa marker: bukan bukti bug memori */
         add_diag_drv(res, "driver: run keluar non-zero tanpa laporan sanitizer");
+        myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_INCONCLUSIVE,
+                            "exit non-zero tanpa sanitizer");
+        myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_SKIP,
+                                "driver: exit non-zero tanpa marker");
         goto out_skip;
     }
     if (res->driver_cases == 0) {
         add_diag_drv(res, "driver: semua kasus dilewati guard requires");
+        myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_NOT_APPLICABLE,
+                            "semua kasus dilewati guard requires");
+        myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_SKIP,
+                                "driver: 0 kasus tereksekusi");
         goto out_skip;
     }
 
     ret = 1;
+    myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_COMPLETED_CLEAN,
+                        "driver clean");
+    myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_GATE_END,
+                            "driver: clean");
     goto out;
 
 out_skip:

@@ -43,6 +43,7 @@
 #endif
 
 #include "contract.h"
+#include "gate.h"
 #include "proc.h"
 
 /* Nama runtime DLL ASan untuk target x86_64-windows-msvc. */
@@ -259,11 +260,16 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
                          ? (size_t)req->max_output_bytes
                          : MYC_MAX_OUTPUT_BYTES;
 
+    myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_NOT_APPLICABLE, NULL);
+
     /* 1. Cari clang. */
     clang_path = myc_find_executable(req->clang_program ? req->clang_program : "clang");
     if (!clang_path) {
         res->err = MYC_ERR_CLANG_NOT_FOUND;
-        add_diag_run(res, "verification run di-skip: clang tidak ditemukan");
+        myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_UNAVAILABLE,
+                            "clang tidak ditemukan");
+        myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_SKIP,
+                                "verification run di-skip: clang tidak ditemukan");
         return 0;
     }
 
@@ -282,12 +288,20 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
     tmp_dir = make_temp_dir();
     if (!tmp_dir) {
         res->err = MYC_ERR_INTERNAL;
+        myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_INFRA_FAILED,
+                            "gagal membuat direktori temp");
+        myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_ERROR,
+                                "verification run di-skip: direktori temp gagal");
         free(clang_path);
         return 0;
     }
     exe_path = exe_path_for(tmp_dir);
     if (!exe_path) {
         res->err = MYC_ERR_INTERNAL;
+        myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_INFRA_FAILED,
+                            "gagal membuat path executable");
+        myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_ERROR,
+                                "verification run di-skip: path exe gagal");
         free(clang_path);
         free(tmp_dir);
         return 0;
@@ -343,9 +357,17 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
                 res->duration_ms += pres.duration_ms;
                 myc_proc_result_free(&pres);
                 free(build_argv);
+                myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_INCONCLUSIVE,
+                                    "build timeout");
+                myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_ERROR,
+                                        "verification build timeout");
                 goto out;
             }
             res->err = MYC_ERR_EXECUTE_FAILED;
+            myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_INFRA_FAILED,
+                                "build launch gagal");
+            myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_ERROR,
+                                    "verification build launch gagal");
             free(build_argv);
             goto out;
         }
@@ -355,11 +377,15 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
             res->err = MYC_ERR_TIMEOUT;
             myc_proc_result_free(&pres);
             free(build_argv);
+            myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_INCONCLUSIVE,
+                                "build timeout");
+            myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_ERROR,
+                                    "verification build timeout");
             goto out;
         }
         if (pres.exit_code != 0) {
             /* Build verifikasi gagal (mis. tanpa main / link gagal).
-             * Bukan pelanggaran; skip gate, jaga assurance statis. */
+             * Bukan pelanggaran; gate di-skip, verification incomplete. */
             char note[512];
             const char *fe = pres.stderr_data && pres.stderr_data[0]
                                  ? pres.stderr_data : "build verifikasi gagal";
@@ -368,9 +394,13 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
             else
                 snprintf(note, sizeof(note), "verification run di-skip: %s", fe);
             add_diag_run(res, note);
+            myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_INFRA_FAILED,
+                                note);
+            myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_SKIP,
+                                    note);
             myc_proc_result_free(&pres);
             free(build_argv);
-            goto out_skip;
+            goto out;
         }
         myc_proc_result_free(&pres);
         free(build_argv);
@@ -413,9 +443,17 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
             res->duration_ms += pres.duration_ms;
             myc_proc_result_free(&pres);
             free(run_argv);
+            myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_INCONCLUSIVE,
+                                "exec timeout");
+            myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_ERROR,
+                                    "verification run timeout");
             goto out;
         }
         res->err = MYC_ERR_EXECUTE_FAILED;
+        myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_INFRA_FAILED,
+                            "exec gagal");
+        myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_ERROR,
+                                "verification run exec gagal");
         free(run_argv);
         goto out;
     }
@@ -452,26 +490,34 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
             add_diag_run(res, note);
             res->verdict = MC_RUNTIME_VIOLATION;
             res->err = MYC_ERR_RUNTIME_VIOLATION;
+            myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_COMPLETED_FINDINGS,
+                                note);
+            myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_FINDING,
+                                    note);
             goto out;
         }
         if (res->exit_code != 0) {
             /* keluar non-zero tanpa laporan sanitizer: bukan bukti bug
-             * memori, tapi run tidak bersih -> jangan naikkan ke L3. */
+             * memori, tapi run tidak bersih -> verification incomplete. */
             char note[128];
             snprintf(note, sizeof(note),
                      "verification run: exit=%d (tanpa laporan sanitizer)",
                      res->exit_code);
             add_diag_run(res, note);
-            goto out_skip;
+            myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_INCONCLUSIVE,
+                                note);
+            myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_SKIP,
+                                    note);
+            goto out;
         }
     }
 
     ret = 1;
+    myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_COMPLETED_CLEAN,
+                        "run bersih");
+    myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_GATE_END,
+                            "verification run selesai: clean");
     goto out;
-
-out_skip:
-    ret = 0;
-    /* Jangan ubah verdict statis; assurance tetap level statis. */
 
 out:
     if (injected) free(injected);

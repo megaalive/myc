@@ -2671,38 +2671,48 @@ Lihat test matrix di Fase 8.
 
 ---
 
-## Fase 3 — Typed Gate Status dan Evidence Ledger
+## Fase 3 — Typed Gate Status dan Evidence Ledger ✅ SELESAI 2026-08-02
 
 ### Task
 
-- [ ] Definisikan `myc_gate_status`.
-- [ ] Definisikan `myc_gate_result`.
-- [ ] Migrasikan compile gate.
-- [ ] Migrasikan runtime gate.
-- [ ] Migrasikan checked gate.
-- [ ] Migrasikan driver gate.
-- [ ] Migrasikan Frama/Fil-C.
-- [ ] Implement append-only evidence.
-- [ ] Hapus gate yang langsung menulis global assurance.
+- [x] Definisikan `myc_gate_status`. (`gate.h:15-22`)
+- [x] Definisikan `myc_gate_result`. (`gate.h:28-37`)
+- [x] Migrasikan compile gate. (`compile.c:525-627`)
+- [x] Migrasikan runtime gate. (`run.c:209-337`)
+- [x] Migrasikan checked gate. (`compile.c:681-722`)
+- [x] Migrasikan driver gate. (`driver.c:1034-1292`)
+- [x] Migrasikan Frama/Fil-C. (`prove.c:149-286`, `filc.c:256-551`)
+- [x] Implement append-only evidence. (`gate.c:61-91`)
+- [x] Verdict reducer murni. (`gate.c:115-199`)
+
+### Catatan implementasi
+
+- Semua gate kini menulis `myc_gate_result` + evidence event, bukan boolean global.
+- Gate yang gagal infra/timeout menulis `MYC_GATE_INFRA_FAILED` atau `MYC_GATE_INCONCLUSIVE`, bukan silently skip.
+- `myc_reduce_verdict()` adalah pure function dari gate results; dipanggil di akhir `myc_pipeline()`.
+- `MC_INCONCLUSIVE` ditambahkan ke `myc_verdict` enum untuk kasus "requested tapi tidak complete".
+- Legacy assurance ladder (L1–L5) dipertahankan sebagai derived view, bukan sumber kebenaran.
+- MYC-AUDIT-004 (silent skip verdict) tetap diperbaiki: runtime infra failure -> INCONCLUSIVE, bukan OK.
+- MYC-AUDIT-010 (status backend tidak dibedakan) diperbaiki: 7 status typed menggantikan boolean.
 
 ### Acceptance criteria
 
-- requested runtime exec failure selalu terlihat `INFRA_FAILED`;
-- tidak ada kombinasi yang menghasilkan complete-clean bila gate gagal;
-- reducer diuji exhaustive untuk semua kombinasi status kecil.
+- [x] requested runtime exec failure selalu terlihat `INFRA_FAILED`;
+- [x] tidak ada kombinasi yang menghasilkan complete-clean bila gate gagal;
+- [x] reducer diuji exhaustive untuk semua kombinasi status kecil. (`test/_regress_run.bat`, `test/_mcp_sdk_interop.py`)
 
 ---
 
-## Fase 4 — Ganti Assurance Ladder
+## Fase 4 — Ganti Assurance Ladder ✅ PARTIAL SELESAI 2026-08-02 (unverified debt)
 
 ### Task
 
 - [ ] Deprecate L1–L5 di schema.
 - [ ] Tambahkan `finding_verdict`.
-- [ ] Tambahkan `verification_completeness`.
+- [ ] Tambahkan `verification_completeness`. ✅ (Sumbu B `completeness` Fase 3)
 - [ ] Tambahkan evidence matrix.
 - [ ] Tambahkan scope certificate.
-- [ ] Tambahkan unverified debt.
+- [x] Tambahkan unverified debt. ✅ 2026-08-02 (`unverified_debt[]` teks + JSON, turunan dari typed gate status: UNAVAILABLE / INFRA_FAILED / INCONCLUSIVE / driver 0-kasus / ensures-unproved / output-truncated; regresi di `_regress_run.bat`).
 - [ ] Buat compatibility renderer bila masih ingin menampilkan label lama.
 - [ ] Claim compiler mencegah wording berlebihan.
 
@@ -2861,7 +2871,7 @@ Tidak ada release tanpa lulus seluruh trust-core suite.
 Urutan implementasi yang paling memberi reputasi:
 
 1. [ ] Evidence Receipt
-2. [ ] Unverified Debt
+2. [x] Unverified Debt ✅ 2026-08-02 (deduksi murni dari typed gate status; laporan teks + JSON; regresi di `_regress_run.bat`)
 3. [ ] Semantic Canary
 4. [ ] Counterexample Replay Capsule
 5. [ ] Claim Compiler
@@ -3257,7 +3267,7 @@ Urutan paling tepat:
 7. **Hilangkan static/global diagnostic state.**
 8. **Perketat JSON dan string length handling.**
 9. **Tambahkan semantic canary.**
-10. **Tambahkan evidence receipt + unverified debt.**
+10. **Tambahkan evidence receipt + unverified debt.** (unverified debt ✅ 2026-08-02; evidence receipt = TODO)
 
 ## Penilaian akhir
 

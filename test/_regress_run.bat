@@ -64,6 +64,14 @@ for %%f in (test\fixtures\ok_driver.c test\fixtures\bad_driver_oob.c) do (
   findstr /B /C:"verdict:" /C:"assurance:" /C:"driver:" /C:"  funcs:" /C:"  cases:" %OUT%
 )
 del %OUT%
+echo --- unverified debt (Fase 4): debt hanya muncul utk scope yg TIDAK lengkap
+set DEBT=none
+myc.exe check test\fixtures\bad_driver_oob.c --driver > %OUT% 2>&1
+findstr /C:"unverified_debt" %OUT% >nul && echo [OK] bad_driver_oob memunculkan unverified_debt
+findstr /C:"generated driver diminta tapi 0 kasus" %OUT% >nul && echo [OK] debt nonzero_cases terdeteksi
+myc.exe check tests\ok_run.c --run > %OUT% 2>&1
+findstr /C:"unverified_debt" %OUT% >nul && echo [FAIL] ok_run seharusnya tanpa debt || echo [OK] ok_run tanpa unverified_debt
+del %OUT%
 echo --- MCP smoke (P9): mcp.exe harus menjawab JSON-RPC
 call test\_mcp_smoke.bat
 echo --- MCP SDK interop (opsional): hanya bila SDK MCP Python resmi terpasang

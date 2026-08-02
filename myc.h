@@ -18,6 +18,7 @@ extern "C" {
 #endif
 
 #include <stddef.h>
+#include <stdint.h>
 
 #define MYC_MAX_CODE_BYTES  (1u << 20)        /* 1 MiB */
 #define MYC_MAX_OUTPUT_BYTES (1u << 20)       /* 1 MiB per channel */
@@ -34,10 +35,14 @@ typedef enum {
     MC_RUNTIME_VIOLATION,
     MC_PROVE_VIOLATION,
     MC_FILC_VIOLATION,
-    MC_DRIVER_VIOLATION
+    MC_DRIVER_VIOLATION,
+    MC_INCONCLUSIVE
 } myc_verdict;
 
-/* Assurance ladder (lihat docs/rencana-memory-safety.md, Bagian C). */
+/* Assurance ladder (lihat docs/rencana-memory-safety.md, Bagian C).
+ * Catatan: ladder ini dipertahankan untuk backward compatibility,
+ * tetapi verdict sebenarnya diturunkan dari typed gate status
+ * melalui myc_reduce_verdict() (Fase 3). */
 typedef enum {
     MYC_ASSURANCE_NONE = 0,
     MYC_ASSURANCE_L0_RAW,
@@ -47,6 +52,88 @@ typedef enum {
     MYC_ASSURANCE_L4_SPATIAL,
     MYC_ASSURANCE_L5_FULL
 } myc_assurance;
+
+/* ------------------------------------------------------------------ */
+/* Gate status (Fase 3)                                                */
+/* ------------------------------------------------------------------ */
+
+typedef enum {
+    MYC_GATE_NOT_REQUESTED = 0,
+    MYC_GATE_NOT_APPLICABLE,
+    MYC_GATE_UNAVAILABLE,
+    MYC_GATE_INFRA_FAILED,
+    MYC_GATE_INCONCLUSIVE,
+    MYC_GATE_COMPLETED_CLEAN,
+    MYC_GATE_COMPLETED_FINDINGS
+} myc_gate_status;
+
+typedef enum {
+    MYC_GATE_PREPROCESS = 0,
+    MYC_GATE_COMPILE,
+    MYC_GATE_ANALYZER,
+    MYC_GATE_RUNTIME,
+    MYC_GATE_PROVE,
+    MYC_GATE_CHECKED,
+    MYC_GATE_FILC,
+    MYC_GATE_DRIVER,
+    MYC_GATE_COUNT
+} myc_gate_id;
+
+typedef struct {
+    myc_gate_id    id;
+    myc_gate_status status;
+    int            requested;
+    int            findings;
+    unsigned long long duration_ms;
+    char          *output;
+    size_t         output_len;
+} myc_gate_result;
+
+typedef enum {
+    MYC_EVIDENCE_GATE_START = 0,
+    MYC_EVIDENCE_GATE_END,
+    MYC_EVIDENCE_DIAGNOSTIC,
+    MYC_EVIDENCE_FINDING,
+    MYC_EVIDENCE_SKIP,
+    MYC_EVIDENCE_ERROR
+} myc_evidence_type;
+
+typedef struct {
+    uint32_t gate_id;
+    uint32_t event_type;
+    char    *message;
+} myc_evidence_event;
+
+typedef enum {
+    MYC_COMPLETENESS_UNKNOWN = 0,
+    MYC_COMPLETENESS_COMPLETE,
+    MYC_COMPLETENESS_INCOMPLETE
+} myc_completeness;
+
+/* Unverified debt (Fase 4, gagasan pembeda 9.3): daftar scope yang DIMINTA
+ * tetapi tidak benar-benar diselesaikan / diverifikasi. Ini menjadikan
+ * "keheningan tidak disalahartikan sebagai keamanan". Setiap kernel debt
+ * dijumlahkan dari typed gate status + counter scope yang tersedia. */
+typedef enum {
+    MYC_DEBT_NONE = 0,
+    MYC_DEBT_GATE_UNAVAILABLE,    /* backend diminta tapi tidak tersedia */
+    MYC_DEBT_GATE_INFRA_FAILED,   /* backend diminta tapi gagal infra/exec */
+    MYC_DEBT_GATE_INCONCLUSIVE,   /* backend diminta tapi hasil tidak lengkap */
+    MYC_DEBT_NONZERO_CASES,       /* gate run/driver diminta tapi 0 kasus */
+    MYC_DEBT_ENSURES_UNPROVED,    /* ensures di-parse tapi tidak dibuktikan */
+    MYC_DEBT_RAW_BUFFERS,         /* terdapat buffer biasa di luar MYC_BUF */
+    MYC_DEBT_OUTPUT_TRUNCATED,    /* output backend terpotong (moral hilang) */
+    MYC_DEBT_COUNT
+} myc_debt_type;
+
+typedef struct {
+    myc_debt_type type;
+    const char   *text;   /* string statis penjelasan debt */
+} myc_debt_item;
+
+#define MYC_MAX_GATES      16
+#define MYC_MAX_EVIDENCE   256
+#define MYC_MAX_DEBT       32
 
 /* Error codes terstruktur (diadaptasi dari Appendix B rencana fpagnt). */
 typedef enum {
@@ -176,7 +263,25 @@ typedef struct {
     int         ran_preprocess;
     int         ran_compile;
     int         ran_analyzer;
+
+    /* --- typed gate status (Fase 3) --- */
+    myc_gate_result gates[MYC_MAX_GATES];
+    size_t          gate_count;
+
+    /* --- evidence ledger (Fase 3) --- */
+    myc_evidence_event evidence[MYC_MAX_EVIDENCE];
+    size_t             evidence_count;
+
+    /* --- verification completeness (Sumbu B) --- */
+    myc_completeness completeness;
+
+    /* --- unverified debt (Fase 4) --- */
+    myc_debt_item debt[MYC_MAX_DEBT];
+    size_t        debt_count;
 } myc_result;
+
+/* Nama debt type (statis). */
+const char *myc_debt_type_name(myc_debt_type t);
 
 /* --- API --- */
 
@@ -201,6 +306,18 @@ void myc_report_json(const myc_result *res);
 const char *myc_error_name(myc_error_code c);
 const char *myc_verdict_name(myc_verdict v);
 const char *myc_assurance_name(myc_assurance a);
+
+/* Gate status API (Fase 3). */
+void myc_gate_set_status(myc_result *res,
+                         myc_gate_id id,
+                         myc_gate_status status,
+                         const char *output);
+const myc_gate_result *myc_gate_get(const myc_result *res, myc_gate_id id);
+void myc_reduce_verdict(myc_result *res);
+void myc_result_add_evidence(myc_result *res,
+                             myc_gate_id gate,
+                             myc_evidence_type type,
+                             const char *message);
 
 /* Direktori yang memuat executable (tempat myc_buf.h diharapkan ada).
  * Mengembalikan string malloc'd atau NULL. Dipakai gate checked-build (D1.2)
