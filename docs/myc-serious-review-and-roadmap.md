@@ -2625,7 +2625,12 @@ Pilih salah satu:
 ### Task 1.5 — Output capture
 
 - [x] bounded prefix;
-- [ ] bounded tail *(masih prefix-only; tail untuk catch sanitizer report di akhir = TODO)*;
+- [x] bounded tail ✅ 2026-08-02 (`drain_buf` kini menyimpan
+  bounded prefix + bounded tail (ring buffer N byte terakhir),
+  `drain_feed()` shared helper, `drain_assemble()` menghasilkan
+  C-string head+tail kontigu. Flag `truncated` hanya menyala bila
+  byte tengah benar-benar dibuang (total > head_cap+tail_cap).
+  Regresi: `test/tail_unit.c` (8 kasus, ALL PASS).
 - [x] total byte counter;
 - [x] truncation flag;
 - [ ] streaming evidence detector;

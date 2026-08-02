@@ -155,6 +155,14 @@ Poin penting:
     validasi tapi pipeline null-deref (`req->source == NULL`). Perbaikan:
     `myc_run()` load file ke memory di ingress layer sebelum masuk pipeline;
     pipeline selalu menerima source in-memory.
+  - **MYC-AUDIT-006 partial** (`proc.c`): bounded output capture hanya
+    prefix — sanitizer report di akhir output terpotong bila output >
+    cap. Perbaikan (Fase 1 Task 1.5): `drain_buf` kini menyimpan
+    bounded prefix + bounded tail (ring buffer N byte terakhir),
+    `drain_feed()` shared helper, `drain_assemble()` menghasilkan
+    C-string head+tail kontigu. Flag `truncated` hanya menyala bila
+    byte tengah benar-benar dibuang (total > head_cap+tail_cap).
+    Regresi: `test/tail_unit.c` (8 kasus, ALL PASS).
   - Dogfooding: self-check 15/15 source myc OK + 3/3 dogfood/ OK; semua
     regression test + `_regress_run.bat` pass setelah perbaikan.
 
