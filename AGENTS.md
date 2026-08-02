@@ -290,6 +290,22 @@ Poin penting:
   kolom function/buffer yang tidak diproduksi penganalisis token tidak
   dimunculkan, tidak mengarang angka. Receipt tetap deterministik
   (`ok_run --run` → `272d7531...`): scope tidak masuk ke hash.
+- **MYC-AUDIT-006 selesai 2026-08-02** (assurance vector / evidence lattice,
+  roadmap 5.7): scalar L1–L5 yang menggabungkan bukti orthogonal (compile /
+  static / runtime / checked / proof / driver / filc) kini dilengkapi
+  **assurance vector per dimensi** — `myc_assurance_vector` di `myc.h`
+  (7 dimensi C/S/R/B/P/D/F), dihitung murni dari typed gate status di
+  `myc_reduce_verdict()` (`myc_build_assurance_vector` di `gate.c`, prioritas
+  findings > inconclusive > clean > observations > n/a; `MYC_DIM_COUNT`
+  di-cover `default` agar lolos `-Werror=switch`). Laporan teks memuat baris
+  kompak `assurance_vector: C1 S0 R1 B0 P0 D0 F0` (0=n/a 1=clean 2=findings
+  3=inconclusive 4=observations) + legend; JSON memuat
+  `"assurance_vector":{"C":{"status":"clean"},...}`. Scalar L1–L5 tetap
+  sebagai legacy, label `[legacy: gunakan assurance_vector + evidence
+  matrix + finding/completeness]`. Receipt TIDAK berubah (vector turunan
+  dari gate status yang sudah di-hash). Fixture: `ok_run --run` → `C1 R1`,
+  `bad_run_oob --run` → `R2`, `ok_checked --checked` → `B1`, plain check →
+  `C1`; regresi section AUDIT-006 di `test/_regress_run.bat`.
 
 ## Dogfooding (keputusan 2026-08-01)
 

@@ -354,7 +354,73 @@ static void myc_build_debt(myc_result *res)
  *
  * Assurance (legacy, dipertahankan untuk backward compatibility):
  *   - Dihitung dari gate tertinggi yang COMPLETED_CLEAN.
+ *
+ * Assurance vector (MYC-AUDIT-006): ringkasan per dimensi orthogonal
+ *   (C/S/R/B/P/D/F) yang TURUN dari typed gate status -- tidak di-max-kan.
  */
+
+/* Prioritas agregasi per dimensi: FINDINGS > INCONCLUSIVE > CLEAN >
+ * OBSERVATIONS > NOT_APPLICABLE > NOT_REQUESTED. (Angka lebih tinggi =
+ * lebih dominan dalam ringkasan jujur.) */
+static int dim_priority(myc_dim_status s)
+{
+    switch (s) {
+    case MYC_DIM_FINDINGS:      return 6;
+    case MYC_DIM_INCONCLUSIVE:  return 5;
+    case MYC_DIM_CLEAN:         return 4;
+    case MYC_DIM_OBSERVATIONS:  return 3;
+    case MYC_DIM_NOT_APPLICABLE:return 2;
+    default:                    return 1; /* NOT_REQUESTED */
+    }
+}
+
+/* Bangun assurance vector dari typed gate status. Murni turunan:
+ * tidak menambah bukti, hanya mengagregasi per dimensi. */
+static void myc_build_assurance_vector(myc_result *res)
+{
+    static const myc_gate_id dim_gates[MYC_DIM_COUNT][2] = {
+        { MYC_GATE_PREPROCESS, MYC_GATE_COMPILE },      /* COMPILE   */
+        { MYC_GATE_ANALYZER,   MYC_GATE_COUNT },        /* STATIC    */
+        { MYC_GATE_RUNTIME,    MYC_GATE_METAMORPHIC },  /* RUNTIME   */
+        { MYC_GATE_CHECKED,    MYC_GATE_COUNT },        /* CHECKED   */
+        { MYC_GATE_PROVE,      MYC_GATE_COUNT },        /* PROOF     */
+        { MYC_GATE_DRIVER,     MYC_GATE_COUNT },        /* DRIVER    */
+        { MYC_GATE_FILC,       MYC_GATE_COUNT }         /* FILC      */
+    };
+    size_t d;
+
+    if (!res)
+        return;
+
+    for (d = 0; d < MYC_DIM_COUNT; d++) {
+        myc_dim_status best = MYC_DIM_NOT_REQUESTED;
+        size_t gi;
+        for (gi = 0; gi < 2; gi++) {
+            const myc_gate_result *g;
+            myc_gate_id gid = dim_gates[d][gi];
+            myc_dim_status cur;
+            if (gid >= MYC_GATE_COUNT)
+                break;
+            g = myc_gate_get(res, gid);
+            if (!g)
+                continue;
+            switch (g->status) {
+            case MYC_GATE_COMPLETED_FINDINGS:      cur = MYC_DIM_FINDINGS; break;
+            case MYC_GATE_INCONCLUSIVE:
+            case MYC_GATE_UNAVAILABLE:
+            case MYC_GATE_INFRA_FAILED:            cur = MYC_DIM_INCONCLUSIVE; break;
+            case MYC_GATE_COMPLETED_CLEAN:         cur = MYC_DIM_CLEAN; break;
+            case MYC_GATE_COMPLETED_OBSERVATIONS:  cur = MYC_DIM_OBSERVATIONS; break;
+            case MYC_GATE_NOT_APPLICABLE:          cur = MYC_DIM_NOT_APPLICABLE; break;
+            default:                               cur = MYC_DIM_NOT_REQUESTED; break;
+            }
+            if (dim_priority(cur) > dim_priority(best))
+                best = cur;
+        }
+        res->assurance_vector.status[d] = best;
+    }
+}
+
 
 /* Claim compiler (Fase 4, gagasan pembeda 9.2): validasi bahwa
  * label assurance benar-benar didukung oleh bukti gate yang
@@ -499,6 +565,10 @@ void myc_reduce_verdict(myc_result *res)
      * selesai. Mencegah output menyebut FULL/PROVEN/memory-safe
      * kecuali obligation benar-benar terpenuhi. */
     res->claim_status = myc_validate_claim(res);
+
+    /* Assurance vector (MYC-AUDIT-006): ringkasan per dimensi,
+     * turunan murni dari typed gate status di atas. */
+    myc_build_assurance_vector(res);
 
     myc_build_debt(res);
     myc_build_receipt(res);

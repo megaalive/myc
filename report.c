@@ -130,6 +130,50 @@ const char *myc_quorum_status_name(myc_quorum_status s)
     return "unknown";
 }
 
+const char *myc_dim_status_name(myc_dim_status s)
+{
+    switch (s) {
+    case MYC_DIM_NOT_REQUESTED:   return "not_requested";
+    case MYC_DIM_NOT_APPLICABLE:  return "not_applicable";
+    case MYC_DIM_CLEAN:           return "clean";
+    case MYC_DIM_FINDINGS:        return "findings";
+    case MYC_DIM_INCONCLUSIVE:    return "inconclusive";
+    case MYC_DIM_OBSERVATIONS:    return "observations";
+    default:                      return "unknown";
+    }
+}
+
+/* Digit kompak per dimensi untuk ringkasan assurance vector:
+ * 0=n/a 1=clean 2=findings 3=inconclusive 4=observations */
+static char dim_digit(myc_dim_status s)
+{
+    switch (s) {
+    case MYC_DIM_CLEAN:        return '1';
+    case MYC_DIM_FINDINGS:     return '2';
+    case MYC_DIM_INCONCLUSIVE: return '3';
+    case MYC_DIM_OBSERVATIONS: return '4';
+    default:                   return '0';
+    }
+}
+
+static void print_assurance_vector(const myc_assurance_vector *v)
+{
+    static const char dim_chars[MYC_DIM_COUNT] = {
+        'C', 'S', 'R', 'B', 'P', 'D', 'F'
+    };
+    size_t d;
+    printf("assurance_vector: ");
+    for (d = 0; d < MYC_DIM_COUNT; d++) {
+        if (d)
+            printf(" ");
+        printf("%c%c", dim_chars[d], dim_digit(v->status[d]));
+    }
+    printf("\n");
+    printf("  (dimensi: C=compile S=static R=runtime B=checked "
+           "P=proof D=driver F=filc; 0=n/a 1=clean 2=findings "
+           "3=inconclusive 4=observations)\n");
+}
+
 /* Escape string JSON ke json_sb (tanpa batas 4096; dipakai laporan & MCP). */
 static int json_sb_escape(json_sb *b, const char *s)
 {
@@ -164,7 +208,8 @@ void myc_report_text(const myc_result *res)
     int i;
     size_t gi;
     printf("verdict:   %s\n", myc_verdict_name(res->verdict));
-    printf("assurance: %s [legacy: gunakan evidence matrix + finding/completeness]\n", myc_assurance_name(res->assurance));
+    printf("assurance: %s [legacy: gunakan assurance_vector + evidence matrix + finding/completeness]\n", myc_assurance_name(res->assurance));
+    print_assurance_vector(&res->assurance_vector);
     printf("finding:   %s\n", myc_finding_name(res->finding));
     printf("completeness: %s\n", myc_completeness_name(res->completeness));
     printf("claim:     %s\n", myc_claim_status_name(res->claim_status));
@@ -392,6 +437,24 @@ char *myc_result_to_json(const myc_result *res)
     json_sb_printf(&b, "\"verdict\":\"%s\",", myc_verdict_name(res->verdict));
     json_sb_printf(&b, "\"assurance\":\"%s\",", myc_assurance_name(res->assurance));
     json_sb_printf(&b, "\"assurance_legacy\":true,");
+    /* Assurance vector (MYC-AUDIT-006): ringkasan per dimensi orthogonal,
+     * turunan dari typed gate status. */
+    json_sb_puts(&b, "\"assurance_vector\":{");
+    {
+        static const char dim_chars[MYC_DIM_COUNT] = {
+            'C', 'S', 'R', 'B', 'P', 'D', 'F'
+        };
+        int dim_i;
+        for (dim_i = 0; dim_i < MYC_DIM_COUNT; dim_i++) {
+            if (dim_i)
+                json_sb_puts(&b, ",");
+            json_sb_printf(&b, "\"%c\":{\"status\":\"%s\"}",
+                           dim_chars[dim_i],
+                           myc_dim_status_name(
+                               res->assurance_vector.status[dim_i]));
+        }
+    }
+    json_sb_puts(&b, "},");
     json_sb_printf(&b, "\"finding\":\"%s\",", myc_finding_name(res->finding));
     json_sb_printf(&b, "\"completeness\":\"%s\",", myc_completeness_name(res->completeness));
     json_sb_printf(&b, "\"claim\":\"%s\",", myc_claim_status_name(res->claim_status));

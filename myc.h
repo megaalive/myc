@@ -60,6 +60,39 @@ typedef enum {
 } myc_assurance;
 
 /* ------------------------------------------------------------------ */
+/* Assurance vector / evidence lattice (MYC-AUDIT-006, roadmap 5.7)    */
+/* ------------------------------------------------------------------ */
+/* Scalar L1-L5 legacy menggabungkan bukti yang ORTHOGONAL (compile,
+ * static, runtime, checked, proof, driver, fil-c) menjadi urutan total
+ * max(level) -- menghilangkan informasi. Vector ini memecah assurance
+ * per dimensi, TURUNAN MURNI dari typed gate status (bukan klaim baru).
+ * Dihitung di myc_reduce_verdict(); dipakai laporan teks + JSON. */
+typedef enum {
+    MYC_DIM_NOT_REQUESTED = 0, /* tidak ada gate dim yang diminta/dijalankan */
+    MYC_DIM_NOT_APPLICABLE,    /* gate dim diminta tapi NOT_APPLICABLE
+                                  (mis. checked tanpa MYC_BUF, prove tanpa clang) */
+    MYC_DIM_CLEAN,             /* semua gate dim COMPLETED_CLEAN */
+    MYC_DIM_FINDINGS,          /* ada gate dim COMPLETED_FINDINGS */
+    MYC_DIM_INCONCLUSIVE,      /* ada gate dim INCONCLUSIVE/UNAVAILABLE/INFRA_FAILED */
+    MYC_DIM_OBSERVATIONS       /* gate dim COMPLETED_OBSERVATIONS (benign) */
+} myc_dim_status;
+
+typedef enum {
+    MYC_DIM_COMPILE = 0,  /* C: compile diagnostics (preprocess + gcc -c + lint) */
+    MYC_DIM_STATIC,       /* S: static analysis (gcc -fanalyzer) */
+    MYC_DIM_RUNTIME,      /* R: runtime observation (clang ASan+UBSan, metamorphic) */
+    MYC_DIM_CHECKED,      /* B: checked-buffer coverage (MYC_BUF fat-pointer) */
+    MYC_DIM_PROOF,        /* P: proof obligations (Frama-C Eva, abstract interp.) */
+    MYC_DIM_DRIVER,       /* D: generated-driver coverage (D2.2) */
+    MYC_DIM_FILC,         /* F: Fil-C execution evidence (D4.1) */
+    MYC_DIM_COUNT
+} myc_assurance_dim;
+
+typedef struct {
+    myc_dim_status status[MYC_DIM_COUNT];
+} myc_assurance_vector;
+
+/* ------------------------------------------------------------------ */
 /* Gate status (Fase 3)                                                */
 /* ------------------------------------------------------------------ */
 
@@ -406,6 +439,12 @@ typedef struct {
     myc_gate_result gates[MYC_MAX_GATES];
     size_t          gate_count;
 
+    /* --- assurance vector (MYC-AUDIT-006) ---
+     * Status per dimensi evidence, turunan dari gates[] (dihitung di
+     * myc_reduce_verdict). Menggantikan scalar L1-L5 sebagai ringkasan
+     * jujur: tiap dimensi orthogonal, tidak di-max-kan. */
+    myc_assurance_vector assurance_vector;
+
     /* --- evidence ledger (Fase 3) --- */
     myc_evidence_event evidence[MYC_MAX_EVIDENCE];
     size_t             evidence_count;
@@ -504,6 +543,7 @@ const char *myc_verdict_name(myc_verdict v);
 const char *myc_assurance_name(myc_assurance a);
 const char *myc_finding_name(myc_finding f);
 const char *myc_claim_status_name(myc_claim_status c);
+const char *myc_dim_status_name(myc_dim_status s);
 
 /* Gate status API (Fase 3). */
 void myc_gate_set_status(myc_result *res,

@@ -305,7 +305,7 @@ Setelah reentrancy dan schema hasil diperbaiki, ini dapat menjadi salah satu keu
 | MYC-AUDIT-003 | Critical | `run.c` / `driver.c` | Path executable relatif + `cwd` temp menyebabkan exit `127` | ✅ SELESAI 2026-08-02 (exec-error pipe + temp path abs) |
 | MYC-AUDIT-004 | Critical | verdict | Gate runtime gagal tetapi hasil dapat tetap `OK` | ✅ SELESAI 2026-08-02 (skip-status jujur via 9.10: requested-unavailable → UNAVAILABLE/INCONCLUSIVE + debt; `--require-complete` menegakkan) |
 | MYC-AUDIT-005 | Critical | `compile.c` | `snprintf` length dipakai untuk hash walau buffer terpotong; OOB read | ✅ SELESAI 2026-08-02 |
-| MYC-AUDIT-006 | High | assurance | Scalar L1–L5 menggabungkan bukti yang tidak comparable | ⏳ TODO |
+| MYC-AUDIT-006 | High | assurance | Scalar L1–L5 menggabungkan bukti yang tidak comparable | ✅ SELESAI 2026-08-02 (assurance vector per dimensi C/S/R/B/P/D/F di `myc_reduce_verdict` — turunan murni typed gate status, tidak di-max-kan; teks `assurance_vector: C1 S0 R3 ...` + JSON `assurance_vector{}`; scalar L1-L5 tetap sebagai legacy `[legacy]`) |
 | MYC-AUDIT-007 | High | API | `file_path` lolos validasi tetapi pipeline memakai `source == NULL` | ✅ SELESAI 2026-08-02 |
 | MYC-AUDIT-008 | High | diagnostics | Static ring buffers membuat hasil tidak reentrant/thread-safe | **? SELESAI 2026-08-02 (arena milik hasil)** |
 | MYC-AUDIT-009 | High | `json.c` | Parser menerima JSON invalid dan embedded NUL memotong string | **? SELESAI 2026-08-02 (parser ketat + corpus)** |
@@ -709,6 +709,34 @@ Lebih baik lagi, keluarkan struktur:
 ```
 
 Human badge boleh tetap ada, tetapi harus derived dari evidence, bukan menggantikan evidence.
+
+### Implementasi (2026-08-02)
+
+`myc_reduce_verdict()` kini menghitung **assurance vector** 7 dimensi
+(`myc_assurance_vector` di `myc.h`, dihitung di `gate.c`):
+
+| Dimensi | Kode | Gate sumber |
+|---|---|---|
+| compile | `C` | preprocess + compile (+ lint) |
+| static | `S` | analyzer (`-fanalyzer`) |
+| runtime | `R` | runtime (`--run`) + metamorphic |
+| checked | `B` | checked-build `MYC_BUF` |
+| proof | `P` | prove (Frama-C Eva) |
+| driver | `D` | driver-generator |
+| filc | `F` | Fil-C |
+
+Status per dimensi: `not_requested` / `not_applicable` / `clean` /
+`findings` / `inconclusive` / `observations` — agregasi dengan prioritas
+findings > inconclusive > clean > observations > n/a. Ringkasan teks
+kompak: `assurance_vector: C1 S0 R1 B0 P0 D0 F0` (0=n/a 1=clean 2=findings
+3=inconclusive 4=observations), plus blok JSON `"assurance_vector":
+{"C":{"status":"clean"},...}`. Scalar L1–L5 tetap untuk backward
+compatibility, ditandai `[legacy: gunakan assurance_vector + evidence
+matrix + finding/completeness]` di laporan. Receipt tidak berubah
+(vector turunan dari gate status yang sudah di-hash). Verifikasi:
+`ok_run --run` → `C1 R1`, `bad_run_oob --run` → `R2`, `ok_checked
+--checked` → `B1`, plain check → `C1`; regresi di `_regress_run.bat`
+section AUDIT-006.
 
 ---
 

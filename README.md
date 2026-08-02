@@ -41,6 +41,13 @@ harness kasus tepi (--driver,       -> L3 RUNTIME (D2.2; DRIVER_VIOLATION
 OK (assurance: L1 SANE, L2 EVA, L3 RUNTIME, L4 SPATIAL, atau L5 FILC)
 ```
 
+> **Assurance vector (MYC-AUDIT-006):** scalar L1–L5 dipertahankan sebagai
+> legacy, tetapi ringkasan jujur kini per dimensi orthogonal —
+> `assurance_vector: C1 S0 R1 B0 P0 D0 F0` (C=compile S=static R=runtime
+> B=checked P=proof D=driver F=filc; 0=n/a 1=clean 2=findings
+> 3=inconclusive 4=observations) — turunan murni dari typed gate status,
+> tidak di-max-kan. Juga di JSON (`"assurance_vector":{"C":...}`).
+
 > Catatan: gate memori memakai `-c -O2` karena `-Warray-bounds` dan
 > `-Wstringop-overflow` hanya aktif saat kompilasi beroptimisasi.
 

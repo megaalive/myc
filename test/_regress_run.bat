@@ -140,6 +140,18 @@ findstr /C:"quorum: inconclusive" %OUT% >nul && echo [OK] quorum inconclusive ut
 myc.exe check tests\ok_run.c --run --quorum --json > %OUT% 2>&1
 findstr /C:"\"quorum_status\":\"clean\"" %OUT% >nul && echo [OK] quorum_status di JSON || echo [FAIL] quorum_status hilang di JSON
 del %OUT%
+echo --- MYC-AUDIT-006: assurance vector per dimensi (bukan scalar max)
+myc.exe check tests\ok_run.c --run > %OUT% 2>&1
+findstr /C:"assurance_vector: C1 S0 R1 B0 P0 D0 F0" %OUT% >nul && echo [OK] vector C1 R1 utk run bersih || echo [FAIL] vector run bersih salah
+myc.exe check tests\bad_run_oob.c --run > %OUT% 2>&1
+findstr /C:"assurance_vector: C1 S0 R2 B0 P0 D0 F0" %OUT% >nul && echo [OK] vector R2 utk runtime finding || echo [FAIL] vector R2 tidak muncul
+myc.exe check tests\ok_checked.c --checked > %OUT% 2>&1
+findstr /C:"assurance_vector: C1 S0 R0 B1 P0 D0 F0" %OUT% >nul && echo [OK] vector B1 utk checked clean || echo [FAIL] vector B1 tidak muncul
+myc.exe check tests\ok_hello.c > %OUT% 2>&1
+findstr /C:"assurance_vector: C1 S0 R0 B0 P0 D0 F0" %OUT% >nul && echo [OK] vector plain check C1 saja || echo [FAIL] vector plain check salah
+myc.exe check tests\ok_run.c --run --json > %OUT% 2>&1
+findstr /C:"\"assurance_vector\"" %OUT% >nul && echo [OK] assurance_vector di JSON || echo [FAIL] assurance_vector hilang di JSON
+del %OUT%
 echo --- Negative-Space Analysis (9.8): observasi non-blocking
 myc.exe check tests\negative_ok.c --negative > %OUT% 2>&1
 findstr /C:"negative (9.8): callsites=3 deviations=0" %OUT% >nul && echo [OK] negative clean utk negative_ok || echo [FAIL] negative clean tidak muncul
