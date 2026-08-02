@@ -2142,7 +2142,20 @@ Capsule tidak perlu memuat binary; cukup metadata + input + generated harness bi
 
 ---
 
-## 9.6. Differential Backend Quorum
+## 9.6. Differential Backend Quorum ✅ SELESAI 2026-08-02
+
+Implementasi: flag `--quorum` (CLI + MCP tool `check`). Setelah pipeline
+selesai (`myc_quorum_analysis` dipanggil dari `myc_run`), status semua gate
+yang diminta dibandingkan: semua `completed_clean` → `MYC_QUORUM_CLEAN`;
+campuran findings+clean → `CONFLICT`; ada gate incomplete/unavailable →
+`INCONCLUSIVE`; tidak ada hasil gate sama sekali (mis. lint memblokir
+pipeline sebelum gate berjalan) → `INCONCLUSIVE` (bukan "agree clean").
+Hasil di `quorum_status` + `quorum_report` (teks + JSON + capsule).
+Verifikasi: clean pada `ok_hello`/`ok_run --run`/`ok_driver --driver`;
+conflict pada `bad_syntax`/`bad_run_oob --run`/`bad_driver_oob --driver`;
+inconclusive pada lint-violation. Bug fix saat penyelesaian: invalid free
+`quorum_report` (arena), quorum di branch `file_path`, dan `}` level teratas
+hilang di `myc_result_to_json` (JSON `--json` invalid sejak capsule #2).
 
 Jangan sekadar mengambil level tertinggi.
 
@@ -2902,8 +2915,15 @@ Urutan implementasi yang paling memberi reputasi:
        `gate.c` memvalidasi assurance label terhadap bukti gate;
        `claim_status` di `myc_result`; tampil di teks `claim:` dan
        JSON `"claim"`; mencegah overselling FULL/PROVEN/memory-safe).
-5. [ ] Counterexample Replay Capsule
-6. [ ] Differential Backend Quorum
+5. [x] Counterexample Replay Capsule ✅ 2026-08-02 (`myc_replay_capsule` di
+       `myc.h`: source/stdin sha, backend identity, flags, verdict, gate
+       status, finding/completeness/claim; dibangun di akhir `myc_run`,
+       dibebaskan di `myc_result_free`; teks + JSON; OOM-safe `goto fail`)
+6. [x] Differential Backend Quorum ✅ 2026-08-02 (flag `--quorum`; analisis
+       pasca-pipeline di `myc_run`: semua gate clean -> CLEAN, findings+clean
+       -> CONFLICT, ada incomplete -> INCONCLUSIVE, tanpa hasil gate ->
+       INCONCLUSIVE; status+report di teks/JSON/capsule; CLI + MCP tool check;
+       bug fix: invalid free arena, top-level `}` hilang di `myc_result_to_json`)
 7. [ ] Scope Certificate
 8. [ ] Metamorphic Verification
 9. [ ] Negative-Space Analysis

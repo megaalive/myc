@@ -196,6 +196,8 @@ static void tool_check(json_value *id, json_value *args)
                 req.strict = 1;
             else if (strcmp(f, "--no-lint") == 0)
                 req.run_lint = 0;
+            else if (strcmp(f, "--quorum") == 0)
+                req.quorum = 1;
         }
     }
 
@@ -427,7 +429,9 @@ static json_value *tools_list_body(void)
         "Verifikasi kode C dengan pipeline myc (memory-safety): verdict, "
         "assurance L0-L5, error, diagnostics, output gate run/prove/checked/"
         "filc. source: kode C (string, wajib). flags: array string opsional "
-        "dari [--run --prove --checked --filc --driver --analyze --strict --no-lint]. "
+        "dari [--run --prove --checked --filc --driver --analyze --strict --no-lint --quorum]. "
+        "--quorum: analisis differential backend (bandingkan status semua gate "
+        "yang diminta, laporkan konflik/inkonsistensi). "
         "run_stdin: string stdin untuk program verification (opsional; efektif "
         "bila --run atau --filc diminta). cwd: direktori kerja opsional."));
     {
@@ -449,7 +453,7 @@ static json_value *tools_list_body(void)
         json_obj_set(items, "type", json_new_str("string"));
         json_obj_set(p, "items", items);
         json_obj_set(p, "description", json_new_str(
-            "Flag opsional: --run --prove --checked --filc --driver --analyze --strict --no-lint"));
+            "Flag opsional: --run --prove --checked --filc --driver --analyze --strict --no-lint --quorum"));
         json_obj_set(props, "flags", p);
 
         p = json_new_obj();

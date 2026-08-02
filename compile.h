@@ -10,4 +10,8 @@
 /* Jalankan pipeline penuh. Mengisi res. */
 void myc_pipeline(const myc_request *req, myc_result *res);
 
+/* Differential Backend Quorum (#3): analisis hasil semua
+ * backend setelah pipeline selesai. */
+void myc_quorum_analysis(const myc_request *req, myc_result *res);
+
 #endif /* MYC_COMPILE_H */

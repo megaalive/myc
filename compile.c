@@ -29,6 +29,7 @@
 #include "policy.h"
 #include "proc.h"
 #include "prove.h"
+#include "report.h"
 #include "run.h"
 #include "scanner.h"
 #include "sha256.h"
@@ -879,4 +880,96 @@ void myc_pipeline(const myc_request *req, myc_result *res)
 
     myc_reduce_verdict(res);
     free(gcc_path);
+}
+
+/* Quorum analysis (#3): dijalankan di myc_run() setelah pipeline
+ * selesai, agar selalu terpanggil terlepas dari early return
+ * di dalam pipeline. */
+void myc_quorum_analysis(const myc_request *req, myc_result *res)
+{
+    size_t qi;
+
+    if (!req->quorum) {
+        res->quorum_status = MYC_QUORUM_NOT_REQUESTED;
+        return;
+    }
+
+    res->quorum_status = MYC_QUORUM_CLEAN;
+    {
+        char qreport[2048];
+        size_t qoff = 0;
+        int any_findings = 0;
+        int any_incomplete = 0;
+        int any_clean = 0;
+        int any_result = 0;
+
+        /* Aksen: snprintf chaining + clamp qoff agar tidak pernah
+         * melewati batas buffer (misi memory-safety myc). */
+#define QAPPEND(...) do {                                            \
+            int _r = snprintf(qreport + qoff, sizeof(qreport) - qoff, \
+                              __VA_ARGS__);                           \
+            if (_r > 0)                                              \
+                qoff += (size_t)_r;                                  \
+            if (qoff >= sizeof(qreport))                             \
+                qoff = sizeof(qreport) - 1;                          \
+        } while (0)
+
+        QAPPEND("quorum: backend comparison\n");
+
+        for (qi = 0; qi < res->gate_count; qi++) {
+            const myc_gate_result *g = &res->gates[qi];
+            if (!g->requested)
+                continue;
+            QAPPEND("  %s: %s\n",
+                    myc_gate_id_short(g->id),
+                    myc_gate_status_name(g->status));
+            switch (g->status) {
+            case MYC_GATE_COMPLETED_FINDINGS:
+                any_findings = 1;
+                any_result = 1;
+                break;
+            case MYC_GATE_COMPLETED_CLEAN:
+                any_clean = 1;
+                any_result = 1;
+                break;
+            case MYC_GATE_INCONCLUSIVE:
+            case MYC_GATE_UNAVAILABLE:
+            case MYC_GATE_INFRA_FAILED:
+                any_incomplete = 1;
+                any_result = 1;
+                break;
+            default:
+                break;
+            }
+        }
+
+        if (!any_result) {
+            /* Tidak ada gate yang benar-benar menghasilkan status
+             * (mis. lint memblokir pipeline sebelum gate apa pun berjalan).
+             * Jujur: ini bukan "semua setuju clean". */
+            res->quorum_status = MYC_QUORUM_INCONCLUSIVE;
+            QAPPEND("inconclusive: tidak ada hasil "
+                    "backend yang dapat dibandingkan\n");
+        } else if (any_findings && any_clean) {
+            res->quorum_status = MYC_QUORUM_CONFLICT;
+            QAPPEND("conflict: backend tidak sepakat "
+                    "(findings vs clean)\n");
+        } else if (any_incomplete) {
+            res->quorum_status = MYC_QUORUM_INCONCLUSIVE;
+            QAPPEND("inconclusive: backend tidak "
+                    "lengkap\n");
+        } else if (any_findings) {
+            /* Status CLEAN di sini bermakna "semua backend setuju"
+             * (bersepakat findings), bukan "kode bersih" -- lihat
+             * komentar myc_quorum_status di myc.h. */
+            res->quorum_status = MYC_QUORUM_CLEAN;
+            QAPPEND("all backends agree: findings\n");
+        } else {
+            res->quorum_status = MYC_QUORUM_CLEAN;
+            QAPPEND("all backends agree: clean\n");
+        }
+
+#undef QAPPEND
+        res->quorum_report = myc_result_arena_dup(res, qreport, qoff);
+    }
 }

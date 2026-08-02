@@ -7,7 +7,13 @@
 #include "myc.h"
 
 /* Serialisasi hasil ke string JSON (malloc'd; caller membebaskan).
- * Dipakai MCP server (P9) untuk konten tool. NULL bila gagal. */
+  * Dipakai MCP server (P9) untuk konten tool. NULL bila gagal. */
 char *myc_result_to_json(const myc_result *res);
+
+/* Nama status gate (untuk laporan). */
+const char *myc_gate_status_name(myc_gate_status s);
+
+/* Nama status quorum (untuk laporan differential backend). */
+const char *myc_quorum_status_name(myc_quorum_status s);
 
 #endif /* MYC_REPORT_H */

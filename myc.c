@@ -161,6 +161,11 @@ void myc_result_free(myc_result *res)
         free(res->capsule);
         res->capsule = NULL;
     }
+    /* quorum_report (#3) TIDAK di-free di sini: ia dialokasikan dari
+     * arena milik hasil (myc_result_arena_dup) dan ikut dibebaskan utuh
+     * oleh arena di atas. free() individual = invalid free (bug #3). */
+    res->quorum_report = NULL;
+    res->quorum_status = MYC_QUORUM_NOT_REQUESTED;
 }
 
 /* ================================================================== */
@@ -248,6 +253,7 @@ static myc_replay_capsule *myc_build_capsule(const myc_request *req,
     cap->finding = res->finding;
     cap->completeness = res->completeness;
     cap->claim_status = res->claim_status;
+    cap->quorum_status = res->quorum_status;
 
     return cap;
 
@@ -312,12 +318,16 @@ void myc_run(const myc_request *req, myc_result *res)
         req2.source = buf;
         req2.source_len = (size_t)sz;
         myc_pipeline(&req2, res);
+        /* #3: quorum juga dihitung di jalur file_path-only (API/MCP),
+         * konsisten dengan jalur source in-memory. */
+        myc_quorum_analysis(&req2, res);
         free(buf);
         res->capsule = myc_build_capsule(&req2, res);
         return;
     }
 
     myc_pipeline(req, res);
+    myc_quorum_analysis(req, res);
     res->capsule = myc_build_capsule(req, res);
 }
 
@@ -363,7 +373,7 @@ static void usage(void)
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
         "  myc check <file.c> [--json] [--analyze] [--strict] [--no-lint] [--cwd DIR]\n"
-        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver]\n"
+        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--quorum]\n"
         "  myc check -          [--json] [--analyze] [--strict] [--no-lint]\n"
         "                        (source dari stdin)\n"
         "  myc policy\n"
@@ -587,6 +597,8 @@ int main(int argc, char **argv)
                 req.filc = 1;
             else if (strcmp(argv[i], "--driver") == 0)
                 req.driver = 1;
+            else if (strcmp(argv[i], "--quorum") == 0)
+                req.quorum = 1;
             else if (strcmp(argv[i], "--run-stdin") == 0 && i + 1 < argc) {
                 char *buf;
                 size_t len;

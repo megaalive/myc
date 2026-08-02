@@ -103,6 +103,17 @@ findstr /C:"receipt_sha256:" %OUT% >nul && echo [OK] receipt_sha256 di laporan |
 myc.exe check tests\ok_run.c --run --json > %OUT% 2>&1
 findstr /C:"\"receipt_sha256\"" %OUT% >nul && echo [OK] receipt_sha256 di JSON || echo [FAIL] receipt hilang di JSON
 del %OUT%
+echo --- Differential Backend Quorum (#3): clean vs conflict vs inconclusive
+myc.exe check tests\ok_run.c --run --quorum > %OUT% 2>&1
+findstr /C:"quorum: clean" %OUT% >nul && echo [OK] quorum clean utk run bersih || echo [FAIL] quorum clean tidak muncul
+findstr /C:"all backends agree: clean" %OUT% >nul && echo [OK] laporan quorum agree-clean || echo [FAIL] laporan quorum agree-clean hilang
+myc.exe check tests\bad_run_oob.c --run --quorum > %OUT% 2>&1
+findstr /C:"quorum: conflict" %OUT% >nul && echo [OK] quorum conflict utk runtime OOB || echo [FAIL] quorum conflict tidak muncul
+myc.exe check tests\bad_intptr.c --quorum > %OUT% 2>&1
+findstr /C:"quorum: inconclusive" %OUT% >nul && echo [OK] quorum inconclusive utk tanpa hasil gate || echo [FAIL] quorum inconclusive tidak muncul
+myc.exe check tests\ok_run.c --run --quorum --json > %OUT% 2>&1
+findstr /C:"\"quorum_status\":\"clean\"" %OUT% >nul && echo [OK] quorum_status di JSON || echo [FAIL] quorum_status hilang di JSON
+del %OUT%
 echo --- MCP smoke (P9): mcp.exe harus menjawab JSON-RPC
 call test\_mcp_smoke.bat
 echo --- MCP SDK interop (opsional): hanya bila SDK MCP Python resmi terpasang

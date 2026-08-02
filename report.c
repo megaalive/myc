@@ -118,6 +118,17 @@ const char *myc_claim_status_name(myc_claim_status c)
     return "unknown";
 }
 
+const char *myc_quorum_status_name(myc_quorum_status s)
+{
+    switch (s) {
+    case MYC_QUORUM_NOT_REQUESTED: return "not_requested";
+    case MYC_QUORUM_CLEAN:         return "clean";
+    case MYC_QUORUM_CONFLICT:      return "conflict";
+    case MYC_QUORUM_INCONCLUSIVE:  return "inconclusive";
+    }
+    return "unknown";
+}
+
 /* Escape string JSON ke json_sb (tanpa batas 4096; dipakai laporan & MCP). */
 static int json_sb_escape(json_sb *b, const char *s)
 {
@@ -274,6 +285,14 @@ if (res->debt_count > 0) {
          }
      }
 
+     /* Differential Backend Quorum (#3). */
+     if (res->quorum_status != MYC_QUORUM_NOT_REQUESTED) {
+         printf("quorum: %s\n",
+                myc_quorum_status_name(res->quorum_status));
+         if (res->quorum_report)
+             printf("%s", res->quorum_report);
+     }
+
      /* Counterexample Replay Capsule (#2). */
      if (res->capsule) {
          const myc_replay_capsule *cap = res->capsule;
@@ -314,6 +333,8 @@ if (res->debt_count > 0) {
                 myc_completeness_name(cap->completeness));
          printf("  claim: %s\n",
                 myc_claim_status_name(cap->claim_status));
+         printf("  quorum: %s\n",
+                myc_quorum_status_name(cap->quorum_status));
      }
  }
 
@@ -469,6 +490,13 @@ json_sb_printf(&b, "\"unverified_debt\":[");
      }
      json_sb_puts(&b, "],");
 
+     /* Differential Backend Quorum (#3). */
+     json_sb_printf(&b, "\"quorum_status\":\"%s\",",
+                    myc_quorum_status_name(res->quorum_status));
+     json_sb_printf(&b, "\"quorum_report\":");
+     json_sb_escape(&b, res->quorum_report);
+     json_sb_puts(&b, ",");
+
      /* Counterexample Replay Capsule (#2). */
      json_sb_printf(&b, "\"capsule\":");
      if (res->capsule) {
@@ -533,13 +561,19 @@ json_sb_printf(&b, "\"unverified_debt\":[");
                         myc_finding_name(cap->finding));
          json_sb_printf(&b, "\"completeness\":\"%s\",",
                         myc_completeness_name(cap->completeness));
-         json_sb_printf(&b, "\"claim\":\"%s\"",
+         json_sb_printf(&b, "\"claim\":\"%s\",",
                         myc_claim_status_name(cap->claim_status));
+         json_sb_printf(&b, "\"quorum\":\"%s\"",
+                        myc_quorum_status_name(cap->quorum_status));
          json_sb_puts(&b, "}");
      } else {
          json_sb_puts(&b, "null");
      }
 
+     /* Tutup objek level teratas. (Bug lama: `}` ini hilang sejak
+      * fitur capsule #2; MCP interop lolos karena isi `text` hanya
+      * diperiksa substring, bukan diparse ketat.) */
+     json_sb_puts(&b, "}");
      json_sb_putc(&b, '\0');
      return b.buf;
  }

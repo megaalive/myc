@@ -217,7 +217,18 @@ typedef struct {
                                    build+run clang ASan (L3 bila bersih) */
     const char *clang_program;  /* NULL = cari "clang" via PATH */
     const char *gcc_program;    /* NULL = cari "gcc" via PATH */
+    int         quorum;         /* gate Differential Backend Quorum (#3):
+                                    jalankan semua backend tersedia,
+                                    bandingkan hasil, laporkan konflik */
 } myc_request;
+
+/* --- Differential Backend Quorum (#3) --- */
+typedef enum {
+    MYC_QUORUM_NOT_REQUESTED = 0,
+    MYC_QUORUM_CLEAN,
+    MYC_QUORUM_CONFLICT,
+    MYC_QUORUM_INCONCLUSIVE
+} myc_quorum_status;
 
 /* --- Counterexample Replay Capsule (#2) ---
  * Captures all information needed to replay a specific verification
@@ -256,13 +267,15 @@ typedef struct {
     myc_finding finding;
     myc_completeness completeness;
     myc_claim_status claim_status;
+    /* Differential Backend Quorum (#3) */
+    myc_quorum_status quorum_status;
 } myc_replay_capsule;
 
 typedef struct {
-     myc_verdict verdict;
-     myc_assurance assurance;    /* level jaminan yang DIBUKTIKAN */
-     int         exit_code;              /* exit code dari gate terakhir */
-     myc_error_code err;                 /* kode error utama (NONE bila ok) */
+    myc_verdict verdict;
+    myc_assurance assurance;    /* level jaminan yang DIBUKTIKAN */
+    int         exit_code;              /* exit code dari gate terakhir */
+    myc_error_code err;                 /* kode error utama (NONE bila ok) */
 
     char       *stdout_text;            /* output -E (debug) / stdout gate */
     char       *stderr_text;            /* diagnostik gcc */
@@ -376,6 +389,18 @@ typedef struct {
      * NULL bila capsule belum dibangun (request gagal sebelum pipeline).
      * Dibebaskan oleh myc_result_free(). */
     myc_replay_capsule *capsule;
+
+    /* --- Differential Backend Quorum (#3) --- */
+    /* Hasil quorum: apakah semua backend yang tersedia setuju.
+     * QUORUM_CLEAN: SEMUA backend SETUJU -- bisa bersepakat clean ATAU
+     *   bersepakat findings (periksa quorum_report untuk arahnya; nama
+     *   "clean" = konsensus, bukan "kode bersih").
+     * QUORUM_CONFLICT: backend bertentangan (ada yang findings, ada yang clean).
+     * QUORUM_INCONCLUSIVE: salah satu backend inconclusive/unavailable, atau
+     *   tidak ada hasil backend sama sekali.
+     * QUORUM_NOT_REQUESTED: quorum tidak diminta. */
+    myc_quorum_status quorum_status;
+    char *quorum_report;    /* teks laporan konflik, freed oleh arena */
 } myc_result;
 
 /* Nama debt type (statis). */
