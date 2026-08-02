@@ -239,27 +239,94 @@ typedef struct {
 #else
     int     fd;
 #endif
-    char   *data;
-    size_t  cap;
-    size_t  len;        /* byte valid */
-    size_t  total;      /* total byte dibaca (termasuk yang dibuang) */
-    int     truncated;
-    size_t  max;
+    char   *hdr;        /* prefix terawetkan (bounded head) */
+    size_t  head_cap;
+    size_t  head_len;
+    char   *tail;      /* ring buffer: N byte TERAKHIR (bounded tail) */
+    size_t  tail_cap;
+    size_t  tail_len;
+    size_t  tail_pos;  /* penulis ring */
+    size_t  total;     /* total byte dibaca (termasuk yang dibuang) */
+    int     truncated; /* ada byte di tengah yang dibuang (total > head+tail) */
+    size_t  max;       /* budget total */
     int     finished;
 } drain_buf;
 
 static int drain_init(drain_buf *d, size_t max)
 {
-    d->data = (char *)malloc(max ? max + 1 : 1);
-    if (!d->data)
+    size_t head_cap, tail_cap;
+    /* Sisihkan sebagian budget untuk tail (akhir output: sanitizer report). */
+    d->head_cap = head_cap = (max / 3) * 2;
+    d->tail_cap = tail_cap = max - head_cap;
+    d->hdr = (char *)malloc(head_cap ? head_cap + 1 : 1);
+    d->tail = (char *)malloc(tail_cap ? tail_cap + 1 : 1);
+    if (!d->hdr || !d->tail) {
+        free(d->hdr);
+        free(d->tail);
+        d->hdr = d->tail = NULL;
         return 0;
-    d->cap = max;
-    d->len = 0;
+    }
+    d->head_len = 0;
+    d->tail_len = 0;
+    d->tail_pos = 0;
     d->total = 0;
     d->truncated = 0;
     d->max = max;
     d->finished = 0;
     return 1;
+}
+
+/* Alirkan n byte ke penampung: head-lalu-tail. dipanggil oleh kedua drain
+ * (Windows & POSIX) agar kebijakan bounded prefix + bounded tail sama. */
+static void drain_feed(drain_buf *d, const char *src, size_t n)
+{
+    size_t i = 0;
+    d->total += n;
+    /* isi head sampai penuh */
+    if (d->head_len < d->head_cap) {
+        size_t space = d->head_cap - d->head_len;
+        size_t take = n < space ? n : space;
+        memcpy(d->hdr + d->head_len, src, take);
+        d->head_len += take;
+        i = take;
+    }
+    /* sisa ditampung di ring tail (selalu byte terakhir) */
+    for (; i < n; i++) {
+        if (d->tail_len < d->tail_cap) {
+            d->tail[d->tail_len++] = src[i];
+        } else {
+            d->tail[d->tail_pos] = src[i];
+            d->tail_pos = (d->tail_pos + 1) % d->tail_cap;
+        }
+    }
+    /* Ada byte tengah yang terpaksa dibuang: head + tail tak menutup semuanya. */
+    if (d->total > d->head_cap + d->tail_cap)
+        d->truncated = 1;
+}
+
+/* Bangun C-string tunggal dari head + tail (urutan ring). Mengembalikan
+ * buffer malloc'd (pemanggil membebaskan) atau NULL; menempatkan *out_len
+ * dan *out_truncated. */
+static char *drain_assemble(drain_buf *d, size_t *out_len, int *out_truncated)
+{
+    size_t total = d->head_len + d->tail_len;
+    char  *buf;
+    size_t i, j;
+    *out_truncated = d->truncated;
+    if (total < 1)
+        total = 1;
+    buf = (char *)malloc(total + 1);
+    if (!buf)
+        return NULL;
+    memcpy(buf, d->hdr, d->head_len);
+    /* tail: ring buffer, mulai tail_pos (tertua) hingga tail_len byte */
+    for (i = 0; i < d->tail_len; i++) {
+        j = (d->tail_pos + i) % d->tail_cap;
+        buf[d->head_len + i] = d->tail[j];
+    }
+    buf[total] = '\0';
+    *out_len = total;
+    return buf;
 }
 
 #ifdef _WIN32
@@ -277,20 +344,8 @@ static unsigned __stdcall drain_thread(void *arg)
         }
         if (rd == 0)
             break;
-        d->total += rd;
-        if (d->len < d->max) {
-            size_t space = d->max - d->len;
-            size_t take = rd < space ? rd : space;
-            memcpy(d->data + d->len, tmp, take);
-            d->len += take;
-            if (take < rd)
-                d->truncated = 1;
-        } else {
-            d->truncated = 1;
-        }
+        drain_feed(d, tmp, rd);
     }
-    if (d->data)
-        d->data[d->len] = '\0';
     d->finished = 1;
     return 0;
 }
@@ -304,20 +359,8 @@ static void *drain_thread(void *arg)
         rd = read(d->fd, tmp, sizeof(tmp));
         if (rd <= 0)
             break;
-        d->total += (size_t)rd;
-        if (d->len < d->max) {
-            size_t space = d->max - d->len;
-            size_t take = (size_t)rd < space ? (size_t)rd : space;
-            memcpy(d->data + d->len, tmp, take);
-            d->len += take;
-            if (take < (size_t)rd)
-                d->truncated = 1;
-        } else {
-            d->truncated = 1;
-        }
+        drain_feed(d, tmp, (size_t)rd);
     }
-    if (d->data)
-        d->data[d->len] = '\0';
     d->finished = 1;
     return NULL;
 }
@@ -361,7 +404,7 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
     STARTUPINFOA si;
     char    *cmdline = NULL;
     char    *cmdline_copy = NULL;
-    drain_buf out, err;
+    drain_buf out = {0}, err = {0};
     unsigned long long t0;
     BOOL    started;
     int     done = 0;
@@ -434,8 +477,10 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
 
     /* Mulai thread drain. */
     if (!drain_init(&out, max_out) || !drain_init(&err, max_out)) {
-        free(out.data);
-        free(err.data);
+        free(out.hdr);
+        free(out.tail);
+        free(err.hdr);
+        free(err.tail);
         res->err = MYC_ERR_INTERNAL;
         res->ok = 0;
         goto cleanup_pi;
@@ -523,25 +568,24 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
         CloseHandle(drain_threads[1]);
     }
 
-    res->stdout_data = out.data; out.data = NULL;
-    res->stderr_data = err.data; err.data = NULL;
     res->stdout_total = out.total;
     res->stderr_total = err.total;
-    res->stdout_shown = out.len;
-    res->stderr_shown = err.len;
+    res->stdout_data = drain_assemble(&out, &res->stdout_shown, &out.truncated);
+    res->stderr_data = drain_assemble(&err, &res->stderr_shown, &err.truncated);
     res->truncated = out.truncated || err.truncated;
-    if (res->stdout_data)
-        res->stdout_data[out.len] = '\0';
-    if (res->stderr_data)
-        res->stderr_data[err.len] = '\0';
     if (!res->stdout_data)
         res->stdout_data = (char *)malloc(1);
     if (!res->stderr_data)
         res->stderr_data = (char *)malloc(1);
-    if (res->stdout_data && !out.len)
+    if (res->stdout_data && !res->stdout_shown)
         res->stdout_data[0] = '\0';
-    if (res->stderr_data && !err.len)
+    if (res->stderr_data && !res->stderr_shown)
         res->stderr_data[0] = '\0';
+
+    free(out.hdr); out.hdr = NULL;
+    free(out.tail); out.tail = NULL;
+    free(err.hdr); err.hdr = NULL;
+    free(err.tail); err.tail = NULL;
 
 cleanup_pi:
     if (stdin_rd) CloseHandle(stdin_rd);
@@ -576,7 +620,7 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
     int     err_pipe[2] = {-1,-1};
     int     exec_pipe[2] = {-1,-1}; /* MYC-AUDIT-003: deteksi execvp gagal */
     pid_t   pid = -1;
-    drain_buf out, err;
+    drain_buf out = {0}, err = {0};
     pthread_t to = 0, te = 0;
     int     to_created = 0, te_created = 0;
     size_t  max_out = req->max_output_bytes ? req->max_output_bytes : MYC_MAX_OUTPUT_BYTES;
@@ -753,19 +797,19 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
     }
 
     res->duration_ms = now_ms() - t0;
-    res->stdout_data = out.data; out.data = NULL;
-    res->stderr_data = err.data; err.data = NULL;
+    res->stdout_data = drain_assemble(&out, &res->stdout_shown, &out.truncated);
+    res->stderr_data = drain_assemble(&err, &res->stderr_shown, &err.truncated);
     res->stdout_total = out.total;
     res->stderr_total = err.total;
-    res->stdout_shown = out.len;
-    res->stderr_shown = err.len;
     res->truncated = out.truncated || err.truncated;
-    if (res->stdout_data) res->stdout_data[out.len] = '\0';
-    if (res->stderr_data) res->stderr_data[err.len] = '\0';
     if (!res->stdout_data) { res->stdout_data = (char *)malloc(1); if (res->stdout_data) res->stdout_data[0] = '\0'; }
     if (!res->stderr_data) { res->stderr_data = (char *)malloc(1); if (res->stderr_data) res->stderr_data[0] = '\0'; }
-    /* out.data dan err.data sudah diserahkan ke res (di-NULL-kan di atas);
-     * jangan free lagi di sini. */
+
+    /* hdr + tail dibebaskan (data hasil sudah ter-amount di atas). */
+    free(out.hdr); out.hdr = NULL;
+    free(out.tail); out.tail = NULL;
+    free(err.hdr); err.hdr = NULL;
+    free(err.tail); err.tail = NULL;
     return res->ok ? 1 : 0;
 
 cleanup_kill:
@@ -787,8 +831,8 @@ cleanup_pipes:
     if (err_pipe[1] >= 0) close(err_pipe[1]);
     if (exec_pipe[0] >= 0) close(exec_pipe[0]);
     if (exec_pipe[1] >= 0) close(exec_pipe[1]);
-    free(out.data);
-    free(err.data);
+    free(out.hdr); free(out.tail);
+    free(err.hdr); free(err.tail);
     return 0;
 }
 
