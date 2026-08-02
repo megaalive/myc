@@ -110,6 +110,16 @@ typedef enum {
     MYC_COMPLETENESS_INCOMPLETE
 } myc_completeness;
 
+/* Sumbu A — Finding (Fase 4): status hasil dilihat dari ada-tidaknya
+ * finding terkonfirmasi pada scope yang selesai. Sumbu yang berbeda
+ * dan setara dengan completeness (Sumbu B). */
+typedef enum {
+    MYC_FINDING_UNKNOWN = 0,
+    MYC_FINDING_CLEAN,       /* tak ada finding terkonfirmasi di scope selesai */
+    MYC_FINDING_FINDINGS,    /* ≥1 finding terkonfirmasi di scope yang selesai */
+    MYC_FINDING_INCONCLUSIVE /* ada gate diminta yang belum selesai */
+} myc_finding;
+
 /* Unverified debt (Fase 4, gagasan pembeda 9.3): daftar scope yang DIMINTA
  * tetapi tidak benar-benar diselesaikan / diverifikasi. Ini menjadikan
  * "keheningan tidak disalahartikan sebagai keamanan". Setiap kernel debt
@@ -277,6 +287,12 @@ typedef struct {
     /* --- verification completeness (Sumbu B) --- */
     myc_completeness completeness;
 
+    /* --- finding verdict (Sumbu A, Fase 4) --- */
+    /* Status hasil dari sisi finding: CLEAN / FINDINGS / INCONCLUSIVE.
+     * Dipisah dari verdict legacy agar konsumen tidak perlu menebak makna
+     * MC_OK/MC_VIOLATION; output dua sumbu (finding + completeness). */
+    myc_finding finding;
+
     /* --- unverified debt (Fase 4) --- */
     myc_debt_item debt[MYC_MAX_DEBT];
     size_t        debt_count;
@@ -328,6 +344,7 @@ void myc_report_json(const myc_result *res);
 const char *myc_error_name(myc_error_code c);
 const char *myc_verdict_name(myc_verdict v);
 const char *myc_assurance_name(myc_assurance a);
+const char *myc_finding_name(myc_finding f);
 
 /* Gate status API (Fase 3). */
 void myc_gate_set_status(myc_result *res,

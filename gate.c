@@ -390,6 +390,17 @@ void myc_reduce_verdict(myc_result *res)
                         ? MYC_COMPLETENESS_INCOMPLETE
                         : MYC_COMPLETENESS_COMPLETE;
 
+    /* Sumbu A: Finding verdict (Fase 4) — jujur terpisah dari verdict legacy.
+     * Prioritas: FINDINGS > INCONCLUSIVE > CLEAN. Hanya gate diminta yang
+     * berpengaruh; finding terkonfirmasi (COMPLETED_FINDINGS) selalu menang. */
+    if (has_findings) {
+        res->finding = MYC_FINDING_FINDINGS;
+    } else if (has_incomplete) {
+        res->finding = MYC_FINDING_INCONCLUSIVE;
+    } else {
+        res->finding = MYC_FINDING_CLEAN;
+    }
+
     /* Assurance (legacy, backward compatibility) */
     if (has_findings) {
         res->assurance = MYC_ASSURANCE_NONE;

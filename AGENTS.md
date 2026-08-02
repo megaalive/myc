@@ -235,10 +235,20 @@ Poin penting:
   high/low surrogate, embedded NUL (`\u0000`), dan raw UTF-8 invalid
   (overlong/continuation/terpotong). Kapasitas dilindungi overflow guard di
   `sb_reserve`/`json_obj_set`/`json_arr_push`.
-- Corpus `test/json_abuse.c` (52 kasus valid/invalid, termasuk re-parse
-  idempoten hasil serialize) ditambahkan ke `test/_regress_run.bat`; semua
-  regress + soak + MCP interop (24 cek) tetap hijau. Verdict JSON tidak
-  terpengaruh (parser hanya dipakai MCP transport).
+- regress + soak + MCP interop (24 cek) tetap hijau. Verdict JSON tidak
+-   terpengaruh (parser hanya dipakai MCP transport).
+- **Fase 4 evidence matrix + finding_verdict selesai 2026-08-02**: Sumbu A
+  kini eksplisit — `myc_result.finding` (`myc_finding`: CLEAN / FINDINGS /
+  INCONCLUSIVE), dihitung murni dari typed gate status di `gate.c`
+  (`myc_gate_status`): prioritas FINDINGS > INCONCLUSIVE > CLEAN; hanya gate
+  diminta yang berpengaruh. Dua sumbu (finding + completeness) dipisah dari
+  verdict legacy (MC_OK/MC_VIOLATION) agar konsumen tak menebak makna.
+  Laporan teks + JSON memuat `finding:` dan `gate_matrix[]` (daftar id +
+  status tiap gate = evidence matrix konkret per scope); teks juga menampilkan
+  blok `evidence:` ringkas. Receipt deterministik tetap sama untuk input yang
+  sama (`ok_run --run` → `60b7db90eac4...`) karena finding diturunkan dari
+  status gate yang sudah di-hash. Semua regress + soak + corpus + interop
+  tetap hijau.
 
 ## Dogfooding (keputusan 2026-08-01)
 

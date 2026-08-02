@@ -2708,9 +2708,15 @@ Lihat test matrix di Fase 8.
 ### Task
 
 - [ ] Deprecate L1–L5 di schema.
-- [ ] Tambahkan `finding_verdict`.
-- [ ] Tambahkan `verification_completeness`. ✅ (Sumbu B `completeness` Fase 3)
-- [ ] Tambahkan evidence matrix.
+- [x] Tambahkan `finding_verdict`. ✅ 2026-08-02 (Sumbu A `myc_finding`
+  `finding`: CLEAN/FINDINGS/INCONCLUSIVE, dihitung di `myc_reduce_verdict`
+  dari typed gate status — prioritas FINDINGS > INCONCLUSIVE > CLEAN, hanya
+  gate diminta yang berpengaruh; dipisah dari verdict legacy; tampil di teks
+  `finding:` + JSON `"finding"`; regresi all-green).
+- [x] Tambahkan `verification_completeness`. ✅ (Sumbu B `completeness` Fase 3)
+- [x] Tambahkan evidence matrix. ✅ 2026-08-02 (`gate_matrix[]` id+status di
+  JSON + blok `evidence:` ringkas di teks = per-scope status konkret; tidak
+  bergantung pada label assurance L1–L5).
 - [ ] Tambahkan scope certificate.
 - [x] Tambahkan unverified debt. ✅ 2026-08-02 (`unverified_debt[]` teks + JSON, turunan dari typed gate status: UNAVAILABLE / INFRA_FAILED / INCONCLUSIVE / driver 0-kasus / ensures-unproved / output-truncated; regresi di `_regress_run.bat`).
 - [ ] Buat compatibility renderer bila masih ingin menampilkan label lama.

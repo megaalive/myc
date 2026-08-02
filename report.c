@@ -96,6 +96,17 @@ const char *myc_completeness_name(myc_completeness c)
     return "unknown";
 }
 
+const char *myc_finding_name(myc_finding f)
+{
+    switch (f) {
+    case MYC_FINDING_UNKNOWN:     return "unknown";
+    case MYC_FINDING_CLEAN:       return "clean";
+    case MYC_FINDING_FINDINGS:    return "findings";
+    case MYC_FINDING_INCONCLUSIVE:return "inconclusive";
+    }
+    return "unknown";
+}
+
 /* Escape string JSON ke json_sb (tanpa batas 4096; dipakai laporan & MCP). */
 static int json_sb_escape(json_sb *b, const char *s)
 {
@@ -131,6 +142,7 @@ void myc_report_text(const myc_result *res)
     size_t gi;
     printf("verdict:   %s\n", myc_verdict_name(res->verdict));
     printf("assurance: %s\n", myc_assurance_name(res->assurance));
+    printf("finding:   %s\n", myc_finding_name(res->finding));
     printf("completeness: %s\n", myc_completeness_name(res->completeness));
     printf("error:     %s\n", myc_error_name(res->err));
     printf("exit_code: %d\n", res->exit_code);
@@ -202,6 +214,16 @@ void myc_report_text(const myc_result *res)
             printf("  driver_stderr:\n%s\n", res->driver_stderr_text);
     }
 
+    /* Evidence matrix (Fase 4): ringkasan status per scope, bukan hanya
+     * label assurance. Memenuhi prinsip "setiap klaim menyertakan scope". */
+    printf("evidence:\n");
+    for (gi = 0; gi < res->gate_count; gi++) {
+        const myc_gate_result *g = &res->gates[gi];
+        printf("  %-12s %s\n",
+               g->id < MYC_GATE_COUNT ? myc_gate_id_short(g->id) : "?",
+               myc_gate_status_name(g->status));
+    }
+
     printf("gates:\n");
     for (gi = 0; gi < res->gate_count; gi++) {
         const myc_gate_result *g = &res->gates[gi];
@@ -233,6 +255,7 @@ char *myc_result_to_json(const myc_result *res)
     json_sb_puts(&b, "{");
     json_sb_printf(&b, "\"verdict\":\"%s\",", myc_verdict_name(res->verdict));
     json_sb_printf(&b, "\"assurance\":\"%s\",", myc_assurance_name(res->assurance));
+    json_sb_printf(&b, "\"finding\":\"%s\",", myc_finding_name(res->finding));
     json_sb_printf(&b, "\"completeness\":\"%s\",", myc_completeness_name(res->completeness));
     json_sb_printf(&b, "\"error\":\"%s\",", myc_error_name(res->err));
     json_sb_printf(&b, "\"exit_code\":%d,", res->exit_code);
@@ -325,6 +348,17 @@ char *myc_result_to_json(const myc_result *res)
                        g->requested ? "true" : "false");
         json_sb_escape(&b, g->output ? g->output : "");
         json_sb_puts(&b, "}");
+    }
+    json_sb_puts(&b, "],");
+    json_sb_printf(&b, "\"gate_matrix\":[");
+    for (i = 0; i < (int)res->gate_count; i++) {
+        const myc_gate_result *g = &res->gates[i];
+        if (i)
+            json_sb_puts(&b, ",");
+        json_sb_printf(&b, "{\"id\":\"%s\",\"status\":\"%s\"}",
+                       (int)g->id < MYC_GATE_COUNT ?
+                           myc_gate_id_short(g->id) : "?",
+                       myc_gate_status_name(g->status));
     }
     json_sb_puts(&b, "],");
     json_sb_printf(&b, "\"evidence\":[");
