@@ -1035,7 +1035,8 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
         if (req->cwd) {
             if (chdir(req->cwd) != 0) {
                 int e = errno;
-                (void)write(exec_pipe[1], &e, sizeof(e));
+                ssize_t wr = write(exec_pipe[1], &e, sizeof(e));
+                (void)wr;
                 _exit(127);
             }
         }
@@ -1045,7 +1046,8 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
         /* execvp gagal: kirim errno ke parent. */
         {
             int e = errno;
-            (void)write(exec_pipe[1], &e, sizeof(e));
+            ssize_t wr = write(exec_pipe[1], &e, sizeof(e));
+            (void)wr;
         }
         _exit(127);
     }
@@ -1157,9 +1159,12 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
         res->ok = 1;
         res->err = MYC_ERR_NONE;
     } else if (WIFSIGNALED(status)) {
+        /* Program berjalan lalu dihentikan sinyal (mis. SIGABRT dari
+         * sanitizer). Ini hasil VALID: exit_code = 128+sig tersedia untuk
+         * caller. Konsisten dengan Windows (proses berjalan selalu ok=1). */
         res->exit_code = 128 + WTERMSIG(status);
-        res->ok = 0;
-        res->err = MYC_ERR_EXECUTE_FAILED;
+        res->ok = 1;
+        res->err = MYC_ERR_NONE;
     } else {
         res->exit_code = 1;
         res->ok = 0;

@@ -969,6 +969,7 @@ static char *drv_make_temp_dir(void)
     return NULL;
 }
 
+#ifdef _WIN32
 static int drv_copy_file(const char *src, const char *dst)
 {
     FILE *f = fopen(src, "rb");
@@ -1022,6 +1023,7 @@ static char *drv_asan_dll_path(const char *clang_path)
     myc_proc_result_free(&pres);
     return out;
 }
+#endif /* _WIN32 */
 
 static int drv_marker_found(const char *out, const char *err)
 {

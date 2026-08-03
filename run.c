@@ -196,6 +196,7 @@ static char *join_path(const char *dir, const char *name)
     return out;
 }
 
+#ifdef _WIN32
 /* Salin file biner; 1 sukses, 0 gagal. */
 static int copy_file(const char *src, const char *dst)
 {
@@ -256,6 +257,7 @@ static char *asan_dll_path(const char *clang_path)
     myc_proc_result_free(&pres);
     return out;
 }
+#endif /* _WIN32 */
 
 /* Path eksekutabel hasil build dari direktori temp. Nama tanpa ekstensi;
  * Windows menambahkan .exe. */

@@ -98,9 +98,20 @@ case "$(uname -s 2>/dev/null)" in
         ;;
 esac
 
+# --- 6. audit_lampiran: lampiran A roadmap (regression test portabel) ---
+rm -f test/audit_lampiran test/audit_lampiran.exe
+if $CC -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/audit_lampiran \
+       test/audit_lampiran.c $SRCS 2>/dev/null; then
+    run_built "audit_lampiran (gap lampiran A: exec/contract/run)" test/audit_lampiran
+else
+    echo "[FAIL] audit_lampiran gagal dibangun"
+    FAIL=1
+fi
+
 rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \
       test/oom_alloc test/oom_alloc.exe test/stress_threads test/stress_threads.exe \
-      test/verify_descendants test/verify_descendants.exe
+      test/verify_descendants test/verify_descendants.exe \
+      test/audit_lampiran test/audit_lampiran.exe
 
 echo "audit018: $([ $FAIL -eq 0 ] && echo SELESAI OK || echo GAGAL)"
 exit $FAIL

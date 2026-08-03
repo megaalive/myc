@@ -92,8 +92,14 @@ static size_t read_word(const char *s, size_t i, size_t len,
 }
 
 /* Baca ekspresi kontrak dari posisi i hingga ';' atau akhir baris.
- * Menulis ke out (truncate bila terlalu panjang), *endpos = posisi setelah
- * ';' (bila ada). Mengembalikan 1 bila non-kosong. */
+ * Menulis ke out (TIDAK menruncate senyap), *endpos = posisi setelah
+ * ';' (bila ada).
+ * Return: 1 = ekspresi penuh terbaca;
+ *         0 = ekspresi kosong;
+ *         2 = ekspresi terlalu panjang untuk buffer (DITOLAK, caller
+ *             menambah diagnostic -- prinsip "no silent truncate",
+ *             Lampiran A roadmap: long contract expression rejected,
+ *             not truncated). */
 static int read_contract_expr(const char *s, size_t i, size_t len,
                               char *out, size_t outcap, size_t *endpos)
 {
@@ -114,7 +120,7 @@ static int read_contract_expr(const char *s, size_t i, size_t len,
     if (t == 0)
         return 0;
     if (t >= outcap)
-        t = outcap - 1;
+        return 2;   /* terlalu panjang: TOLAK, jangan truncate */
     memcpy(out, s + a, t);
     out[t] = '\0';
     return 1;
@@ -173,9 +179,14 @@ int myc_contract_scan(const char *source, size_t len, myc_result *res)
                 if (strcmp(kw, "requires") == 0) {
                     char   expr[512];
                     size_t endp;
-                    if (read_contract_expr(source, kwend, line_end, expr,
-                                           sizeof(expr), &endp)) {
+                    int    st = read_contract_expr(source, kwend, line_end,
+                                                   expr, sizeof(expr), &endp);
+                    if (st == 1) {
                         res->contract_requires++;
+                    } else if (st == 2) {
+                        add_contract_diag(res, (int)line,
+                                          (int)(start_col + (j - i)),
+                                          "kontrak requires terlalu panjang (ditolak, bukan ditruncate)");
                     } else {
                         add_contract_diag(res, (int)line,
                                           (int)(start_col + (j - i)),
@@ -184,9 +195,14 @@ int myc_contract_scan(const char *source, size_t len, myc_result *res)
                 } else if (strcmp(kw, "ensures") == 0) {
                     char   expr[512];
                     size_t endp;
-                    if (read_contract_expr(source, kwend, line_end, expr,
-                                           sizeof(expr), &endp)) {
+                    int    st = read_contract_expr(source, kwend, line_end,
+                                                   expr, sizeof(expr), &endp);
+                    if (st == 1) {
                         res->contract_ensures++;
+                    } else if (st == 2) {
+                        add_contract_diag(res, (int)line,
+                                          (int)(start_col + (j - i)),
+                                          "kontrak ensures terlalu panjang (ditolak, bukan ditruncate)");
                     } else {
                         add_contract_diag(res, (int)line,
                                           (int)(start_col + (j - i)),
@@ -263,8 +279,11 @@ int myc_contract_list(const char *source, size_t len,
                     strcmp(kw, "ensures") == 0) {
                     char   expr[512];
                     size_t endp;
-                    if (read_contract_expr(source, kwend, line_end, expr,
-                                           sizeof(expr), &endp)) {
+                    int    st = read_contract_expr(source, kwend, line_end,
+                                                   expr, sizeof(expr), &endp);
+                    /* st==2 = terlalu panjang: TOLAK (jangan kumpulkan
+                     * ekspresi terpotong). "No silent truncate". */
+                    if (st == 1) {
                         if (strcmp(kw, "requires") == 0)
                             collect_expr(reqs, nreqs, expr);
                         else
