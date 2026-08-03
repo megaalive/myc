@@ -141,6 +141,30 @@ Poin penting:
   test eksplisit belum). Regresi: audit018 6/6 unit (audit_lampiran 12/12 OK),
   self-dogfooding WSL 17/17 OK, Windows regress fixture utuh (ok_run L3,
   bad_run_oob RUNTIME_VIOLATION, ok_checked L4).
+- **MYC-AUDIT-019 lanjutan #2 2026-08-03** (Lampiran A di-ikat test penuh).
+  `test/audit_lampiran.c` bertambah menjadi 17 test: **T8** fingerprint cwd
+  3000-char tetap 64-hex + deterministik (AUDIT-005; `--fp-long` mode; varian
+  ASan di-ikat ke `_audit018.sh` section 6b — menangkap OOB read regresi secara
+  eksplisit, non-blocking bila toolchain tanpa ASan), **T9** `file_path`-only
+  request tanpa NULL deref + source di-load & di-hash (AUDIT-007), **T11**
+  canary failure invalidates backend (9.9): binary di-hardlink sebagai
+  `fake-clang` (`fake-clang.exe` di Windows, `strstr(argv[0],"fake-clang")`
+  dispatch) yang menolak build canary (`-o` berisi "myc_canary" → exit 1, nama
+  canary = `myc_canary.exe` di `run.c:317`) tapi menerima verification build
+  (compile program polos via gcc) → `myc_runtime_canary` return -1 → gate
+  runtime **INCONCLUSIVE** (run.c:744-763). **OOM JSON** (AUDIT-009): fase
+  `json_new_obj/obj_set/arr_push/serialize` 49 fail point ditambahkan ke
+  `test/oom_alloc.c` (--wrap). **Bug nyata ditemukan di WSL**: parent myc mati
+  SIGPIPE (exit 141) saat menulis stdin ke child yang sudah mati lebih awal
+  (exec gagal / `chdir(cwd)` gagal — T8 memakai cwd 3000-char yang tak ada →
+  child _exit sebelum baca stdin) → `write()` tidak sempat return EPIPE karena
+  sinyal default membunuh parent. **Fix proc.c POSIX**: tahan `SIGPIPE` (`SIG_
+  IGN` via `sigaction`, simpan & pulihkan handler lama) selama loop tulis stdin;
+  `write()` kini return EPIPE → break seperti desain. Lampiran A kini **27/28**
+  `[x]` (sisa: Fil-C run_stdin — tak bisa diuji tanpa Fil-C terpasang). Regresi:
+  `_audit018.sh` WSL 6/6 + fp-long ASan OK + verify_descendants OK (0 FAIL);
+  Windows `_regress_run.bat` 0 [FAIL] (self-dogfooding 16 OK, fixtures utuh,
+  MCP interop 25 cek).
 - **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
   seluruh rule lint.c (intptr_t/uintptr_t cast, realloc ke variabel lain,
   memcpy/memset tanpa sizeof, ukuran alokasi perkalian tanpa sizeof, akses
