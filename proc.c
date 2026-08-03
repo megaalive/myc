@@ -1092,7 +1092,16 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
 
     /* Tulis stdin SETELAH drain thread sudah berjalan. */
     if (req->stdin_len > 0) {
+        struct sigaction sa, oldsa;
         size_t off = 0;
+        /* SIGPIPE: child bisa mati sebelum selesai membaca stdin (exec
+         * gagal / crash dini / chdir(cwd) gagal). Default SIGPIPE =
+         * terminate PARENT -- bug: myc/mcp/proc_flood ikut mati padahal
+         * write() cukup return EPIPE. Tahan SIGPIPE selama menulis,
+         * pulihkan handler lama setelahnya. */
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_handler = SIG_IGN;
+        sigaction(SIGPIPE, &sa, &oldsa);
         while (off < req->stdin_len) {
             ssize_t w = write(in_pipe[1], (const char *)req->stdin_data + off,
                               req->stdin_len - off);
@@ -1100,6 +1109,7 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
                 break; /* broken pipe: child mungkin sudah exit */
             off += (size_t)w;
         }
+        sigaction(SIGPIPE, &oldsa, NULL);
     }
     close(in_pipe[1]); in_pipe[1] = -1;
 
