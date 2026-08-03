@@ -57,13 +57,17 @@ static void worker_run(worker_arg *w)
         myc_result_init(&res);
         myc_run(&req, &res);
         if (res.verdict == MC_OK || res.verdict == MC_VIOLATION ||
-            res.verdict == MC_COMPILE_ERROR)
+            res.verdict == MC_COMPILE_ERROR || res.verdict == MC_TIMEOUT)
             verdict_ok++;
         if (res.source_sha256) {
             if (sha_last && strcmp(sha_last, res.source_sha256) != 0)
                 w->mismatch = 1;
             free(sha_last);
-            sha_last = strdup(res.source_sha256);
+            /* myc_strdup: abstraction portabel (myc.h) -- `strdup` tidak
+             * dideklarasikan di glibc tanpa feature macro (_POSIX_C_SOURCE)
+             * dan menjadi `int` di C11, meng-truncate pointer 64-bit ke
+             * 32-bit -> segfault di build POSIX (ditemukan audit018 WSL). */
+            sha_last = myc_strdup(res.source_sha256);
         }
         myc_result_free(&res);
     }

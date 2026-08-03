@@ -19,6 +19,15 @@ cd "$(dirname "$0")/.." || exit 1
 
 SRCS="myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c"
 CC="${CC:-gcc}"
+# POSIX/Windows butuh -pthread untuk stress_threads (pthread_create/join).
+# Deteksi apakah kompiler menerima flag; aman untuk MinGW juga.
+PTHREAD=""
+if "$CC" -pthread -o /dev/null -x c - 2>/dev/null <<'EOF'
+int main(void){return 0;}
+EOF
+then
+    PTHREAD="-pthread"
+fi
 FAIL=0
 
 rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \
@@ -35,7 +44,7 @@ run_built() {
 }
 
 # --- 1. proc_flood: deadlock + flood + env override ---
-if $CC -O2 -std=c11 -Wall -Wextra -I. -o test/proc_flood test/proc_flood.c proc.c 2>/dev/null; then
+if $CC -O2 -std=c11 -Wall -Wextra -I. $PTHREAD -o test/proc_flood test/proc_flood.c proc.c 2>/dev/null; then
     run_built "audit018 proc_flood (deadlock/flood/env)" test/proc_flood
 else
     echo "[FAIL] audit018 proc_flood gagal dibangun"
@@ -62,7 +71,7 @@ else
 fi
 
 # --- 4. stress_threads: concurrency (juga dijalankan _regress_run.bat) ---
-if $CC -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/stress_threads \
+if $CC -O2 -std=c11 -Wall -Wextra -I. $PTHREAD -DMYC_NO_MAIN -o test/stress_threads \
        test/stress_threads.c $SRCS 2>/dev/null; then
     run_built "audit018 stress_threads (concurrency)" test/stress_threads
 else
