@@ -2794,7 +2794,7 @@ Lihat test matrix di Fase 8.
 
 ---
 
-## Fase 2 — Canonical Ingress dan API Contract ✅ PARTIAL SELESAI 2026-08-02
+## Fase 2 — Canonical Ingress dan API Contract ⚠️ PARTIAL SELESAI 2026-08-02 (ingress flag fail-fast ✅ 2026-08-03)
 
 ### Task
 
@@ -2804,7 +2804,7 @@ Lihat test matrix di Fase 8.
 - [ ] Embedded NUL policy length-aware.
 - [x] `file_path`-only: `myc_run()` kini load file sebelum masuk pipeline (MYC-AUDIT-007).
 - [ ] Validasi timeout, output cap, cwd, flag combinations.
-- [ ] Unknown flag menjadi error.
+- [x] Unknown flag menjadi error. (MYC-AUDIT-019: CLI fail-fast pada unknown flag → pesan + exit 2; `--run-stdin`/`--cwd` tanpa argumen nilai → exit 2. Konsisten dengan reject unknown flag MCP -32602.)
 - [ ] Semua string public memiliki pointer + length bila dapat mengandung input eksternal.
 
 ### Acceptance criteria
