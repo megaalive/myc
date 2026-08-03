@@ -1100,6 +1100,11 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
         free(harness);
         return 0;
     }
+    /* MYC-AUDIT-022 (roadmap 7.1): exact tool identity — baris pertama
+     * `clang --version`. Hanya diisi bila belum ada (bila --run juga
+     * berjalan, jangan timpa/double-free). */
+    if (!res->clang_version)
+        res->clang_version = myc_tool_version(clang_path);
 
     /* 4. Direktori temp. */
     tmp_dir = drv_make_temp_dir();

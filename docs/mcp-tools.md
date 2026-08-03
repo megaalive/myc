@@ -32,7 +32,8 @@ sebagai server dan memanggil pipeline verifikasi `myc` sebagai tool.
 - `cwd` (string, opsional): direktori kerja gate (gcc/clang).
 - **Hasil**: `content[0].text` memuat **JSON lengkap** `myc_result`
   (`verdict`, `assurance`, `error`, `exit_code`, `duration_ms`,
-  `resolved_gcc`, `fingerprint`, `source_sha256`, `contract_requires`,
+  `resolved_gcc`, `gcc_version`, `clang_version` (exact tool identity,
+  MYC-AUDIT-022), `fingerprint`, `source_sha256`, `contract_requires`,
   `contract_ensures`, `truncated`, `stdout_bytes`, `stderr_bytes`, plus
   seksi gate yang berjalan (`run_*`, `checked_*`, `filc_*`, `driver_*`,
   `prove_*`) dan `diagnostics[]`). **Dan** objek `structuredContent`

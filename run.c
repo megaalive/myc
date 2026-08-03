@@ -435,6 +435,11 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
                                 "verification run di-skip: clang tidak ditemukan");
         return 0;
     }
+    /* MYC-AUDIT-022 (roadmap 7.1): exact tool identity — baris pertama
+     * `clang --version`. Hanya diisi bila belum ada (bila --driver juga
+     * berjalan, jangan timpa/double-free). */
+    if (!res->clang_version)
+        res->clang_version = myc_tool_version(clang_path);
 
     /* 1b. Inject assert(requires) (D1.5) untuk verification build.
      * Catatan: myc_contract_inject TIDAK menulis *out_len saat tidak ada

@@ -29,6 +29,7 @@
 #include "driver.h"
 #include "filc.h"
 #include "gate.h"
+#include "json.h"
 #include "lint.h"
 #include "negative.h"
 #include "policy.h"
@@ -88,14 +89,19 @@ static const char *const SYNTAX_BASE[] = {
 };
 
 /* Gate memori: perlu -c + -O2 agar -Warray-bounds/-Wstringop-overflow aktif
- * (gcc menjalankan analisis GIMPLE hanya saat kompilasi dengan optimisasi). */
+ * (gcc menjalankan analisis GIMPLE hanya saat kompilasi dengan optimisasi).
+ * MYC-AUDIT-022 (roadmap 7.1): -fdiagnostics-format=json membuat stderr
+ * gcc menjadi array JSON terstruktur (kind/message/caret line+col) yang
+ * di-parse ingest_gcc_diagnostics (machine-readable diagnostic). */
 static const char *const MEMORY_GATE[] = {
-    "-c", "-O2", "-o", "NUL", NULL
+    "-c", "-O2", "-o", "NUL",
+    "-fdiagnostics-format=json", NULL
 };
 
 /* Flags analyzer: MEMORY_GATE + -fanalyzer. */
 static const char *const ANALYZER_EXTRA[] = {
-    "-c", "-O2", "-fanalyzer", "-o", "NUL", NULL
+    "-c", "-O2", "-fanalyzer", "-o", "NUL",
+    "-fdiagnostics-format=json", NULL
 };
 
 /* Susun satu array argv gabungan (semua pointer statis, tak perlu bebas).
@@ -143,40 +149,102 @@ static void add_diag_copy(myc_result *res, int line, int col, const char *msg)
     res->diag_count++;
 }
 
-/* Tambah diagnostic dari stderr gcc (parsing baris sederhana).
- * Hanya baris yang memuat "<stdin>:<line>:<col>:" yang diambil sebagai
- * diagnostic; baris lanjutan gcc ("cc1.exe:...", "  'main': events",
- * "<stdin>: In function") dilewati agar laporan tidak bising. */
+/* Tambah diagnostic dari stderr gcc.
+ *
+ * MYC-AUDIT-022 (roadmap 7.1): gate kompilasi kini memakai
+ * -fdiagnostics-format=json (machine-readable). Bila stderr adalah array
+ * JSON (dimulai '['), parse terstruktur: kind/message/caret line+col dari
+ * tiap entri top-level; kind "note" di-skip (konsisten dengan parser teks
+ * lama yang melewatkan baris lanjutan indented). Bila parse JSON gagal
+ * (mis. output terpotong oleh bounded capture 1 MiB) atau stderr format
+ * teks (gate preprocess gcc -E TANPA flag JSON), fallback ke parser baris
+ * sederhana ("<stdin>:<line>:<col>:"). Keduanya menghasilkan diagnostic
+ * confidence CONFIRMED (bukti SEMANTIK compiler, bukan heuristik teks). */
 static void ingest_gcc_diagnostics(myc_result *res, const char *text)
 {
-    const char *p = text;
-    while (p && *p) {
-        const char *nl = strchr(p, '\n');
-        size_t      linelen = nl ? (size_t)(nl - p) : strlen(p);
-        char       *linebuf = (char *)malloc(linelen + 1);
-        int         line = 0, col = 0;
-        const char *msg = NULL;
+    size_t      len;
+    json_value *root = NULL;
 
-        if (linebuf) {
-            memcpy(linebuf, p, linelen);
-            linebuf[linelen] = '\0';
-            if (strncmp(linebuf, "<stdin>:", 8) == 0) {
-                char *rest = linebuf + 8;
-                char *endptr;
-                line = (int)strtol(rest, &endptr, 10);
-                if (endptr && *endptr == ':') {
-                    col = (int)strtol(endptr + 1, &endptr, 10);
-                    if (endptr && *endptr == ':') {
-                        msg = endptr + 1;
-                        add_diag_copy(res, line, col, msg);
+    if (!text || !text[0])
+        return;
+    len = strlen(text);
+
+    /* 1. Jalur JSON (gcc -fdiagnostics-format=json). */
+    if (text[0] == '[' && json_parse(text, len, &root) && root &&
+        root->type == JSON_ARR) {
+        size_t i;
+        for (i = 0; i < root->len &&
+                    res->diag_count < MYC_MAX_DIAGNOSTICS; i++) {
+            json_value *d = root->items[i];
+            json_value *kind, *msg, *locs;
+            int         line = 0, col = 0;
+            if (!d || d->type != JSON_OBJ)
+                continue;
+            kind = json_get(d, "kind");
+            if (kind && kind->type == JSON_STR &&
+                strcmp(kind->str, "note") == 0)
+                continue;
+            msg = json_get(d, "message");
+            locs = json_get(d, "locations");
+            if (locs && locs->type == JSON_ARR && locs->len > 0) {
+                json_value *loc = locs->items[0];
+                if (loc && loc->type == JSON_OBJ) {
+                    json_value *caret = json_get(loc, "caret");
+                    if (caret && caret->type == JSON_OBJ) {
+                        json_value *lv = json_get(caret, "line");
+                        json_value *cv = json_get(caret, "column");
+                        if (lv && lv->type == JSON_NUM)
+                            line = (int)lv->num;
+                        if (cv && cv->type == JSON_NUM)
+                            col = (int)cv->num;
                     }
                 }
             }
-            free(linebuf);
+            if (msg && msg->type == JSON_STR && msg->str[0])
+                add_diag_copy(res, line, col, msg->str);
         }
-        if (!nl)
-            break;
-        p = nl + 1;
+        json_free(root);
+        return;
+    }
+    if (root) {
+        json_free(root);
+        root = NULL;
+    }
+
+    /* 2. Fallback: format teks (mis. gcc -E preprocess). Hanya baris yang
+     * memuat "<stdin>:<line>:<col>:" yang diambil; baris lanjutan gcc
+     * ("cc1.exe:...", "  'main': events", "<stdin>: In function")
+     * dilewati agar laporan tidak bising. */
+    {
+        const char *p = text;
+        while (p && *p) {
+            const char *nl = strchr(p, '\n');
+            size_t      linelen = nl ? (size_t)(nl - p) : strlen(p);
+            char       *linebuf = (char *)malloc(linelen + 1);
+            int         line = 0, col = 0;
+            const char *msg = NULL;
+
+            if (linebuf) {
+                memcpy(linebuf, p, linelen);
+                linebuf[linelen] = '\0';
+                if (strncmp(linebuf, "<stdin>:", 8) == 0) {
+                    char *rest = linebuf + 8;
+                    char *endptr;
+                    line = (int)strtol(rest, &endptr, 10);
+                    if (endptr && *endptr == ':') {
+                        col = (int)strtol(endptr + 1, &endptr, 10);
+                        if (endptr && *endptr == ':') {
+                            msg = endptr + 1;
+                            add_diag_copy(res, line, col, msg);
+                        }
+                    }
+                }
+                free(linebuf);
+            }
+            if (!nl)
+                break;
+            p = nl + 1;
+        }
     }
 }
 
@@ -327,6 +395,7 @@ static void run_checked_gate(const myc_request *req, const char *gcc_path,
     static const char *const CHECKED_EXTRA[] = {
         "-c", "-O2", "-o", "NUL",
         "-DMYC_CHECKED=1",
+        "-fdiagnostics-format=json",
         NULL
     };
     const char *const *lists[4];
@@ -481,6 +550,9 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         return;
     }
     res->resolved_gcc = myc_strdup(gcc_path);
+    /* MYC-AUDIT-022 (roadmap 7.1): exact tool identity — baris pertama
+     * `gcc --version` (mis. "gcc.exe (...) 15.2.0"). NULL bila gagal. */
+    res->gcc_version = myc_tool_version(gcc_path);
 
     /* fingerprint kanonik
      * Perbaikan MYC-AUDIT-005: snprintf() mengembalikan panjang yang

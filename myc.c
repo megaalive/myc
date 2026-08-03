@@ -166,6 +166,8 @@ void myc_result_free(myc_result *res)
     free(res->driver_stdout_text);
     free(res->driver_stderr_text);
     free(res->resolved_gcc);
+    free(res->gcc_version);
+    free(res->clang_version);
     free(res->fingerprint);
     free(res->source_sha256);
     for (i = 0; i < res->gate_count; i++)
@@ -183,6 +185,8 @@ void myc_result_free(myc_result *res)
     res->driver_stdout_text = NULL;
     res->driver_stderr_text = NULL;
     res->resolved_gcc = NULL;
+    res->gcc_version = NULL;
+    res->clang_version = NULL;
     res->fingerprint = NULL;
     res->source_sha256 = NULL;
     res->gate_count = 0;
@@ -660,17 +664,28 @@ static int cmd_probe(const char *argv0)
 
 static int cmd_version(void)
 {
+    /* MYC-AUDIT-022 (roadmap 7.1): `myc version` kini memberi EXACT tool
+     * identity — versi persis backend (baris pertama `<exe> --version`),
+     * bukan hanya path. Roadmap lama: "version belum memberi exact
+     * toolchain identity" (docs/myc-serious-review-and-roadmap.md). */
     char *gcc = myc_find_executable("gcc");
     char *clang = myc_find_executable("clang");
+    char *gv, *cv;
     printf("myc 0.1.0\n");
     if (gcc) {
         printf("gcc: %s\n", gcc);
+        gv = myc_tool_version(gcc);
+        printf("gcc version: %s\n", gv ? gv : "(tidak terbaca)");
+        free(gv);
         free(gcc);
     } else {
         printf("gcc: TIDAK DITEMUKAN\n");
     }
     if (clang) {
         printf("clang: %s\n", clang);
+        cv = myc_tool_version(clang);
+        printf("clang version: %s\n", cv ? cv : "(tidak terbaca)");
+        free(cv);
         free(clang);
     } else {
         printf("clang: TIDAK DITEMUKAN (verification run --run tidak tersedia)\n");

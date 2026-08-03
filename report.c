@@ -236,6 +236,11 @@ void myc_report_text(const myc_result *res)
         printf("receipt_sha256: %s\n", res->receipt_sha256);
     if (res->resolved_gcc)
         printf("gcc:       %s\n", res->resolved_gcc);
+    /* MYC-AUDIT-022 (roadmap 7.1): exact tool identity. */
+    if (res->gcc_version)
+        printf("gcc_version: %s\n", res->gcc_version);
+    if (res->clang_version)
+        printf("clang_version: %s\n", res->clang_version);
     if (res->fingerprint)
         printf("fingerprint: %s\n", res->fingerprint);
     if (res->source_sha256)
@@ -497,6 +502,13 @@ char *myc_result_to_json(const myc_result *res)
                    res->require_complete ? "true" : "false");
     json_sb_printf(&b, "\"resolved_gcc\":");
     json_sb_escape(&b, res->resolved_gcc);
+    json_sb_puts(&b, ",");
+    /* MYC-AUDIT-022 (roadmap 7.1): exact tool identity (NULL -> null). */
+    json_sb_printf(&b, "\"gcc_version\":");
+    json_sb_escape(&b, res->gcc_version);
+    json_sb_puts(&b, ",");
+    json_sb_printf(&b, "\"clang_version\":");
+    json_sb_escape(&b, res->clang_version);
     json_sb_puts(&b, ",");
     json_sb_printf(&b, "\"fingerprint\":");
     json_sb_escape(&b, res->fingerprint);

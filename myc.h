@@ -405,6 +405,11 @@ typedef struct {
     const char *prove_mode;             /* adapter: "eva" (abstract interpretation) */
 
     char       *resolved_gcc;           /* canonical executable identity */
+    /* Exact tool identity (MYC-AUDIT-022, roadmap 7.1): baris pertama
+     * `<exe> --version` untuk backend yang benar-benar dipakai. NULL
+     * bila tool tidak tersedia / versi tidak terbaca. */
+    char       *gcc_version;
+    char       *clang_version;
     char       *fingerprint;            /* canonical process fingerprint */
     char       *source_sha256;          /* stdin content hash */
 
@@ -566,6 +571,12 @@ char *myc_result_arena_dup(myc_result *res, const char *s, size_t string_len);
  * hasil malloc (idiom aman, lolos lint). Mengembalikan malloc'd copy atau
  * NULL bila OOM / s NULL. */
 char *myc_strdup(const char *s);
+
+/* Exact tool identity (MYC-AUDIT-022, roadmap 7.1): jalankan <exe>
+ * --version, kembalikan baris pertama stdout sebagai string malloc'd,
+ * atau NULL bila exec gagal / exit != 0 / tidak ada output. Implementasi
+ * di proc.c (selalu di-link). Dipakai pipeline (gcc/clang) + `myc version`. */
+char *myc_tool_version(const char *exe);
 
 /* Jalankan pipeline penuh pada request. Mengisi res. */
 void myc_run(const myc_request *req, myc_result *res);

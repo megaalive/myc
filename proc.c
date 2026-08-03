@@ -241,6 +241,64 @@ char *myc_strdup(const char *s)
 }
 
 /* ------------------------------------------------------------------ */
+/* myc_tool_version (MYC-AUDIT-022, roadmap 7.1: exact tool identity)  */
+/* ------------------------------------------------------------------ */
+/* Jalankan <exe> --version, ambil BARIS PERTAMA non-kosong dari stdout
+ * sebagai identitas versi tool (mis. "gcc.exe (...) 15.2.0" / "clang
+ * version 22.1.6 (...)"). Diletakkan di proc.c karena modul ini selalu
+ * di-link (myc.exe, mcp.exe, dan unit test yang hanya men-link proc.c).
+ * Mengembalikan malloc'd string, atau NULL bila exec gagal / exit != 0 /
+ * stdout kosong (backend tersedia tapi versi tidak terbaca -> NULL
+ * ditangani pemanggil sebagai "tidak diketahui"). */
+char *myc_tool_version(const char *exe)
+{
+    myc_proc_request preq;
+    myc_proc_result  pr;
+    const char      *argv[3];
+    const char      *nl;
+    size_t           n;
+    char            *v;
+
+    if (!exe)
+        return NULL;
+    argv[0] = exe;
+    argv[1] = "--version";
+    argv[2] = NULL;
+    memset(&preq, 0, sizeof(preq));
+    preq.argv = argv;
+    preq.timeout_ms = 10000;
+    preq.max_output_bytes = 16384;
+    memset(&pr, 0, sizeof(pr));
+    if (!myc_proc_run(&preq, &pr)) {
+        /* konsisten dgn konvensi proyek: myc_proc_result_free walau
+         * launch gagal (buffer kemungkinan NULL, tapi aman) */
+        myc_proc_result_free(&pr);
+        return NULL;
+    }
+    if (pr.exit_code != 0 || !pr.stdout_data || !pr.stdout_data[0]) {
+        myc_proc_result_free(&pr);
+        return NULL;
+    }
+    nl = strchr(pr.stdout_data, '\n');
+    n = nl ? (size_t)(nl - pr.stdout_data) : strlen(pr.stdout_data);
+    /* buang trailing \r (CRLF Windows) */
+    while (n > 0 &&
+           (pr.stdout_data[n - 1] == '\r' || pr.stdout_data[n - 1] == '\n'))
+        n--;
+    if (n == 0) {
+        myc_proc_result_free(&pr);
+        return NULL;
+    }
+    v = (char *)malloc(n + 1);
+    if (v) {
+        memcpy(v, pr.stdout_data, n);
+        v[n] = '\0';
+    }
+    myc_proc_result_free(&pr);
+    return v;
+}
+
+/* ------------------------------------------------------------------ */
 /* Pencarian executable                                                */
 /* ------------------------------------------------------------------ */
 
