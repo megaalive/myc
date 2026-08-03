@@ -23,8 +23,11 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <process.h>
+#define myc_getpid _getpid
 #else
 #include <unistd.h>
+#define myc_getpid getpid
 #endif
 
 #include "myc.h"
@@ -132,10 +135,204 @@ static void test_zero_driver_cases(void)
     myc_result_free(&res);
 }
 
+/* ------------------------------------------------------------------ */
+/* T8: long fingerprint material cannot OOB (MYC-AUDIT-005).            */
+/* ------------------------------------------------------------------ */
+/* Fingerprint dibangun dari gcc_path + cwd + policy + flags. cwd yang
+ * sangat panjang membuat material fingerprint > 512 byte. Bug lama:
+ * snprintf ke buf[512] truncated -> nilai return (panjang yang SEHARUSNYA)
+ * dipakai sebagai length ke sha256_hex -> OOB read. Fix: snprintf(NULL,0)
+ * menghitung panjang exact, lalu alokasi dinamis. Test: fingerprint harus
+ * tetap 64-hex dan DETERMINISTIK untuk material panjang (tidak terpengaruh
+ * stack garbage / OOB). Jalankan dua kali -> hasil identik. */
+static void run_fp_long_test(void)
+{
+    char      *cwd;
+    myc_request req;
+    myc_result  r1, r2;
+    const char *src = "int main(void){return 0;}\n";
+    int i;
+
+    cwd = (char *)malloc(3001);
+    if (!cwd) {
+        printf("[SKIP] fp-long: malloc cwd gagal\n");
+        return;
+    }
+    for (i = 0; i < 3000; i++)
+        cwd[i] = 'a';
+    cwd[3000] = '\0';
+
+    myc_request_init(&req);
+    req.source = src;
+    req.source_len = strlen(src);
+    req.run_lint = 1;
+    req.cwd = cwd;
+
+    myc_result_init(&r1);
+    myc_run(&req, &r1);
+    myc_result_init(&r2);
+    myc_run(&req, &r2);
+
+    CHECK(r1.fingerprint && strlen(r1.fingerprint) == 64,
+          "fingerprint cwd 3000 char tetap 64-hex (AUDIT-005)");
+    CHECK(r1.fingerprint && r2.fingerprint &&
+          strcmp(r1.fingerprint, r2.fingerprint) == 0,
+          "fingerprint deterministik untuk material panjang (tanpa OOB/truncate)");
+
+    myc_result_free(&r1);
+    myc_result_free(&r2);
+    free(cwd);
+}
+
+/* ------------------------------------------------------------------ */
+/* Mode fake-clang (T11: canary failure invalidates backend, 9.9).     */
+/* ------------------------------------------------------------------ */
+/* Ketika binary audit_lampiran di-hardlink sebagai "fake-clang" dan
+ * dipanggil myc sebagai program clang (argv[0] mengandung "fake-clang"),
+ * binary bertindak sebagai compiler pengganti:
+ *   - output "-o <path>" yang berisi "myc_canary" -> return 1 (canary
+ *     build GAGAL; backend tak teruji);
+ *   - selain itu -> kompilasi program polos `int main(void){return 0;}`
+ *     via gcc asli ke <path> (verification build sukses + run bersih).
+ * Akibat: verification run bersih TAPI canary gagal dibangun ->
+ * myc_runtime_canary return -1 -> gate runtime INCONCLUSIVE (bukan
+ * COMPLETED_CLEAN). Verification exe = program polos tanpa sanitizer,
+ * sehingga run-nya selalu exit 0 tanpa report -> myc melangkah ke canary. */
+static int fake_clang_main(int argc, char **argv)
+{
+    const char *out = NULL;
+    char       *gcc = NULL;
+    const char *av[8];
+    myc_proc_request preq;
+    myc_proc_result  pres;
+    int i;
+    int ret = 1;
+    static const char TRIVIAL[] = "int main(void){return 0;}\n";
+
+    for (i = 1; i < argc - 1; i++) {
+        if (strcmp(argv[i], "-o") == 0) {
+            out = argv[i + 1];
+            break;
+        }
+    }
+    if (!out)
+        return 1;
+    if (strstr(out, "myc_canary")) {
+        fprintf(stderr, "fake-clang: canary build ditolak (canary gagal dibangun)\n");
+        return 1;
+    }
+    gcc = myc_find_executable("gcc");
+    if (!gcc)
+        return 1;
+    av[0] = gcc;
+    av[1] = "-x"; av[2] = "c"; av[3] = "-";
+    av[4] = "-o"; av[5] = out;
+    av[6] = NULL;
+    memset(&preq, 0, sizeof(preq));
+    preq.argv = av;
+    preq.stdin_data = TRIVIAL;
+    preq.stdin_len = sizeof(TRIVIAL) - 1;
+    preq.timeout_ms = 30000;
+    preq.max_output_bytes = 65536;
+    memset(&pres, 0, sizeof(pres));
+    if (myc_proc_run(&preq, &pres))
+        ret = pres.exit_code;
+    myc_proc_result_free(&pres);
+    free(gcc);
+    return ret;
+}
+
+/* Path target fake-clang: direktori self dengan basename diganti
+ * "fake-clang" (+ ".exe" di Windows). Malloc'd; NULL bila OOM. */
+static char *fake_clang_target(const char *self)
+{
+    const char *slash;
+    const char *name = "fake-clang";
+    size_t dirlen;
+    char *out;
+
+#ifdef _WIN32
+    name = "fake-clang.exe";
+#endif
+    slash = strrchr(self, '/');
+    if (slash) {
+        dirlen = (size_t)(slash - self) + 1;
+    } else {
+        const char *bs = strrchr(self, '\\');
+        dirlen = bs ? (size_t)(bs - self) + 1 : 0;
+    }
+    out = (char *)malloc(dirlen + strlen(name) + 1);
+    if (!out)
+        return NULL;
+    memcpy(out, self, dirlen);
+    memcpy(out + dirlen, name, strlen(name) + 1);
+    return out;
+}
+
+static int hardlink_file(const char *src, const char *dst)
+{
+#ifdef _WIN32
+    return CreateHardLinkA(dst, src, NULL) ? 1 : 0;
+#else
+    return link(src, dst) == 0 ? 1 : 0;
+#endif
+}
+
+/* T11: canary failure invalidates backend (9.9). Gunakan fake-clang yang
+ * menolak canary build TAPI menerima verification build -> myc harus
+ * menurunkan gate runtime ke INCONCLUSIVE (bukan COMPLETED_CLEAN). */
+static void test_canary_failure(const char *self)
+{
+    char *fake = fake_clang_target(self);
+    myc_request req;
+    myc_result  res;
+    const char *src = "int main(void){return 0;}\n";
+    const myc_gate_result *g;
+
+    if (!fake) {
+        printf("[SKIP] canary failure: fake-clang path OOM\n");
+        return;
+    }
+    if (!hardlink_file(self, fake)) {
+        printf("[SKIP] canary failure: fake-clang gagal di-hardlink\n");
+        free(fake);
+        return;
+    }
+    myc_request_init(&req);
+    req.source = src;
+    req.source_len = strlen(src);
+    req.run_lint = 1;
+    req.run = 1;
+    req.clang_program = fake;
+    myc_result_init(&res);
+    myc_run(&req, &res);
+    g = myc_gate_get(&res, MYC_GATE_RUNTIME);
+    CHECK(res.verdict == MC_INCONCLUSIVE &&
+          g && g->status == MYC_GATE_INCONCLUSIVE,
+          "canary gagal dibangun -> gate runtime INCONCLUSIVE (verdict=%d status=%d)",
+          (int)res.verdict, g ? (int)g->status : -1);
+    myc_result_free(&res);
+    remove(fake);
+    free(fake);
+}
+
 int main(int argc, char **argv)
 {
     const char *self;
     myc_error_code err = MYC_ERR_NONE;
+
+    /* Mode khusus: HANYA test fingerprint panjang (dipakai varian ASan
+     * di _audit018.sh; ASan menangkap OOB read bila regresi AUDIT-005). */
+    if (argc > 1 && strcmp(argv[1], "--fp-long") == 0) {
+        run_fp_long_test();
+        printf(g_fail ? "audit_lampiran fp-long: FAIL (%d)\n"
+                      : "audit_lampiran fp-long: OK\n", g_fail);
+        return g_fail ? 1 : 0;
+    }
+
+    /* Mode fake-clang: dipanggil myc sebagai pengganti clang (T11). */
+    if (argc > 0 && argv[0] && strstr(argv[0], "fake-clang"))
+        return fake_clang_main(argc, argv);
 
     if (argc > 1 && strcmp(argv[1], "--child-exit127") == 0)
         return child_exit127();
@@ -286,6 +483,47 @@ int main(int argc, char **argv)
         myc_result_free(&r1);
         myc_result_free(&r2);
     }
+
+    /* T8: long fingerprint material cannot OOB (MYC-AUDIT-005). */
+    run_fp_long_test();
+
+    /* T9: file_path-only request (MYC-AUDIT-007). Bila caller memakai
+     * file_path tanpa source, myc_run() harus load file sebelum pipeline
+     * (tanpa NULL deref). Verdict boleh MC_OK (gcc tersedia) atau error
+     * infra lainnya; yang dilarang = MC_ERROR dengan err INVALID_REQUEST
+     * (request ditolak karena source NULL) ATAU crash/INVALID_PATH. */
+    {
+        myc_request req;
+        myc_result  res;
+        const char *path = "audit_fp_only_tmp.c";
+        const char *src = "int main(void){return 0;}\n";
+        FILE *f = fopen(path, "wb");
+
+        if (f) {
+            fwrite(src, 1, strlen(src), f);
+            fclose(f);
+            myc_request_init(&req);
+            req.file_path = path;
+            req.source = NULL;
+            req.source_len = 0;
+            req.run_lint = 1;
+            myc_result_init(&res);
+            myc_run(&req, &res);
+            CHECK(res.err != MYC_ERR_INVALID_REQUEST &&
+                  res.err != MYC_ERR_INVALID_PATH,
+                  "file_path-only request diproses tanpa NULL deref (verdict=%d err=%d)",
+                  (int)res.verdict, (int)res.err);
+            CHECK(res.source_sha256 != NULL,
+                  "file_path-only: source di-load & di-hash (sha256 ada)");
+            myc_result_free(&res);
+            remove(path);
+        } else {
+            printf("[SKIP] file_path-only: gagal menulis file temp\n");
+        }
+    }
+
+    /* T11: canary failure invalidates backend (9.9). */
+    test_canary_failure(self);
 
     printf(g_fail ? "audit_lampiran: FAIL (%d)\n" : "audit_lampiran: OK\n", g_fail);
     return g_fail ? 1 : 0;

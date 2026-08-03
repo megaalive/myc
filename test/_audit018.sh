@@ -8,8 +8,13 @@
 #   1. proc_flood    -- deadlock stdin/stdout, flood 100MiB prefix+tail,
 #                      env override (MYC-AUDIT-002/017 + bounded capture).
 #   2. oom_guards    -- guard overflow arena + validasi input ekstrem.
-#   3. oom_alloc     -- injeksi kegagalan malloc/calloc/realloc (--wrap).
+#   3. oom_alloc     -- injeksi kegagalan malloc/calloc/realloc (--wrap),
+#                      incl. fase JSON (MYC-AUDIT-009 sb_reserve/obj_set).
 #   4. stress_threads-- concurrency myc_run paralel (Fase 5, juga Windows).
+#   5. audit_lampiran-- lampiran A: exec-vs-127, temp path, contract panjang,
+#                      NUL portability, 0 driver cases, immutable, fp-long
+#                      (T8), file_path-only (T9), canary failure (T11),
+#                      + varian ASan untuk fp-long (AUDIT-005 OOB).
 #
 # Dijalankan dari _regress_run.bat (bila bash tersedia) atau langsung di
 # POSIX/CI Linux. CWD harus root proyek.
@@ -108,10 +113,33 @@ else
     FAIL=1
 fi
 
+# --- 6b. Varian ASan untuk T8 (fp-long): menangkap OOB read regresi
+# MYC-AUDIT-005 secara EKSPLISIT. Butuh toolchain dengan -fsanitize=address
+# (mis. clang/gcc WSL); MinGW Windows biasanya tak punya ASan runtime ->
+# skip (bukan klaim). Bila ASan tersedia dan fingerprint memicu OOB read,
+# proses akan di-abort ASan (exit 1) -> run_built menandai FAIL. ---
+if $CC -fsanitize=address -o /dev/null -x c - 2>/dev/null <<'EOF'
+int main(void){return 0;}
+EOF
+then
+    if $CC -O1 -g -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN \
+           -fsanitize=address -fno-omit-frame-pointer \
+           -o test/audit_lampiran_asan test/audit_lampiran.c $SRCS 2>/dev/null; then
+        run_built "audit_lampiran fp-long ASan (AUDIT-005 OOB)" \
+                  test/audit_lampiran_asan --fp-long
+    else
+        echo "[FAIL] audit_lampiran fp-long ASan gagal dibangun"
+        FAIL=1
+    fi
+else
+    echo "[SKIP] audit_lampiran fp-long ASan (toolchain ASan tak tersedia)"
+fi
+
 rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \
       test/oom_alloc test/oom_alloc.exe test/stress_threads test/stress_threads.exe \
       test/verify_descendants test/verify_descendants.exe \
-      test/audit_lampiran test/audit_lampiran.exe
+      test/audit_lampiran test/audit_lampiran.exe \
+      test/audit_lampiran_asan test/audit_lampiran_asan.exe
 
 echo "audit018: $([ $FAIL -eq 0 ] && echo SELESAI OK || echo GAGAL)"
 exit $FAIL

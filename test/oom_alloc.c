@@ -28,6 +28,7 @@
 #include <string.h>
 
 #include "myc.h"
+#include "json.h"
 
 /* --- allocator injection (di-link via --wrap) --- */
 void *__real_malloc(size_t n);
@@ -124,6 +125,40 @@ int main(void)
         if (res.verdict < MC_OK || res.verdict > MC_INCONCLUSIVE)
             bad_verdict++;
         myc_result_free(&res);
+    }
+
+    /* --- fase JSON (MYC-AUDIT-009): OOM di konstruksi objek/array +
+     * serialisasi. guard sb_reserve/json_obj_set/json_arr_push harus
+     * mengembalikan NULL/free val tanpa crash. Semua alokasi json ter-wrap,
+     * jadi loop fail point sama seperti myc_run. PENTING: TIDAK boleh printf
+     * selama g_fail_after aktif (stdio bisa mengalokasi). */
+    {
+        long j;
+        int  json_ok = 1;
+        for (j = 0; j <= npoints; j++) {
+            json_value *obj;
+            int k;
+            g_fail_after = j;
+            obj = json_new_obj();
+            if (obj) {
+                for (k = 0; k < 8; k++) {
+                    char key[24];
+                    snprintf(key, sizeof(key), "key_%d", k);
+                    json_obj_set(obj, key, json_new_num(k));
+                }
+                json_arr_push(obj, json_new_null());
+                {
+                    char *s = NULL;
+                    json_serialize(obj, &s);
+                    free(s);
+                }
+            }
+            json_free(obj);
+        }
+        g_fail_after = -1;
+        /* json_new_obj di fail point 0 bisa NULL (bukan kegagalan) --
+         * yang kita uji adalah "tidak crash & json_free(NULL) aman". */
+        (void)json_ok;
     }
     g_fail_after = -1;
 
