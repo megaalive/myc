@@ -16,6 +16,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <limits.h>
+#include <errno.h>
 
 #ifdef _WIN32
 #include <direct.h>
@@ -134,6 +136,16 @@ myc_error_code myc_request_validate(const myc_request *req)
     }
     if (req->source_len > MYC_MAX_CODE_BYTES)
         return MYC_ERR_INPUT_TOO_LARGE;
+    if (req->timeout_ms < 0 || (int)req->timeout_ms > MYC_MAX_TIMEOUT_MS)
+        return MYC_ERR_INVALID_TIMEOUT;
+    /* MYC-AUDIT-020: nilai NEGATIF juga ditolak -- tanpa ini, -N yang
+     * dikonversi ke size_t di proc.c menjadi raksasa (alokasi drain buffer
+     * OOM saat --run). Rentang sah: 0 (default 1 MiB) s.d. 100 MiB. */
+    if (req->max_output_bytes < 0 ||
+        req->max_output_bytes > (int)MYC_MAX_OUTPUT_CAP_BYTES)
+        return MYC_ERR_INVALID_OUTPUT_CAP;
+    if (req->cwd && req->cwd[0] == '\0')
+        return MYC_ERR_INVALID_CWD;
     return MYC_ERR_NONE;
 }
 
@@ -362,6 +374,30 @@ void myc_run(const myc_request *req, myc_result *res)
                 res->diag_count++;
             }
         }
+        if (ve == MYC_ERR_INVALID_TIMEOUT && res->diag_count < MYC_MAX_DIAGNOSTICS) {
+            const char *msg = "timeout_ms di luar rentang valid (0-600000)";
+            res->diags[res->diag_count].line = 0;
+            res->diags[res->diag_count].col = 0;
+            res->diags[res->diag_count].message = myc_result_arena_dup(res, msg, 0);
+            res->diags[res->diag_count].confidence = MYC_CONF_CONFIRMED;
+            res->diag_count++;
+        }
+        if (ve == MYC_ERR_INVALID_OUTPUT_CAP && res->diag_count < MYC_MAX_DIAGNOSTICS) {
+            const char *msg = "max_output_bytes di luar rentang valid (0-104857600)";
+            res->diags[res->diag_count].line = 0;
+            res->diags[res->diag_count].col = 0;
+            res->diags[res->diag_count].message = myc_result_arena_dup(res, msg, 0);
+            res->diags[res->diag_count].confidence = MYC_CONF_CONFIRMED;
+            res->diag_count++;
+        }
+        if (ve == MYC_ERR_INVALID_CWD && res->diag_count < MYC_MAX_DIAGNOSTICS) {
+            const char *msg = "cwd tidak boleh kosong";
+            res->diags[res->diag_count].line = 0;
+            res->diags[res->diag_count].col = 0;
+            res->diags[res->diag_count].message = myc_result_arena_dup(res, msg, 0);
+            res->diags[res->diag_count].confidence = MYC_CONF_CONFIRMED;
+            res->diag_count++;
+        }
         return;
     }
     res->require_complete = req->require_complete;
@@ -466,6 +502,8 @@ static void usage(void)
         "usage:\n"
         "  myc check <file.c> [--json] [--analyze] [--strict] [--no-lint] [--cwd DIR]\n"
         "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--metamorphic] [--negative] [--quorum] [--require-complete]\n"
+        "  myc check <file.c> [--timeout MS] [--output-cap BYTES]\n"
+        "                        (timeout 0-600000 ms, 0 = default 30000; output-cap 0-104857600 byte, 0 = default 1 MiB)\n"
         "  myc check -          [--json] [--analyze] [--strict] [--no-lint]\n"
         "                        (source dari stdin)\n"
         "  myc policy\n"
@@ -527,6 +565,28 @@ static int read_file(const char *path, char **out, size_t *out_len)
     fclose(f);
     *out = buf;
     *out_len = (size_t)sz;
+    return 1;
+}
+
+/* Parse bilangan bulat ketat (MYC-AUDIT-020): seluruh string harus angka
+ * (tanda opsional), tanpa trailing garbage, tanpa overflow. Mengembalikan
+ * 1 sukses, 0 gagal. Fail-fast konsisten dengan ingress Fase-2/AUDIT-019:
+ * "abc" tidak boleh diam-diam menjadi 0 (default) seperti atoi lama. */
+static int parse_int_arg(const char *s, int *out)
+{
+    char *end;
+    long  v;
+    if (!s || !*s)
+        return 0;
+    errno = 0;
+    v = strtol(s, &end, 10);
+    if (errno == ERANGE)
+        return 0;                   /* overflow long (strtol set ERANGE) */
+    if (end == s || *end != '\0')
+        return 0;                   /* bukan angka / ada sisa karakter */
+    if (v < INT_MIN || v > INT_MAX)
+        return 0;                   /* overflow int */
+    *out = (int)v;
     return 1;
 }
 
@@ -726,6 +786,37 @@ int main(int argc, char **argv)
                     return 2;
                 }
                 req.cwd = argv[i + 1];
+                i++;  /* konsumsi argumen nilai */
+                known = 1;
+            } else if (strcmp(argv[i], "--timeout") == 0) {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "myc: --timeout membutuhkan argumen MILIS\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                /* MYC-AUDIT-020: fail-fast angka (konsisten AUDIT-019).
+                 * atoi lama diam-diam mengubah "abc" menjadi 0 (default)
+                 * dan overflow tidak terdeteksi. */
+                if (!parse_int_arg(argv[i + 1], &req.timeout_ms)) {
+                    fprintf(stderr, "myc: --timeout: nilai bukan angka valid: %s\n",
+                            argv[i + 1]);
+                    myc_result_free(&res);
+                    return 2;
+                }
+                i++;  /* konsumsi argumen nilai */
+                known = 1;
+            } else if (strcmp(argv[i], "--output-cap") == 0) {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "myc: --output-cap membutuhkan argumen BYTES\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                if (!parse_int_arg(argv[i + 1], &req.max_output_bytes)) {
+                    fprintf(stderr, "myc: --output-cap: nilai bukan angka valid: %s\n",
+                            argv[i + 1]);
+                    myc_result_free(&res);
+                    return 2;
+                }
                 i++;  /* konsumsi argumen nilai */
                 known = 1;
             }

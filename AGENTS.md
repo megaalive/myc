@@ -168,6 +168,27 @@ Poin penting:
    `_audit018.sh` WSL 6/6 + fp-long ASan OK + verify_descendants OK (0 FAIL);
    Windows `_regress_run.bat` 0 [FAIL] (self-dogfooding 16 OK, fixtures utuh,
    MCP interop 25 cek).
+- **MYC-AUDIT-020 selesai 2026-08-03** (CLI `--timeout`/`--output-cap` +
+  validasi request API): flag CLI baru `--timeout MS` (0–600000, 0 = default
+  30000) dan `--output-cap BYTES` (0–104857600, 0 = default 1 MiB) memetakan
+  ke field `myc_request.timeout_ms`/`max_output_bytes` yang sudah dipakai
+  semua gate (proc/run/prove/filc/driver/metamorphic). **Validasi ingress di
+  `myc_request_validate`** (berlaku untuk CLI, API, dan MCP): timeout di luar
+  rentang → `MYC_ERR_INVALID_TIMEOUT`; output-cap di luar rentang →
+  `MYC_ERR_INVALID_OUTPUT_CAP`; `cwd` string kosong → `MYC_ERR_INVALID_CWD`
+  — verdict ERROR + diagnostic CONFIRMED (bukan silent). **Bug nyata yang
+  diperbaiki**: `--output-cap -5` sebelumnya LOLOS validasi (cek hanya `>
+  cap`) → di proc.c `req->max_output_bytes` (int -5) di-cast ke `size_t`
+  raksasa → alokasi drain buffer raksasa saat `--run`; kini nilai negatif
+  ditolak. **Fail-fast angka** (konsisten MYC-AUDIT-019): `atoi` diganti
+  helper `parse_int_arg` (strtol + cek `errno==ERANGE` + trailing garbage +
+  rentang int) — `--timeout abc`/`--timeout 5000x`/`--output-cap
+  99999999999` kini pesan + exit 2, bukan diam-diam jadi 0/default. Capsule
+  (`myc_replay_capsule`) sudah memuat timeout_ms/max_output_bytes (tidak
+  berubah). Receipt TIDAK berubah (validasi ingress tidak masuk hash) —
+  `ok_run --run` tetap `8224c23a...`. Regresi: section AUDIT-020 di
+  `test/_regress_run.bat` (+12 cek: valid, negatif, overflow, non-angka
+  exit 2, aliran nilai ke capsule, cwd kosong).
 - **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
   seluruh rule lint.c (intptr_t/uintptr_t cast, realloc ke variabel lain,
   memcpy/memset tanpa sizeof, ukuran alokasi perkalian tanpa sizeof, akses

@@ -37,6 +37,42 @@ if errorlevel 1 (
 myc.exe check tests\ok_hello.c --run-stdin > %OUT% 2>&1
 findstr /C:"--run-stdin membutuhkan argumen" %OUT% >nul && echo [OK] --run-stdin tanpa argumen ditolak || echo [FAIL] --run-stdin tanpa argumen tidak ditolak
 del %OUT%
+echo --- MYC-AUDIT-020: CLI --timeout/--output-cap (validasi + fail-fast angka)
+myc.exe check tests\ok_hello.c --timeout 5000 > %OUT% 2>&1
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] --timeout valid diterima || echo [FAIL] --timeout valid ditolak
+myc.exe check tests\ok_hello.c --timeout -1 > %OUT% 2>&1
+findstr /C:"invalid_timeout" %OUT% >nul && echo [OK] --timeout negatif ditolak (invalid_timeout) || echo [FAIL] --timeout negatif tidak ditolak
+myc.exe check tests\ok_hello.c --timeout 999999999 > %OUT% 2>&1
+findstr /C:"invalid_timeout" %OUT% >nul && echo [OK] --timeout overflow ditolak (invalid_timeout) || echo [FAIL] --timeout overflow tidak ditolak
+myc.exe check tests\ok_hello.c --timeout abc > %OUT% 2>&1
+if errorlevel 2 (
+  echo [OK] --timeout non-angka ditolak exit2 failfast
+) else (
+  echo [FAIL] --timeout non-angka tidak ditolak ec=%ERRORLEVEL%
+)
+findstr /C:"--timeout: nilai bukan angka" %OUT% >nul && echo [OK] pesan --timeout non-angka tampil || echo [FAIL] pesan --timeout non-angka hilang
+myc.exe check tests\ok_hello.c --output-cap 5000 > %OUT% 2>&1
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] --output-cap valid diterima || echo [FAIL] --output-cap valid ditolak
+findstr /C:"max_output_bytes: 5000" %OUT% >nul && echo [OK] max_output_bytes mengalir ke capsule report || echo [FAIL] max_output_bytes tidak tampil di report
+myc.exe check tests\ok_hello.c --output-cap -5 > %OUT% 2>&1
+findstr /C:"invalid_output_cap" %OUT% >nul && echo [OK] --output-cap NEGATIF ditolak (bug AUDIT-020 fix) || echo [FAIL] --output-cap negatif lolos validasi
+myc.exe check tests\ok_hello.c --output-cap 104857601 > %OUT% 2>&1
+findstr /C:"invalid_output_cap" %OUT% >nul && echo [OK] --output-cap melebihi 100MiB ditolak || echo [FAIL] --output-cap besar tidak ditolak
+myc.exe check tests\ok_hello.c --output-cap abc > %OUT% 2>&1
+if errorlevel 2 (
+  echo [OK] --output-cap non-angka ditolak exit2 failfast
+) else (
+  echo [FAIL] --output-cap non-angka tidak ditolak ec=%ERRORLEVEL%
+)
+myc.exe check tests\ok_hello.c --output-cap 99999999999 > %OUT% 2>&1
+if errorlevel 2 (
+  echo [OK] --output-cap overflow angka ditolak exit2 failfast
+) else (
+  echo [FAIL] --output-cap overflow tidak ditolak ec=%ERRORLEVEL%
+)
+myc.exe check tests\ok_hello.c --cwd "" > %OUT% 2>&1
+findstr /C:"invalid_cwd" %OUT% >nul && echo [OK] --cwd kosong ditolak (invalid_cwd) || echo [FAIL] --cwd kosong tidak ditolak
+del %OUT%
 echo --- self-dogfooding: semua source myc harus OK
 for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c) do (
   echo === %%f

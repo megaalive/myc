@@ -53,6 +53,9 @@ const char *myc_error_name(myc_error_code c)
     case MYC_ERR_FILC_VIOLATION:              return "filc_violation";
     case MYC_ERR_DRIVER_VIOLATION:            return "driver_violation";
     case MYC_ERR_CLANG_NOT_FOUND:             return "clang_not_found";
+    case MYC_ERR_INVALID_TIMEOUT:              return "invalid_timeout";
+    case MYC_ERR_INVALID_OUTPUT_CAP:           return "invalid_output_cap";
+    case MYC_ERR_INVALID_CWD:                  return "invalid_cwd";
     case MYC_ERR_INTERNAL:                    return "internal";
     }
     return "unknown";
