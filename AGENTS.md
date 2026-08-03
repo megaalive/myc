@@ -115,6 +115,32 @@ Poin penting:
   (proc_flood, oom_guards, oom_alloc, stress_threads 8×200, verify_descendants),
   full `_regress_run.bat` 0 [FAIL], receipt deterministik `ok_run --run` tetap
   `8224c23a...` (tidak ada perubahan pipeline/hash).
+- **MYC-AUDIT-019 lanjutan 2026-08-03** (Lampiran A roadmap + bug WIFSIGNALED
+  POSIX). **Bug nyata WSL ditemukan**: gate `--run` selalu INCONCLUSIVE di
+  POSIX karena `myc_runtime_canary` return -1 → diagnostic "canary ASan gagal
+  dibangun" padahal build canary sukses. Akar: program yang di-SIGABRT sanitizer
+  (OOB terdeteksi, exit 134 = 128+SIGABRT) diklasifikasi `WIFSIGNALED` →
+  `res->ok = 0` + `err = MYC_ERR_EXECUTE_FAILED` → `myc_proc_run` return 0 →
+  caller menganggapnya kegagalan infra. **Fix proc.c**: `WIFSIGNALED` kini
+  `ok = 1`, `err = MYC_ERR_NONE` (exit_code 128+sig hasil valid, konsisten
+  dengan Windows yang selalu `ok=1` utk proses berjalan; hanya exec/fork gagal
+  yang `ok=0`). Akibat: run gate POSIX kini benar-benar menangkap finding
+  (bad_run_oob `--run` → RUNTIME_VIOLATION), canary sehat (ok_run `--run` →
+  completed_clean), metamorphic konsisten. **Portabilitas `-Werror`** (self-
+  dogfooding WSL awalnya 3 COMPILE_ERROR): `(void)write()` tidak menekan
+  `-Wunused-result` glibc → diganti tangkap `ssize_t wr`; `copy_file`/
+  `asan_dll_path` (run.c) & `drv_copy_file`/`drv_asan_dll_path` (driver.c)
+  hanya dipakai di `#ifdef _WIN32` → kini di-guard `#ifdef _WIN32` (unused
+  di POSIX). **Lampiran A roadmap ditutup**: `test/audit_lampiran.c` baru
+  (7 test portabel, di-wire ke `_audit018.sh`): exec-vs-127, temp path absolut,
+  multiple consecutive requires, long contract expression REJECTED (bukan
+  truncate — `read_contract_expr` kini return 2 + diagnostic "terlalu panjang",
+  contract.c), NUL tak pernah dibuat di POSIX, 0 driver cases, result lama
+  immutable. Lampiran A kini 24/27 `[x]` (sisa: fingerprint OOB test, file_path
+  -only test, OOM JSON test, Fil-C run_stdin, canary-failure fixture — fix ada,
+  test eksplisit belum). Regresi: audit018 6/6 unit (audit_lampiran 12/12 OK),
+  self-dogfooding WSL 17/17 OK, Windows regress fixture utuh (ok_run L3,
+  bad_run_oob RUNTIME_VIOLATION, ok_checked L4).
 - **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
   seluruh rule lint.c (intptr_t/uintptr_t cast, realloc ke variabel lain,
   memcpy/memset tanpa sizeof, ukuran alokasi perkalian tanpa sizeof, akses

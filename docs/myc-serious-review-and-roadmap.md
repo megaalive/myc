@@ -3507,29 +3507,29 @@ Jika fondasi tersebut selesai, barulah analisis baru akan memperkuat reputasi. T
 - [x] POSIX stdin/stdout deadlock. (proc_flood T1, Windows+POSIX; MYC-AUDIT-018)
 - [x] POSIX drain thread join. (dijalankan implisit oleh proc_flood/stress di POSIX — tiap myc_proc_run meng-join drain; MYC-AUDIT-018)
 - [x] output complete before result return. (proc_flood T1 total byte persis; MYC-AUDIT-018)
-- [ ] process group kill.
-- [ ] exec failure vs application exit 127.
-- [ ] absolute temp executable path.
-- [ ] bad runtime fixture cannot return `OK + complete`.
-- [ ] bad checked runtime cannot retain misleading `L4`.
-- [ ] long fingerprint material cannot OOB.
-- [ ] `file_path`-only request.
+- [x] process group kill. (verify_descendants; MYC-AUDIT-011/018)
+- [x] exec failure vs application exit 127. (audit_lampiran T1; MYC-AUDIT-003 exec-error pipe)
+- [x] absolute temp executable path. (audit_lampiran T2; MYC-AUDIT-003 make_temp_dir)
+- [x] bad runtime fixture cannot return `OK + complete`. (bad_run_oob `--run` → RUNTIME_VIOLATION; `_regress_run.bat`)
+- [x] bad checked runtime cannot retain misleading `L4`. (bad_checked_oob `--run --checked` → RUNTIME_VIOLATION; `_regress_run.bat`)
+- [ ] long fingerprint material cannot OOB. (fix MYC-AUDIT-005; test eksplisit belum ada)
+- [ ] `file_path`-only request. (fix MYC-AUDIT-007; test eksplisit belum ada)
 - [x] two simultaneous `myc_run`. (stress_threads 8 thread × 200 iterasi; MYC-AUDIT-008/018)
-- [ ] old result diagnostic remains immutable.
-- [ ] strict JSON number grammar.
-- [ ] embedded NUL source via MCP.
-- [ ] OOM in JSON object insertion.
-- [ ] `MYC_BUF` wrong type.
-- [ ] signed negative allocation count.
-- [ ] multiple consecutive requires.
-- [ ] long contract expression rejected, not truncated.
-- [ ] Fil-C WSL receives `run_stdin`.
+- [x] old result diagnostic remains immutable. (audit_lampiran T7; arena milik hasil, Fase 5)
+- [x] strict JSON number grammar. (json_abuse corpus; MYC-AUDIT-009)
+- [x] embedded NUL source via MCP. (json_abuse "embedded NUL" `\u0000`; MYC-AUDIT-009)
+- [ ] OOM in JSON object insertion. (guard sb_reserve/json_obj_set ada; test eksplisit belum jelas)
+- [x] `MYC_BUF` wrong type. (bad_checked_type `--checked` → COMPILE_ERROR; MYC-AUDIT-012)
+- [x] signed negative allocation count. (bad_checked_new_overflow `--run --checked` → RUNTIME_VIOLATION; MYC-AUDIT-012)
+- [x] multiple consecutive requires. (audit_lampiran T3; contract scan)
+- [x] long contract expression rejected, not truncated. (audit_lampiran T4 + contract.c `read_contract_expr` return 2)
+- [ ] Fil-C WSL receives `run_stdin`. (mekanisme ada; tak bisa diuji tanpa Fil-C terpasang)
 - [x] backend output truncation cannot become clean. (proc_flood T2 truncated=1 + total 100MiB persis; MYC-AUDIT-018)
 - [x] OOM tidak membuat myc crash/hang. (oom_alloc: 49 titik kegagalan alokasi tanpa crash; oom_guards: arena overflow guard; MYC-AUDIT-018)
-- [ ] canary failure invalidates backend.
-- [ ] 0 driver cases cannot become runtime clean.
-- [ ] unknown CLI/MCP flags rejected.
-- [ ] `NUL` is never created on POSIX.
+- [ ] canary failure invalidates backend. (jalur gagal belum ada fixture; jalur sukses di `_regress_run.bat:130`)
+- [x] 0 driver cases cannot become runtime clean. (audit_lampiran T6; D2.2/9.10)
+- [x] unknown CLI/MCP flags rejected. (CLI fail-fast MYC-AUDIT-019; MCP -32602 MYC-AUDIT-016)
+- [x] `NUL` is never created on POSIX. (audit_lampiran T5; MYC-AUDIT-015 myc_null_device)
 
 ## Lampiran B — Definisi Selesai
 
