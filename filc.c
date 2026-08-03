@@ -62,18 +62,33 @@ static const char *const FILC_PANIC_MARKERS[] = {
 #define WSL_FILC_DETECT_CMD \
     "command -v " FILC_DRIVER " 2>/dev/null || ls /opt/fil/bin/" FILC_DRIVER " 2>/dev/null"
 
+/* Template tetap yang dijalankan di dalam WSL. Source mengalir via stdin
+ * (cat > $t); deteksi driver: command -v filc-clang, fallback ke
+ * /opt/fil/bin/filc-clang (distribusi glibc resmi).
+ *
+ * MYC-AUDIT-021 (2026-08-03): run_stdin diteruskan dari Windows via env
+ * MYC_FILC_STDIN. Env Windows TIDAK sampai ke WSL bash tanpa WSLENV --
+ * filc.c kini menambahkan "WSLENV=...:MYC_FILC_STDIN/p" ke env block
+ * (suffix /p = path translation otomatis: D:\Temp\x -> /mnt/d/Temp/x).
+ * Template memakai $MYC_FILC_STDIN langsung (sudah berupa path WSL);
+ * fallback wslpath() bila file tak ditemukan (mis. WSLENV tidak didukung);
+ * bila tetap gagal -> run tanpa stdin (perilaku lama, aman). */
 #define WSL_FILC_CMD \
     "t=/tmp/myc_filc_$$.c; cat > $t; " \
     "FILC=$(command -v " FILC_DRIVER " 2>/dev/null || echo /opt/fil/bin/" FILC_DRIVER "); " \
     "\"$FILC\" -O0 -g -o /tmp/myc_filc_$$ $t 2>/tmp/myc_filc_$$.builderr; rc=$?; " \
     "if [ $rc -eq 0 ]; then " \
-    "  if [ -n \"${MYC_FILC_STDIN:-}\" ] && [ -f \"${MYC_FILC_STDIN}\" ]; then " \
-    "    cat \"${MYC_FILC_STDIN}\" | /tmp/myc_filc_$$; " \
+    "  SIN=${MYC_FILC_STDIN:-}; " \
+    "  if [ -n \"$SIN\" ] && [ ! -f \"$SIN\" ]; then " \
+    "    CONV=$(wslpath \"$SIN\" 2>/dev/null); " \
+    "    [ -n \"$CONV\" ] && [ -f \"$CONV\" ] && SIN=\"$CONV\"; " \
+    "  fi; " \
+    "  if [ -n \"$SIN\" ] && [ -f \"$SIN\" ]; then " \
+    "    cat \"$SIN\" | /tmp/myc_filc_$$; " \
     "  else /tmp/myc_filc_$$; fi; " \
     "  rc=$?; fi; " \
     "cat /tmp/myc_filc_$$.builderr 2>/dev/null; " \
     "rm -f $t /tmp/myc_filc_$$ /tmp/myc_filc_$$.builderr; " \
-    "rm -f \"${MYC_FILC_STDIN:-}\"; " \
     "exit $rc"
 
 /* Tambah diagnostic ringan (string disalin ke pool statis bergilir). */
@@ -274,6 +289,7 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
     char *wsl_path = NULL;
     char *stdin_file = NULL;
     char *stdin_file_env = NULL;
+    char *wslenv_env = NULL;
     char *tmp_dir = NULL;
     char *exe_path = NULL;
     size_t max_out = req->max_output_bytes > 0
@@ -468,10 +484,11 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
         const char *argv_wsl[6];
         int   n = 0;
         myc_proc_request preq;
-        const char *envp[2];
+        const char *envp[3];
 
-        /* Tulis run_stdin ke file temp agar WSL template bisa
-         * membacanya dan meneruskannya ke program child. */
+        /* Tulis run_stdin ke file temp WINDOWS (MYC-AUDIT-021): WSL template
+         * membacanya via env MYC_FILC_STDIN lalu mengonversi path dengan
+         * wslpath(). File dihapus di jalur out_wsl / early-return (remove). */
         if (req->run_stdin_len > 0) {
             const char *base = getenv("TEMP");
             size_t bl;
@@ -528,7 +545,40 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
         preq.max_output_bytes = max_out;
         if (stdin_file_env) {
             envp[0] = stdin_file_env;
-            envp[1] = NULL;
+            /* MYC-AUDIT-021: WSL TIDAK meneruskan env Windows ke bash tanpa
+             * WSLENV. Daftarkan MYC_FILC_STDIN dengan suffix /p (path
+             * translation otomatis) sambil mempertahankan WSLENV induk.
+             * String HARUS ber-awalan "WSLENV=" (entri env tanpa '='
+             * membuat CreateProcess gagal ERROR 87). Hindari ':' ganda
+             * bila WSLENV induk sudah berakhir ':'. */
+            {
+                const char *par = getenv("WSLENV");
+                size_t pl = par ? strlen(par) : 0;
+                int    par_ends_colon = 0;
+                char  *w;
+                size_t k = 0;
+                if (pl > 0 && par[pl - 1] == ':')
+                    par_ends_colon = 1;
+                w = (char *)malloc(sizeof("WSLENV=") + pl +
+                                   (par_ends_colon ? 0 : 1) +
+                                   sizeof("MYC_FILC_STDIN/p") + 1);
+                if (w) {
+                    memcpy(w, "WSLENV=", sizeof("WSLENV=") - 1);
+                    k = sizeof("WSLENV=") - 1;
+                    if (par && *par) {
+                        memcpy(w + k, par, pl);
+                        k += pl;
+                        if (!par_ends_colon)
+                            w[k++] = ':';
+                    }
+                    memcpy(w + k, "MYC_FILC_STDIN/p",
+                           sizeof("MYC_FILC_STDIN/p"));
+                    wslenv_env = w;
+                }
+            }
+            envp[0] = stdin_file_env;
+            envp[1] = wslenv_env;
+            envp[2] = NULL;
             preq.env = envp;
         }
         if (!myc_proc_run(&preq, &pres)) {
@@ -538,8 +588,12 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
                 res->duration_ms += pres.duration_ms;
                 myc_proc_result_free(&pres);
                 free(wsl_path);
-                free(stdin_file);
+                if (stdin_file) {
+                    remove(stdin_file);
+                    free(stdin_file);
+                }
                 free(stdin_file_env);
+                free(wslenv_env);
                 myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INCONCLUSIVE,
                                     "WSL filc timeout");
                 myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
@@ -554,8 +608,12 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
                                     "filc WSL run exec failed");
             myc_proc_result_free(&pres);
             free(wsl_path);
-            free(stdin_file);
+            if (stdin_file) {
+                remove(stdin_file);
+                free(stdin_file);
+            }
             free(stdin_file_env);
+            free(wslenv_env);
             return 0;
         }
         res->duration_ms += pres.duration_ms;
@@ -564,8 +622,12 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
             res->err = MYC_ERR_TIMEOUT;
             myc_proc_result_free(&pres);
             free(wsl_path);
-            free(stdin_file);
+            if (stdin_file) {
+                remove(stdin_file);
+                free(stdin_file);
+            }
             free(stdin_file_env);
+            free(wslenv_env);
             myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INCONCLUSIVE,
                                 "WSL filc timeout");
             myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
@@ -636,8 +698,14 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
 
 out_wsl:
     free(wsl_path);
-    free(stdin_file);
+    /* MYC-AUDIT-021: hapus file stdin temp Windows (template WSL sudah
+     * tidak lagi bertanggung jawab; path Windows tak bisa di-rm dari WSL). */
+    if (stdin_file) {
+        remove(stdin_file);
+        free(stdin_file);
+    }
     free(stdin_file_env);
+    free(wslenv_env);
     return ret;
 
 out:
