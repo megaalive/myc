@@ -20,6 +20,23 @@ del test\json_abuse.exe 2>nul
 echo --- Fase 1 streaming evidence detector: sanitizer marker terdeteksi pada output streaming
 myc.exe check tests\bad_run_oob.c --run > %OUT%
 findstr /C:"sanitizer:" %OUT% >nul && echo [OK] streaming evidence detector mencatat sanitizer marker || echo [INFO] sanitizer tidak terdeteksi (bukan fixture sanitizer)
+echo --- Fase-2 canonical ingress: unknown CLI flag ditolak fail-fast
+myc.exe check tests\ok_hello.c --rnu > %OUT% 2>&1
+if errorlevel 2 (
+  echo [OK] unknown flag --rnu ditolak exit2 failfast
+) else (
+  echo [FAIL] unknown flag --rnu tidak ditolak harus exit2 ec=%ERRORLEVEL%
+)
+findstr /C:"unknown option: --rnu" %OUT% >nul && echo [OK] pesan unknown option tampil || echo [FAIL] pesan unknown option hilang
+myc.exe check tests\ok_hello.c --run --json > %OUT% 2>&1
+if errorlevel 1 (
+  echo [FAIL] flag valid --run justru gagal regresi ingress
+) else (
+  echo [OK] flag valid --run tetap diterima
+)
+myc.exe check tests\ok_hello.c --run-stdin > %OUT% 2>&1
+findstr /C:"--run-stdin membutuhkan argumen" %OUT% >nul && echo [OK] --run-stdin tanpa argumen ditolak || echo [FAIL] --run-stdin tanpa argumen tidak ditolak
+del %OUT%
 echo --- self-dogfooding: semua source myc harus OK
 for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c) do (
   echo === %%f
@@ -193,9 +210,9 @@ del %OUT%
 echo --- MYC-AUDIT-018: test portabel concurrency/deadlock/flood/OOM (via bash)
 where bash >nul 2>&1
 if errorlevel 1 (
-  echo [SKIP] bash tidak tersedia (test portabel audit018 dilewati; jalankan test\_audit018.sh di POSIX)
+  echo [SKIP] bash tidak tersedia (test portabel audit018 dilewati; jalankan test/_audit018.sh di POSIX)
 ) else (
-  bash test\_audit018.sh
+  bash test/_audit018.sh
   if errorlevel 1 (
     echo [FAIL] audit018 portable gagal
     exit /b 1

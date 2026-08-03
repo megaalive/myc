@@ -622,56 +622,79 @@ int main(int argc, char **argv)
     req.run_lint = 1;               /* lint memory-safety default ON */
     req.checked_header_dir = myc_exe_dirname(argv[0]);
 
-    /* parse flags */
+    /* Parse flags. Fase-2 (canonical ingress): unknown flag = error
+     * (fail-fast), konsisten dengan reject unknown flag pada MCP server
+     * (AUDIT-016: -32602). CLI tidak lagi diam-diam mengabaikan flag yang
+     * tidak dikenal -- menyembunyikannya membuat hasil tampak OK padahal
+     * permintaan bisa salah ketik (mis. --rnu). */
     {
         int i;
         for (i = 3; i < argc; i++) {
-            if (strcmp(argv[i], "--json") == 0)
-                req.as_json = 1;
-            else if (strcmp(argv[i], "--analyze") == 0)
-                req.run_analyzer = 1;
-            else if (strcmp(argv[i], "--strict") == 0)
-                req.strict = 1;
-            else if (strcmp(argv[i], "--level") == 0) {
+            int known = 0;
+            if (strcmp(argv[i], "--json") == 0) {
+                req.as_json = 1; known = 1;
+            } else if (strcmp(argv[i], "--analyze") == 0) {
+                req.run_analyzer = 1; known = 1;
+            } else if (strcmp(argv[i], "--strict") == 0) {
+                req.strict = 1; known = 1;
+            } else if (strcmp(argv[i], "--level") == 0) {
                 /* --level L1 | --level strict : sama-sama menyalakan tier ketat */
-                req.strict = 1;
+                req.strict = 1; known = 1;
                 if (i + 1 < argc && strcmp(argv[i + 1], "strict") == 0)
                     i++;
-            }
-            else if (strcmp(argv[i], "--no-lint") == 0)
-                req.run_lint = 0;
-            else if (strcmp(argv[i], "--run") == 0)
-                req.run = 1;
-            else if (strcmp(argv[i], "--prove") == 0)
-                req.prove = 1;
-            else if (strcmp(argv[i], "--checked") == 0)
-                req.checked = 1;
-            else if (strcmp(argv[i], "--filc") == 0)
-                req.filc = 1;
-            else if (strcmp(argv[i], "--driver") == 0)
-                req.driver = 1;
-            else if (strcmp(argv[i], "--quorum") == 0)
-                req.quorum = 1;
-            else if (strcmp(argv[i], "--metamorphic") == 0)
-                req.metamorphic = 1;
-            else if (strcmp(argv[i], "--negative") == 0)
-                req.negative = 1;
-            else if (strcmp(argv[i], "--require-complete") == 0)
-                req.require_complete = 1;
-            else if (strcmp(argv[i], "--run-stdin") == 0 && i + 1 < argc) {
+            } else if (strcmp(argv[i], "--no-lint") == 0) {
+                req.run_lint = 0; known = 1;
+            } else if (strcmp(argv[i], "--run") == 0) {
+                req.run = 1; known = 1;
+            } else if (strcmp(argv[i], "--prove") == 0) {
+                req.prove = 1; known = 1;
+            } else if (strcmp(argv[i], "--checked") == 0) {
+                req.checked = 1; known = 1;
+            } else if (strcmp(argv[i], "--filc") == 0) {
+                req.filc = 1; known = 1;
+            } else if (strcmp(argv[i], "--driver") == 0) {
+                req.driver = 1; known = 1;
+            } else if (strcmp(argv[i], "--quorum") == 0) {
+                req.quorum = 1; known = 1;
+            } else if (strcmp(argv[i], "--metamorphic") == 0) {
+                req.metamorphic = 1; known = 1;
+            } else if (strcmp(argv[i], "--negative") == 0) {
+                req.negative = 1; known = 1;
+            } else if (strcmp(argv[i], "--require-complete") == 0) {
+                req.require_complete = 1; known = 1;
+            } else if (strcmp(argv[i], "--run-stdin") == 0) {
                 char *buf;
                 size_t len;
-                if (!read_file(argv[++i], &buf, &len)) {
-                    fprintf(stderr, "myc: tidak dapat membaca run-stdin %s\n", argv[i]);
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "myc: --run-stdin membutuhkan argumen FILE\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                if (!read_file(argv[i + 1], &buf, &len)) {
+                    fprintf(stderr, "myc: tidak dapat membaca run-stdin %s\n", argv[i + 1]);
                     myc_result_free(&res);
                     return 1;
                 }
                 req.run_stdin = buf;
                 req.run_stdin_len = len;
                 req.run = 1;
+                i++;  /* konsumsi argumen nilai */
+                known = 1;
+            } else if (strcmp(argv[i], "--cwd") == 0) {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "myc: --cwd membutuhkan argumen DIR\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                req.cwd = argv[i + 1];
+                i++;  /* konsumsi argumen nilai */
+                known = 1;
             }
-            else if (strcmp(argv[i], "--cwd") == 0 && i + 1 < argc) {
-                req.cwd = argv[++i];
+            if (!known) {
+                /* fail-fast: tolak flag tidak dikenal (Fase-2 / AUDIT-016). */
+                fprintf(stderr, "myc: unknown option: %s\n", argv[i]);
+                myc_result_free(&res);
+                return 2;
             }
         }
     }
