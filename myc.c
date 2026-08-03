@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #ifdef _WIN32
 #include <direct.h>
@@ -110,12 +111,27 @@ void myc_request_init(myc_request *req)
 
 myc_error_code myc_request_validate(const myc_request *req)
 {
+    size_t nul_pos;
+    size_t nul_count;
+    size_t i;
+
     if (!req)
         return MYC_ERR_INVALID_REQUEST;
     if (!req->source && !req->file_path)
         return MYC_ERR_INVALID_REQUEST;
-    if (req->source && memchr(req->source, '\0', req->source_len))
-        return MYC_ERR_NUL_IN_INPUT;
+    if (req->source && req->source_len > 0) {
+        nul_count = 0;
+        nul_pos = SIZE_MAX;
+        for (i = 0; i < req->source_len; i++) {
+            if (req->source[i] == '\0') {
+                nul_count++;
+                if (i < nul_pos)
+                    nul_pos = i;
+            }
+        }
+        if (nul_count > 0)
+            return MYC_ERR_NUL_IN_INPUT;
+    }
     if (req->source_len > MYC_MAX_CODE_BYTES)
         return MYC_ERR_INPUT_TOO_LARGE;
     return MYC_ERR_NONE;
@@ -323,6 +339,29 @@ void myc_run(const myc_request *req, myc_result *res)
     if (ve != MYC_ERR_NONE) {
         res->verdict = MC_ERROR;
         res->err = ve;
+        if (ve == MYC_ERR_NUL_IN_INPUT && req->source && req->source_len > 0) {
+            size_t nul_pos = SIZE_MAX;
+            size_t nul_count = 0;
+            size_t i;
+            for (i = 0; i < req->source_len; i++) {
+                if (req->source[i] == '\0') {
+                    nul_count++;
+                    if (i < nul_pos)
+                        nul_pos = i;
+                }
+            }
+            if (nul_pos != SIZE_MAX && res->diag_count < MYC_MAX_DIAGNOSTICS) {
+                char note[192];
+                snprintf(note, sizeof(note),
+                         "embedded NUL ditemukan pada posisi %zu (total %zu byte NUL)",
+                         nul_pos, nul_count);
+                res->diags[res->diag_count].line = 0;
+                res->diags[res->diag_count].col = 0;
+                res->diags[res->diag_count].message = myc_result_arena_dup(res, note, 0);
+                res->diags[res->diag_count].confidence = MYC_CONF_OBSERVATION;
+                res->diag_count++;
+            }
+        }
         return;
     }
     res->require_complete = req->require_complete;
