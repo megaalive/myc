@@ -189,6 +189,45 @@ Poin penting:
   `ok_run --run` tetap `8224c23a...`. Regresi: section AUDIT-020 di
   `test/_regress_run.bat` (+12 cek: valid, negatif, overflow, non-angka
   exit 2, aliran nilai ke capsule, cwd kosong).
+- **MYC-AUDIT-021 selesai 2026-08-03** (Lampiran A 28/28: run_stdin ke Fil-C di WSL):
+  gate `--filc --run-stdin` di WSL TIDAK meneruskan stdin ke program child
+  — env `MYC_FILC_STDIN` berisi path Windows (`D:\Temp\...`) yang tidak bisa
+  dibaca WSL, dan env Windows → WSL bash TIDAK diteruskan otomatis (debug
+  membuktikan: blok env benar berisi `MYC_FILC_STDIN`, tapi `echo` di WSL
+  tetap `UNSET`). **Fix**: pakai mekanisme resmi **`WSLENV`** — proc.c
+  `build_env_block` sekarang menambahkan override `WSLENV` (merges parent
+  bila sudah ada; `MYC_FILC_STDIN/p` = share + path translation otomatis ke
+  `/mnt/<drive>/...`), filc.c template WSL memakai `$MYC_FILC_STDIN` langsung
+  (fallback `wslpath` bila WSLENV tak sampai). **Bug lanjutan ditemukan &
+  diperbaiki**: entri env tanpa `=` → CreateProcess `ERROR 87`
+  (ERROR_INVALID_PARAMETER) — `wslenv_env` sempat tanpa prefix `WSLENV=`;
+  double-colon di WSLENV dihindari. **Leak**: file stdin temp Windows kini
+  di-`remove()` di semua jalur keluar (out_wsl + early-return). Fixture
+  permanen `test/fixtures/ok_filc_stdin.c` (baca stdin, cetak `got:...`) +
+  regresi AUDIT-021 (`ok_filc_stdin --filc --run-stdin` → `got:halo-filc-stdin`;
+  di sistem tanpa Fil-C = INFO, bukan FAIL). Lampiran A kini **28/28** `[x]`.
+  Receipt tidak berubah.
+- **MYC-AUDIT-022 selesai 2026-08-03** (roadmap 7.1: machine-readable
+  diagnostic + exact tool identity): (1) **diagnostic JSON** — gate kompilasi
+  (compile, analyzer, checked) kini memakai `-fdiagnostics-format=json`;
+  `ingest_gcc_diagnostics` di compile.c mem-parse array JSON (reuse parser
+  ketat json.c): `kind`/`message`/`locations[0].caret.line/column` →
+  `myc_diagnostic` terstruktur (kind `note` di-skip, konsisten parser teks
+  lama); bila parse JSON gagal (output terpotong bounded capture) atau
+  stderr format teks (gate preprocess `gcc -E` tanpa flag) → fallback parser
+  baris lama. Verifikasi: `bad_realloc.c` → diag `[17:12] pointer 'buf' used
+  after 'realloc'` (dari JSON, confidence CONFIRMED); (2) **exact tool
+  identity** — helper baru `myc_tool_version()` di proc.c (jalankan `<exe>
+  --version`, ambil baris pertama stdout, buang trailing CR) → field baru
+  `myc_result.gcc_version`/`clang_version` (di-set pipeline setelah
+  resolve gcc/clang, guard NULL agar run+driver tidak double-free),
+  ditampilkan di teks (`gcc_version:`/`clang_version:`) + JSON (`"gcc_version"`/
+  `"clang_version"`, NULL → null); `myc version` CLI kini mencetak versi
+  persis backend (`gcc.exe (...) 15.2.0`, `clang version 22.1.6 (...)`) —
+  menutup roadmap "version belum memberi exact toolchain identity".
+  Receipt TIDAK berubah (flag/versi tidak masuk hash; status gate clean
+  tetap clean) — `ok_run --run` tetap `8224c23a...`. Regresi: section
+  AUDIT-022 di `test/_regress_run.bat` (+8 cek).
 - **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
   seluruh rule lint.c (intptr_t/uintptr_t cast, realloc ke variabel lain,
   memcpy/memset tanpa sizeof, ukuran alokasi perkalian tanpa sizeof, akses

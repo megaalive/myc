@@ -138,6 +138,27 @@ for %%f in (test\fixtures\ok_filc.c test\fixtures\bad_filc_oob.c) do (
   myc.exe check "%%f" --filc > %OUT%
   findstr /B /C:"verdict:" /C:"assurance:" /C:"filc:" /C:"  panics:" %OUT%
 )
+echo --- MYC-AUDIT-021: run_stdin diteruskan ke program Fil-C (WSLENV path translation)
+echo halo-filc-stdin> test\_tmp_stdin.txt
+myc.exe check test\fixtures\ok_filc_stdin.c --filc --run-stdin test\_tmp_stdin.txt > %OUT% 2>&1
+findstr /C:"got:halo-filc-stdin" %OUT% >nul && echo [OK] run_stdin sampai ke Fil-C (WSLENV fix) || echo [INFO] run_stdin Fil-C tidak terlihat (Fil-C tak tersedia / bukan WSL)
+del test\_tmp_stdin.txt
+echo --- MYC-AUDIT-022: machine-readable diagnostic + exact tool identity (roadmap 7.1)
+myc.exe version > %OUT% 2>&1
+findstr /C:"gcc version:" %OUT% >nul && echo [OK] myc version cetak gcc version || echo [FAIL] gcc version hilang di myc version
+findstr /C:"clang version:" %OUT% >nul && echo [OK] myc version cetak clang version || echo [FAIL] clang version hilang di myc version
+myc.exe check tests\ok_hello.c > %OUT% 2>&1
+findstr /C:"gcc_version:" %OUT% >nul && echo [OK] report memuat gcc_version || echo [FAIL] gcc_version tidak tampil
+myc.exe check tests\bad_realloc.c > %OUT% 2>&1
+findstr /C:"verdict:   COMPILE_ERROR" %OUT% >nul && echo [OK] bad_realloc COMPILE_ERROR || echo [FAIL] bad_realloc bukan COMPILE_ERROR
+findstr /C:"used after 'realloc'" %OUT% >nul && echo [OK] diagnostic JSON gcc ter-parse terstruktur (line:col) || echo [FAIL] diagnostic JSON gcc tidak ter-parse
+findstr /C:"[17:12]" %OUT% >nul && echo [OK] line:col dari caret JSON benar || echo [FAIL] line:col JSON salah
+myc.exe check tests\ok_hello.c --json > %OUT% 2>&1
+findstr /C:"gcc_version" %OUT% >nul && echo [OK] JSON memuat gcc_version || echo [FAIL] JSON gcc_version hilang
+myc.exe check tests\ok_run.c --run --json > %OUT% 2>&1
+findstr /C:"clang_version" %OUT% >nul && echo [OK] JSON memuat clang_version (backend clang) || echo [FAIL] JSON clang_version hilang
+myc.exe check tests\ok_run.c --run > %OUT% 2>&1
+findstr /C:"receipt_sha256: 8224c23a8a42265f4596d0a740066a97b1a10b0288dc7e1f6cdf8da002e7f565" %OUT% >nul && echo [OK] receipt golden tetap deterministik || echo [FAIL] receipt golden BERUBAH (AUDIT-022 mengubah gate status?)
 echo --- driver fixtures (D2.2, --driver): ok_driver harus OK, bad_driver_oob harus DRIVER_VIOLATION
 for %%f in (test\fixtures\ok_driver.c test\fixtures\bad_driver_oob.c) do (
   echo === %%f

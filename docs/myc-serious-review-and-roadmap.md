@@ -1923,7 +1923,7 @@ dan pastikan setiap jalur:
 - file dibaca penuh sebelum size cap;
 - resource tertentu tidak dibebaskan pada early return;
 - `probe` memakai asumsi path Windows;
-- `version` belum memberi exact toolchain identity;
+- ~~`version` belum memberi exact toolchain identity~~; ✅ 2026-08-03 (MYC-AUDIT-022: `myc version` cetak `gcc version:`/`clang version:` via `myc_tool_version()`).
 - result report belum memisahkan code finding dan infra status.
 
 ### Perbaikan
@@ -2711,12 +2711,12 @@ Ini membuatnya:
 
 ### Task
 
-- [ ] Tandai README bahwa level assurance lama bersifat eksperimental.
+- [x] Tandai README bahwa level assurance lama bersifat eksperimental. ✅ 2026-08-03 (README: catatan Fase 0 pada blok assurance vector — L1–L5 eksperimental, sumber kepercayaan = evidence matrix/finding/claim_status/receipt; jangan tambah backend sebelum trust core stabil).
 - [x] Hapus istilah `FULL` (MYC-AUDIT-013, 2026-08-02).
 - [ ] Jangan menambah backend baru.
 - [ ] Buat branch `trust-core`.
 - [ ] Tambahkan issue untuk setiap `MYC-AUDIT-*`.
-- [ ] Simpan fixture output saat ini sebagai baseline bug, bukan golden success.
+- [x] Simpan fixture output saat ini sebagai baseline bug, bukan golden success. ✅ 2026-08-03 (README: nilai receipt golden didokumentasikan sebagai sidik jari perilaku SAAT INI untuk deteksi regresi — bukan jaminan kebenaran; perubahan perilaku yang diperbaiki boleh menggesernya dengan sengaja).
 
 ### Acceptance criteria
 
@@ -2801,9 +2801,9 @@ Lihat test matrix di Fase 8.
 - [ ] Implement `myc_source_input` formal struct.
 - [ ] Terapkan size cap saat membaca, bukan setelah membaca penuh.
 - [ ] File path canonicalization.
-- [ ] Embedded NUL policy length-aware.
+- [x] Embedded NUL policy length-aware. ✅ 2026-08-03 (commit `feat(myc): Embedded NUL policy length-aware` + posisi/total di diagnostic; NUL → `MYC_ERR_NUL_IN_INPUT`).
 - [x] `file_path`-only: `myc_run()` kini load file sebelum masuk pipeline (MYC-AUDIT-007).
-- [ ] Validasi timeout, output cap, cwd, flag combinations.
+- [x] Validasi timeout, output cap, cwd, flag combinations. ✅ 2026-08-03 (MYC-AUDIT-020: `--timeout` 0–600000, `--output-cap` 0–100 MiB, cwd non-kosong; negatif/overflow/non-angka fail-fast; CLI + API + MCP).
 - [x] Unknown flag menjadi error. (MYC-AUDIT-019: CLI fail-fast pada unknown flag → pesan + exit 2; `--run-stdin`/`--cwd` tanpa argumen nilai → exit 2. Konsisten dengan reject unknown flag MCP -32602.)
 - [ ] Semua string public memiliki pointer + length bila dapat mengandung input eksternal.
 
@@ -2957,17 +2957,17 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 
 ### 7.1. GCC/Clang compile
 
-- [ ] machine-readable diagnostic;
-- [ ] exact tool identity;
-- [ ] `/dev/null` fix;
+- [x] machine-readable diagnostic ✅ 2026-08-03 (MYC-AUDIT-022: gate compile/analyzer/checked memakai `-fdiagnostics-format=json`; `ingest_gcc_diagnostics` parse array JSON via json.c → `kind`/`message`/caret line+col; fallback teks untuk `gcc -E`/output terpotong).
+- [x] exact tool identity ✅ 2026-08-03 (MYC-AUDIT-022: `myc_tool_version()` di proc.c; `myc_result.gcc_version`/`clang_version` di teks+JSON; `myc version` cetak versi persis backend).
+- [x] `/dev/null` fix ✅ 2026-08-02 (MYC-AUDIT-015: `myc_null_device()` — "NUL" Windows vs "/dev/null" POSIX).
 - [ ] fingerprint incremental;
-- [ ] output truncation status.
+- [x] output truncation status ✅ 2026-08-02 (drain_buf bounded prefix+tail + `truncated` flag; Fase 1.5).
 
 ### 7.2. Runtime sanitizer
 
 - [x] absolute temp path ✅ 2026-08-02 (`make_temp_dir()` fallback ke `/tmp` (POSIX) / `C:/Temp` (Windows), canonicalize via `getcwd` bila base masih relatif).
 - [x] `mkdtemp`; ✅ (temp dir absolut & unik, MyC_AUDIT-003)
-- [ ] explicit sanitizer env;
+- [x] explicit sanitizer env ✅ 2026-08-02 (MYC-AUDIT-017: `ASAN_OPTIONS`/`UBSAN_OPTIONS`/`LC_ALL=C` deterministik via `preq.env` di proc.c).
 - [x] canary ✅ 2026-08-02 (`myc_runtime_canary`: OOB deterministik dijalankan
       sebelum `COMPLETED_CLEAN`; canary tak terdeteksi -> INCONCLUSIVE)
 - [x] report channel non-spoofable ✅ 2026-08-02 (MYC-AUDIT-017: `log_path`
@@ -2976,16 +2976,16 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 
 ### 7.3. Checked buffer
 
-- [ ] elem size metadata;
-- [ ] checked multiplication;
+- [x] elem size metadata ✅ 2026-08-02 (MYC-AUDIT-012: member `T *data` + `elem_size` + `byte_capacity`).
+- [x] checked multiplication ✅ 2026-08-02 (MYC-AUDIT-012: `MYC_NEW` tolak `n*sizeof(T)>SIZE_MAX`; bounds `i >= byte_capacity/elem`).
 - [ ] coverage count;
-- [ ] type mismatch trap;
+- [x] type mismatch trap ✅ 2026-08-02 (MYC-AUDIT-012: cek ukuran tipe compile-time + `elem_size` runtime; fixture `bad_checked_type.c`).
 - [ ] semantics parity tests.
 
 ### 7.4. Contract
 
-- [ ] no silent truncate;
-- [ ] multiple requires;
+- [x] no silent truncate ✅ 2026-08-03 (MYC-AUDIT-019: `read_contract_expr` return 2 + diagnostic "terlalu panjang" — reject, bukan truncate; test `audit_lampiran.c`).
+- [x] multiple requires ✅ 2026-08-03 (MYC-AUDIT-019: multiple consecutive requires di-ikat; test `audit_lampiran.c`).
 - [ ] pure expression validation;
 - [ ] explicit clause status;
 - [ ] stable function binding.
@@ -2994,7 +2994,7 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 
 - [ ] case record;
 - [ ] replay capsule;
-- [ ] 0-case classification;
+- [x] 0-case classification ✅ 2026-08-02 (9.10: driver tanpa fungsi ber-kontrak = `NOT_APPLICABLE`; diminta tapi 0 kasus = debt `MYC-INCOMPLETE-NONZERO-CASES`).
 - [ ] boundary portfolio;
 - [ ] combinatorial budget.
 
@@ -3011,7 +3011,7 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 ### 7.7. Fil-C
 
 - [x] remove `FULL` — label `L5 FILC` (MYC-AUDIT-013, 2026-08-02).
-- [ ] fix `run_stdin` under WSL;
+- [x] fix `run_stdin` under WSL ✅ 2026-08-03 (MYC-AUDIT-021: env Windows tidak sampai ke WSL tanpa `WSLENV`; filc.c kini menambahkan `WSLENV=...:MYC_FILC_STDIN/p` (path translation otomatis) ke env block wsl.exe, template memakai `$MYC_FILC_STDIN` langsung + fallback `wslpath`; file stdin temp Windows dihapus via `remove`; fixture `ok_filc_stdin.c` + regresi `_regress_run.bat` — `got:...` muncul di filc_stdout).
 - [ ] version identity;
 - [ ] robust report parser;
 - [ ] per-case scope.

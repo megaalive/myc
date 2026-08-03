@@ -50,6 +50,17 @@ OK (assurance: L1 SANE, L2 EVA, L3 RUNTIME, L4 SPATIAL, atau L5 FILC)
 > 3=inconclusive 4=observations) — turunan murni dari typed gate status,
 > tidak di-max-kan. Juga di JSON (`"assurance_vector":{"C":...}`).
 
+> **Fase 0 (freeze klaim):** label level assurance **lama** (L1–L5) bersifat
+> **eksperimental** — keandalan klaim tergantung backend yang tersedia saat
+> itu dan tidak menjanjikan bukti formal. Sumber kepercayaan = bukti gate
+> itu sendiri: `gate_matrix[]` (evidence matrix), `finding`/`completeness`,
+> `claim_status` (VALID/OVERSTATED/UNVERIFIED) dan `receipt_sha256`.
+> Jangan menambah backend baru sebelum trust core stabil (roadmap Fase 0).
+> Fixture output saat ini adalah **baseline bug, bukan golden success** —
+> nilai receipt golden (mis. `ok_run --run` → `8224c23a...`) didokumentasikan
+> sebagai sidik jari perilaku SAAT INI untuk deteksi regresi; perubahan
+> perilaku yang diperbaiki (bukan bug) boleh menggesernya dengan disengaja.
+
 > Catatan: gate memori memakai `-c -O2` karena `-Warray-bounds` dan
 > `-Wstringop-overflow` hanya aktif saat kompilasi beroptimisasi.
 
