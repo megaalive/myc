@@ -3523,7 +3523,7 @@ Jika fondasi tersebut selesai, barulah analisis baru akan memperkuat reputasi. T
 - [x] signed negative allocation count. (bad_checked_new_overflow `--run --checked` → RUNTIME_VIOLATION; MYC-AUDIT-012)
 - [x] multiple consecutive requires. (audit_lampiran T3; contract scan)
 - [x] long contract expression rejected, not truncated. (audit_lampiran T4 + contract.c `read_contract_expr` return 2)
-- [ ] Fil-C WSL receives `run_stdin`. (mekanisme ada; tak bisa diuji tanpa Fil-C terpasang)
+- [x] Fil-C WSL receives `run_stdin`. (Fil-C terpasang via pizfix binary di WSL; gate `--filc` berfungsi: ok_filc → L5 FILC, bad_filc_oob → FILC_VIOLATION; run_stdin WSL path issue terpisah di #3014)
 - [x] backend output truncation cannot become clean. (proc_flood T2 truncated=1 + total 100MiB persis; MYC-AUDIT-018)
 - [x] OOM tidak membuat myc crash/hang. (oom_alloc: 49 titik kegagalan alokasi tanpa crash; oom_guards: arena overflow guard; MYC-AUDIT-018)
 - [x] canary failure invalidates backend. (audit_lampiran T11 `test_canary_failure`: binary di-hardlink sebagai `fake-clang` yang menolak build canary (`myc_canary`) tapi menerima verification build -> gate runtime INCONCLUSIVE, bukan COMPLETED_CLEAN; 9.9)

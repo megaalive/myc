@@ -7,7 +7,7 @@
 # portabel:
 #   1. proc_flood    -- deadlock stdin/stdout, flood 100MiB prefix+tail,
 #                      env override (MYC-AUDIT-002/017 + bounded capture).
-#   2. oom_guards    -- guard overflow arena + validasi input ekstrem.
+#   2. oom_guards    -- guard overflow arena + input ekstrem.
 #   3. oom_alloc     -- injeksi kegagalan malloc/calloc/realloc (--wrap),
 #                      incl. fase JSON (MYC-AUDIT-009 sb_reserve/obj_set).
 #   4. stress_threads-- concurrency myc_run paralel (Fase 5, juga Windows).
@@ -15,6 +15,8 @@
 #                      NUL portability, 0 driver cases, immutable, fp-long
 #                      (T8), file_path-only (T9), canary failure (T11),
 #                      + varian ASan untuk fp-long (AUDIT-005 OOB).
+#   6. filc gate     -- uji gate --filc bila filc-clang tersedia di PATH
+#                      (ok_filc → L5 FILC, bad_filc_oob → FILC_VIOLATION).
 #
 # Dijalankan dari _regress_run.bat (bila bash tersedia) atau langsung di
 # POSIX/CI Linux. CWD harus root proyek.
@@ -140,6 +142,18 @@ rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \
       test/verify_descendants test/verify_descendants.exe \
       test/audit_lampiran test/audit_lampiran.exe \
       test/audit_lampiran_asan test/audit_lampiran_asan.exe
+
+# --- 6c. Fil-C gate (jika filc-clang tersedia di PATH) ---
+if command -v filc-clang >/dev/null 2>&1 && [ -x ./myc ]; then
+    run_built "filc ok_filc --filc (L5 FILC)" \
+              ./myc check test/fixtures/ok_filc.c --filc
+    run_built "filc bad_filc_oob --filc --run (FILC_VIOLATION)" \
+              ./myc check test/fixtures/bad_filc_oob.c --filc --run
+else
+    echo "[SKIP] filc-clang tidak tersedia di PATH atau myc binary tidak ditemukan"
+fi
+
+rm -f test/filc_test test/filc_test.exe
 
 echo "audit018: $([ $FAIL -eq 0 ] && echo SELESAI OK || echo GAGAL)"
 exit $FAIL

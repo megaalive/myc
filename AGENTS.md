@@ -157,14 +157,17 @@ Poin penting:
   `test/oom_alloc.c` (--wrap). **Bug nyata ditemukan di WSL**: parent myc mati
   SIGPIPE (exit 141) saat menulis stdin ke child yang sudah mati lebih awal
   (exec gagal / `chdir(cwd)` gagal — T8 memakai cwd 3000-char yang tak ada →
-  child _exit sebelum baca stdin) → `write()` tidak sempat return EPIPE karena
-  sinyal default membunuh parent. **Fix proc.c POSIX**: tahan `SIGPIPE` (`SIG_
-  IGN` via `sigaction`, simpan & pulihkan handler lama) selama loop tulis stdin;
-  `write()` kini return EPIPE → break seperti desain. Lampiran A kini **27/28**
-  `[x]` (sisa: Fil-C run_stdin — tak bisa diuji tanpa Fil-C terpasang). Regresi:
-  `_audit018.sh` WSL 6/6 + fp-long ASan OK + verify_descendants OK (0 FAIL);
-  Windows `_regress_run.bat` 0 [FAIL] (self-dogfooding 16 OK, fixtures utuh,
-  MCP interop 25 cek).
+   child _exit sebelum baca stdin) → `write()` tidak sempat return EPIPE karena
+   sinyal default membunuh parent. **Fix proc.c POSIX**: tahan `SIGPIPE` (`SIG_
+   IGN` via `sigaction`, simpan & pulihkan handler lama) selama loop tulis stdin;
+   `write()` kini return EPIPE → break seperti desain. Lampiran A kini **27/28**
+   `[x]` (sisa: Fil-C run_stdin WSL path — mekanisme ada tapi stdin tidak diteruskan
+   ke program child di WSL; fix terpisah). Fil-C kini terpasang di WSL (pizfix 0.681,
+   `~/bin/filc-clang` → `filc-clang` di PATH; gate `--filc` berfungsi: ok_filc → L5
+   FILC, bad_filc_oob → FILC_VIOLATION). Regresi:
+   `_audit018.sh` WSL 6/6 + fp-long ASan OK + verify_descendants OK (0 FAIL);
+   Windows `_regress_run.bat` 0 [FAIL] (self-dogfooding 16 OK, fixtures utuh,
+   MCP interop 25 cek).
 - **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
   seluruh rule lint.c (intptr_t/uintptr_t cast, realloc ke variabel lain,
   memcpy/memset tanpa sizeof, ukuran alokasi perkalian tanpa sizeof, akses
