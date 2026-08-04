@@ -3003,7 +3003,7 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 
 - [x] separate Eva/WP — klaim dipisah: L2 EVA ≠ WP (MYC-AUDIT-013, 2026-08-02);
       adapter WP belum ada dan TIDAK diklaim.
-- [ ] native POSIX path;
+- [x] native POSIX path; ✅ 2026-08-05 (prove.c: di POSIX non-Windows, `frama-c` dicari langsung di PATH dan dijalankan via `myc_proc_run` — tidak lagi bergantung WSL; Windows tetap via WSL).
 - [x] version/model/entry point — laporan prove memuat mode/version/entry
       (MYC-AUDIT-013, 2026-08-02).
 - [ ] machine output if available;
