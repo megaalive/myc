@@ -2789,7 +2789,7 @@ Pilih salah satu:
 - [ ] gunakan `STARTUPINFOEX` + `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` bila tersedia;
 - [ ] fallback didokumentasikan;
 - [x] semua drain thread di-join (WaitForSingleObject sudah ada);
-- [ ] handle leak test.
+- [x] handle leak test. ✅ 2026-08-05 (audit_lampiran.c: handle count via GetProcessHandleCount sebelum dan sesudah myc_run — 188 == 188, tidak ada leak).
 
 ### Acceptance criteria
 
@@ -3036,7 +3036,7 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 - [x] output boundary tests ✅ (proc_flood T2: 100 MiB prefix+tail cap 64 KiB).
 - [x] cancellation and timeout tests ✅ (proc_flood T1: timeout 1500ms + group-kill).
 - [x] path length tests ✅ (audit_lampiran T8: cwd 3000-char, fingerprint 64-hex deterministik).
-- [ ] Unicode tests. (sebagian: json.c validasi UTF-8/surrogate di json_abuse; portofolio eksplisit belum)
+- [x] Unicode tests. ✅ 2026-08-05 (portofolio eksplisit ditambahkan ke json_abuse.c: emoji BMP U+1F600, CJK Ext B U+20000, BOM U+FEFF, U+10FFFF (ceiling), combining chars U+0300, astral plane U+1D11E, valid 3-byte/4-byte UTF-8, overlong 2-byte/3-byte, lone continuation, invalid 0xFE/0xFF, lone surrogates, mixed ASCII+Unicode; total 71 case, semua lolos).
 - [ ] 32-bit build bila tersedia.
 
 ### Acceptance criteria

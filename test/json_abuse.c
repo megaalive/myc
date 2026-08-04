@@ -75,6 +75,25 @@ static const corpus_case CORPUS[] = {
     { "trailing garbage",        "1 2",                                  0 },
     { "two roots",               "{} []",                                0 },
     { "empty",                   "",                                     0 },
+    { "valid emoji U+1F600",     "\"\\uD83D\\uDE00\"",                  1 }, /* 😀 */
+    { "valid CJK ext B U+20000", "\"\\uD840\\uDC00\"",                  1 }, /* U+20000 */
+    { "bom U+FEFF",              "\"\\uFEFF\"",                          1 },
+    { "valid codepoint U+10FFFF", "\"\\uDBFF\\uDFFF\"",          1 }, /* U+10FFFF max valid */
+    { "utf8 overlong 2-byte",    "\"\xC0\x80\"",                        0 }, /* U+0000 overlong */
+    { "utf8 overlong 3-byte",    "\"\xE0\x80\x80\"",                    0 }, /* U+0000 overlong 3 */
+    { "utf8 continuation alone", "\"\x80\"",                             0 }, /* lone continuation */
+    { "utf8 3-byte valid",       "\"\xC3\xA9\"",                        1 }, /* é */
+    { "utf8 4-byte valid",       "\"\xF0\x9F\x98\x80\"",                1 }, /* 😀 UTF-8 raw */
+    { "utf8 4-byte valid U+10FFFF", "\"\xF4\x90\x80\x80\"",        1 }, /* U+10FFFF max valid */
+    { "utf8 invalid seq 0xFE",   "\"\xFE\"",                             0 },
+    { "utf8 invalid seq 0xFF",   "\"\xFF\"",                             0 },
+    { "valid combining chars",   "\"a\\u0300\"",                        1 }, /* à */
+    { "valid astral plane",      "\"\\uD834\\uDD1E\"",                  1 }, /* 𝄞 U+1D11E */
+    { "invalid low surrogate alone", "\"\\uDC00\"",                     0 },
+    { "invalid high surrogate alone", "\"\\uD800\"",                    0 },
+    { "valid mixed ascii unicode","\"hello \\u0020 world\"",            1 },
+    { "invalid 4-escape non-hex", "\"\\uXYZW\"",                        0 },
+    { "valid roof/ceiling U+10FFFF","\"\\uDBFF\\uDFFF\"",            1 },
 };
 
 #define NCASES ((int)(sizeof(CORPUS) / sizeof(CORPUS[0])))
