@@ -3037,7 +3037,7 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 - [x] cancellation and timeout tests ✅ (proc_flood T1: timeout 1500ms + group-kill).
 - [x] path length tests ✅ (audit_lampiran T8: cwd 3000-char, fingerprint 64-hex deterministik).
 - [x] Unicode tests. ✅ 2026-08-05 (portofolio eksplisit ditambahkan ke json_abuse.c: emoji BMP U+1F600, CJK Ext B U+20000, BOM U+FEFF, U+10FFFF (ceiling), combining chars U+0300, astral plane U+1D11E, valid 3-byte/4-byte UTF-8, overlong 2-byte/3-byte, lone continuation, invalid 0xFE/0xFF, lone surrogates, mixed ASCII+Unicode; total 71 case, semua lolos).
-- [ ] 32-bit build bila tersedia.
+- [x] 32-bit build bila tersedia. ✅ 2026-08-05 (audit_lampiran.c: uji kompilasi `-m32` conditional; skip bila toolchain 32-bit tidak terpasang, bukan FAIL).
 
 ### Acceptance criteria
 

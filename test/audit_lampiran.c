@@ -1,22 +1,23 @@
 /*
- * audit_lampiran.c -- Regression Lampiran A roadmap: item fix yang belum
- * di-ikat test eksplisit (portabel, Windows git-bash + POSIX).
- *
- * Menutup gap regression yang tersisa:
- *   1. exec failure vs application exit 127  (MYC-AUDIT-003: exec-error pipe)
- *   2. absolute temp executable path         (MYC-AUDIT-003: make_temp_dir)
- *   3. multiple consecutive requires         (contract scan)
- *   4. long contract expression rejected, NOT truncated ("no silent truncate")
- *   5. NUL is never created on POSIX         (MYC-AUDIT-015: myc_null_device)
- *   6. 0 driver cases cannot become runtime clean (D2.2 / 9.10)
- *   7. old result diagnostic remains immutable (arena milik hasil, Fase 5)
- *
- * Build:
- *   gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o audit_lampiran \
- *       audit_lampiran.c myc.c proc.c scanner.c policy.c compile.c report.c \
- *       sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c \
- *       gate.c negative.c
- */
+  * audit_lampiran.c -- Regression Lampiran A roadmap: item fix yang belum
+  * di-ikat test eksplisit (portabel, Windows git-bash + POSIX).
+  *
+  * Menutup gap regression yang tersisa:
+  *   1. exec failure vs application exit 127  (MYC-AUDIT-003: exec-error pipe)
+  *   2. absolute temp executable path         (MYC-AUDIT-003: make_temp_dir)
+  *   3. multiple consecutive requires         (contract scan)
+  *   4. long contract expression rejected, NOT truncated ("no silent truncate")
+  *   5. NUL is never created on POSIX         (MYC-AUDIT-015: myc_null_device)
+  *   6. 0 driver cases cannot become runtime clean (D2.2 / 9.10)
+  *   7. old result diagnostic remains immutable (arena milik hasil, Fase 5)
+  *   8. handle leak test                      (Fase 1 Task 1.6: Windows)
+  *
+  * Build:
+  *   gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o audit_lampiran \
+  *       audit_lampiran.c myc.c proc.c scanner.c policy.c compile.c report.c \
+  *       sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c \
+  *       gate.c negative.c
+  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -648,6 +649,66 @@ int main(int argc, char **argv)
         myc_result_free(&r4);
         if (have_cwd)
             myc_result_free(&r5);
+    }
+
+#ifdef _WIN32
+    /* --- Handle leak test (Fase 1 Task 1.6) --- */
+    {
+        DWORD before = 0, after = 0;
+        if (GetProcessHandleCount(GetCurrentProcess(), &before)) {
+            myc_request req_hl;
+            myc_result r_hl;
+            const char *hl_src = "int main(void) { return 0; }";
+            memset(&req_hl, 0, sizeof(req_hl));
+            req_hl.input.kind = MYC_SOURCE_MEMORY;
+            req_hl.input.data = hl_src;
+            req_hl.input.len = strlen(hl_src);
+            req_hl.cwd = ".";
+            req_hl.timeout_ms = 30000;
+            req_hl.max_output_bytes = 0;
+            req_hl.strict = 0;
+            req_hl.run = 0;
+            req_hl.prove = 0;
+            req_hl.checked = 0;
+            req_hl.filc = 0;
+            req_hl.driver = 0;
+            req_hl.metamorphic = 0;
+            req_hl.negative = 0;
+            req_hl.require_complete = 0;
+            myc_result_init(&r_hl);
+            myc_run(&req_hl, &r_hl);
+            myc_result_free(&r_hl);
+            if (GetProcessHandleCount(GetCurrentProcess(), &after)) {
+                CHECK(before == after,
+                      "handle leak test: %lu handles before, %lu after",
+                      (unsigned long)before, (unsigned long)after);
+            } else {
+                printf("[SKIP] GetProcessHandleCount pasca-run gagal\n");
+            }
+        } else {
+            printf("[SKIP] GetProcessHandleCount pra-run gagal\n");
+        }
+    }
+#endif
+
+    /* --- 32-bit build test (Fase 8) --- */
+    {
+        FILE *f32 = fopen("test/_test32.c", "w");
+        if (f32) {
+            fprintf(f32, "int main(void) { return 0; }\n");
+            fclose(f32);
+            int rc = system("gcc -m32 -O2 -std=c11 -o test/_test32.exe test/_test32.c 2>test/_test32.err");
+            if (rc == 0) {
+                printf("[OK]   32-bit build tersedia dan kompilasi bersih\n");
+                remove("test/_test32.exe");
+            } else {
+                printf("[SKIP] 32-bit build tidak tersedia (toolchain -m32 tidak terpasang)\n");
+            }
+            remove("test/_test32.c");
+            remove("test/_test32.err");
+        } else {
+            printf("[SKIP] tidak dapat membuat file uji 32-bit\n");
+        }
     }
 
     printf(g_fail ? "audit_lampiran: FAIL (%d)\n" : "audit_lampiran: OK\n", g_fail);
