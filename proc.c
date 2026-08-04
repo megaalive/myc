@@ -872,14 +872,44 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
     }
 
     t0 = now_ms();
-    started = CreateProcessA(
-        req->argv[0],
-        cmdline_copy,
-        NULL, NULL, TRUE,             /* bInheritHandles = TRUE */
-        CREATE_NO_WINDOW,
-        env_block,                    /* NULL = warisi env induk */
-        req->cwd,
-        &si, &pi);
+    /* STARTUPINFOEX dengan handle allow-list (MYC-AUDIT-003 partial):
+     * hanya handle yang secara eksplisit terdaftar yang diwarisi anak,
+     * mengurangi surface area handle leak/misuse. Fallback ke STARTUPINFOA
+     * bila STARTUPINFOEX tidak tersedia (Windows < Vista, atau kegagalan). */
+    {
+        HANDLE handle_list[] = { stdin_rd, stdout_wr, stderr_wr };
+        SIZE_T attr_size = 0;
+        STARTUPINFOEXA siex = {0};
+        siex.StartupInfo.cb = sizeof(siex);
+        siex.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+        siex.StartupInfo.hStdInput = stdin_rd;
+        siex.StartupInfo.hStdOutput = stdout_wr;
+        siex.StartupInfo.hStdError = stderr_wr;
+        InitializeProcThreadAttributeList(NULL, 1, 0, &attr_size);
+        siex.lpAttributeList = (PPROC_THREAD_ATTRIBUTE_LIST)malloc(attr_size);
+        if (siex.lpAttributeList &&
+            InitializeProcThreadAttributeList(siex.lpAttributeList, 1, 0, &attr_size) &&
+            UpdateProcThreadAttribute(siex.lpAttributeList, 0,
+                PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                handle_list, sizeof(handle_list), NULL, NULL)) {
+            started = CreateProcessA(
+                req->argv[0], cmdline_copy,
+                NULL, NULL, FALSE,
+                EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW,
+                env_block, req->cwd,
+                (STARTUPINFOA *)&siex, &pi);
+            DeleteProcThreadAttributeList(siex.lpAttributeList);
+        } else {
+            /* Fallback ke STARTUPINFOA biasa. */
+            started = CreateProcessA(
+                req->argv[0], cmdline_copy,
+                NULL, NULL, TRUE,
+                CREATE_NO_WINDOW,
+                env_block, req->cwd,
+                (STARTUPINFOA *)&si, &pi);
+        }
+        free(siex.lpAttributeList);
+    }
 
     if (!started) {
         res->err = MYC_ERR_EXECUTE_FAILED;
