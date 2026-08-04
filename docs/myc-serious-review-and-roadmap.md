@@ -2786,8 +2786,8 @@ Pilih salah satu:
 
 ### Task 1.6 — Windows handle allow-list
 
-- [ ] gunakan `STARTUPINFOEX` + `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` bila tersedia;
-- [ ] fallback didokumentasikan;
+- [x] gunakan `STARTUPINFOEX` + `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` bila tersedia. ✅ 2026-08-05 (proc.c: handle allow-list [stdin_rd, stdout_wr, stderr_wr] via STARTUPINFOEX; fallback ke STARTUPINFOA + bInheritHandles=TRUE bila gagal).
+- [x] fallback didokumentasikan. ✅ 2026-08-05 (kode komentar di proc.c: fallback ke STARTUPINFOA + bInheritHandles=TRUE bila STARTUPINFOEX gagal).
 - [x] semua drain thread di-join (WaitForSingleObject sudah ada);
 - [x] handle leak test. ✅ 2026-08-05 (audit_lampiran.c: handle count via GetProcessHandleCount sebelum dan sesudah myc_run — 188 == 188, tidak ada leak).
 
