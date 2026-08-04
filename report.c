@@ -327,6 +327,7 @@ void myc_report_text(const myc_result *res)
             printf("  version: %s\n", res->prove_version);
         printf("  entry: main (default)\n");
         printf("  alarms: %d\n", res->prove_alarms);
+        printf("  proof_obligations: %d\n", res->prove_proof_obligations);
         printf("  note: 0 alarm = tidak ada alarm RTE di bawah model Eva; "
                "bukan proof obligation WP\n");
         if (res->prove_stdout_text && res->prove_stdout_text[0])
@@ -737,6 +738,8 @@ char *myc_result_to_json(const myc_result *res)
     }
     json_sb_printf(&b, "\"ran_prove\":%s,", res->ran_prove ? "true" : "false");
     json_sb_printf(&b, "\"prove_alarms\":%d,", res->prove_alarms);
+    json_sb_printf(&b, "\"prove_proof_obligations\":%d,",
+                   res->prove_proof_obligations);
     json_sb_printf(&b, "\"prove_mode\":\"%s\",",
                    res->prove_mode ? res->prove_mode
                                    : "eva (abstract interpretation)");

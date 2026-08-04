@@ -481,6 +481,7 @@ typedef struct {
     /* --- hasil gate prove (D3.1, --prove) --- */
     int         ran_prove;              /* 1 bila gate prove dijalankan */
     int         prove_alarms;           /* jumlah alarm Eva (RTE) */
+    int         prove_proof_obligations; /* jumlah "proof obligation" (Task 11) */
     char       *prove_stdout_text;      /* output frama-c -eva */
     char       *prove_stderr_text;
     char       *prove_version;          /* versi Frama-C dari banner (arena) */

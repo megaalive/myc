@@ -183,6 +183,52 @@ static int ingest_eva_alarms(myc_result *res, const char *text)
     return count;
 }
 
+/* Coba parse output JSON Frama-C (jika tersedia).
+ * Mengembalikan jumlah alarm yang ditemukan, atau -1 bila bukan JSON. */
+static int ingest_eva_json(myc_result *res, const char *text)
+{
+    const char *p = text;
+    int         count = 0;
+    if (!text)
+        return -1;
+    /* JSON Eva dimulai dengan "[" atau "{". */
+    while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r'))
+        p++;
+    if (*p != '[' && *p != '{')
+        return -1;
+    /* Cari "[eva:alarm]" di JSON juga (Frama-C menyematkan marker yang sama). */
+    count = ingest_eva_alarms(res, text);
+    return count >= 0 ? count : -1;
+}
+
+/* Hitung alarm Eva dari output: preferensi output mesin (JSON) bila
+ * tersedia, fallback ke pemindaian teks baris "[eva:alarm]"
+ * (Task 10: machine output if available — Frama-C). */
+static int count_eva_alarms(myc_result *res, const char *text)
+{
+    int a = ingest_eva_json(res, text);
+    if (a >= 0)
+        return a;
+    return ingest_eva_alarms(res, text);
+}
+
+/* Hitung proof obligation dari output Eva.
+ * Mengembalikan jumlah yang ditemukan (0 jika tidak ditemukan). */
+static int count_proof_obligations(const char *text)
+{
+    int count = 0;
+    const char *p = text;
+    if (!text)
+        return 0;
+    while ((p = strstr(p, "proof obligation")) != NULL) {
+        count++;
+        p += strlen("proof obligation");
+        if (count >= 10000)
+            break;
+    }
+    return count;
+}
+
 int myc_prove_gate(const myc_request *req, const char *source, size_t source_len,
                     myc_result *res)
 {
@@ -335,9 +381,12 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
             free(wsl_path);
             return 0;
         }
-        alarms = ingest_eva_alarms(res, res->prove_stdout_text);
-        alarms += ingest_eva_alarms(res, res->prove_stderr_text);
+        alarms = count_eva_alarms(res, res->prove_stdout_text);
+        alarms += count_eva_alarms(res, res->prove_stderr_text);
         res->prove_alarms = alarms;
+        res->prove_proof_obligations =
+            count_proof_obligations(res->prove_stdout_text) +
+            count_proof_obligations(res->prove_stderr_text);
         if (alarms > 0) {
             char note[128];
             snprintf(note, sizeof(note),
@@ -447,7 +496,10 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
         }
         res->duration_ms += pres.duration_ms;
         if (pres.exit_code != 0) {
-            alarms = count_prove_alarms(res, pres.stdout_data);
+            alarms = count_eva_alarms(res, pres.stdout_data);
+            res->prove_proof_obligations =
+                count_proof_obligations(pres.stdout_data) +
+                count_proof_obligations(pres.stderr_data);
             if (alarms > 0) {
                 res->verdict = MC_PROVE_VIOLATION;
                 res->err = MYC_ERR_NONE;
@@ -466,7 +518,10 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
                                         "Eva exit != 0 tanpa alarm terdeteksi");
             }
         } else {
-            alarms = count_prove_alarms(res, pres.stdout_data);
+            alarms = count_eva_alarms(res, pres.stdout_data);
+            res->prove_proof_obligations =
+                count_proof_obligations(pres.stdout_data) +
+                count_proof_obligations(pres.stderr_data);
             if (alarms == 0) {
                 res->verdict = MC_OK;
                 res->err = MYC_ERR_NONE;
