@@ -308,6 +308,33 @@ Poin penting:
   purity gate), bad_contract_pre --run tetap RUNTIME_VIOLATION (requires
   pure di-inject), ok_contract --run OK; regresi +8 cek AUDIT-025; receipt
   deterministik tetap `8224c23a...` (field klausa tidak masuk hash).
+- **MYC-AUDIT-026 selesai 2026-08-04** (roadmap 7.3: Checked buffer — coverage
+  count + semantics parity tests):
+  (1) **coverage count** — scanner leksikal TUNGGAL `scan_checked_coverage()`
+  (compile.c) menggantikan `source_uses_checked_buf` (sumber kebenaran
+  tunggal, tanpa duplikasi logika skip komentar): menghitung deklarasi
+  `MYC_BUF(` + invokasi `MYC_NEW(`/`MYC_AT(`/`MYC_FREE(` di LUAR komentar /
+  string / char literal / baris preprocessor; batas identifier dijaga
+  (`MYC_BUF_COOKIE` tidak terhitung). Empat metrik `checked_buffers` /
+  `checked_allocations` / `checked_accesses` / `checked_frees` di laporan
+  teks (`checked:` blok `coverage: buffers=N allocations=M accesses=K
+  frees=F`) + JSON (`checked_buffers` dkk, hanya bila memakai MYC_BUF) +
+  capsule replay (`checked_coverage:` / `"checked_*"`). `accesses` = TITIK
+  akses di source yang tercakup disiplin MYC_AT (1 per invokasi tekstual,
+  BUKAN per eksekusi runtime — jujur: metrik statis seperti callsite
+  negative). Bila build `-DMYC_CHECKED` lolos, tiap buffer + tiap titik akses
+  terbukti tunduk cek batas → coverage = bukti cakupan L4. (2) **semantics
+  parity tests** — fixture `tests/semantics_parity.c` (digest deterministik
+  uint32; buffer `MYC_BUF(int)` + `MYC_BUF(point)` struct; coverage
+  2/2/6/2) dibangun DUA KALI oleh regresi: produksi (`gcc -O2`) vs checked
+  (`gcc -O2 -DMYC_CHECKED=1`); stdout + exit code harus IDENTIK
+  (`digest=176930656`, exit 0) → membuktikan transformasi fat-pointer TIDAK
+  mengubah perilaku kode sah (nol false positive). Terpasang di
+  `_regress_run.bat` (+8 cek AUDIT-026) dan `_ci_linux.sh` (section 4b,
+  Linux CI). Verifikasi: semantics_parity --checked → L4 + coverage
+  2/2/6/2, ok_checked → 1/1/2/1, dogfood_ring tetap L4, parity identik di
+  Windows; receipt tetap `8224c23a...` (coverage bukan bagian fingerprint —
+  source_sha sudah mencakup source).
 - **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
   seluruh rule lint.c (intptr_t/uintptr_t cast, realloc ke variabel lain,
   memcpy/memset tanpa sizeof, ukuran alokasi perkalian tanpa sizeof, akses

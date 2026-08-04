@@ -92,6 +92,36 @@ fi
 assert_out "ok_checked --checked -> L4" "assurance: L4" tests/ok_checked.c --checked
 assert_out "bad_checked --checked -> COMPILE_ERROR" "verdict:   COMPILE_ERROR" tests/bad_checked.c --checked
 
+# --- 4b. checked coverage + semantics parity (MYC-AUDIT-026, roadmap 7.3) ---
+if ./myc check tests/semantics_parity.c --checked 2>&1 | grep -qF \
+    "buffers=2 allocations=2 accesses=6 frees=2"; then
+    note "checked coverage count (2 buffer, 6 titik akses)"
+else
+    fail "checked coverage count"
+fi
+assert_out "semantics_parity --checked -> L4" "assurance: L4" tests/semantics_parity.c --checked
+# No over-claim: komentar berisi "MYC_BUF" TIDAK boleh memicu coverage/L4
+if ./myc check tests/checked_comment_only.c --checked 2>&1 | grep -qF "checked build di-skip" &&
+   ! ./myc check tests/checked_comment_only.c --checked 2>&1 | grep -qF "  build_ok:"; then
+    note "comment-only MYC_BUF di-skip (no over-claim)"
+else
+    fail "comment-only MYC_BUF over-claim"
+fi
+# Semantics parity: source sama, build produksi vs -DMYC_CHECKED=1, output identik
+if gcc -O2 -std=c11 -Wall -I. -o test/parity_prod tests/semantics_parity.c 2>/dev/null &&
+   gcc -O2 -std=c11 -Wall -I. -DMYC_CHECKED=1 -o test/parity_ck tests/semantics_parity.c 2>/dev/null; then
+    test/parity_prod > test/parity_prod.txt; PEC=$?
+    test/parity_ck  > test/parity_ck.txt;  CEC=$?
+    if [ "$PEC" -eq 0 ] && [ "$CEC" -eq 0 ] && cmp -s test/parity_prod.txt test/parity_ck.txt; then
+        note "semantics parity: stdout + exit identik (produksi vs checked)"
+    else
+        fail "semantics parity (prod=$PEC ck=$CEC)"
+    fi
+else
+    fail "semantics parity build"
+fi
+rm -f test/parity_prod test/parity_ck test/parity_prod.txt test/parity_ck.txt
+
 # --- 5. verification run (butuh clang ASan) ---
 assert_out "ok_run --run -> L3" "assurance: L3" tests/ok_run.c --run
 assert_out "bad_run_oob --run -> RUNTIME_VIOLATION" "verdict:   RUNTIME_VIOLATION" tests/bad_run_oob.c --run

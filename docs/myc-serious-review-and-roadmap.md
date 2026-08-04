@@ -320,6 +320,7 @@ Setelah reentrancy dan schema hasil diperbaiki, ini dapat menjadi salah satu keu
 | MYC-AUDIT-018 | Medium | test | Test dominan Windows dan tidak menguji concurrency/deadlock/OOM | ✅ SELESAI 2026-08-02 (runner portabel `test/_audit018.sh` — bash di Windows git-bash DAN POSIX; unit test C: `proc_flood` deadlock 1MiB + flood 100MiB prefix+tail + env override, `oom_guards` arena overflow guard + input ekstrem, `oom_alloc` injeksi `--wrap` malloc/calloc/realloc 49 titik OOM, `stress_threads` concurrency; bug ditemukan test: `myc_result_arena_dup` string_len raksasa → memcpy OOB (n+1 wrap) → diperbaiki guard ganda) |
 | MYC-AUDIT-024 | Medium | `filc.c` | Hitungan marker strstr rapuh/spoofable + tanpa identitas versi + tanpa rincian per-panic | ✅ SELESAI 2026-08-03 (parser struktural baris kanonik `[pid] filc panic:` + fallback blok `filc safety error:`; `filc_version` native+WSL; `myc_filc_case[]` per-case message+lokasi origin `file:line:col: func`; teks `case #N:` + JSON `filc_cases[]`; `myc version` cetak status filc) |
 | MYC-AUDIT-025 | Medium | `contract.c` | Kontrak tanpa validasi purity (ekspresi ber-efek samping bisa di-inject), tanpa status per klausa, binding heuristik rapuh | ✅ SELESAI 2026-08-03 (purity checker: assignment/++/--/comma = impure, pemanggilan fungsi = call — TIDAK di-inject; `myc_contract_clause[]` status eksplisit per klausa teks+JSON; `find_func_binding` ikat ke nama fungsi, keyword kontrol ditolak, inject multi-requires; fixture `contract_clauses.c`) |
+| MYC-AUDIT-026 | Medium | `compile.c` | Transformasi fat-pointer tanpa bukti cakupan (berapa buffer/titik akses tercakup) dan tanpa uji parity produksi-vs-checked | ✅ SELESAI 2026-08-04 (coverage count: scanner tunggal `scan_checked_coverage` — MYC_BUF/MYC_NEW/MYC_AT/MYC_FREE di luar komentar/string, teks+JSON+capsule; semantics parity: fixture `semantics_parity.c` dibangun 2× produksi vs `-DMYC_CHECKED=1`, stdout+exit identik; regresi Windows +8 cek & Linux section 4b) |
 
 ---
 
@@ -2980,9 +2981,9 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 
 - [x] elem size metadata ✅ 2026-08-02 (MYC-AUDIT-012: member `T *data` + `elem_size` + `byte_capacity`).
 - [x] checked multiplication ✅ 2026-08-02 (MYC-AUDIT-012: `MYC_NEW` tolak `n*sizeof(T)>SIZE_MAX`; bounds `i >= byte_capacity/elem`).
-- [ ] coverage count;
+- [x] coverage count ✅ 2026-08-04 (MYC-AUDIT-026: scanner leksikal tunggal `scan_checked_coverage` menghitung deklarasi `MYC_BUF(` + invokasi `MYC_NEW(`/`MYC_AT(`/`MYC_FREE(` di luar komentar/string/preprocessor; `checked_buffers/allocations/accesses/frees` di teks+JSON+capsule; `accesses` = titik akses source yang tercakup disiplin MYC_AT).
 - [x] type mismatch trap ✅ 2026-08-02 (MYC-AUDIT-012: cek ukuran tipe compile-time + `elem_size` runtime; fixture `bad_checked_type.c`).
-- [ ] semantics parity tests.
+- [x] semantics parity tests ✅ 2026-08-04 (MYC-AUDIT-026: fixture `semantics_parity.c` — digest deterministik, buffer int + struct point (coverage 2/2/6/2); dibangun 2× produksi vs `-DMYC_CHECKED=1`, stdout + exit code identik; regresi Windows `_regress_run.bat` + Linux `_ci_linux.sh`; bukti transformasi fat-pointer tanpa false positive).
 
 ### 7.4. Contract
 

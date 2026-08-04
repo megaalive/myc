@@ -315,13 +315,51 @@ static int ident_char(int c)
            (c >= '0' && c <= '9') || c == '_';
 }
 
-/* Deteksi apakah source MEMAKAI makro checked-build (D1.2): identifier
- * "MYC_BUF" di LUAR komentar/string/char-literal, yang diikuti '(' (bentuk
- * deklarasi `MYC_BUF(T) b;`). Skimmer mini ini mencegah over-claim L4 untuk
- * source yang hanya MENYEBUT "MYC_BUF" di komentar. */
-static int source_uses_checked_buf(const char *src, size_t len)
+/* Skimmer coverage checked-build (MYC-AUDIT-026, roadmap 7.3): hitung
+ * jumlah makro checked-build yang BENAR-BENAR terpakai di source (di luar
+ * komentar, string, char literal, baris preprocessor):
+ *   buffers     = deklarasi `MYC_BUF(T) b;` (ident MYC_BUF diikuti '(')
+ *   allocations = invokasi MYC_NEW
+ *   accesses    = invokasi MYC_AT   (titik akses yang mendapat cek batas)
+ *   frees       = invokasi MYC_FREE
+ * Coverage = metrik cakupan transformasi fat-pointer: bila build
+ * -DMYC_CHECKED lolos, tiap buffer MYC_BUF dan tiap akses via MYC_AT terbukti
+ * tunduk pada cek batas (akses langsung b[i] pada fat-struct = error
+ * kompilasi), sehingga `accesses` adalah jumlah titik akses yang terlindungi.
+ * Mengembalikan 1 bila ada >= 1 deklarasi MYC_BUF (source memakai
+ * checked-build), 0 bila tidak. Deteksi uses_buf DAN perhitungan coverage
+ * memakai SATU scanner (sumber kebenaran tunggal, tanpa duplikasi logika
+ * skip komentar). Tidak menghitung referensi "MYC_BUF" di komentar (mencegah
+ * over-claim L4).
+ *
+ * Catatan jujur: scanner LEXICAL — menghitung invokasi bahkan di dalam
+ * cabang preprocessor yang TIDAK aktif (mis. `#ifndef MYC_CHECKED` fallback
+ * produksi yang memakai akses langsung b[i]); untuk source semacam itu
+ * angka accesses bisa over-state. Batasan yang sama dengan scanner leksikal
+ * lain (lint/negative) — untuk pola umum (semua akses via MYC_AT) angkanya
+ * tepat. */
+static int scan_checked_coverage(const char *src, size_t len,
+                                 int *buffers, int *allocs,
+                                 int *accesses, int *frees)
 {
+    /* auto storage (bukan static): initializer memakai parameter fungsi
+     * (bukan konstanta) sehingga `static` tidak valid di C. */
+    const struct {
+        const char *name;
+        size_t      n;
+        int        *dst;
+        int         is_buf; /* MYC_BUF = deklarasi -> uses_buf */
+    } macros[] = {
+        { "MYC_BUF",  7, buffers,  1 },
+        { "MYC_NEW",  7, allocs,   0 },
+        { "MYC_AT",   6, accesses, 0 },
+        { "MYC_FREE", 8, frees,    0 },
+    };
     size_t i = 0;
+    int    uses = 0;
+    size_t nmac = sizeof(macros) / sizeof(macros[0]);
+
+    *buffers = *allocs = *accesses = *frees = 0;
     while (i < len) {
         char c = src[i];
         if (c == '/' && i + 1 < len) {
@@ -354,23 +392,36 @@ static int source_uses_checked_buf(const char *src, size_t len)
                 i++;
             continue;
         }
-        if (c == 'M' && i + 7 <= len && memcmp(src + i, "MYC_BUF", 7) == 0) {
-            char before = i > 0 ? src[i - 1] : ' ';
-            char after  = i + 7 < len ? src[i + 7] : ' ';
-            if (!ident_char((unsigned char)before) &&
-                !ident_char((unsigned char)after)) {
-                size_t j = i + 7;
-                while (j < len && (src[j] == ' ' || src[j] == '\t'))
-                    j++;
-                if (j < len && src[j] == '(')
-                    return 1;
+        if (c >= 'A' && c <= 'Z') {
+            size_t m;
+            for (m = 0; m < nmac; m++) {
+                if (i + macros[m].n <= len &&
+                    memcmp(src + i, macros[m].name, macros[m].n) == 0) {
+                    char before = i > 0 ? src[i - 1] : ' ';
+                    char after  = i + macros[m].n < len
+                                      ? src[i + macros[m].n] : ' ';
+                    /* batas identifier: MYC_BUF_COOKIE tidak terhitung */
+                    if (!ident_char((unsigned char)before) &&
+                        !ident_char((unsigned char)after)) {
+                        size_t j = i + macros[m].n;
+                        while (j < len && (src[j] == ' ' || src[j] == '\t'))
+                            j++;
+                        if (j < len && src[j] == '(') {
+                            (*macros[m].dst)++;
+                            if (macros[m].is_buf)
+                                uses = 1;
+                        }
+                    }
+                    i += macros[m].n;
+                    break;
+                }
             }
-            i += 7;
-            continue;
+            if (m < nmac)
+                continue;
         }
         i++;
     }
-    return 0;
+    return uses;
 }
 
 /* ------------------------------------------------------------------ */
@@ -409,14 +460,23 @@ static void run_checked_gate(const myc_request *req, const char *gcc_path,
     int   i;
     const char **argv;
 
-    if (!source_uses_checked_buf(src, srclen)) {
-        add_diag_copy(res, 0, 0,
-                      "checked build di-skip: tidak ada pola MYC_BUF di source");
-        /* verdict sukses (gate kompilasi sudah lolos); jangan biarkan
-         * nilai awal MC_ERROR terbawa ke guard pipeline. */
-        res->verdict = MC_OK;
-        res->err = MYC_ERR_NONE;
-        return;
+    {
+        int n_buf = 0, n_alloc = 0, n_at = 0, n_free = 0;
+        if (!scan_checked_coverage(src, srclen, &n_buf, &n_alloc, &n_at,
+                                   &n_free)) {
+            add_diag_copy(res, 0, 0,
+                          "checked build di-skip: tidak ada pola MYC_BUF di source");
+            /* verdict sukses (gate kompilasi sudah lolos); jangan biarkan
+             * nilai awal MC_ERROR terbawa ke guard pipeline. */
+            res->verdict = MC_OK;
+            res->err = MYC_ERR_NONE;
+            return;
+        }
+        /* MYC-AUDIT-026: coverage count — cakupan transformasi. */
+        res->checked_buffers = n_buf;
+        res->checked_allocations = n_alloc;
+        res->checked_accesses = n_at;
+        res->checked_frees = n_free;
     }
 
     /* susun argv: gcc + CHECKED_EXTRA + syntax base + mem warnings (+strict)

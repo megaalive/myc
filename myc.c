@@ -294,6 +294,10 @@ static myc_replay_capsule *myc_build_capsule(const myc_request *req,
     cap->meta_o2_finding = res->meta_o2_finding;
     cap->negative_callsites = res->negative_callsites;
     cap->negative_deviations = res->negative_deviations;
+    cap->checked_buffers = res->checked_buffers;
+    cap->checked_allocations = res->checked_allocations;
+    cap->checked_accesses = res->checked_accesses;
+    cap->checked_frees = res->checked_frees;
     if (res->run_sanitizer_detected) {
         size_t slen = strlen(res->run_sanitizer_marker);
         if (slen >= sizeof(cap->sanitizer_marker))

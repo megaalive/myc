@@ -337,8 +337,13 @@ void myc_report_text(const myc_result *res)
     if (res->ran_checked) {
         printf("checked:\n");
         printf("  uses_myc_buf: %s\n", res->checked_uses_buf ? "yes" : "no");
-        if (res->checked_uses_buf)
+        /* MYC-AUDIT-026 (roadmap 7.3): coverage count — cakupan transformasi. */
+        if (res->checked_uses_buf) {
             printf("  build_ok:     %s\n", res->checked_build_ok ? "yes" : "no");
+            printf("  coverage:     buffers=%d allocations=%d accesses=%d frees=%d\n",
+                   res->checked_buffers, res->checked_allocations,
+                   res->checked_accesses, res->checked_frees);
+        }
     }
 
     if (res->ran_filc) {
@@ -451,6 +456,11 @@ if (res->debt_count > 0) {
          if (cap->negative)
              printf("  negative_callsites: %d  negative_deviations: %d\n",
                     cap->negative_callsites, cap->negative_deviations);
+         /* MYC-AUDIT-026: coverage count checked-build di capsule. */
+         if (cap->checked)
+             printf("  checked_coverage: buffers=%d allocations=%d accesses=%d frees=%d\n",
+                    cap->checked_buffers, cap->checked_allocations,
+                    cap->checked_accesses, cap->checked_frees);
          printf("  require_complete: %s\n",
                 cap->require_complete ? "yes" : "no");
          if (cap->metamorphic) {
@@ -589,6 +599,13 @@ char *myc_result_to_json(const myc_result *res)
                    res->checked_uses_buf ? "true" : "false");
     json_sb_printf(&b, "\"checked_build_ok\":%s,",
                    res->checked_build_ok ? "true" : "false");
+    /* MYC-AUDIT-026: coverage count per makro (hanya bila memakai MYC_BUF). */
+    if (res->checked_uses_buf) {
+        json_sb_printf(&b, "\"checked_buffers\":%d,", res->checked_buffers);
+        json_sb_printf(&b, "\"checked_allocations\":%d,", res->checked_allocations);
+        json_sb_printf(&b, "\"checked_accesses\":%d,", res->checked_accesses);
+        json_sb_printf(&b, "\"checked_frees\":%d,", res->checked_frees);
+    }
     json_sb_printf(&b, "\"ran_filc\":%s,", res->ran_filc ? "true" : "false");
     json_sb_printf(&b, "\"filc_panics\":%d,", res->filc_panics);
     /* MYC-AUDIT-024 (roadmap 7.7): version identity + per-case scope. */
@@ -776,6 +793,17 @@ char *myc_result_to_json(const myc_result *res)
                             cap->negative_callsites);
              json_sb_printf(&b, "\"negative_deviations\":%d,",
                             cap->negative_deviations);
+         }
+         /* MYC-AUDIT-026: coverage count checked-build di capsule. */
+         if (cap->checked) {
+             json_sb_printf(&b, "\"checked_buffers\":%d,",
+                            cap->checked_buffers);
+             json_sb_printf(&b, "\"checked_allocations\":%d,",
+                            cap->checked_allocations);
+             json_sb_printf(&b, "\"checked_accesses\":%d,",
+                            cap->checked_accesses);
+             json_sb_printf(&b, "\"checked_frees\":%d,",
+                            cap->checked_frees);
          }
          json_sb_printf(&b, "\"require_complete\":%s,",
                         cap->require_complete ? "true" : "false");

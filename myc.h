@@ -390,6 +390,11 @@ typedef struct {
     /* Negative-space (9.8): hasil observasi */
     int negative_callsites;   /* total callsite alokasi terdeteksi */
     int negative_deviations;  /* jumlah yang tidak memeriksa hasil */
+    /* Checked coverage (MYC-AUDIT-026): cakupan transformasi fat-pointer */
+    int checked_buffers;      /* deklarasi MYC_BUF */
+    int checked_allocations;  /* invokasi MYC_NEW */
+    int checked_accesses;     /* invokasi MYC_AT */
+    int checked_frees;        /* invokasi MYC_FREE */
     /* Gate summary (one status per gate) */
     myc_gate_status gate_status[MYC_GATE_COUNT];
     /* Finding / completeness / claim */
@@ -465,6 +470,14 @@ typedef struct {
     int         ran_checked;            /* 1 bila gate checked-build dijalankan */
     int         checked_uses_buf;       /* 1 bila source memakai makro MYC_BUF */
     int         checked_build_ok;       /* 1 bila build -DMYC_CHECKED lolos */
+    /* MYC-AUDIT-026 (roadmap 7.3): coverage count transformasi fat-pointer.
+     * Jumlah deklarasi/invokasi makro checked-build yang terdeteksi di source
+     * (di luar komentar/string) — bukti CAKUPAN gate L4: berapa buffer dan
+     * berapa titik akses yang tercakup disiplin MYC_AT. */
+    int         checked_buffers;        /* deklarasi MYC_BUF(T) b; */
+    int         checked_allocations;    /* invokasi MYC_NEW */
+    int         checked_accesses;       /* invokasi MYC_AT (akses yang dicek) */
+    int         checked_frees;          /* invokasi MYC_FREE */
 
     /* --- hasil gate Fil-C (D4.1, P8, --filc) --- */
     int         ran_filc;               /* 1 bila gate Fil-C dijalankan */

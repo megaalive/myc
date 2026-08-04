@@ -131,6 +131,31 @@ echo === tests\bad_checked_new_overflow.c --run --checked (RUNTIME_VIOLATION)
 myc.exe check tests\bad_checked_new_overflow.c --run --checked > %OUT% 2>&1
 findstr /C:"verdict:   RUNTIME_VIOLATION" %OUT% >nul && echo [OK] bad_checked_new_overflow: overflow MYC_NEW terdeteksi runtime || echo [FAIL] overflow MYC_NEW tidak terdeteksi
 findstr /C:"MYC_NEW overflow" %OUT% >nul && echo [OK] marker MYC_NEW overflow muncul || echo [FAIL] marker overflow hilang
+echo --- checked audit MYC-AUDIT-026: coverage count + semantics parity
+echo === tests\semantics_parity.c --checked (L4 + coverage 2/2/6/2)
+myc.exe check tests\semantics_parity.c --checked > %OUT% 2>&1
+findstr /C:"buffers=2 allocations=2 accesses=6 frees=2" %OUT% >nul && echo [OK] checked coverage: 2 buffer 6 titik akses terhitung || echo [FAIL] checked coverage count salah
+findstr /C:"assurance: L4" %OUT% >nul && echo [OK] semantics_parity --checked -> L4 || echo [FAIL] semantics_parity --checked bukan L4
+echo === coverage ok_checked (1/1/2/1)
+myc.exe check tests\ok_checked.c --checked > %OUT% 2>&1
+findstr /C:"buffers=1 allocations=1 accesses=2 frees=1" %OUT% >nul && echo [OK] ok_checked coverage 1/1/2/1 || echo [FAIL] ok_checked coverage count salah
+echo === no over-claim: comment-only MYC_BUF harus di-skip, tanpa coverage
+myc.exe check tests\checked_comment_only.c --checked > %OUT% 2>&1
+findstr /C:"checked build di-skip" %OUT% >nul && echo [OK] comment-only MYC_BUF di-skip (no over-claim) || echo [FAIL] comment-only MYC_BUF tidak di-skip
+findstr /C:"  build_ok:" %OUT% >nul && echo [FAIL] gate checked aktif padahal komentar saja || echo [OK] gate checked benar di-skip (no coverage)
+echo === semantics parity: build produksi vs checked, stdout + exit identik
+gcc -O2 -std=c11 -Wall -I. -o test\_parity_prod.exe tests\semantics_parity.c >nul 2>&1
+gcc -O2 -std=c11 -Wall -I. -DMYC_CHECKED=1 -o test\_parity_ck.exe tests\semantics_parity.c >nul 2>&1
+if not exist test\_parity_prod.exe ( echo [FAIL] parity build produksi gagal ) else ( echo [OK] parity build produksi OK )
+if not exist test\_parity_ck.exe ( echo [FAIL] parity build checked gagal ) else ( echo [OK] parity build checked OK )
+if exist test\_parity_prod.exe if exist test\_parity_ck.exe (
+  test\_parity_prod.exe > test\_parity_prod.txt
+  if errorlevel 1 ( echo [FAIL] parity produksi exit!=0 ) else ( echo [OK] parity produksi exit=0 )
+  test\_parity_ck.exe > test\_parity_ck.txt
+  if errorlevel 1 ( echo [FAIL] parity checked exit!=0 ) else ( echo [OK] parity checked exit=0 )
+  fc /b test\_parity_prod.txt test\_parity_ck.txt >nul && echo [OK] semantics parity: stdout identik || echo [FAIL] semantics parity: stdout berbeda
+)
+del test\_parity_prod.exe test\_parity_ck.exe test\_parity_prod.txt test\_parity_ck.txt 2>nul
 del %OUT%
 echo --- filc fixtures (--filc): di-skip bila Fil-C tak tersedia (non-blocking)
 for %%f in (test\fixtures\ok_filc.c test\fixtures\bad_filc_oob.c) do (
