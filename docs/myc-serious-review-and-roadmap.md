@@ -2875,8 +2875,6 @@ Lihat test matrix di Fase 8.
 - [x] Tambahkan evidence matrix. ✅ 2026-08-02 (`gate_matrix[]` id+status di
   JSON + blok `evidence:` ringkas di teks = per-scope status konkret; tidak
   bergantung pada label assurance L1–L5).
-- [ ] Tambahkan scope certificate.
-- [ ] Tambahkan scope certificate done-pruning-rewritten.
 - [x] Tambahkan scope certificate. ✅ 2026-08-02 (blok `scope:` di teks +
   objek `"scope"` di JSON — daftar persis apa yang diperiksa: counts kontrak
   requires/ensures/total + driver funcs/cases. Jujur: hanya metrik yang
