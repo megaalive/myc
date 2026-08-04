@@ -3006,8 +3006,8 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 - [x] native POSIX path; ✅ 2026-08-05 (prove.c: di POSIX non-Windows, `frama-c` dicari langsung di PATH dan dijalankan via `myc_proc_run` — tidak lagi bergantung WSL; Windows tetap via WSL).
 - [x] version/model/entry point — laporan prove memuat mode/version/entry
       (MYC-AUDIT-013, 2026-08-02).
-- [ ] machine output if available;
-- [ ] proof obligation counts.
+- [x] machine output if available; ✅ 2026-08-05 (prove.c: `ingest_eva_json` (JSON-aware, text fallback) di-wire via `count_eva_alarms` ke jalur WSL + POSIX — menggantikan `count_prove_alarms` yang undefined; build rusak diperbaiki).
+- [x] proof obligation counts. ✅ 2026-08-05 (prove.c: `count_proof_obligations` di-wire ke kedua jalur; field `prove_proof_obligations` di `myc_result`; dilaporkan di teks `proof_obligations:` + JSON `prove_proof_obligations`).
 
 ### 7.7. Fil-C
 
