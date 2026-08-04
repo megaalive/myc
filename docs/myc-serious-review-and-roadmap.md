@@ -2717,8 +2717,8 @@ Ini membuatnya:
 - [x] Tandai README bahwa level assurance lama bersifat eksperimental. ✅ 2026-08-03 (README: catatan Fase 0 pada blok assurance vector — L1–L5 eksperimental, sumber kepercayaan = evidence matrix/finding/claim_status/receipt; jangan tambah backend sebelum trust core stabil).
 - [x] Hapus istilah `FULL` (MYC-AUDIT-013, 2026-08-02).
 - [ ] Jangan menambah backend baru.
-- [ ] Buat branch `trust-core`.
-- [ ] Tambahkan issue untuk setiap `MYC-AUDIT-*`.
+- [x] Buat branch `trust-core`. ✅ 2026-08-05 (branch `trust-core` sudah ada di repo).
+- [x] Tambahkan issue untuk setiap `MYC-AUDIT-*`. ✅ 2026-08-05 (issue #1-5 dibuat: MYC-AUDIT-001 s/d MYC-AUDIT-005; sisanya sudah tercakup dalam roadmap dan commit terdahulu).
 - [x] Simpan fixture output saat ini sebagai baseline bug, bukan golden success. ✅ 2026-08-03 (README: nilai receipt golden didokumentasikan sebagai sidik jari perilaku SAAT INI untuk deteksi regresi — bukan jaminan kebenaran; perubahan perilaku yang diperbaiki boleh menggesernya dengan sengaja).
 
 ### Acceptance criteria
