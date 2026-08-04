@@ -329,7 +329,18 @@ void myc_report_text(const myc_result *res)
 
     if (res->ran_filc) {
         printf("filc:\n");
+        /* MYC-AUDIT-024 (roadmap 7.7): version identity + per-case scope. */
+        if (res->filc_version)
+            printf("  version: %s\n", res->filc_version);
         printf("  panics: %d\n", res->filc_panics);
+        for (i = 0; i < res->filc_case_count; i++) {
+            const myc_filc_case *c = &res->filc_cases[i];
+            printf("  case #%d: %s\n", i + 1,
+                   c->message ? c->message : "(detail tidak tersedia)");
+            if (c->file && c->function)
+                printf("      origin: %s @ %s:%d:%d\n",
+                       c->function, c->file, c->line, c->col);
+        }
         if (res->filc_stdout_text && res->filc_stdout_text[0])
             printf("  filc_stdout:\n%s\n", res->filc_stdout_text);
         if (res->filc_stderr_text && res->filc_stderr_text[0])
@@ -551,6 +562,25 @@ char *myc_result_to_json(const myc_result *res)
                    res->checked_build_ok ? "true" : "false");
     json_sb_printf(&b, "\"ran_filc\":%s,", res->ran_filc ? "true" : "false");
     json_sb_printf(&b, "\"filc_panics\":%d,", res->filc_panics);
+    /* MYC-AUDIT-024 (roadmap 7.7): version identity + per-case scope. */
+    json_sb_printf(&b, "\"filc_version\":");
+    json_sb_escape(&b, res->filc_version);
+    json_sb_puts(&b, ",");
+    json_sb_printf(&b, "\"filc_cases\":[");
+    for (i = 0; i < res->filc_case_count; i++) {
+        const myc_filc_case *c = &res->filc_cases[i];
+        if (i)
+            json_sb_puts(&b, ",");
+        json_sb_printf(&b, "{\"message\":");
+        json_sb_escape(&b, c->message);
+        json_sb_printf(&b, ",\"file\":");
+        json_sb_escape(&b, c->file);
+        json_sb_printf(&b, ",\"line\":%d,\"col\":%d,\"function\":",
+                       c->line, c->col);
+        json_sb_escape(&b, c->function);
+        json_sb_puts(&b, "}");
+    }
+    json_sb_puts(&b, "],");
     if (res->ran_filc) {
         json_sb_printf(&b, "\"filc_stdout\":");
         json_sb_escape(&b, res->filc_stdout_text);

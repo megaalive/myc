@@ -163,6 +163,7 @@ void myc_result_free(myc_result *res)
     free(res->prove_stderr_text);
     free(res->filc_stdout_text);
     free(res->filc_stderr_text);
+    free(res->filc_version);
     free(res->driver_stdout_text);
     free(res->driver_stderr_text);
     free(res->resolved_gcc);
@@ -182,6 +183,7 @@ void myc_result_free(myc_result *res)
     res->prove_stderr_text = NULL;
     res->filc_stdout_text = NULL;
     res->filc_stderr_text = NULL;
+    res->filc_version = NULL;
     res->driver_stdout_text = NULL;
     res->driver_stderr_text = NULL;
     res->resolved_gcc = NULL;
@@ -689,6 +691,23 @@ static int cmd_version(void)
         free(clang);
     } else {
         printf("clang: TIDAK DITEMUKAN (verification run --run tidak tersedia)\n");
+    }
+    /* MYC-AUDIT-024 (roadmap 7.7): exact tool identity untuk Fil-C.
+     * filc-clang hanya Linux; di Windows akan TIDAK DITEMUKAN (jujur,
+     * bukan salah). */
+    {
+        char *filc = myc_find_executable("filc-clang");
+        char *fv;
+        if (filc) {
+            printf("filc: %s\n", filc);
+            fv = myc_tool_version(filc);
+            printf("filc version: %s\n", fv ? fv : "(tidak terbaca)");
+            free(fv);
+            free(filc);
+        } else {
+            printf("filc: TIDAK DITEMUKAN (Fil-C hanya Linux; instal "
+                   "filc-clang di PATH atau WSL)\n");
+        }
     }
     return 0;
 }

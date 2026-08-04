@@ -13,11 +13,15 @@
  *      (`command -v filc-clang || ls /opt/fil/bin/filc-clang`).
  *   3. Tidak tersedia -> SKIP, assurance statis + diagnostic (non-blocking).
  *   4. Verification build (source via stdin) + eksekusi terkendali.
- *   5. Parse marker panic pada output: ada -> MC_FILC_VIOLATION; bersih
- *      (exit 0, tanpa marker) -> caller naikkan ke L5 FULL.
+ *   5. Parse report panic secara STRUKTURAL (MYC-AUDIT-024): panics =
+ *      baris kanonik "[pid] filc panic:" (fallback blok "filc safety
+ *      error:"); per-case scope mencatat message + lokasi origin
+ *      (file:line:col: func) tiap panic. Ada panic terkonfirmasi ->
+ *      MC_FILC_VIOLATION; bersih (exit 0, tanpa panic) -> caller naikkan
+ *      ke L5 FILC. Robust terhadap spoof (MYC-AUDIT-017).
  *
- * Catatan jujur: bila build/run gagal tanpa marker panic (mis. tanpa main,
- * runtime Fil-C tidak ter-setup), gate di-skip -- bukan bukti bug.
+ * Catatan jujur: bila build/run gagal tanpa panic terkonfirmasi (mis.
+ * tanpa main, runtime Fil-C tidak ter-setup), gate di-skip -- bukan bukti bug.
  */
 #include "filc.h"
 
@@ -45,16 +49,6 @@
 
 /* Nama driver Fil-C. */
 #define FILC_DRIVER "filc-clang"
-
-/* Marker panic Fil-C (strstr pada stdout+stderr). */
-static const char *const FILC_PANIC_MARKERS[] = {
-    "filc safety error",
-    "Fatal runtime error",
-    "panicked",
-    "Fil-C panic",
-    "double free",
-    NULL
-};
 
 /* Template tetap yang dijalankan di dalam WSL. Source mengalir via stdin
  * (cat > $t); deteksi driver: command -v filc-clang, fallback ke
@@ -125,23 +119,195 @@ static int run_proc(const myc_request *req, const char *const *argv,
     return myc_proc_run(&preq, pr);
 }
 
-/* Hitung marker panic Fil-C pada output. */
-static int count_panics(const char *out, const char *err)
+/* =====================================================================
+ * Robust report parser (MYC-AUDIT-024, roadmap 7.7).
+ * ---------------------------------------------------------------------
+ * Report panic Fil-C nyata (terkonfirmasi dari run asli, Fil-C 0.681):
+ *
+ *   filc safety error: cannot write pointer with ptr >= upper.
+ *       pointer: 0x7ffb53684238,...
+ *       expected 4 writable bytes.
+ *   semantic origin:
+ *       (panic_test) /tmp/panic_test.c:2:43: main
+ *   check scheduled at:
+ *       ...
+ *   [492245] filc panic: thwarted a futile attempt to violate memory safety.
+ *
+ * Strategi (menggantikan hitung marker strstr lama yang rapuh):
+ *   - panics = jumlah baris "[<pid>] filc panic:" -- marker KANONIK
+ *     per-panic (tiap panic meng-abort -> tepat satu baris).
+ *   - fallback: bila baris kanonik tidak ada tapi ada blok
+ *     "filc safety error:" -> pakai jumlah blok (kompatibilitas
+ *     format versi Fil-C lain).
+ *   - per-case: message dari "filc safety error:", lokasi origin dari
+ *     frame pertama blok "semantic origin:" (file:line:col: func).
+ *   - Robust terhadap spoof (MYC-AUDIT-017): teks yang HANYA memuat kata
+ *     marker tanpa baris kanonik/blok safety error TIDAK dihitung. */
+typedef struct {
+    int panics;          /* panic terkonfirmasi (baris kanonik) */
+    int safety_errors;   /* blok "filc safety error:" (signal sekunder) */
+} filc_report;
+
+/* Parse frame origin Fil-C: "    (module) /path/file.c:12:34: func"
+ * Isi myc_filc_case (arena milik hasil). Return 1 sukses. */
+static int parse_origin_frame(myc_result *res, const char *line,
+                              myc_filc_case *c)
 {
-    int i, count = 0;
-    for (i = 0; FILC_PANIC_MARKERS[i]; i++) {
-        const char *p = out ? out : "";
-        while ((p = strstr(p, FILC_PANIC_MARKERS[i])) != NULL) {
-            count++;
-            p += strlen(FILC_PANIC_MARKERS[i]);
-        }
-        p = err ? err : "";
-        while ((p = strstr(p, FILC_PANIC_MARKERS[i])) != NULL) {
-            count++;
-            p += strlen(FILC_PANIC_MARKERS[i]);
+    const char *rp = strrchr(line, ':');   /* ':' sebelum func */
+    const char *cp, *lp, *open, *cl, *start, *pe;
+    char *func, *file;
+
+    if (!rp)
+        return 0;
+    /* func = setelah ':' terakhir; kosong = bukan frame origin */
+    {
+        const char *f = rp + 1;
+        while (*f == ' ' || *f == '\t')
+            f++;
+        if (!*f)
+            return 0;
+        func = myc_result_arena_dup(res, f, 0);
+        if (!func)
+            return 0;
+    }
+    /* kolom = digit tepat sebelum ':' terakhir */
+    cp = rp - 1;
+    while (cp >= line && *cp >= '0' && *cp <= '9')
+        cp--;
+    if (cp + 1 >= rp)
+        return 0;                     /* tak ada digit kolom */
+    /* baris = digit sebelum ':' sebelum kolom */
+    lp = cp - 1;
+    while (lp >= line && *lp >= '0' && *lp <= '9')
+        lp--;
+    if (lp + 1 >= cp)
+        return 0;                     /* tak ada digit baris */
+    /* file = antara penutup ')' (module) dan ':' sebelum baris */
+    pe = lp;                          /* ':' sebelum baris */
+    open = strrchr(line, '(');
+    start = open ? open + 1 : line;
+    while (start < pe && (*start == ' ' || *start == '\t'))
+        start++;
+    if (open) {
+        cl = strchr(open, ')');
+        if (cl && cl + 1 < pe) {
+            start = cl + 1;
+            while (start < pe && (*start == ' ' || *start == '\t'))
+                start++;
         }
     }
-    return count;
+    if (start >= pe)
+        return 0;
+    file = myc_result_arena_dup(res, start, (size_t)(pe - start));
+    if (!file)
+        return 0;
+    c->file = file;
+    c->line = (int)strtol(lp + 1, NULL, 10);
+    c->col = (int)strtol(cp + 1, NULL, 10);
+    c->function = func;
+    return 1;
+}
+
+/* Parse output Fil-C (stdout+stderr) menjadi laporan terstruktur dan
+ * mengisi res->filc_cases[] (hingga MYC_MAX_FILC_CASES). */
+static filc_report parse_filc_report(myc_result *res, const char *out,
+                                     const char *err)
+{
+    filc_report rep;
+    int pending_origin = 0;   /* sedang menunggu frame "semantic origin:" */
+    int ci;
+    const char *texts[2];
+
+    rep.panics = 0;
+    rep.safety_errors = 0;
+    res->filc_case_count = 0;
+    memset(res->filc_cases, 0, sizeof(res->filc_cases));
+
+    texts[0] = out ? out : "";
+    texts[1] = err ? err : "";
+    for (ci = 0; ci < 2; ci++) {
+        const char *p = texts[ci];
+        while (p && *p) {
+            const char *nl = strchr(p, '\n');
+            size_t      len = nl ? (size_t)(nl - p) : strlen(p);
+            char       *lb = (char *)malloc(len + 1);
+            if (lb) {
+                memcpy(lb, p, len);
+                lb[len] = '\0';
+                {
+                    const char *se = strstr(lb, "filc safety error:");
+                    char *t = lb;
+                    while (*t == ' ' || *t == '\t')
+                        t++;
+                    /* Marker kanonik per-panic: "[<pid>] filc panic:". */
+                    if (t[0] == '[' && strstr(t, "] filc panic:") != NULL)
+                        rep.panics++;
+                    /* Blok safety error: buka case baru. */
+                    if (se) {
+                        const char *m = se + strlen("filc safety error:");
+                        while (*m == ' ' || *m == '\t')
+                            m++;                 /* buang spasi awal pesan */
+                        rep.safety_errors++;
+                        pending_origin = 0;
+                        if (res->filc_case_count < MYC_MAX_FILC_CASES) {
+                            myc_filc_case *c =
+                                &res->filc_cases[res->filc_case_count];
+                            memset(c, 0, sizeof(*c));
+                            c->message = myc_result_arena_dup(res, m, 0);
+                            res->filc_case_count++;
+                        }
+                    }
+                    /* Blok "semantic origin:" -> baris berikutnya adalah
+                     * frame pertama (lokasi asal panic). */
+                    if (strncmp(t, "semantic origin:", 16) == 0) {
+                        pending_origin = 1;
+                    } else if (pending_origin &&
+                               res->filc_case_count > 0) {
+                        if (parse_origin_frame(
+                                res, lb,
+                                &res->filc_cases[res->filc_case_count - 1]))
+                            pending_origin = 0;
+                    }
+                }
+                free(lb);
+            }
+            if (!nl)
+                break;
+            p = nl + 1;
+        }
+    }
+    return rep;
+}
+
+/* Isi buf dengan pesan finding terperinci (per-case scope MYC-AUDIT-024).
+ * Dipakai untuk diagnostic + status gate + evidence ledger. */
+static void panic_note(myc_result *res, int panics, char *buf, size_t bufsz)
+{
+    if (res->filc_case_count > 0 && res->filc_cases[0].message) {
+        const myc_filc_case *c = &res->filc_cases[0];
+        if (c->file && c->function) {
+            snprintf(buf, bufsz,
+                     "filc: %d panic -> bug memori terbukti (%s @ %s:%d:%d: %s)",
+                     panics, c->function, c->file, c->line, c->col,
+                     c->message);
+        } else {
+            snprintf(buf, bufsz,
+                     "filc: %d panic -> bug memori terbukti (%s)",
+                     panics, c->message);
+        }
+    } else {
+        snprintf(buf, bufsz,
+                 "filc: %d panic (marker Fil-C) -> bug memori terbukti",
+                 panics);
+    }
+}
+
+/* Diagnostic finding dengan rincian case pertama (per-case scope). */
+static void panic_diag(myc_result *res, int panics)
+{
+    char note[384];
+    panic_note(res, panics, note, sizeof(note));
+    add_diag_filc(res, note);
 }
 
 /* Adopsi output proses ke res (ran_filc). */
@@ -194,17 +360,19 @@ static int run_filc_exe(const myc_request *req, const char *exe,
     adopt_filc_output(res, &pres, exit_code);
     res->ran_filc = 1;
 
-    panics = count_panics(res->filc_stdout_text, res->filc_stderr_text);
+    /* MYC-AUDIT-024 (roadmap 7.7): parser struktural — panics dari baris
+     * kanonik "[pid] filc panic:", fallback blok "filc safety error:". */
+    {
+        filc_report rep = parse_filc_report(res, res->filc_stdout_text,
+                                            res->filc_stderr_text);
+        panics = rep.panics > 0 ? rep.panics : rep.safety_errors;
+    }
     res->filc_panics = panics;
     if (panics > 0 && exit_code != 0) {
-        /* Finding hanya bila marker panic TERKONFIRMASI exit != 0
+        /* Finding hanya bila panic TERKONFIRMASI exit != 0
          * (MYC-AUDIT-017: panic Fil-C meng-abort -> non-zero; teks marker
          * tanpa exit non-zero bukan bukti / bisa spoof). */
-        char note[192];
-        snprintf(note, sizeof(note),
-                 "filc: %d panic (marker Fil-C) -> bug memori terbukti",
-                 panics);
-        add_diag_filc(res, note);
+        panic_diag(res, panics);
         res->verdict = MC_FILC_VIOLATION;
         res->err = MYC_ERR_FILC_VIOLATION;
         return 0;
@@ -232,6 +400,45 @@ static int run_filc_exe(const myc_request *req, const char *exe,
     add_diag_filc(res, "filc: run bersih - eksekusi Fil-C bersih (L5 FILC); "
                         "bukan klaim FULL");
     return 1;
+}
+
+/* Query versi filc-clang di dalam WSL (MYC-AUDIT-024, roadmap 7.7
+ * version identity). NON-blocking: kegagalan hanya menyisakan
+ * res->filc_version = NULL -- tidak mengubah verdict gate. */
+static void query_filc_version_wsl(myc_result *res, const char *wsl_path)
+{
+    const char *argv_wsl[6];
+    myc_proc_request preq;
+    myc_proc_result pres;
+    int   n = 0;
+    char *line;
+    size_t len;
+
+    argv_wsl[n++] = wsl_path;
+    argv_wsl[n++] = "-e";
+    argv_wsl[n++] = "bash";
+    argv_wsl[n++] = "-lc";
+    argv_wsl[n++] = "FILC=$(command -v " FILC_DRIVER " 2>/dev/null || echo /opt/fil/bin/" FILC_DRIVER "); \"$FILC\" --version 2>/dev/null | head -1";
+    argv_wsl[n] = NULL;
+
+    memset(&preq, 0, sizeof(preq));
+    preq.argv = argv_wsl;
+    preq.cwd = NULL;
+    preq.timeout_ms = 10000;
+    preq.max_output_bytes = 16384;
+    memset(&pres, 0, sizeof(pres));
+    if (!myc_proc_run(&preq, &pres))
+        goto done;
+    if (pres.timed_out || pres.exit_code != 0 || !pres.stdout_data)
+        goto done;
+    line = pres.stdout_data;
+    len = strlen(line);
+    while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
+        line[--len] = '\0';
+    if (len > 0)
+        res->filc_version = myc_strdup(line);
+done:
+    myc_proc_result_free(&pres);
 }
 
 /* Path direktori temp unik: <base>/myc_filc_<pid>_<n>. */
@@ -303,6 +510,11 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
     /* 1. Cari filc-clang native di PATH (Linux / setup lokal). */
     filc_path = myc_find_executable(FILC_DRIVER);
     if (filc_path) {
+        /* MYC-AUDIT-024 (roadmap 7.7 version identity): baris pertama
+         * `filc-clang --version` (mis. "clang version 20.1.8 (Fil-C
+         * 0.681 ...)"). Non-blocking: NULL bila tidak terbaca. */
+        res->filc_version = myc_tool_version(filc_path);
+
         /* filc-clang -O0 -g -o <exe> -x c -  (8 entry + NULL) */
         const char *build_argv[9];
         int   n = 0;
@@ -478,6 +690,10 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
         myc_proc_result_free(&pres);
     }
 
+    /* MYC-AUDIT-024 (roadmap 7.7 version identity): tanyakan versi
+     * filc-clang di WSL (non-blocking; gagal = filc_version NULL). */
+    query_filc_version_wsl(res, wsl_path);
+
     /* 4. Build + run di dalam WSL (source via stdin ke template tetap). */
     memset(&pres, 0, sizeof(pres));
     {
@@ -637,20 +853,22 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
     }
 
     /* WSL template menulis builderr ke stdout; gabungkan penilaian:
-     * run bersih bila exit 0 & tanpa marker. Build gagal (exit != 0 tanpa
-     * marker) -> skip (bukan bukti bug). */
+     * run bersih bila exit 0 & tanpa panic. Build gagal (exit != 0 tanpa
+     * panic terkonfirmasi) -> skip (bukan bukti bug). MYC-AUDIT-024:
+     * parser struktural (kanonik [pid] filc panic: / blok safety error). */
     {
         int   exit_code = pres.exit_code;
         int   panics;
+        filc_report rep;
         adopt_filc_output(res, &pres, exit_code);
         res->ran_filc = 1;
-        panics = count_panics(res->filc_stdout_text, res->filc_stderr_text);
+        rep = parse_filc_report(res, res->filc_stdout_text,
+                                res->filc_stderr_text);
+        panics = rep.panics > 0 ? rep.panics : rep.safety_errors;
         res->filc_panics = panics;
         if (panics > 0 && exit_code != 0) {
-            char note[192];
-            snprintf(note, sizeof(note),
-                     "filc: %d panic (marker Fil-C) -> bug memori terbukti",
-                     panics);
+            char note[384];
+            panic_note(res, panics, note, sizeof(note));
             add_diag_filc(res, note);
             res->verdict = MC_FILC_VIOLATION;
             res->err = MYC_ERR_FILC_VIOLATION;

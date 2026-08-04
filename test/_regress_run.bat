@@ -143,6 +143,17 @@ echo halo-filc-stdin> test\_tmp_stdin.txt
 myc.exe check test\fixtures\ok_filc_stdin.c --filc --run-stdin test\_tmp_stdin.txt > %OUT% 2>&1
 findstr /C:"got:halo-filc-stdin" %OUT% >nul && echo [OK] run_stdin sampai ke Fil-C (WSLENV fix) || echo [INFO] run_stdin Fil-C tidak terlihat (Fil-C tak tersedia / bukan WSL)
 del test\_tmp_stdin.txt
+echo --- MYC-AUDIT-024: Fil-C version identity + robust report parser (roadmap 7.7)
+myc.exe version > %OUT% 2>&1
+findstr /C:"filc:" %OUT% >nul && echo [OK] myc version cetak status filc || echo [FAIL] status filc hilang di myc version
+myc.exe check test\fixtures\bad_filc_oob.c --filc > %OUT% 2>&1
+findstr /C:"verdict:   FILC_VIOLATION" %OUT% >nul && echo [OK] bad_filc_oob FILC_VIOLATION || echo [INFO] bad_filc_oob --filc bukan violation - Fil-C tak tersedia
+findstr /C:"filc: 1 panic -> bug memori terbukti (main @" %OUT% >nul && echo [OK] diagnostic panic memuat lokasi origin || echo [INFO] lokasi origin tidak ter-parse
+findstr /C:"case #1:" %OUT% >nul && echo [OK] per-case scope ter-parse || echo [INFO] per-case panic tidak ter-parse
+findstr /C:"  version: clang version" %OUT% >nul && echo [OK] filc version identity tampil || echo [INFO] filc version tidak tampil - Fil-C tak tersedia
+myc.exe check test\fixtures\ok_filc.c --filc > %OUT% 2>&1
+findstr /C:"verdict:   OK" %OUT% >nul && findstr /C:"  panics: 0" %OUT% >nul && echo [OK] ok_filc bersih panics=0 || echo [INFO] ok_filc --filc bukan clean - Fil-C tak tersedia
+del %OUT%
 echo --- MYC-AUDIT-022: machine-readable diagnostic + exact tool identity (roadmap 7.1)
 myc.exe version > %OUT% 2>&1
 findstr /C:"gcc version:" %OUT% >nul && echo [OK] myc version cetak gcc version || echo [FAIL] gcc version hilang di myc version

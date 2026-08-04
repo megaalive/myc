@@ -255,6 +255,30 @@ Poin penting:
   memakai clang MSVC-target LLVM (ASan DLL `clang_rt.asan_dynamic-x86_64`)
   — bila backend run tak sehat, canary → INCONCLUSIVE dan assert L3 FAIL
   (jujur, bukan false-clean).
+- **MYC-AUDIT-024 selesai 2026-08-03** (roadmap 7.7: Fil-C version identity +
+  robust report parser + per-case scope): (1) **version identity** — field
+  `filc_version` di `myc_result` (baris pertama `filc-clang --version`, mis.
+  `clang version 20.1.8 (Fil-C 0.681 ...)`), diisi native via
+  `myc_tool_version` dan WSL via query `query_filc_version_wsl` (non-blocking:
+  gagal = NULL, verdict tak berubah); tampil di teks (blok `filc:` baris
+  `version:`) + JSON (`filc_version`); `myc version` kini juga mencetak status
+  filc (jujur: `TIDAK DITEMUKAN` di Windows karena filc-clang hanya Linux).
+  (2) **robust report parser** — `count_panics` (hitungan strstr marker yang
+  rapuh/spoofable) diganti `parse_filc_report` STRUKTURAL: panics = jumlah
+  baris kanonik `[<pid>] filc panic:` (tiap panic meng-abort SIGTRAP → tepat
+  satu baris), fallback jumlah blok `filc safety error:` (kompatibilitas
+  format Fil-C lain); teks yang HANYA memuat kata marker tanpa baris
+  kanonik/blok safety error TIDAK dihitung (konsisten MYC-AUDIT-017).
+  (3) **per-case scope** — `myc_filc_case[]` (maks 8, arena): tiap panic
+  terekam message (teks setelah `filc safety error:`) + lokasi origin dari
+  frame pertama `semantic origin:` (`file:line:col: func`); tampil di teks
+  (`case #N:` + `origin:`) + JSON (`filc_cases[]`); diagnostic violation kini
+  memuat lokasi (`filc: 1 panic -> bug memori terbukti (main @
+  /tmp/...:15:14: cannot write pointer ...)` — terbukti fixture
+  `bad_filc_oob`). Receipt TIDAK berubah (field baru tidak masuk hash).
+  Verifikasi: Windows regress 153 [OK] 0 [FAIL] (section AUDIT-024 +6 cek),
+  WSL `_ci_linux.sh` PASS=18 FAIL=0 (audit018 6c + version identity +
+  per-case scope), `myc version` cetak filc.
 - **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
   seluruh rule lint.c (intptr_t/uintptr_t cast, realloc ke variabel lain,
   memcpy/memset tanpa sizeof, ukuran alokasi perkalian tanpa sizeof, akses

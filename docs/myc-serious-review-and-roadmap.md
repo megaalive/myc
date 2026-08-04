@@ -318,6 +318,7 @@ Setelah reentrancy dan schema hasil diperbaiki, ini dapat menjadi salah satu keu
 | MYC-AUDIT-016 | Medium | MCP | JSON document dibungkus sebagai string text, status error tidak konsisten | ✅ SELESAI 2026-08-02 (structuredContent schema myc.result.v1; isError hanya tool/protocol error; JSON-RPC ketat jsonrpc/typed-id/notification; negosiasi strict; unknown flag ditolak) |
 | MYC-AUDIT-017 | Medium | output parsing | Marker human-readable mudah spoof dan rapuh terhadap versi/localization | ✅ SELESAI 2026-08-02 (saluran bukti NON-SPOOFABLE: ASan/UBSan `log_path` → report FILE di tmp_dir, dibaca `myc_read_sanitizer_report`; marker teks stdout/stderr hanya bukti sekunder & WAJIB exit != 0; env deterministik `ASAN_OPTIONS`/`UBSAN_OPTIONS`/`LC_ALL=C` via `preq.env`; finding = report || (marker && exit!=0); teks mirip marker dgn exit 0 diabaikan + diagnostic) |
 | MYC-AUDIT-018 | Medium | test | Test dominan Windows dan tidak menguji concurrency/deadlock/OOM | ✅ SELESAI 2026-08-02 (runner portabel `test/_audit018.sh` — bash di Windows git-bash DAN POSIX; unit test C: `proc_flood` deadlock 1MiB + flood 100MiB prefix+tail + env override, `oom_guards` arena overflow guard + input ekstrem, `oom_alloc` injeksi `--wrap` malloc/calloc/realloc 49 titik OOM, `stress_threads` concurrency; bug ditemukan test: `myc_result_arena_dup` string_len raksasa → memcpy OOB (n+1 wrap) → diperbaiki guard ganda) |
+| MYC-AUDIT-024 | Medium | `filc.c` | Hitungan marker strstr rapuh/spoofable + tanpa identitas versi + tanpa rincian per-panic | ✅ SELESAI 2026-08-03 (parser struktural baris kanonik `[pid] filc panic:` + fallback blok `filc safety error:`; `filc_version` native+WSL; `myc_filc_case[]` per-case message+lokasi origin `file:line:col: func`; teks `case #N:` + JSON `filc_cases[]`; `myc version` cetak status filc) |
 
 ---
 
@@ -3012,9 +3013,9 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 
 - [x] remove `FULL` — label `L5 FILC` (MYC-AUDIT-013, 2026-08-02).
 - [x] fix `run_stdin` under WSL ✅ 2026-08-03 (MYC-AUDIT-021: env Windows tidak sampai ke WSL tanpa `WSLENV`; filc.c kini menambahkan `WSLENV=...:MYC_FILC_STDIN/p` (path translation otomatis) ke env block wsl.exe, template memakai `$MYC_FILC_STDIN` langsung + fallback `wslpath`; file stdin temp Windows dihapus via `remove`; fixture `ok_filc_stdin.c` + regresi `_regress_run.bat` — `got:...` muncul di filc_stdout).
-- [ ] version identity;
-- [ ] robust report parser;
-- [ ] per-case scope.
+- [x] version identity ✅ 2026-08-03 (MYC-AUDIT-024: field `filc_version` = baris pertama `filc-clang --version`; native via `myc_tool_version`, WSL via query non-blocking; teks+JSON; `myc version` juga mencetak status filc).
+- [x] robust report parser ✅ 2026-08-03 (MYC-AUDIT-024: `count_panics` strstr rapuh/spoofable diganti parser STRUKTURAL — panics = baris kanonik `[pid] filc panic:`, fallback blok `filc safety error:`; teks hanya berisi kata marker tanpa baris kanonik tidak dihitung, konsisten MYC-AUDIT-017).
+- [x] per-case scope ✅ 2026-08-03 (MYC-AUDIT-024: `myc_filc_case[]` — tiap panic terekam message + lokasi origin `file:line:col: func` dari frame `semantic origin:`; teks `case #N:` + JSON `filc_cases[]`; diagnostic violation memuat lokasi).
 
 ---
 

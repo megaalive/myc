@@ -207,6 +207,7 @@ typedef struct {
 #define MYC_MAX_GATES      16
 #define MYC_MAX_EVIDENCE   256
 #define MYC_MAX_DEBT       32
+#define MYC_MAX_FILC_CASES 8        /* rincian per-panic Fil-C (7.7) */
 
 #define MYC_ARENA_BLOCK    65536        /* ukuran blok arena per request */
 
@@ -238,6 +239,17 @@ typedef enum {
     MYC_ERR_CLANG_NOT_FOUND,
     MYC_ERR_INTERNAL
 } myc_error_code;
+
+/* Satu panic Fil-C terkonfirmasi (MYC-AUDIT-024, roadmap 7.7 per-case
+ * scope). Lokasi berasal dari frame "semantic origin" report Fil-C:
+ *   (module) /path/file.c:LINE:COL: func
+ * String (message/file/function) disimpan di arena milik hasil. */
+typedef struct {
+    char *message;      /* pesan panic (mis. "cannot write pointer ...") */
+    char *file;         /* file origin pertama (NULL bila tak terparse) */
+    int   line, col;    /* lokasi origin (0 bila tak terparse) */
+    char *function;     /* fungsi origin pertama (NULL bila tak terparse) */
+} myc_filc_case;
 
 /* Confidence diagnostic heuristik teks (MYC-AUDIT-014, roadmap 5.15):
  * scanner/lint berbasis token/text TIDAK boleh menghasilkan hard verdict
@@ -427,7 +439,20 @@ typedef struct {
 
     /* --- hasil gate Fil-C (D4.1, P8, --filc) --- */
     int         ran_filc;               /* 1 bila gate Fil-C dijalankan */
-    int         filc_panics;            /* jumlah marker panic Fil-C */
+    int         filc_panics;            /* jumlah panic terkonfirmasi
+                                           (MYC-AUDIT-024: baris kanonik
+                                           "[pid] filc panic:", fallback blok
+                                           "filc safety error:") */
+    /* MYC-AUDIT-024 (roadmap 7.7 version identity): baris pertama
+     * `filc-clang --version` (mis. "clang version 20.1.8 (Fil-C 0.681 ...)").
+     * NULL bila tidak tersedia / tidak terbaca. Malloc'd, di-free
+     * myc_result_free (pola gcc_version/clang_version). */
+    char       *filc_version;
+    /* Per-case scope (roadmap 7.7): rincian tiap panic terkonfirmasi,
+     * hasil parsing STRUKTURAL report Fil-C (bukan hitung marker).
+     * String di arena milik hasil; hanya N case pertama disimpan. */
+    myc_filc_case filc_cases[MYC_MAX_FILC_CASES];
+    int         filc_case_count;        /* banyak case tersimpan (<= MAX) */
     char       *filc_stdout_text;       /* output program Fil-C */
     char       *filc_stderr_text;
 

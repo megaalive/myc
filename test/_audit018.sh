@@ -160,6 +160,21 @@ if command -v filc-clang >/dev/null 2>&1 && [ -x ./myc ]; then
         echo "[FAIL] filc bad_filc_oob --filc --run (FILC_VIOLATION)"
         FAIL=1
     fi
+    # MYC-AUDIT-024 (roadmap 7.7): version identity + robust report parser
+    # (per-case scope). Parser struktural: baris kanonik "[pid] filc panic:",
+    # detail message + lokasi origin (file:line:col: func) tiap panic.
+    if ./myc check test/fixtures/ok_filc.c --filc 2>&1 | grep -q "version: clang version"; then
+        echo "[OK] filc version identity (7.7)"
+    else
+        echo "[FAIL] filc version identity (7.7)"
+        FAIL=1
+    fi
+    if ./myc check test/fixtures/bad_filc_oob.c --filc 2>&1 | grep -q "case #1:"; then
+        echo "[OK] filc per-case scope (7.7)"
+    else
+        echo "[FAIL] filc per-case scope (7.7)"
+        FAIL=1
+    fi
 else
     echo "[SKIP] filc-clang tidak tersedia di PATH atau myc binary tidak ditemukan"
 fi

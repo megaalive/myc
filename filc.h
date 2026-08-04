@@ -9,8 +9,9 @@
  *   - Opsional & non-blocking: bila filc-clang tidak tersedia (PATH atau
  *     WSL), gate di-skip, assurance statis dipertahankan + diagnostic.
  *   - Bila tersedia: verification build (filc-clang) + eksekusi terkendali.
- *     Run bersih (exit 0, tanpa marker panic) -> caller naikkan ke L5 FULL.
- *   - Marker panic -> verdict MC_FILC_VIOLATION (bug memori terbukti).
+ *     Run bersih (exit 0, tanpa panic) -> caller naikkan ke L5 FILC.
+ *   - Panic terkonfirmasi (parser struktural MYC-AUDIT-024: baris kanonik
+ *     "[pid] filc panic:" + detail per-case) -> MC_FILC_VIOLATION.
  * Source hanya via stdin (tidak pernah jadi argumen).
  */
 #ifndef MYC_FILC_H
