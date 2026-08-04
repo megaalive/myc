@@ -2797,7 +2797,7 @@ Lihat test matrix di Fase 8.
 
 ---
 
-## Fase 2 — Canonical Ingress dan API Contract ⚠️ PARTIAL SELESAI 2026-08-04 (ingress flag fail-fast ✅ 2026-08-03; size cap + myc_source_input ✅ 2026-08-04; canonicalization ✅ 2026-08-04)
+## Fase 2 — Canonical Ingress dan API Contract ✅ SELESAI 2026-08-04 (ingress flag fail-fast ✅ 2026-08-03; size cap + myc_source_input ✅ 2026-08-04; canonicalization ✅ 2026-08-04; pointer+length ✅ 2026-08-04)
 
 ### Task
 
@@ -2808,7 +2808,7 @@ Lihat test matrix di Fase 8.
 - [x] `file_path`-only: `myc_run()` kini load file sebelum masuk pipeline (MYC-AUDIT-007).
 - [x] Validasi timeout, output cap, cwd, flag combinations. ✅ 2026-08-03 (MYC-AUDIT-020: `--timeout` 0–600000, `--output-cap` 0–100 MiB, cwd non-kosong; negatif/overflow/non-angka fail-fast; CLI + API + MCP).
 - [x] Unknown flag menjadi error. (MYC-AUDIT-019: CLI fail-fast pada unknown flag → pesan + exit 2; `--run-stdin`/`--cwd` tanpa argumen nilai → exit 2. Konsisten dengan reject unknown flag MCP -32602.)
-- [ ] Semua string public memiliki pointer + length bila dapat mengandung input eksternal.
+- [x] Semua string public memiliki pointer + length bila dapat mengandung input eksternal. ✅ 2026-08-04 (secara efektif terpenuhi oleh AUDIT-029: `myc_source_input` + loader terpusat `myc_source_load()` — satu-satunya cara memuat input eksternal ke dalam myc; source → `input.data`/`input.len`; run_stdin → `run_stdin_len`; cwd/file_path adalah path OS yang tidak mengandung NUL valid; pipeline HANYA menerima in-memory sehingga tidak ada lagi jalur string public tanpa pointer+length).
 
 ### Acceptance criteria
 
