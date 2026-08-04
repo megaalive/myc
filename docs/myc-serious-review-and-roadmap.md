@@ -2995,11 +2995,11 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 
 ### 7.5. Driver
 
-- [ ] case record;
-- [ ] replay capsule;
+- [x] case record ✅ 2026-08-04 (MYC-AUDIT-027: `myc_driver_case` per kasus — case_id, function, parameter values + allocation sizes, status eksekusi run/skip; `driver_case_records[]` (maks 256) di laporan teks + JSON + capsule; harness `setvbuf(_IONBF)` agar marker per-case ter-flush walau sanitizer abort → record akurat untuk run yang crash).
+- [x] replay capsule ✅ 2026-08-04 (MYC-AUDIT-027: capsule memuat driver_funcs/driver_cases/driver_skipped/driver_case_count + harness_sha256 + driver_case_records[]).
 - [x] 0-case classification ✅ 2026-08-02 (9.10: driver tanpa fungsi ber-kontrak = `NOT_APPLICABLE`; diminta tapi 0 kasus = debt `MYC-INCOMPLETE-NONZERO-CASES`).
-- [ ] boundary portfolio;
-- [ ] combinatorial budget.
+- [x] boundary portfolio ✅ 2026-08-04 (MYC-AUDIT-027: per-case record memuat parameter values dari portofolio tepi kontrak — batas bawah/atas from requires, 0/1/2/3, nilai tengah; `driver_max_product`/`driver_bounded` jujur; untuk run yang crash, jumlah kasus diturunkan dari marker tereksekusi, bukan klaim '0 kasus').
+- [x] combinatorial budget ✅ 2026-08-04 (MYC-AUDIT-027: `build_combos` — produk kartesian ≤ 32 = full, > 32 = coverage-first (base + satu-per-nilai-ekstra + filler leksikografis) dengan jaminan tiap nilai kandidat muncul; laporan `combinatorial: max_product=N budget=32 strategy=full|coverage-first`).
 
 ### 7.6. Frama-C
 

@@ -371,6 +371,25 @@ void myc_report_text(const myc_result *res)
         printf("  funcs: %d\n", res->driver_funcs);
         printf("  cases: %d\n", res->driver_cases);
         printf("  skipped: %d\n", res->driver_skipped);
+        /* Roadmap 7.5 (combinatorial budget + boundary portfolio):
+         * strategi kombinasi dilaporkan; tiap nilai kandidat dari setiap
+         * parameter dijamin muncul minimal sekali walau budget memotong. */
+        printf("  combinatorial: max_product=%ld budget=%d strategy=%s\n",
+               res->driver_max_product, MYC_MAX_DRIVER_CASES,
+               res->driver_bounded ? "coverage-first" : "full");
+        printf("  harness_sha256: %s\n",
+               res->driver_harness_sha256 ? res->driver_harness_sha256
+                                          : "(n/a)");
+        if (res->driver_case_count > 0) {
+            printf("  case records (input + status):\n");
+            for (i = 0; i < res->driver_case_count; i++) {
+                const myc_driver_case *c = &res->driver_case_records[i];
+                printf("    #%-3d %s(%s) alloc=%ldB -> %s\n", c->case_id,
+                       c->func ? c->func : "?",
+                       c->params ? c->params : "",
+                       c->alloc_bytes, c->executed ? "run" : "skip");
+            }
+        }
         if (res->driver_stdout_text && res->driver_stdout_text[0])
             printf("  driver_stdout:\n%s\n", res->driver_stdout_text);
         if (res->driver_stderr_text && res->driver_stderr_text[0])
@@ -461,6 +480,24 @@ if (res->debt_count > 0) {
              printf("  checked_coverage: buffers=%d allocations=%d accesses=%d frees=%d\n",
                     cap->checked_buffers, cap->checked_allocations,
                     cap->checked_accesses, cap->checked_frees);
+         /* Roadmap 7.5: driver case records + harness sha (replay). */
+         if (cap->driver) {
+             int dci;
+             printf("  driver_funcs: %d  driver_cases: %d  driver_skipped: %d\n",
+                    cap->driver_funcs, cap->driver_cases, cap->driver_skipped);
+             printf("  driver_combinatorial: max_product=%ld budget=%d strategy=%s\n",
+                    cap->driver_max_product, MYC_MAX_DRIVER_CASES,
+                    cap->driver_bounded ? "coverage-first" : "full");
+             printf("  driver_harness_sha256: %s\n",
+                    cap->driver_harness_sha256 ? cap->driver_harness_sha256 : "");
+             for (dci = 0; dci < cap->driver_case_count; dci++) {
+                 const myc_driver_case *c = &cap->driver_case_records[dci];
+                 printf("    case #%-3d %s(%s) alloc=%ldB -> %s\n",
+                        c->case_id, c->func ? c->func : "?",
+                        c->params ? c->params : "", c->alloc_bytes,
+                        c->executed ? "run" : "skip");
+             }
+         }
          printf("  require_complete: %s\n",
                 cap->require_complete ? "yes" : "no");
          if (cap->metamorphic) {
@@ -639,6 +676,33 @@ char *myc_result_to_json(const myc_result *res)
     json_sb_printf(&b, "\"driver_funcs\":%d,", res->driver_funcs);
     json_sb_printf(&b, "\"driver_cases\":%d,", res->driver_cases);
     json_sb_printf(&b, "\"driver_skipped\":%d,", res->driver_skipped);
+    if (res->ran_driver) {
+        /* Roadmap 7.5: combinatorial budget + case record (replay). */
+        json_sb_printf(&b, "\"driver_max_product\":%ld,", res->driver_max_product);
+        json_sb_printf(&b, "\"driver_bounded\":%s,",
+                       res->driver_bounded ? "true" : "false");
+        json_sb_printf(&b, "\"driver_harness_sha256\":");
+        json_sb_escape(&b, res->driver_harness_sha256);
+        json_sb_puts(&b, ",");
+        json_sb_printf(&b, "\"driver_case_records\":[");
+        for (i = 0; i < res->driver_case_count; i++) {
+            const myc_driver_case *c = &res->driver_case_records[i];
+            if (i)
+                json_sb_puts(&b, ",");
+            json_sb_puts(&b, "{");
+            json_sb_printf(&b, "\"case_id\":%d,", c->case_id);
+            json_sb_printf(&b, "\"func\":");
+            json_sb_escape(&b, c->func);
+            json_sb_puts(&b, ",");
+            json_sb_printf(&b, "\"params\":");
+            json_sb_escape(&b, c->params);
+            json_sb_printf(&b, ",\"alloc_bytes\":%ld,", c->alloc_bytes);
+            json_sb_printf(&b, "\"executed\":%s",
+                           c->executed ? "true" : "false");
+            json_sb_puts(&b, "}");
+        }
+        json_sb_puts(&b, "],");
+    }
     json_sb_printf(&b, "\"ran_metamorphic\":%s,",
                    res->ran_metamorphic ? "true" : "false");
     if (res->ran_metamorphic) {
@@ -804,6 +868,42 @@ char *myc_result_to_json(const myc_result *res)
                             cap->checked_accesses);
              json_sb_printf(&b, "\"checked_frees\":%d,",
                             cap->checked_frees);
+         }
+         /* Roadmap 7.5: driver case records + harness sha (replay). */
+         if (cap->driver) {
+             int dci;
+             json_sb_printf(&b, "\"driver_funcs\":%d,",
+                            cap->driver_funcs);
+             json_sb_printf(&b, "\"driver_cases\":%d,",
+                            cap->driver_cases);
+             json_sb_printf(&b, "\"driver_skipped\":%d,",
+                            cap->driver_skipped);
+             json_sb_printf(&b, "\"driver_max_product\":%ld,",
+                            cap->driver_max_product);
+             json_sb_printf(&b, "\"driver_bounded\":%s,",
+                            cap->driver_bounded ? "true" : "false");
+             json_sb_printf(&b, "\"driver_harness_sha256\":");
+             json_sb_escape(&b, cap->driver_harness_sha256);
+             json_sb_puts(&b, ",");
+             json_sb_printf(&b, "\"driver_case_records\":[");
+             for (dci = 0; dci < cap->driver_case_count; dci++) {
+                 const myc_driver_case *c = &cap->driver_case_records[dci];
+                 if (dci)
+                     json_sb_puts(&b, ",");
+                 json_sb_puts(&b, "{");
+                 json_sb_printf(&b, "\"case_id\":%d,", c->case_id);
+                 json_sb_printf(&b, "\"func\":");
+                 json_sb_escape(&b, c->func);
+                 json_sb_puts(&b, ",");
+                 json_sb_printf(&b, "\"params\":");
+                 json_sb_escape(&b, c->params);
+                 json_sb_printf(&b, ",\"alloc_bytes\":%ld,",
+                                c->alloc_bytes);
+                 json_sb_printf(&b, "\"executed\":%s",
+                                c->executed ? "true" : "false");
+                 json_sb_puts(&b, "}");
+             }
+             json_sb_puts(&b, "],");
          }
          json_sb_printf(&b, "\"require_complete\":%s,",
                         cap->require_complete ? "true" : "false");

@@ -209,6 +209,8 @@ typedef struct {
 #define MYC_MAX_DEBT       32
 #define MYC_MAX_FILC_CASES 8        /* rincian per-panic Fil-C (7.7) */
 #define MYC_MAX_CONTRACT_CLAUSES 64 /* rincian per-klausa kontrak (7.4) */
+#define MYC_MAX_DRIVER_CASES   32  /* budget kombinatorial per fungsi (7.5) */
+#define MYC_MAX_DRIVER_RECORDS 256 /* total case records tersimpan (hasil) */
 
 #define MYC_ARENA_BLOCK    65536        /* ukuran blok arena per request */
 
@@ -287,6 +289,19 @@ typedef struct {
     int   line, col;        /* lokasi klausa di source */
     int   kind;             /* 0 = requires, 1 = ensures */
 } myc_contract_clause;
+
+/* Satu kasus uji driver ter-record (roadmap 7.5 "case record").
+ * Merekam INPUT yang benar-benar diuji — parameter values + allocation
+ * sizes — plus status eksekusi (guard requires lolos / dilewati).
+ * String (func/params) disimpan di arena milik hasil; bila disalin ke
+ * capsule, di-strdup. `case_id` = nomor global 1-based lintas fungsi. */
+typedef struct {
+    char *func;        /* nama fungsi ber-kontrak yang diuji */
+    char *params;      /* ringkasan argumen deterministik, mis. "n=4, a=16B" */
+    long  alloc_bytes; /* total bytes dialokasikan utk parameter pointer */
+    int   case_id;     /* 1-based (global lintas fungsi) */
+    int   executed;    /* 1 = dieksekusi, 0 = dilewati guard requires */
+} myc_driver_case;
 
 /* Satu pelanggaran / diagnostic yang ditemukan scanner atau gcc. */
 typedef struct {
@@ -395,6 +410,16 @@ typedef struct {
     int checked_allocations;  /* invokasi MYC_NEW */
     int checked_accesses;     /* invokasi MYC_AT */
     int checked_frees;        /* invokasi MYC_FREE */
+    /* Driver (roadmap 7.5): ringkasan + per-case record untuk replay.
+     * String di-strdup (capsule dibebaskan myc_result_free). */
+    int driver_funcs;
+    int driver_cases;
+    int driver_skipped;
+    int driver_case_count;
+    char *driver_harness_sha256;   /* hash source harness yang dibangun */
+    long  driver_max_product;
+    int   driver_bounded;
+    myc_driver_case driver_case_records[MYC_MAX_DRIVER_RECORDS];
     /* Gate summary (one status per gate) */
     myc_gate_status gate_status[MYC_GATE_COUNT];
     /* Finding / completeness / claim */
@@ -505,6 +530,17 @@ typedef struct {
     int         driver_skipped;         /* jumlah kasus dilewati guard */
     char       *driver_stdout_text;     /* output harness (DRIVER run=...) */
     char       *driver_stderr_text;
+    /* Roadmap 7.5 (case record): rincian tiap kasus yang diuji.
+     * String di arena milik hasil; case_count dibatasi
+     * MYC_MAX_DRIVER_RECORDS (hitungan exact tetap di driver_cases). */
+    myc_driver_case driver_case_records[MYC_MAX_DRIVER_RECORDS];
+    int             driver_case_count;
+    char           *driver_harness_sha256; /* hash source harness (replay) */
+    /* Roadmap 7.5 (combinatorial budget): produk kartesian terbesar di
+     * seluruh fungsi (sebelum budget) + apakah budget memotong (bila
+     * memotong, tiap nilai kandidat tetap muncul minimal sekali). */
+    long            driver_max_product;
+    int             driver_bounded;
 
     /* --- hasil gate metamorphic (9.7, --metamorphic) --- */
     int         ran_metamorphic;      /* 1 bila gate metamorphic dijalankan */

@@ -246,11 +246,28 @@ findstr /C:"DRIVER_VIOLATION" %OUT% >nul && echo [FAIL] spoof driver jadi DRIVER
 del %OUT%
 echo --- unverified debt (Fase 4): debt hanya muncul utk scope yg TIDAK lengkap
 set DEBT=none
-myc.exe check test\fixtures\bad_driver_oob.c --driver > %OUT% 2>&1
-findstr /C:"unverified_debt" %OUT% >nul && echo [OK] bad_driver_oob memunculkan unverified_debt
+myc.exe check test\fixtures\driver_zero_cases.c --driver > %OUT% 2>&1
+findstr /C:"unverified_debt" %OUT% >nul && echo [OK] driver_zero_cases memunculkan unverified_debt
 findstr /C:"generated driver diminta tapi 0 kasus" %OUT% >nul && echo [OK] debt nonzero_cases terdeteksi
 myc.exe check tests\ok_run.c --run > %OUT% 2>&1
 findstr /C:"unverified_debt" %OUT% >nul && echo [FAIL] ok_run seharusnya tanpa debt || echo [OK] ok_run tanpa unverified_debt
+del %OUT%
+echo --- MYC-AUDIT-027: case record + combinatorial budget + harness sha
+myc.exe check test\fixtures\ok_driver.c --driver > %OUT% 2>&1
+findstr /C:"case records" %OUT% >nul && echo [OK] case records muncul di laporan || echo [FAIL] case records hilang
+findstr /C:"combinatorial: max_product=5 budget=32 strategy=full" %OUT% >nul && echo [OK] combinatorial full utk produk kecil || echo [FAIL] combinatorial full hilang
+findstr /C:"harness_sha256:" %OUT% >nul && echo [OK] harness_sha256 di laporan || echo [FAIL] harness_sha256 hilang
+findstr /C:"#1   ok_sum" %OUT% >nul && echo [OK] case record #1 berisi input+status || echo [FAIL] case record #1 hilang
+myc.exe check test\fixtures\ok_driver.c --driver --json > %OUT% 2>&1
+findstr /C:"\"driver_case_records\"" %OUT% >nul && echo [OK] driver_case_records di JSON || echo [FAIL] driver_case_records hilang di JSON
+findstr /C:"\"driver_harness_sha256\"" %OUT% >nul && echo [OK] driver_harness_sha256 di JSON || echo [FAIL] driver_harness_sha256 hilang di JSON
+myc.exe check test\fixtures\bad_driver_oob.c --driver > %OUT% 2>&1
+findstr /C:"case=2 run" %OUT% >nul && echo [OK] bad_driver_oob tereksekusi 2 kasus sblm crash || echo [FAIL] case record bad_driver_oob salah
+findstr /C:"verdict:   DRIVER_VIOLATION" %OUT% >nul && echo [OK] bad_driver_oob tetap DRIVER_VIOLATION || echo [FAIL] bad_driver_oob bukan violation
+myc.exe check test\fixtures\ok_driver_bounded.c --driver > %OUT% 2>&1
+findstr /C:"strategy=coverage-first" %OUT% >nul && echo [OK] combinatorial coverage-first utk produk besar || echo [FAIL] coverage-first tidak muncul
+findstr /C:"combinatorial: max_product=64 budget=32" %OUT% >nul && echo [OK] max_product+budget jujur (64>32) || echo [FAIL] max_product/budget hilang
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] bounded harness run bersih || echo [FAIL] bounded harness gagal
 del %OUT%
 echo --- semantic canary (gagasan 9.9): run bersih tetap L3 HANYA bila backend ASan sehat
 myc.exe check tests\ok_run.c --run --json > %OUT% 2>&1

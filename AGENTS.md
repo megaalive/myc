@@ -335,6 +335,56 @@ Poin penting:
   2/2/6/2, ok_checked → 1/1/2/1, dogfood_ring tetap L4, parity identik di
   Windows; receipt tetap `8224c23a...` (coverage bukan bagian fingerprint —
   source_sha sudah mencakup source).
+- **MYC-AUDIT-027 selesai 2026-08-04** (roadmap 7.5: Driver — case record +
+  replay capsule + boundary portfolio + combinatorial budget):
+  (1) **case record** — struct `myc_driver_case` di `myc.h` (case_id, func,
+  params, alloc_bytes, executed) + `driver_case_records[]` (maks
+  `MYC_MAX_DRIVER_RECORDS` 256) di `myc_result`; dibangun di
+  `myc_driver_gate` dari metadata harness (`drv_case_meta`: nama fungsi,
+  nama param, is_ptr, ukuran buffer, nilai kandidat per param, kombinasi)
+  + peta eksekusi per-case dari stdout. Record menampilkan parameter
+  values + allocation sizes + status run/skip — ditampilkan di teks
+  (`case records (input + status):` baris `#N func(a=16B, n=0) alloc=16B ->
+  run`) + JSON (`driver_case_records[]`) + capsule. (2) **harness flush
+  jujur** — harness kini `setvbuf(stdout, NULL, _IONBF, 0)` di awal main;
+  tanpa ini, saat sanitizer meng-abort proses di tengah run, stdout pipe
+  yang fully-buffered tidak ter-flush → SEMUA marker per-case hilang →
+  record salah tampil 'skip' dan klaim debt '0 kasus tereksekusi' muncul
+  padahal kasus dieksekusi (bug nyata ditemukan di bad_driver_oob: ASan
+  abort di kasus n=4; sebelum fix `cases: 0`, sesudah fix `cases: 2` +
+  record #1/#2 run, #3-5 skip). Bila summary `DRIVER run=N` tidak sempat
+  tercetak (abort), `driver_cases`/`driver_skipped` diturunkan dari jumlah
+  marker per-case. Akibat: bad_driver_oob TIDAK lagi memicu debt
+  NONZERO-CASES (memang bukan 0 kasus); debt itu kini diuji lewat fixture
+  baru `test/fixtures/driver_zero_cases.c` (guard requires `g_flag == 1`
+  selalu salah → semua kasus di-skip, exit 3 → INCONCLUSIVE + debt
+  GATE-UNAVAILABLE + NONZERO-CASES). (3) **combinatorial budget** —
+  `build_combos()` di driver.c: produk kartesian ≤ `DRV_MAX_CASES` 32 =
+  strategi `full`; produk > 32 = `coverage-first` (base + satu-per-nilai-
+  ekstra + filler leksikografis) dengan jaminan deterministik setiap nilai
+  kandidat muncul minimal sekali; dilaporkan jujur di teks+JSON
+  (`combinatorial: max_product=N budget=32 strategy=full|coverage-first`)
+  + capsule (`driver_max_product`/`driver_bounded`). (4) **harness
+  identity** — `driver_harness_sha256` (SHA-256 teks harness) di
+  `myc_result` + capsule; verifikasi fixture `ok_driver_bounded.c`
+  (kontrak a/b/c ≤ 3 → max_product 64 > 32 → coverage-first, 32 kasus).
+  Receipt TIDAK berubah (case records/coverage bukan bagian hash) —
+  `ok_driver --driver` tetap `0e9be800...`. Terpasang di `_regress_run.bat`
+  (section AUDIT-027, +10 cek) dan `_ci_linux.sh` (section 5c, +8 cek).
+  Verifikasi: ok_driver OK L3 + 10 records + full; bad_driver_oob
+  DRIVER_VIOLATION + records akurat; driver_zero_cases INCONCLUSIVE + debt;
+  mcp smoke 13 respons utuh; JSON + capsule valid. (5) **bug portabilitas
+  POSIX (kelas MYC-AUDIT-003)** ditemukan saat menulis regresi Linux:
+  `drv_make_temp_dir` memakai fallback `"."` di POSIX (tanpa `/tmp` +
+  canonicalisasi getcwd) → `exe_path` relatif rusak setelah child
+  `chdir(tmp_dir)` → gate driver di WSL SELALU "driver run exec failed"
+  (ok_driver jadi INCONCLUSIVE padahal build sukses; `funcs: 0`). Diperbaiki
+  mirror `make_temp_dir` run.c: `TEMP` → `TMPDIR` → `/tmp`, canonicalize
+  base relatif via `my_getcwd`; driver kini berfungsi penuh di POSIX
+  (ok_driver L3, harness sha IDENTIK lintas platform `6919dfb9...`,
+  bounded coverage-first 32 kasus). Verifikasi: `_ci_linux.sh` WSL
+  PASS=30 FAIL=0 (sebelumnya PASS=21 FAIL=1).
+- **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
 - **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
   seluruh rule lint.c (intptr_t/uintptr_t cast, realloc ke variabel lain,
   memcpy/memset tanpa sizeof, ukuran alokasi perkalian tanpa sizeof, akses

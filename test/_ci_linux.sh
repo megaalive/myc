@@ -135,6 +135,46 @@ else
     fail "receipt tidak deterministik ($R1 vs $R2)"
 fi
 
+# --- 5c. driver: case record + combinatorial budget + harness sha (AUDIT-027) ---
+if ./myc check test/fixtures/ok_driver.c --driver 2>&1 | grep -qF \
+    "combinatorial: max_product=5 budget=32 strategy=full"; then
+    note "driver combinatorial full utk produk kecil"
+else
+    fail "driver combinatorial full"
+fi
+if ./myc check test/fixtures/ok_driver.c --driver 2>&1 | grep -qF \
+    "harness_sha256:"; then
+    note "driver harness_sha256 di laporan"
+else
+    fail "driver harness_sha256 hilang"
+fi
+if ./myc check test/fixtures/ok_driver.c --driver 2>&1 | grep -qF \
+    "#1   ok_sum"; then
+    note "driver case record #1 berisi input+status"
+else
+    fail "driver case record hilang"
+fi
+if ./myc check test/fixtures/ok_driver_bounded.c --driver 2>&1 | grep -qF \
+    "strategy=coverage-first"; then
+    note "driver coverage-first utk produk besar"
+else
+    fail "driver coverage-first tidak muncul"
+fi
+if ./myc check test/fixtures/ok_driver_bounded.c --driver 2>&1 | grep -qF \
+    "combinatorial: max_product=64 budget=32"; then
+    note "driver max_product+budget jujur (64>32)"
+else
+    fail "driver max_product/budget hilang"
+fi
+assert_out "ok_driver --driver -> L3" "assurance: L3" test/fixtures/ok_driver.c --driver
+assert_out "bad_driver_oob --driver -> DRIVER_VIOLATION" "verdict:   DRIVER_VIOLATION" test/fixtures/bad_driver_oob.c --driver
+if ./myc check test/fixtures/driver_zero_cases.c --driver 2>&1 | grep -qF \
+    "generated driver diminta tapi 0 kasus"; then
+    note "driver 0 kasus -> debt NONZERO_CASES"
+else
+    fail "driver debt NONZERO_CASES hilang"
+fi
+
 # --- 6. dogfood tool ---
 for f in dogfood/dogfood_ring.c dogfood/dogfood_config.c dogfood/dogfood_tilemap.c; do
     assert_out "dogfood $(basename "$f") -> OK" "verdict:   OK" "$f"

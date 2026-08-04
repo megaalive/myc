@@ -166,6 +166,8 @@ void myc_result_free(myc_result *res)
     free(res->filc_version);
     free(res->driver_stdout_text);
     free(res->driver_stderr_text);
+    free(res->driver_harness_sha256);
+    res->driver_harness_sha256 = NULL;
     free(res->resolved_gcc);
     free(res->gcc_version);
     free(res->clang_version);
@@ -205,12 +207,20 @@ void myc_result_free(myc_result *res)
     res->arena = NULL;
     /* bebaskan capsule (#2) */
     if (res->capsule) {
-        free(res->capsule->source_sha256);
-        free(res->capsule->stdin_sha256);
-        free(res->capsule->clang_path);
-        free(res->capsule->gcc_path);
-        free(res->capsule->cwd);
-        free(res->capsule);
+        myc_replay_capsule *cap = res->capsule;
+        int ci;
+        free(cap->source_sha256);
+        free(cap->stdin_sha256);
+        free(cap->clang_path);
+        free(cap->gcc_path);
+        free(cap->cwd);
+        /* Roadmap 7.5: per-case driver records di-strdup ke capsule. */
+        free(cap->driver_harness_sha256);
+        for (ci = 0; ci < cap->driver_case_count; ci++) {
+            free(cap->driver_case_records[ci].func);
+            free(cap->driver_case_records[ci].params);
+        }
+        free(cap);
         res->capsule = NULL;
     }
     /* quorum_report (#3) TIDAK di-free di sini: ia dialokasikan dari
@@ -298,6 +308,33 @@ static myc_replay_capsule *myc_build_capsule(const myc_request *req,
     cap->checked_allocations = res->checked_allocations;
     cap->checked_accesses = res->checked_accesses;
     cap->checked_frees = res->checked_frees;
+    /* Driver (roadmap 7.5): ringkasan + per-case record utk replay. */
+    cap->driver_funcs = res->driver_funcs;
+    cap->driver_cases = res->driver_cases;
+    cap->driver_skipped = res->driver_skipped;
+    cap->driver_case_count = res->driver_case_count;
+    cap->driver_max_product = res->driver_max_product;
+    cap->driver_bounded = res->driver_bounded;
+    if (res->driver_harness_sha256) {
+        cap->driver_harness_sha256 = myc_strdup(res->driver_harness_sha256);
+        if (!cap->driver_harness_sha256) goto fail;
+    }
+    for (i = 0; i < (size_t)res->driver_case_count &&
+                 i < (size_t)MYC_MAX_DRIVER_RECORDS; i++) {
+        cap->driver_case_records[i].case_id = res->driver_case_records[i].case_id;
+        cap->driver_case_records[i].executed = res->driver_case_records[i].executed;
+        cap->driver_case_records[i].alloc_bytes = res->driver_case_records[i].alloc_bytes;
+        if (res->driver_case_records[i].func) {
+            cap->driver_case_records[i].func =
+                myc_strdup(res->driver_case_records[i].func);
+            if (!cap->driver_case_records[i].func) goto fail;
+        }
+        if (res->driver_case_records[i].params) {
+            cap->driver_case_records[i].params =
+                myc_strdup(res->driver_case_records[i].params);
+            if (!cap->driver_case_records[i].params) goto fail;
+        }
+    }
     if (res->run_sanitizer_detected) {
         size_t slen = strlen(res->run_sanitizer_marker);
         if (slen >= sizeof(cap->sanitizer_marker))
@@ -329,6 +366,11 @@ fail:
     free(cap->clang_path);
     free(cap->gcc_path);
     free(cap->cwd);
+    free(cap->driver_harness_sha256);
+    for (i = 0; i < (size_t)MYC_MAX_DRIVER_RECORDS; i++) {
+        free(cap->driver_case_records[i].func);
+        free(cap->driver_case_records[i].params);
+    }
     free(cap);
     return NULL;
 }

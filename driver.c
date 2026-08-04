@@ -37,6 +37,7 @@
 #define myc_mkdir(path) _mkdir(path)
 #define myc_rmdir(path) _rmdir(path)
 #define myc_getpid() _getpid()
+#define my_getcwd(buf,sz) _getcwd(buf,sz)
 #else
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -44,16 +45,19 @@
 #define myc_mkdir(path) mkdir(path, 0700)
 #define myc_rmdir(path) rmdir(path)
 #define myc_getpid() getpid()
+#define my_getcwd(buf,sz) getcwd(buf,sz)
 #endif
 
 #include "proc.h"
 
 #include "gate.h"
 
+#include "sha256.h"
+
 #define DRV_MAX_FUNCS  8
 #define DRV_MAX_PARAMS 6
 #define DRV_MAX_REQS   4
-#define DRV_MAX_CASES  8
+#define DRV_MAX_CASES  MYC_MAX_DRIVER_CASES
 #define DRV_MAX_CANDS  8
 #define DRV_MAX_LEN    128
 #define DRV_BUF_CAP    65536    /* ukuran buffer pointer maksimum (bytes) */
@@ -359,6 +363,114 @@ static void parse_bound(const char *expr, const char *name, drv_bounds *bd)
         }
         i += k - 1;
     }
+}
+
+/* ------------------------------------------------------------------ */
+/* Combinatorial budget (roadmap 7.5)                                  */
+/* ------------------------------------------------------------------ */
+
+/* Satu kombinasi parameter (indeks ke daftar kandidat tiap param). */
+typedef struct {
+    unsigned char idx[DRV_MAX_PARAMS];
+} drv_combo;
+
+/* Metadata kasus per fungsi: kombinasi yang dibangkitkan + info untuk
+ * membangun case record (nama fungsi, nama parameter, alokasi buffer). */
+typedef struct {
+    char  func[DRV_MAX_LEN];
+    char  pname[DRV_MAX_PARAMS][DRV_MAX_LEN];
+    int   is_ptr[DRV_MAX_PARAMS];
+    long  psize[DRV_MAX_PARAMS];     /* bytes utk pointer (0 utk scalar) */
+    long  cands[DRV_MAX_PARAMS][DRV_MAX_CANDS]; /* nilai kandidat scalar */
+    int   nc[DRV_MAX_PARAMS];
+    int   nparams;
+    drv_combo combos[DRV_MAX_CASES];
+    int   ncombos;
+    long  product;                   /* produk kartesian penuh (sebelum budget) */
+    int   bounded;                   /* 1 = budget memotong (coverage-first) */
+} drv_case_meta;
+
+/* Bangun daftar kombinasi dari daftar kandidat per parameter dengan
+ * BUDGET deterministik (combinatorial budget, roadmap 7.5):
+ *   - Bila produk kartesian <= maxcases: SEMUA kombinasi (full cartesian).
+ *   - Bila produk > maxcases: coverage-first — pastikan setiap nilai
+ *     kandidat dari setiap parameter muncul di minimal satu kasus
+ *     (base + one-per-extra-value), lalu isi sisa budget dengan kombinasi
+ *     leksikografis yang belum ada. Strategi di-laporkan (meta->bounded). */
+static int build_combos(const int *nc, int nparams, drv_combo *out, int maxcases,
+                        long *product_out, int *bounded_out)
+{
+    long product = 1;
+    int  p, i;
+    int  count = 0;
+    for (p = 0; p < nparams; p++)
+        product *= (long)nc[p];
+    if (product_out)
+        *product_out = product;
+    if (bounded_out)
+        *bounded_out = 0;
+
+    if (product <= (long)maxcases) {
+        long k;
+        for (k = 0; k < product && count < maxcases; k++) {
+            long rem = k;
+            drv_combo c;
+            memset(&c, 0, sizeof(c));
+            for (p = 0; p < nparams; p++) {
+                c.idx[p] = (unsigned char)(rem % nc[p]);
+                rem /= nc[p];
+            }
+            out[count++] = c;
+        }
+        return count;
+    }
+
+    if (bounded_out)
+        *bounded_out = 1;
+
+    /* coverage-first: base (semua nilai kandidat pertama) */
+    {
+        drv_combo c;
+        memset(&c, 0, sizeof(c));
+        out[count++] = c;
+    }
+    /* setiap nilai kandidat tambahan dari tiap parameter */
+    for (p = 0; p < nparams && count < maxcases; p++) {
+        for (i = 1; i < nc[p] && count < maxcases; i++) {
+            drv_combo c;
+            memset(&c, 0, sizeof(c));
+            c.idx[p] = (unsigned char)i;
+            out[count++] = c;
+        }
+    }
+    /* filler: kombinasi leksikografis yang belum ada, sampai budget */
+    if (count < maxcases) {
+        long k;
+        for (k = 0; k < product && count < maxcases; k++) {
+            long rem = k;
+            drv_combo c;
+            int  j;
+            int  dup = 0;
+            memset(&c, 0, sizeof(c));
+            for (p = 0; p < nparams; p++) {
+                c.idx[p] = (unsigned char)(rem % nc[p]);
+                rem /= nc[p];
+            }
+            for (j = 0; j < count; j++) {
+                int q;
+                for (q = 0; q < nparams; q++)
+                    if (out[j].idx[q] != c.idx[q])
+                        break;
+                if (q == nparams) {
+                    dup = 1;
+                    break;
+                }
+            }
+            if (!dup)
+                out[count++] = c;
+        }
+    }
+    return count;
 }
 
 /* ------------------------------------------------------------------ */
@@ -750,11 +862,15 @@ static void build_candidates(const drv_func *f, int pi, long *cands, int *nc)
 /* Generate teks harness lengkap (source asli + main baru). */
 static char *gen_harness(const char *src, size_t srclen,
                          const drv_func *funcs, int nfuncs,
-                         size_t *out_len)
+                         size_t *out_len,
+                         drv_case_meta *meta, int maxmeta, int *nmeta)
 {
     drv_buf b;
     int     f;
+    int     gid = 0;    /* case_id global lintas fungsi (roadmap 7.5) */
     memset(&b, 0, sizeof(b));
+    if (nmeta)
+        *nmeta = 0;
 
     drv_buf_puts(&b, "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n");
     drv_buf_puts(&b, "#define main myc_driver_orig_main\n");
@@ -763,13 +879,21 @@ static char *gen_harness(const char *src, size_t srclen,
     drv_buf_puts(&b, "static int drv_run = 0;\n");
     drv_buf_puts(&b, "static int drv_skip = 0;\n\n");
     drv_buf_puts(&b, "int main(void) {\n");
+    /* Flush per baris: marker per-case harus sampai ke parent WALAUPUN
+     * sanitizer meng-abort proses di tengah run (stdout bertipe pipe
+     * fully-buffered secara default; tanpa ini semua marker hilang saat
+     * abort dan record per-case salah tampil 'skip'). */
+    drv_buf_puts(&b, "    setvbuf(stdout, NULL, _IONBF, 0);\n");
 
     for (f = 0; f < nfuncs; f++) {
         const drv_func *fn = &funcs[f];
         long cands[DRV_MAX_PARAMS][DRV_MAX_CANDS];
         int  nc[DRV_MAX_PARAMS];
         long psize[DRV_MAX_PARAMS];
-        long ncases = 1;
+        drv_combo combos[DRV_MAX_CASES];
+        long product = 1;
+        int  bounded = 0;
+        int  ncombos = 0;
         int  p, ci;
         if (fn->unsupported || fn->nreqs == 0 || fn->name[0] == '\0')
             continue;
@@ -820,28 +944,60 @@ static char *gen_harness(const char *src, size_t srclen,
             }
             if (nc[p] < 1)
                 nc[p] = 1;
-            if (ncases < DRV_MAX_CASES)
-                ncases *= nc[p];
-            if (ncases > DRV_MAX_CASES)
-                ncases = DRV_MAX_CASES;
         }
-        if (ncases < 1)
-            ncases = 1;
+        /* combinatorial budget (roadmap 7.5): produk kartesian dibatasi
+         * budget deterministik dengan jaminan tiap nilai kandidat muncul. */
+        ncombos = build_combos(nc, fn->nparams, combos, DRV_MAX_CASES,
+                               &product, &bounded);
+        if (ncombos < 1)
+            ncombos = 1;
 
-        for (ci = 0; ci < (int)ncases; ci++) {
-            int idx[DRV_MAX_PARAMS];
-            long v[DRV_MAX_PARAMS];
-            int  rem = ci;
-            int  p;
-            for (p = 0; p < fn->nparams; p++) {
-                idx[p] = rem % nc[p];
-                rem /= nc[p];
+        /* simpan metadata untuk case record (hanya N pertama fungsi) */
+        if (meta && nmeta && *nmeta < maxmeta) {
+            drv_case_meta *m = &meta[*nmeta];
+            int  mp;
+            int  ci;
+            int  i;
+            memset(m, 0, sizeof(*m));
+            {
+                size_t nlen = strlen(fn->name);
+                if (nlen >= sizeof(m->func))
+                    nlen = sizeof(m->func) - 1;
+                memcpy(m->func, fn->name, nlen);
+                m->func[nlen] = '\0';
             }
+            m->nparams = fn->nparams;
+            m->ncombos = ncombos;
+            m->product = product;
+            m->bounded = bounded;
+            for (mp = 0; mp < fn->nparams; mp++) {
+                size_t plen = strlen(fn->pname[mp]);
+                if (plen >= sizeof(m->pname[mp]))
+                    plen = sizeof(m->pname[mp]) - 1;
+                memcpy(m->pname[mp], fn->pname[mp], plen);
+                m->pname[mp][plen] = '\0';
+                m->is_ptr[mp] = fn->is_ptr[mp];
+                m->psize[mp] = psize[mp];
+                m->nc[mp] = nc[mp];
+                for (i = 0; i < nc[mp]; i++)
+                    m->cands[mp][i] = cands[mp][i];
+                m->combos[0].idx[mp] = combos[0].idx[mp];
+            }
+            for (ci = 0; ci < ncombos; ci++)
+                for (mp = 0; mp < fn->nparams; mp++)
+                    m->combos[ci].idx[mp] = combos[ci].idx[mp];
+            (*nmeta)++;
+        }
+
+        for (ci = 0; ci < ncombos; ci++) {
+            long v[DRV_MAX_PARAMS];
+            int  p;
+            gid++;
             for (p = 0; p < fn->nparams; p++) {
                 if (fn->is_ptr[p]) {
                     v[p] = psize[p];
                 } else {
-                    v[p] = cands[p][idx[p]];
+                    v[p] = cands[p][combos[ci].idx[p]];
                 }
             }
             drv_buf_puts(&b, "    {\n");
@@ -877,7 +1033,10 @@ static char *gen_harness(const char *src, size_t srclen,
                 if (first)
                     drv_buf_puts(&b, "1");
             }
-            drv_buf_puts(&b, ") {\n            drv_run++;\n            (void)");
+            drv_buf_printf(&b, ") {\n            drv_run++;\n");
+            drv_buf_printf(&b, "            printf(\"DRIVER case=%d run\\n\", %d);\n",
+                           gid, gid);
+            drv_buf_puts(&b, "            (void)");
             drv_buf_puts(&b, fn->name);
             drv_buf_puts(&b, "(");
             for (p = 0; p < fn->nparams; p++) {
@@ -886,7 +1045,10 @@ static char *gen_harness(const char *src, size_t srclen,
                 drv_buf_puts(&b, fn->pname[p]);
             }
             drv_buf_puts(&b, ");\n        } else {\n");
-            drv_buf_puts(&b, "            drv_skip++;\n        }\n");
+            drv_buf_printf(&b, "            drv_skip++;\n");
+            drv_buf_printf(&b, "            printf(\"DRIVER case=%d skip\\n\", %d);\n",
+                           gid, gid);
+            drv_buf_puts(&b, "        }\n");
             for (p = 0; p < fn->nparams; p++) {
                 if (fn->is_ptr[p])
                     drv_buf_printf(&b, "        free((void*)%s);\n", fn->pname[p]);
@@ -941,15 +1103,32 @@ static char *drv_join_path(const char *dir, const char *name)
 static char *drv_make_temp_dir(void)
 {
     const char *base = getenv("TEMP");
+    char        cwdbuf[4096];
     char       *dir;
     int         n = 0;
     size_t      bl;
 #ifdef _WIN32
     if (!base || !*base)
         base = getenv("TMP");
-#endif
+#else
     if (!base || !*base)
-        base = ".";
+        base = getenv("TMPDIR");
+#endif
+    if (!base || !*base) {
+#ifdef _WIN32
+        base = "C:/Temp";
+#else
+        base = "/tmp";
+#endif
+    }
+    /* Base relatif -> canonicalize via getcwd agar path absolut. MYC-AUDIT-003:
+     * tanpo ini exe_path relatif ("myc_drv/...") rusak setelah child
+     * chdir(tmp_dir) -- run gate L3 jalan di POSIX, driver gagal "exec failed". */
+    if (base[0] != '/' && !(base[0] && base[1] == ':')) {
+        if (my_getcwd(cwdbuf, sizeof(cwdbuf))) {
+            base = cwdbuf;
+        }
+    }
     bl = strlen(base);
     while (n < 100) {
         char   buf[32];
@@ -1040,7 +1219,9 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
                     myc_result *res)
 {
     drv_func funcs[DRV_MAX_FUNCS];
+    drv_case_meta meta[DRV_MAX_FUNCS];
     int      nfuncs;
+    int      nmeta = 0;
     char    *clang_path = NULL;
     char    *harness = NULL;
     char    *tmp_dir = NULL;
@@ -1077,8 +1258,10 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
         return 0;
     }
 
-    /* 2. Generate harness. */
-    harness = gen_harness(source, source_len, funcs, nfuncs, &harness_len);
+    /* 2. Generate harness (roadmap 7.5: meta berisi combo + psize per
+     * fungsi untuk membangun case record; harness sha untuk replay). */
+    harness = gen_harness(source, source_len, funcs, nfuncs, &harness_len,
+                          meta, DRV_MAX_FUNCS, &nmeta);
     if (!harness) {
         add_diag_drv(res, "driver di-skip: gagal generate harness");
         myc_gate_set_status(res, MYC_GATE_DRIVER, MYC_GATE_INFRA_FAILED,
@@ -1086,6 +1269,18 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
         myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_ERROR,
                                 "driver: harness generation failed");
         return 0;
+    }
+    /* Hash source harness (9.5 replay capsule: "generated harness hash").
+     * Deterministik — mereplay berarti membangun ulang harness yang sama. */
+    {
+        char hex[65];
+        sha256_hex(harness, harness_len, hex);
+        res->driver_harness_sha256 = myc_strdup(hex);
+        if (!res->driver_harness_sha256) {
+            res->err = MYC_ERR_INTERNAL;
+            free(harness);
+            return 0;
+        }
     }
 
     /* 3. Cari clang. */
@@ -1270,9 +1465,12 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
     myc_proc_result_free(&pres);
     free(run_argv);
 
-    /* 8. Hitung jumlah fungsi yang benar-benar dipanggil & kasus. */
+    /* 8. Hitung jumlah fungsi yang benar-benar dipanggil & kasus,
+     * lalu bangun CASE RECORD per kasus (roadmap 7.5): parameter
+     * values + allocation sizes + status eksekusi. */
     res->driver_funcs = 0;
     res->driver_cases = 0;
+    res->driver_case_count = 0;
     {
         int f;
         for (f = 0; f < nfuncs; f++) {
@@ -1289,6 +1487,92 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
             sscanf(p, "DRIVER run=%d skip=%d", &run, &skip);
             res->driver_cases = run;
             res->driver_skipped = skip;
+        }
+    }
+    /* parse per-case status: "DRIVER case=ID run|skip" */
+    {
+        int exec_map[MYC_MAX_DRIVER_RECORDS];
+        const char *t = res->driver_stdout_text;
+        int  mi;
+        int  gid = 0;
+        memset(exec_map, -1, sizeof(exec_map));
+        while (t && *t) {
+            const char *m = strstr(t, "DRIVER case=");
+            int  id = 0;
+            const char *q;
+            if (!m)
+                break;
+            q = m + strlen("DRIVER case=");
+            while (*q >= '0' && *q <= '9') {
+                id = id * 10 + (*q - '0');
+                q++;
+            }
+            if (id >= 1 && id <= MYC_MAX_DRIVER_RECORDS) {
+                while (*q == ' ')
+                    q++;
+                exec_map[id - 1] = (strncmp(q, "run", 3) == 0) ? 1 : 0;
+            }
+            t = m + strlen("DRIVER case=");
+        }
+        /* Bila program abort sebelum mencetak summary "DRIVER run=N skip=M"
+         * (mis. sanitizer menghentikan proses), turunkan jumlah kasus dari
+         * marker per-case yang sudah ter-flush (setvbuf _IONBF di harness)
+         * agar record tidak berbohong '0 kasus' padahal beberapa dieksekusi. */
+        if (res->driver_cases == 0) {
+            int n_run = 0, n_skip = 0, i;
+            for (i = 0; i < MYC_MAX_DRIVER_RECORDS; i++) {
+                if (exec_map[i] == 1)
+                    n_run++;
+                else if (exec_map[i] == 0)
+                    n_skip++;
+            }
+            res->driver_cases = n_run;
+            res->driver_skipped = n_skip;
+        }
+        /* bangun record dari meta (deterministik, sama dengan harness) */
+        for (mi = 0; mi < nmeta; mi++) {
+            const drv_case_meta *m = &meta[mi];
+            int  ci;
+            if (m->product > res->driver_max_product)
+                res->driver_max_product = m->product;
+            if (m->bounded)
+                res->driver_bounded = 1;
+            for (ci = 0; ci < m->ncombos; ci++) {
+                drv_buf params;
+                long   alloc = 0;
+                int    p;
+                gid++;
+                memset(&params, 0, sizeof(params));
+                for (p = 0; p < m->nparams; p++) {
+                    if (p > 0)
+                        drv_buf_puts(&params, ", ");
+                    if (m->is_ptr[p]) {
+                        drv_buf_printf(&params, "%s=%ldB",
+                                       m->pname[p], m->psize[p]);
+                        alloc += m->psize[p];
+                    } else {
+                        long v = m->cands[p][m->combos[ci].idx[p]];
+                        drv_buf_printf(&params, "%s=%ld", m->pname[p], v);
+                    }
+                }
+                if (res->driver_case_count < MYC_MAX_DRIVER_RECORDS &&
+                    gid >= 1 && gid <= MYC_MAX_DRIVER_RECORDS) {
+                    myc_driver_case *r = &res->driver_case_records[
+                                             res->driver_case_count];
+                    r->case_id = gid;
+                    r->alloc_bytes = alloc;
+                    r->executed = (gid - 1 < MYC_MAX_DRIVER_RECORDS &&
+                                   exec_map[gid - 1] == 1) ? 1 : 0;
+                    r->func = myc_result_arena_dup(res, m->func, 0);
+                    r->params = params.data
+                                    ? myc_result_arena_dup(res, params.data,
+                                                           params.len)
+                                    : NULL;
+                    if (r->func && (params.len == 0 || r->params))
+                        res->driver_case_count++;
+                }
+                free(params.data);
+            }
         }
     }
 
