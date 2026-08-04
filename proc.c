@@ -66,6 +66,28 @@ static const char *stream_sanitizer_match(const char *buf, size_t len)
 }
 
 /* ------------------------------------------------------------------ */
+/* close_if_valid — tutup fd/handle hanya jika masih valid, lalu
+ * null-kan. Menggantikan pola if (fd >= 0) { close(fd); fd = -1; }
+ * yang tersebar di proc.c. */
+/* ------------------------------------------------------------------ */
+#ifndef _WIN32
+static void close_if_valid_fd(int *fd)
+{
+    if (fd && *fd >= 0) { close(*fd); *fd = -1; }
+}
+#endif
+
+#ifdef _WIN32
+static void close_if_valid_handle(HANDLE *h)
+{
+    if (h && *h && *h != INVALID_HANDLE_VALUE) {
+        CloseHandle(*h);
+        *h = NULL;
+    }
+}
+#endif
+
+/* ------------------------------------------------------------------ */
 /* Saluran laporan sanitizer (MYC-AUDIT-017)                            */
 /* ------------------------------------------------------------------ */
 /* ASan/UBSan dengan log_path=<base> menulis report ke "<base>.<pid>" di
@@ -870,9 +892,9 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
         AssignProcessToJobObject(job, pi.hProcess);
 
     /* Tutup sisi yang diwarisi oleh proses induk. */
-    CloseHandle(stdin_rd); stdin_rd = NULL;
-    CloseHandle(stdout_wr); stdout_wr = NULL;
-    CloseHandle(stderr_wr); stderr_wr = NULL;
+    close_if_valid_handle(&stdin_rd);
+    close_if_valid_handle(&stdout_wr);
+    close_if_valid_handle(&stderr_wr);
 
     /* Mulai thread drain. */
     if (!drain_init(&out, max_out) || !drain_init(&err, max_out)) {
@@ -912,7 +934,7 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
             total_written += wr;
         }
     }
-    CloseHandle(stdin_wr); stdin_wr = NULL;
+    close_if_valid_handle(&stdin_wr);
 
     /* Tunggu proses, dengan batas waktu. */
     while (1) {
@@ -960,11 +982,11 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
     /* Tunggu thread drain selesai (hasilnya sudah lengkap). */
     if (drain_threads[0]) {
         WaitForSingleObject(drain_threads[0], 2000);
-        CloseHandle(drain_threads[0]);
+        close_if_valid_handle(&drain_threads[0]);
     }
     if (drain_threads[1]) {
         WaitForSingleObject(drain_threads[1], 2000);
-        CloseHandle(drain_threads[1]);
+        close_if_valid_handle(&drain_threads[1]);
     }
 
     res->stdout_total = out.total;
@@ -993,17 +1015,15 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
     free(err.tail); err.tail = NULL;
 
 cleanup_pi:
-    if (stdin_rd) CloseHandle(stdin_rd);
-    if (stdout_rd) CloseHandle(stdout_rd);
-    if (stderr_rd) CloseHandle(stderr_rd);
-    if (stdin_wr) CloseHandle(stdin_wr);
-    if (stdout_wr) CloseHandle(stdout_wr);
-    if (stderr_wr) CloseHandle(stderr_wr);
-    if (job) {
-        CloseHandle(job);
-    }
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
+    close_if_valid_handle(&stdin_rd);
+    close_if_valid_handle(&stdout_rd);
+    close_if_valid_handle(&stderr_rd);
+    close_if_valid_handle(&stdin_wr);
+    close_if_valid_handle(&stdout_wr);
+    close_if_valid_handle(&stderr_wr);
+    close_if_valid_handle(&job);
+    close_if_valid_handle(&pi.hProcess);
+    close_if_valid_handle(&pi.hThread);
 
 cleanup:
     free(cmdline);
@@ -1083,10 +1103,13 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
         dup2(err_pipe[1], 2);
 
         /* Tutup semua fd pipe di child (dup2 sudah menyalin). */
-        close(in_pipe[0]); close(in_pipe[1]);
-        close(out_pipe[0]); close(out_pipe[1]);
-        close(err_pipe[0]); close(err_pipe[1]);
-        close(exec_pipe[0]); /* sisi read tidak dibutuhkan child */
+        close_if_valid_fd(&in_pipe[0]);
+        close_if_valid_fd(&in_pipe[1]);
+        close_if_valid_fd(&out_pipe[0]);
+        close_if_valid_fd(&out_pipe[1]);
+        close_if_valid_fd(&err_pipe[0]);
+        close_if_valid_fd(&err_pipe[1]);
+        close_if_valid_fd(&exec_pipe[0]); /* sisi read tidak dibutuhkan child */
         /* exec_pipe[1] tetap terbuka, FD_CLOEXEC akan menutupnya saat exec
          * berhasil. Bila exec gagal, kita write errno lalu _exit. */
 
@@ -1121,10 +1144,10 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
     (void)setpgid(pid, pid);
 
     /* Tutup sisi child dari semua pipe. */
-    close(in_pipe[0]);  in_pipe[0] = -1;
-    close(out_pipe[1]); out_pipe[1] = -1;
-    close(err_pipe[1]); err_pipe[1] = -1;
-    close(exec_pipe[1]); exec_pipe[1] = -1;
+    close_if_valid_fd(&in_pipe[0]);
+    close_if_valid_fd(&out_pipe[1]);
+    close_if_valid_fd(&err_pipe[1]);
+    close_if_valid_fd(&exec_pipe[1]);
 
     /* Inisialisasi drain buffer dan mulai thread drain SEBELUM menulis
      * stdin. MYC-AUDIT-002: memulai drain dulu mencegah deadlock bila
@@ -1169,7 +1192,7 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
         }
         sigaction(SIGPIPE, &oldsa, NULL);
     }
-    close(in_pipe[1]); in_pipe[1] = -1;
+    close_if_valid_fd(&in_pipe[1]);
 
     /* Periksa apakah execvp berhasil: baca dari exec_pipe[0].
      * Jika exec berhasil, pipe ditutup oleh FD_CLOEXEC → read() = 0.
@@ -1185,7 +1208,7 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
         }
         /* r==0: exec berhasil. r<0: error read, tetap lanjut. */
     }
-    close(exec_pipe[0]); exec_pipe[0] = -1;
+    close_if_valid_fd(&exec_pipe[0]);
 
     /* Tunggu child selesai atau timeout. */
     while (1) {
@@ -1211,8 +1234,8 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
     }
 
     /* Tutup sisi read pipe sehingga drain thread mendapat EOF. */
-    if (out_pipe[0] >= 0) { close(out_pipe[0]); out_pipe[0] = -1; }
-    if (err_pipe[0] >= 0) { close(err_pipe[0]); err_pipe[0] = -1; }
+    close_if_valid_fd(&out_pipe[0]);
+    close_if_valid_fd(&err_pipe[0]);
 
     /* MYC-AUDIT-001: join kedua thread sebelum menyentuh buffer hasil. */
     if (to_created) { pthread_join(to, NULL); to_created = 0; }
@@ -1271,17 +1294,17 @@ cleanup_kill:
     }
 cleanup_pipes:
     /* Tutup sisi read pipe agar drain thread (jika sempat dibuat) mendapat EOF. */
-    if (out_pipe[0] >= 0) { close(out_pipe[0]); out_pipe[0] = -1; }
-    if (err_pipe[0] >= 0) { close(err_pipe[0]); err_pipe[0] = -1; }
+    close_if_valid_fd(&out_pipe[0]);
+    close_if_valid_fd(&err_pipe[0]);
     if (to_created) { pthread_join(to, NULL); }
     if (te_created) { pthread_join(te, NULL); }
     /* Tutup semua fd yang tersisa. */
-    if (in_pipe[0]  >= 0) close(in_pipe[0]);
-    if (in_pipe[1]  >= 0) close(in_pipe[1]);
-    if (out_pipe[1] >= 0) close(out_pipe[1]);
-    if (err_pipe[1] >= 0) close(err_pipe[1]);
-    if (exec_pipe[0] >= 0) close(exec_pipe[0]);
-    if (exec_pipe[1] >= 0) close(exec_pipe[1]);
+    close_if_valid_fd(&in_pipe[0]);
+    close_if_valid_fd(&in_pipe[1]);
+    close_if_valid_fd(&out_pipe[1]);
+    close_if_valid_fd(&err_pipe[1]);
+    close_if_valid_fd(&exec_pipe[0]);
+    close_if_valid_fd(&exec_pipe[1]);
     free(out.hdr); free(out.tail);
     free(err.hdr); free(err.tail);
     free(child_env);
