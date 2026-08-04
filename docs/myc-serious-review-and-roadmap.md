@@ -2743,7 +2743,7 @@ Dokumentasikan untuk setiap fd/handle:
 
 - [x] initialize semua fd ke `-1`;
 - [x] setiap partial failure menutup yang sudah dibuat (cleanup_pipes label);
-- [ ] gunakan helper `close_if_valid`;
+- [x] gunakan helper `close_if_valid`. ✅ 2026-08-05 (proc.c: `close_if_valid_fd` untuk POSIX fd + `close_if_valid_handle` untuk Windows HANDLE; semua close()/CloseHandle() calls direfactor ke helper).
 - [x] set `FD_CLOEXEC` untuk fd non-child (exec-error pipe);
 - [x] tambahkan exec-error pipe.
 
