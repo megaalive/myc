@@ -2961,7 +2961,7 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 - [x] machine-readable diagnostic ✅ 2026-08-03 (MYC-AUDIT-022: gate compile/analyzer/checked memakai `-fdiagnostics-format=json`; `ingest_gcc_diagnostics` parse array JSON via json.c → `kind`/`message`/caret line+col; fallback teks untuk `gcc -E`/output terpotong).
 - [x] exact tool identity ✅ 2026-08-03 (MYC-AUDIT-022: `myc_tool_version()` di proc.c; `myc_result.gcc_version`/`clang_version` di teks+JSON; `myc version` cetak versi persis backend).
 - [x] `/dev/null` fix ✅ 2026-08-02 (MYC-AUDIT-015: `myc_null_device()` — "NUL" Windows vs "/dev/null" POSIX).
-- [ ] fingerprint incremental;
+- [x] fingerprint incremental. ✅ 2026-08-05 (compile.c: `fingerprint_cache_t` menyimpan base components (gcc_path, cwd, policy, flags, buf_rev); `fingerprint_cache_update()` hanya recompute bila komponen berubah; `fingerprint_compute_incremental()` menggabungkan cached base_sha256 + source_sha256 baru. Determinisme diverifikasi: fingerprint identik lintas-run).
 - [x] output truncation status ✅ 2026-08-02 (drain_buf bounded prefix+tail + `truncated` flag; Fase 1.5).
 
 ### 7.2. Runtime sanitizer

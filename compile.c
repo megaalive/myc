@@ -50,6 +50,80 @@
  * Naikkan saat semantic myc_buf.h berubah agar receipt berubah juga. */
 #define MYC_BUF_RUNTIME_REV 2
 
+/* ------------------------------------------------------------------ */
+/* Fingerprint incremental — cache base fingerprint (semua komponen
+ * kecuali source_sha256) agar perubahan source saja tidak perlu
+ * recompute gcc_path/cwd/policy/flags. */
+/* ------------------------------------------------------------------ */
+typedef struct {
+    char gcc_path[512];
+    char cwd[4096];
+    char policy_hex[65];
+    char flags[256];
+    int  buf_rev;
+    char base_sha256[65]; /* SHA-256 dari string base (tanpa src) */
+    int  valid;
+} fingerprint_cache_t;
+
+static fingerprint_cache_t fp_cache = {0};
+
+static void fingerprint_cache_invalidate(void)
+{
+    fp_cache.valid = 0;
+}
+
+static void fingerprint_cache_update(const char *gcc_path,
+                                     const char *cwd,
+                                     const char *policy_hex,
+                                     const char *flags_str,
+                                     int buf_rev)
+{
+    if (fp_cache.valid &&
+        strcmp(fp_cache.gcc_path, gcc_path) == 0 &&
+        strcmp(fp_cache.cwd, cwd) == 0 &&
+        strcmp(fp_cache.policy_hex, policy_hex) == 0 &&
+        strcmp(fp_cache.flags, flags_str) == 0 &&
+        fp_cache.buf_rev == buf_rev) {
+        return; /* cache masih valid */
+    }
+    {
+        char base_buf[8192];
+        int  base_len;
+        snprintf(base_buf, sizeof(base_buf),
+                 "v12|gcc:%s|cwd:%s|pol:%s|flags:%s|buf:%d|",
+                 gcc_path, cwd ? cwd : "", policy_hex,
+                 flags_str, buf_rev);
+        base_len = (int)strlen(base_buf);
+        sha256_hex(base_buf, (size_t)base_len, fp_cache.base_sha256);
+    }
+    strncpy(fp_cache.gcc_path, gcc_path, sizeof(fp_cache.gcc_path) - 1);
+    fp_cache.gcc_path[sizeof(fp_cache.gcc_path) - 1] = '\0';
+    strncpy(fp_cache.cwd, cwd ? cwd : "", sizeof(fp_cache.cwd) - 1);
+    fp_cache.cwd[sizeof(fp_cache.cwd) - 1] = '\0';
+    strncpy(fp_cache.policy_hex, policy_hex, sizeof(fp_cache.policy_hex) - 1);
+    fp_cache.policy_hex[sizeof(fp_cache.policy_hex) - 1] = '\0';
+    strncpy(fp_cache.flags, flags_str, sizeof(fp_cache.flags) - 1);
+    fp_cache.flags[sizeof(fp_cache.flags) - 1] = '\0';
+    fp_cache.buf_rev = buf_rev;
+    fp_cache.valid = 1;
+}
+
+static void fingerprint_compute_incremental(const char *source_sha256,
+                                             char *out_hex)
+{
+    char fp_buf[8192];
+    int  fp_len;
+    if (!fp_cache.valid) {
+        /* fallback: hitung full fingerprint (sebelum cache diisi) */
+        fingerprint_cache_invalidate();
+        return;
+    }
+    fp_len = snprintf(fp_buf, sizeof(fp_buf),
+                      "%s|src:%s", fp_cache.base_sha256,
+                      source_sha256 ? source_sha256 : "");
+    sha256_hex(fp_buf, (size_t)fp_len, out_hex);
+}
+
 /* Device null portabel (MYC-AUDIT-015): "NUL" hanya null device di Windows;
  * di POSIX itu file biasa (artefak literal `NUL` di repo lama). `/dev/null`
  * adalah null device yang benar di POSIX. Dipakai sebagai target `-o` pada
@@ -614,23 +688,16 @@ void myc_pipeline(const myc_request *req, myc_result *res)
      * `gcc --version` (mis. "gcc.exe (...) 15.2.0"). NULL bila gagal. */
     res->gcc_version = myc_tool_version(gcc_path);
 
-    /* fingerprint kanonik
-     * Perbaikan MYC-AUDIT-005: snprintf() mengembalikan panjang yang
-     * *seharusnya* ditulis jika terpotong, bukan panjang aktual di buffer.
-     * Dulu kode memakai nilai n yang truncated sebagai panjang ke sha256_hex
-     * sehingga bisa membaca di luar buf[512]. Sekarang kita hitung dulu
-     * dengan snprintf(NULL,0,...), lalu alokasi exact, baru hash. */
+    /* fingerprint kanonik (incremental — cache base components
+     * agar perubahan source saja tidak perlu recompute gcc_path/
+     * cwd/policy/flags). MYC-AUDIT-005: snprintf(NULL,0,...)
+     * menghitung panjang exact sebelum alokasi. */
     {
         char  policy_hex[65];
-        char *fp_buf = NULL;
-        int   fp_need;
-        size_t fp_len;
+        char  flags_str[256];
         myc_policy_hash(policy_hex);
-        fp_need = snprintf(NULL, 0,
-                     "v12|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s;%s|buf:%d|src:%s",
-                     gcc_path,
-                     req->cwd ? req->cwd : "",
-                     policy_hex,
+        snprintf(flags_str, sizeof(flags_str),
+                     "c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s;%s",
                      req->strict ? "strict" : "default",
                      req->run ? "run" : "norun",
                      req->prove ? "prove" : "noprove",
@@ -639,36 +706,10 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                      req->driver ? "driver" : "nodriver",
                      req->metamorphic ? "meta" : "nometa",
                      req->negative ? "neg" : "noneg",
-                     req->require_complete ? "reqc" : "noreqc",
-                     MYC_BUF_RUNTIME_REV,
-                     res->source_sha256 ? res->source_sha256 : "");
-        if (fp_need > 0) {
-            fp_len = (size_t)fp_need;
-            fp_buf = (char *)malloc(fp_len + 1);
-        }
-        if (fp_buf) {
-            snprintf(fp_buf, fp_len + 1,
-                     "v12|gcc:%s|cwd:%s|pol:%s|flags:c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s;%s|buf:%d|src:%s",
-                     gcc_path,
-                     req->cwd ? req->cwd : "",
-                     policy_hex,
-                     req->strict ? "strict" : "default",
-                     req->run ? "run" : "norun",
-                     req->prove ? "prove" : "noprove",
-                     req->checked ? "checked" : "nochecked",
-                     req->filc ? "filc" : "nofilc",
-                     req->driver ? "driver" : "nodriver",
-                     req->metamorphic ? "meta" : "nometa",
-                     req->negative ? "neg" : "noneg",
-                     req->require_complete ? "reqc" : "noreqc",
-                     MYC_BUF_RUNTIME_REV,
-                     res->source_sha256 ? res->source_sha256 : "");
-            sha256_hex(fp_buf, fp_len, hex);
-            free(fp_buf);
-        } else {
-            /* alokasi gagal: hash string kosong sebagai fallback */
-            sha256_hex("", 0, hex);
-        }
+                     req->require_complete ? "reqc" : "noreqc");
+        fingerprint_cache_update(gcc_path, req->cwd, policy_hex,
+                                     flags_str, MYC_BUF_RUNTIME_REV);
+        fingerprint_compute_incremental(res->source_sha256, hex);
         res->fingerprint = myc_strdup(hex);
     }
 
