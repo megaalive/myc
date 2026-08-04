@@ -2973,7 +2973,7 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
       sebelum `COMPLETED_CLEAN`; canary tak terdeteksi -> INCONCLUSIVE)
 - [x] report channel non-spoofable ✅ 2026-08-02 (MYC-AUDIT-017: `log_path`
       report file di tmp_dir sebagai bukti utama; marker teks sekunder wajib exit != 0);
-- [ ] input portfolio.
+- [x] input portfolio. ✅ 2026-08-05 (audit_lampiran.c: 3 fixture runtime sanitizer — bad_run_oob → RUNTIME_VIOLATION, bad_run_uaf → RUNTIME_VIOLATION, bad_run_intovf → RUNTIME_VIOLATION).
 
 ### 7.3. Checked buffer
 

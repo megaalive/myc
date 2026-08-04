@@ -691,23 +691,42 @@ int main(int argc, char **argv)
     }
 #endif
 
-    /* --- 32-bit build test (Fase 8) --- */
+    /* --- Input portfolio for runtime sanitizer (Fase 7.2) --- */
     {
-        FILE *f32 = fopen("test/_test32.c", "w");
-        if (f32) {
-            fprintf(f32, "int main(void) { return 0; }\n");
-            fclose(f32);
-            int rc = system("gcc -m32 -O2 -std=c11 -o test/_test32.exe test/_test32.c 2>test/_test32.err");
-            if (rc == 0) {
-                printf("[OK]   32-bit build tersedia dan kompilasi bersih\n");
-                remove("test/_test32.exe");
+        const char *portfolio[] = {
+            "tests/bad_run_oob.c",
+            "tests/bad_run_uaf.c",
+            "tests/bad_run_intovf.c",
+            NULL
+        };
+        int p;
+        for (p = 0; portfolio[p]; p++) {
+            myc_request req_p;
+            myc_result r_p;
+            memset(&req_p, 0, sizeof(req_p));
+            req_p.input.kind = MYC_SOURCE_FILE;
+            req_p.input.file_path = portfolio[p];
+            req_p.cwd = ".";
+            req_p.timeout_ms = 30000;
+            req_p.max_output_bytes = 0;
+            req_p.strict = 0;
+            req_p.run = 1;
+            req_p.prove = 0;
+            req_p.checked = 0;
+            req_p.filc = 0;
+            req_p.driver = 0;
+            req_p.metamorphic = 0;
+            req_p.negative = 0;
+            req_p.require_complete = 0;
+            myc_result_init(&r_p);
+            myc_run(&req_p, &r_p);
+            if (r_p.finding == MYC_FINDING_FINDINGS || r_p.verdict == MC_VIOLATION) {
+                printf("[OK]   input portfolio: %s -> violation terdeteksi\n", portfolio[p]);
             } else {
-                printf("[SKIP] 32-bit build tidak tersedia (toolchain -m32 tidak terpasang)\n");
+                CHECK(0, "input portfolio: %s -> harapnya violation, dapat verdict=%d",
+                      portfolio[p], r_p.verdict);
             }
-            remove("test/_test32.c");
-            remove("test/_test32.err");
-        } else {
-            printf("[SKIP] tidak dapat membuat file uji 32-bit\n");
+            myc_result_free(&r_p);
         }
     }
 
