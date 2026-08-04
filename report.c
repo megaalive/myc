@@ -248,6 +248,20 @@ void myc_report_text(const myc_result *res)
     if (res->contract_requires > 0 || res->contract_ensures > 0)
         printf("contracts: requires=%d ensures=%d\n",
                res->contract_requires, res->contract_ensures);
+    /* MYC-AUDIT-025 (roadmap 7.4): explicit clause status + stable
+     * function binding + purity per klausa. */
+    if (res->contract_clause_count > 0) {
+        printf("contract clauses:\n");
+        for (i = 0; i < res->contract_clause_count; i++) {
+            const myc_contract_clause *cl = &res->contract_clauses[i];
+            printf("  [%d] %-8s (%-8s) %s [%s]\n",
+                   i + 1,
+                   cl->kind == 0 ? "requires" : "ensures",
+                   cl->func && cl->func[0] ? cl->func : "unbound",
+                   cl->expr ? cl->expr : "(tak terbaca)",
+                   myc_clause_status_name(cl->status));
+        }
+    }
     if (res->ran_negative)
         printf("negative (9.8): callsites=%d deviations=%d\n",
                res->negative_callsites, res->negative_deviations);
@@ -529,6 +543,21 @@ char *myc_result_to_json(const myc_result *res)
     json_sb_puts(&b, ",");
     json_sb_printf(&b, "\"contract_requires\":%d,", res->contract_requires);
     json_sb_printf(&b, "\"contract_ensures\":%d,", res->contract_ensures);
+    /* MYC-AUDIT-025 (roadmap 7.4): per-klausa (status + binding + purity). */
+    json_sb_printf(&b, "\"contract_clauses\":[");
+    for (i = 0; i < res->contract_clause_count; i++) {
+        const myc_contract_clause *cl = &res->contract_clauses[i];
+        if (i)
+            json_sb_puts(&b, ",");
+        json_sb_printf(&b, "{\"kind\":\"%s\",\"function\":",
+                       cl->kind == 0 ? "requires" : "ensures");
+        json_sb_escape(&b, cl->func);
+        json_sb_printf(&b, ",\"expr\":");
+        json_sb_escape(&b, cl->expr);
+        json_sb_printf(&b, ",\"status\":\"%s\",\"line\":%d,\"col\":%d}",
+                       myc_clause_status_name(cl->status), cl->line, cl->col);
+    }
+    json_sb_puts(&b, "],");
     json_sb_printf(&b, "\"ran_negative\":%s,", res->ran_negative ? "true" : "false");
     if (res->ran_negative) {
         json_sb_printf(&b, "\"negative_callsites\":%d,", res->negative_callsites);

@@ -208,6 +208,7 @@ typedef struct {
 #define MYC_MAX_EVIDENCE   256
 #define MYC_MAX_DEBT       32
 #define MYC_MAX_FILC_CASES 8        /* rincian per-panic Fil-C (7.7) */
+#define MYC_MAX_CONTRACT_CLAUSES 64 /* rincian per-klausa kontrak (7.4) */
 
 #define MYC_ARENA_BLOCK    65536        /* ukuran blok arena per request */
 
@@ -264,6 +265,28 @@ typedef enum {
     MYC_CONF_LIKELY,          /* hampir pasti, belum bukti */
     MYC_CONF_CONFIRMED        /* bukti semantik / syntactic pasti */
 } myc_confidence;
+
+/* Status klausa kontrak (MYC-AUDIT-025, roadmap 7.4): hasil validasi
+ * ekspresi kontrak-lite. Purity adalah SYARAT inject: klausa ber-efek
+ * samping TIDAK pernah di-inject sebagai assert (safety). */
+typedef enum {
+    MYC_CLAUSE_OK = 0,      /* ekspresi valid + pure (layak inject) */
+    MYC_CLAUSE_EMPTY,       /* ekspresi kosong (ditolak) */
+    MYC_CLAUSE_TOO_LONG,    /* melebihi buffer (ditolak, no silent truncate) */
+    MYC_CLAUSE_IMPURE,      /* efek samping: assignment / ++ / -- / comma */
+    MYC_CLAUSE_CALL         /* pemanggilan fungsi: purity tak terbukti */
+} myc_clause_status;
+
+/* Satu klausa kontrak //@ requires/ensures ter-parse (MYC-AUDIT-025).
+ * String (expr/func) disimpan di arena milik hasil. */
+typedef struct {
+    char *expr;             /* ekspresi kontrak */
+    char *func;             /* nama fungsi terikat (stable binding);
+                               "" bila tidak terikat ke fungsi */
+    myc_clause_status status;
+    int   line, col;        /* lokasi klausa di source */
+    int   kind;             /* 0 = requires, 1 = ensures */
+} myc_contract_clause;
 
 /* Satu pelanggaran / diagnostic yang ditemukan scanner atau gcc. */
 typedef struct {
@@ -431,6 +454,12 @@ typedef struct {
     /* --- hasil contract-lite (D1.5, P7) --- */
     int         contract_requires;      /* jumlah //@ requires terbaca */
     int         contract_ensures;       /* jumlah //@ ensures terbaca */
+    /* MYC-AUDIT-025 (roadmap 7.4): explicit clause status + stable
+     * function binding + purity per klausa. String di arena milik hasil;
+     * clause_count dibatasi MYC_MAX_CONTRACT_CLAUSES (hitungan total
+     * tetap di contract_requires/ensures). */
+    myc_contract_clause contract_clauses[MYC_MAX_CONTRACT_CLAUSES];
+    int         contract_clause_count;
 
     /* --- hasil checked build (D1.2, P8, --checked) --- */
     int         ran_checked;            /* 1 bila gate checked-build dijalankan */
@@ -617,6 +646,9 @@ const char *myc_assurance_name(myc_assurance a);
 const char *myc_finding_name(myc_finding f);
 const char *myc_claim_status_name(myc_claim_status c);
 const char *myc_dim_status_name(myc_dim_status s);
+/* Status klausa kontrak (MYC-AUDIT-025): "ok"/"empty"/"too_long"
+ * /"impure"/"call" (statis). */
+const char *myc_clause_status_name(myc_clause_status s);
 
 /* Nama confidence diagnostic (MYC-AUDIT-014): "observation"/"suspicious"
  * /"likely"/"confirmed" (statis). */

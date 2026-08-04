@@ -154,6 +154,26 @@ findstr /C:"  version: clang version" %OUT% >nul && echo [OK] filc version ident
 myc.exe check test\fixtures\ok_filc.c --filc > %OUT% 2>&1
 findstr /C:"verdict:   OK" %OUT% >nul && findstr /C:"  panics: 0" %OUT% >nul && echo [OK] ok_filc bersih panics=0 || echo [INFO] ok_filc --filc bukan clean - Fil-C tak tersedia
 del %OUT%
+echo --- MYC-AUDIT-025: contract pure validation + explicit clause status + stable binding (roadmap 7.4)
+myc.exe check test\fixtures\contract_clauses.c > %OUT% 2>&1
+findstr /C:"contract clauses:" %OUT% >nul && echo [OK] report memuat daftar klausa eksplisit || echo [FAIL] daftar klausa kontrak hilang
+findstr /C:"(x = 0) != 0 [impure]" %OUT% >nul && echo [OK] ekspresi impure terdeteksi || echo [FAIL] purity gate gagal mendeteksi impure
+findstr /C:"helper(-5) > 0 [call]" %OUT% >nul && echo [OK] pemanggilan fungsi terdeteksi - status call || echo [FAIL] purity gate gagal mendeteksi call
+findstr /C:"n > 0 [ok]" %OUT% >nul && echo [OK] klausa pure berstatus ok || echo [FAIL] klausa pure tidak berstatus ok
+findstr /C:"(unbound" %OUT% >nul && echo [OK] klausa tak terikat ditandai unbound || echo [FAIL] stable binding tidak bekerja
+myc.exe check test\fixtures\contract_clauses.c --run > %OUT% 2>&1
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] run bersih: impure/call TIDAK di-inject || echo [FAIL] impure/call ikut di-inject - run harus bersih
+myc.exe check test\fixtures\bad_contract_pre.c --run > %OUT% 2>&1
+findstr /C:"verdict:   RUNTIME_VIOLATION" %OUT% >nul && echo [OK] requires pure tetap di-inject - bad_contract_pre || echo [FAIL] inject requires pure rusak
+myc.exe check test\fixtures\contract_clauses.c --json > %OUT% 2>&1
+findstr /C:"contract_clauses" %OUT% >nul && echo [OK] JSON memuat contract_clauses || echo [FAIL] JSON contract_clauses hilang
+rem --- fix review: ; membuang pending basi + komentar blok bukan klausa
+myc.exe check test\fixtures\contract_stale_pending.c > %OUT% 2>&1
+findstr /C:"requires=1" %OUT% >nul && echo [OK] klausa hantu dalam komentar blok tidak dihitung || echo [FAIL] klausa hantu komentar ikut dihitung
+findstr /C:"ghost" %OUT% >nul && echo [FAIL] teks ghost bocor ke laporan || echo [OK] teks ghost tidak muncul
+myc.exe check test\fixtures\contract_stale_pending.c --run > %OUT% 2>&1
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] pending basi tidak ter-inject ke fungsi salah (fix ;) || echo [FAIL] false inject pending basi ke dummy
+del %OUT%
 echo --- MYC-AUDIT-022: machine-readable diagnostic + exact tool identity (roadmap 7.1)
 myc.exe version > %OUT% 2>&1
 findstr /C:"gcc version:" %OUT% >nul && echo [OK] myc version cetak gcc version || echo [FAIL] gcc version hilang di myc version

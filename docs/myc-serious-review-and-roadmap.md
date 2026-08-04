@@ -319,6 +319,7 @@ Setelah reentrancy dan schema hasil diperbaiki, ini dapat menjadi salah satu keu
 | MYC-AUDIT-017 | Medium | output parsing | Marker human-readable mudah spoof dan rapuh terhadap versi/localization | ✅ SELESAI 2026-08-02 (saluran bukti NON-SPOOFABLE: ASan/UBSan `log_path` → report FILE di tmp_dir, dibaca `myc_read_sanitizer_report`; marker teks stdout/stderr hanya bukti sekunder & WAJIB exit != 0; env deterministik `ASAN_OPTIONS`/`UBSAN_OPTIONS`/`LC_ALL=C` via `preq.env`; finding = report || (marker && exit!=0); teks mirip marker dgn exit 0 diabaikan + diagnostic) |
 | MYC-AUDIT-018 | Medium | test | Test dominan Windows dan tidak menguji concurrency/deadlock/OOM | ✅ SELESAI 2026-08-02 (runner portabel `test/_audit018.sh` — bash di Windows git-bash DAN POSIX; unit test C: `proc_flood` deadlock 1MiB + flood 100MiB prefix+tail + env override, `oom_guards` arena overflow guard + input ekstrem, `oom_alloc` injeksi `--wrap` malloc/calloc/realloc 49 titik OOM, `stress_threads` concurrency; bug ditemukan test: `myc_result_arena_dup` string_len raksasa → memcpy OOB (n+1 wrap) → diperbaiki guard ganda) |
 | MYC-AUDIT-024 | Medium | `filc.c` | Hitungan marker strstr rapuh/spoofable + tanpa identitas versi + tanpa rincian per-panic | ✅ SELESAI 2026-08-03 (parser struktural baris kanonik `[pid] filc panic:` + fallback blok `filc safety error:`; `filc_version` native+WSL; `myc_filc_case[]` per-case message+lokasi origin `file:line:col: func`; teks `case #N:` + JSON `filc_cases[]`; `myc version` cetak status filc) |
+| MYC-AUDIT-025 | Medium | `contract.c` | Kontrak tanpa validasi purity (ekspresi ber-efek samping bisa di-inject), tanpa status per klausa, binding heuristik rapuh | ✅ SELESAI 2026-08-03 (purity checker: assignment/++/--/comma = impure, pemanggilan fungsi = call — TIDAK di-inject; `myc_contract_clause[]` status eksplisit per klausa teks+JSON; `find_func_binding` ikat ke nama fungsi, keyword kontrol ditolak, inject multi-requires; fixture `contract_clauses.c`) |
 
 ---
 
@@ -2987,9 +2988,9 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 
 - [x] no silent truncate ✅ 2026-08-03 (MYC-AUDIT-019: `read_contract_expr` return 2 + diagnostic "terlalu panjang" — reject, bukan truncate; test `audit_lampiran.c`).
 - [x] multiple requires ✅ 2026-08-03 (MYC-AUDIT-019: multiple consecutive requires di-ikat; test `audit_lampiran.c`).
-- [ ] pure expression validation;
-- [ ] explicit clause status;
-- [ ] stable function binding.
+- [x] pure expression validation ✅ 2026-08-03 (MYC-AUDIT-025: `contract_expr_purity` — assignment/++/--/comma = impure, pemanggilan fungsi = call (purity tak terbukti), `sizeof` pure; klausa impure/call TIDAK di-inject sebagai assert; bug `==` diperbaiki).
+- [x] explicit clause status ✅ 2026-08-03 (MYC-AUDIT-025: `myc_contract_clause[]` per klausa — expr, status ok/empty/too_long/impure/call, kind, line/col; teks `contract clauses:` + JSON `contract_clauses[]`).
+- [x] stable function binding ✅ 2026-08-03 (MYC-AUDIT-025: `find_func_binding` ikat klausa ke nama fungsi `<ident>(...){`, keyword kontrol ditolak, prototype `;` = tak terikat; inject multi-requires + purity gate; spasi antar token tidak memutus ikatan).
 
 ### 7.5. Driver
 

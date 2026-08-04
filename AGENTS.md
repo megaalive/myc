@@ -279,6 +279,35 @@ Poin penting:
   Verifikasi: Windows regress 153 [OK] 0 [FAIL] (section AUDIT-024 +6 cek),
   WSL `_ci_linux.sh` PASS=18 FAIL=0 (audit018 6c + version identity +
   per-case scope), `myc version` cetak filc.
+- **MYC-AUDIT-025 selesai 2026-08-03** (roadmap 7.4: Contract — pure
+  expression validation + explicit clause status + stable function binding):
+  (1) **pure expression validation** — `contract_expr_purity()` (lexical,
+  skipping string/char literal): assignment (`=`, `+=`, `-=`, `*=`, `/=`,
+  `%=`, `<<=`, `>>=`, `&=`, `|=`, `^=` — `==`/`!=`/`<=`/`>=` pure), `++`/`--`,
+  operator comma level atas → **IMPURE**; pemanggilan fungsi (identifier
+  selain `sizeof` diikuti `(`) → **CALL** (purity tak terbukti). Klausa
+  impure/call **TIDAK pernah di-inject** sebagai assert (safety: ekspresi
+  ber-efek samping tidak boleh berjalan di verification build). (2)
+  **explicit clause status** — `myc_contract_clause[]` (maks 64, arena) per
+  klausa: expr, status (`ok`/`empty`/`too_long`/`impure`/`call`), kind,
+  line/col; tampil di teks (`contract clauses:` baris `[N] requires (func)
+  expr [status]`) + JSON (`contract_clauses[]` dengan function/expr/status/
+  line/col). (3) **stable function binding** — `find_func_binding()`: ikat
+  klausa ke NAMA fungsi dari pola `<ident>(...){` (keyword kontrol
+  if/for/while/switch/return/sizeof/case/do/else/goto ditolak; `;` sebelum
+  `{` = prototype/pernyataan → tak terikat); grup klausa berturut berbagi
+  satu binding; `myc_contract_inject` ditulis ulang: pending MULTIPLE
+  requires per fungsi + purity gate + whitespace antar token tidak memutus
+  ikatan (bug: spasi antara `)` dan `{` membuang pending). Bug purity
+  ditemukan saat uji: `a == b` salah ter-flag impure karena '=' pertama
+  hanya memeriksa karakter sebelumnya → kini cek depan+belakang. Fixture
+  `test/fixtures/contract_clauses.c`: pure (di-inject, run bersih),
+  impure `(x = 0) != 0` (TIDAK di-inject — bila di-inject pasti
+  RUNTIME_VIOLATION), call `helper(-5) > 0` (TIDAK di-inject), unbound
+  sebelum deklarasi global. Verifikasi: contract_clauses --run OK (bukti
+  purity gate), bad_contract_pre --run tetap RUNTIME_VIOLATION (requires
+  pure di-inject), ok_contract --run OK; regresi +8 cek AUDIT-025; receipt
+  deterministik tetap `8224c23a...` (field klausa tidak masuk hash).
 - **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
   seluruh rule lint.c (intptr_t/uintptr_t cast, realloc ke variabel lain,
   memcpy/memset tanpa sizeof, ukuran alokasi perkalian tanpa sizeof, akses
