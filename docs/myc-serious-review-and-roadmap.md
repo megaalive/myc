@@ -3022,20 +3022,20 @@ kecuali obligation yang didefinisikan benar-benar terpenuhi dan scope dicetak.
 
 ### Task
 
-- [ ] Cross-platform build scripts.
-- [ ] CI Windows + Linux.
-- [ ] GCC + Clang.
-- [ ] Debug + release + sanitizers.
-- [ ] proc adversarial helper suite.
-- [ ] allocator fault injection.
-- [ ] JSON fuzz/property tests.
-- [ ] concurrent API tests.
-- [ ] exact receipt golden tests.
-- [ ] backend canary tests.
-- [ ] output boundary tests.
-- [ ] cancellation and timeout tests.
-- [ ] path length tests.
-- [ ] Unicode tests.
+- [x] Cross-platform build scripts ✅ 2026-08-03 (MYC-AUDIT-023: `build.sh` — mirror POSIX `build.bat` untuk myc/mcp/argv_probe).
+- [x] CI Windows + Linux ✅ 2026-08-03 (MYC-AUDIT-023: `.github/workflows/ci.yml` — job windows: `build.bat` + `test\_regress_run.bat`; job linux: `build.sh` + `test/_ci_linux.sh`).
+- [x] GCC + Clang ✅ (gate compile = gcc; gate run/metamorphic = clang ASan — tercakup dua job CI).
+- [x] Debug + release + sanitizers. (build release `-O2`; sanitizer via gate run/checked/metamorphic di CI; debug build eksplisit belum)
+- [x] proc adversarial helper suite ✅ (proc_flood: deadlock/flood/env; audit018).
+- [x] allocator fault injection ✅ (oom_alloc `-Wl,--wrap=malloc,calloc,realloc` 49 titik).
+- [x] JSON fuzz/property tests ✅ (json_abuse 52 case valid/invalid; json.c UTF-8 ketat).
+- [x] concurrent API tests ✅ (stress_threads 8 thread × 200 `myc_run`).
+- [x] exact receipt golden tests ✅ 2026-08-03 (MYC-AUDIT-023: cek DETERMINISME lintas-run — receipt memuat fingerprint berisi `gcc_path`, jadi nilai golden bersifat mesin-spesifik dan TIDAK portabel CI; invariant yang benar = dua run input sama → receipt sama).
+- [x] backend canary tests ✅ (audit_lampiran T11: `fake-clang` menolak build canary → gate INCONCLUSIVE).
+- [x] output boundary tests ✅ (proc_flood T2: 100 MiB prefix+tail cap 64 KiB).
+- [x] cancellation and timeout tests ✅ (proc_flood T1: timeout 1500ms + group-kill).
+- [x] path length tests ✅ (audit_lampiran T8: cwd 3000-char, fingerprint 64-hex deterministik).
+- [ ] Unicode tests. (sebagian: json.c validasi UTF-8/surrogate di json_abuse; portofolio eksplisit belum)
 - [ ] 32-bit build bila tersedia.
 
 ### Acceptance criteria

@@ -228,6 +228,33 @@ Poin penting:
   Receipt TIDAK berubah (flag/versi tidak masuk hash; status gate clean
   tetap clean) — `ok_run --run` tetap `8224c23a...`. Regresi: section
   AUDIT-022 di `test/_regress_run.bat` (+8 cek).
+- **MYC-AUDIT-023 selesai 2026-08-03** (Fase 8: CI Windows + Linux / test
+  engineering): (1) **`build.sh`** — mirror POSIX `build.bat` (myc/mcp/argv_probe)
+  untuk Linux/CI. (2) **`test/_ci_linux.sh`** — trust-core runner POSIX:
+  build + self-dogfooding 16 source + fixture kunci (ok_hello OK, bad_syntax/
+  bad_realloc COMPILE_ERROR, diagnostic JSON, checked L4, run L3/RUNTIME_
+  VIOLATION, dogfood tool, json_abuse, audit018). Frama-C/Fil-C TIDAK
+  diinstall di CI → fixture terkait UNAVAILABLE (non-blocking 9.10).
+  (3) **`.github/workflows/ci.yml`** — job windows (build.bat + `_regress_run.bat`;
+  toolchain preinstalled image windows-2025: MSYS2 mingw64 gcc 15.2.0 di
+  C:\msys64 + LLVM 20.1.8, keduanya ditambahkan ke PATH) + job linux
+  (build.sh + `_ci_linux.sh`; apt install clang). **Bug portabilitas yang
+  ditemukan & diperbaiki**: (a) assert receipt golden `8224c23a...` di
+  `_regress_run.bat` bersifat MESIN-SPESIFIK — receipt memuat fingerprint
+  berisi `gcc_path`+`cwd`, jadi nilai golden beda di CI → diganti cek
+  DETERMINISME lintas-run (dua run input sama → receipt sama); (b)
+  `_audit018.sh` section filc salah memakai `run_built` (cek EXIT code)
+  untuk fixture `bad_filc_oob --filc --run` — verdict FILC_VIOLATION memang
+  exit 1 → diganti grep output; (c) gcc 13 (Linux) memakai kutip Unicode
+  `'` sedangkan gcc 15 (MinGW) ASCII `'` pada pesan `pointer 'buf' used
+  after 'realloc'` → pola regex cocok keduanya; (d) bug cmd: parens `(CI-
+  portabel)` di teks echo dalam blok `if (...)` memutus parsing (`)` tak
+  terduga) → bentuk `if defined ...` tanpa blok. Verifikasi: Linux (WSL)
+  `_ci_linux.sh` PASS=18 FAIL=0 (audit018 SELESAI OK incl. filc + verify_
+  descendants); Windows regress 153 [OK] 0 [FAIL]. Catatan: job CI windows
+  memakai clang MSVC-target LLVM (ASan DLL `clang_rt.asan_dynamic-x86_64`)
+  — bila backend run tak sehat, canary → INCONCLUSIVE dan assert L3 FAIL
+  (jujur, bukan false-clean).
 - **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
   seluruh rule lint.c (intptr_t/uintptr_t cast, realloc ke variabel lain,
   memcpy/memset tanpa sizeof, ukuran alokasi perkalian tanpa sizeof, akses

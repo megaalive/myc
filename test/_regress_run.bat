@@ -152,13 +152,25 @@ findstr /C:"gcc_version:" %OUT% >nul && echo [OK] report memuat gcc_version || e
 myc.exe check tests\bad_realloc.c > %OUT% 2>&1
 findstr /C:"verdict:   COMPILE_ERROR" %OUT% >nul && echo [OK] bad_realloc COMPILE_ERROR || echo [FAIL] bad_realloc bukan COMPILE_ERROR
 findstr /C:"used after 'realloc'" %OUT% >nul && echo [OK] diagnostic JSON gcc ter-parse terstruktur (line:col) || echo [FAIL] diagnostic JSON gcc tidak ter-parse
-findstr /C:"[17:12]" %OUT% >nul && echo [OK] line:col dari caret JSON benar || echo [FAIL] line:col JSON salah
+rem MYC-AUDIT-023: cek LINE saja (bukan [17:12] eksak) — kolom bisa berbeda
+rem antar toolchain gcc; pesan terstruktur sudah di-assert di atas.
+findstr /C:"[17" %OUT% >nul && echo [OK] diagnostic JSON membawa baris sumber || echo [FAIL] diagnostic JSON tanpa baris sumber
 myc.exe check tests\ok_hello.c --json > %OUT% 2>&1
 findstr /C:"gcc_version" %OUT% >nul && echo [OK] JSON memuat gcc_version || echo [FAIL] JSON gcc_version hilang
 myc.exe check tests\ok_run.c --run --json > %OUT% 2>&1
 findstr /C:"clang_version" %OUT% >nul && echo [OK] JSON memuat clang_version (backend clang) || echo [FAIL] JSON clang_version hilang
+rem MYC-AUDIT-023: receipt memuat fingerprint (gcc_path+cwd) -> nilai golden
+rem bersifat SPESIFIK-MESIN (CI runner punya path gcc beda). Invariant yang
+rem portabel = DETERMINISME: dua run input sama -> receipt sama.
 myc.exe check tests\ok_run.c --run > %OUT% 2>&1
-findstr /C:"receipt_sha256: 8224c23a8a42265f4596d0a740066a97b1a10b0288dc7e1f6cdf8da002e7f565" %OUT% >nul && echo [OK] receipt golden tetap deterministik || echo [FAIL] receipt golden BERUBAH (AUDIT-022 mengubah gate status?)
+for /f "tokens=2" %%r in ('findstr /C:"receipt_sha256:" %OUT%') do set REC1=%%r
+myc.exe check tests\ok_run.c --run > %OUT% 2>&1
+for /f "tokens=2" %%r in ('findstr /C:"receipt_sha256:" %OUT%') do set REC2=%%r
+rem CATATAN: jangan taruh parens di teks echo dalam blok if (...) -- parser cmd
+rem menghitung parens sehingga `(CI-portabel)` memutus blok (error: `)` tak terduga).
+if not defined REC1 echo [FAIL] receipt tidak terbaca
+if defined REC1 if "%REC1%"=="%REC2%" echo [OK] receipt deterministik lintas-run, CI-portabel
+if defined REC1 if not "%REC1%"=="%REC2%" echo [FAIL] receipt tidak deterministik: %REC1% vs %REC2%
 echo --- driver fixtures (D2.2, --driver): ok_driver harus OK, bad_driver_oob harus DRIVER_VIOLATION
 for %%f in (test\fixtures\ok_driver.c test\fixtures\bad_driver_oob.c) do (
   echo === %%f

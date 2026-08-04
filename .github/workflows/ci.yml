@@ -1,0 +1,73 @@
+# ci.yml -- Trust-core CI untuk myc (MYC-AUDIT-023, roadmap Fase 8).
+#
+# Dua job paralel:
+#   - windows: build.bat (MSYS2 gcc) + test\_regress_run.bat (cmd, trust-core
+#     penuh: fixtures, self-dogfooding, audit018, MCP smoke, dogfood).
+#   - linux:   build.sh (gcc) + test/_ci_linux.sh (trust-core POSIX: fixtures,
+#     self-dogfooding, audit018 dengan verify_descendants fork-test).
+#
+# Backend opsional (Frama-C --prove, Fil-C --filc) TIDAK diinstall di CI —
+# fixture terkait menampilkan UNAVAILABLE/INCONCLUSIVE (non-blocking sesuai
+# MYC-AUDIT-004/9.10), bukan FAIL. Backend WAJIB: gcc + clang (gate run).
+#
+# Catatan image windows-latest (per runner-images README): MSYS2 (mingw64
+# gcc 15.2.0) di C:\msys64 TAPI tidak di-PATH; LLVM 20.1.8 di
+# C:\Program Files\LLVM; Git for Windows bash preinstalled.
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  windows:
+    name: Windows (build.bat + _regress_run.bat)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup toolchain PATH (MSYS2 gcc + LLVM clang + git bash)
+        shell: bash
+        run: |
+          for d in "/c/msys64/mingw64/bin" "/c/ProgramData/mingw64/mingw64/bin" "/c/mingw64/bin"; do
+            if [ -x "$d/gcc.exe" ]; then
+              cygpath -w "$d" >> "$GITHUB_PATH"
+              echo "gcc dir: $d"
+              break
+            fi
+          done
+          if [ -x "/c/Program Files/LLVM/bin/clang.exe" ]; then
+            cygpath -w "/c/Program Files/LLVM/bin" >> "$GITHUB_PATH"
+          else
+            echo "::warning::LLVM clang tidak ditemukan; gate --run akan jadi UNAVAILABLE"
+          fi
+          cygpath -w "/c/Program Files/Git/bin" >> "$GITHUB_PATH"
+
+      - name: Verify toolchain
+        shell: bash
+        run: |
+          gcc --version | head -1 || { echo "::error::gcc tidak ditemukan di PATH"; exit 1; }
+          clang --version | head -1 || { echo "::error::clang tidak ditemukan di PATH"; exit 1; }
+
+      - name: Build (build.bat)
+        shell: cmd
+        run: build.bat
+
+      - name: Trust-core regression (_regress_run.bat)
+        shell: cmd
+        run: test\_regress_run.bat
+
+  linux:
+    name: Linux (build.sh + _ci_linux.sh)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang (gcc sudah preinstalled di ubuntu-latest)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+
+      - name: Build + trust-core POSIX
+        run: bash test/_ci_linux.sh

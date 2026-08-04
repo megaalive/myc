@@ -5,3 +5,8 @@
 *.pdb
 *.dll
 
+
+# binary Linux (build.sh / CI)
+/myc
+/mcp
+/argv_probe

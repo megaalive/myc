@@ -145,10 +145,21 @@ rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \
 
 # --- 6c. Fil-C gate (jika filc-clang tersedia di PATH) ---
 if command -v filc-clang >/dev/null 2>&1 && [ -x ./myc ]; then
-    run_built "filc ok_filc --filc (L5 FILC)" \
-              ./myc check test/fixtures/ok_filc.c --filc
-    run_built "filc bad_filc_oob --filc --run (FILC_VIOLATION)" \
-              ./myc check test/fixtures/bad_filc_oob.c --filc --run
+    # MYC-AUDIT-023: jangan pakai run_built (cek EXIT code) untuk fixture
+    # bad_filc_oob — verdict FILC_VIOLATION memang keluar exit 1 (benar).
+    # Assert via output, bukan exit code.
+    if ./myc check test/fixtures/ok_filc.c --filc 2>&1 | grep -q "verdict:   OK"; then
+        echo "[OK] filc ok_filc --filc (L5 FILC)"
+    else
+        echo "[FAIL] filc ok_filc --filc (L5 FILC)"
+        FAIL=1
+    fi
+    if ./myc check test/fixtures/bad_filc_oob.c --filc --run 2>&1 | grep -q "FILC_VIOLATION"; then
+        echo "[OK] filc bad_filc_oob --filc --run (FILC_VIOLATION)"
+    else
+        echo "[FAIL] filc bad_filc_oob --filc --run (FILC_VIOLATION)"
+        FAIL=1
+    fi
 else
     echo "[SKIP] filc-clang tidak tersedia di PATH atau myc binary tidak ditemukan"
 fi
