@@ -105,8 +105,9 @@ int main(void)
     /* kontrol: tanpa OOM, fixture valid harus MC_OK. */
     g_fail_after = -1;
     myc_request_init(&req);
-    req.source = SMALL_SRC;
-    req.source_len = strlen(SMALL_SRC);
+    req.input.kind = MYC_SOURCE_MEMORY;
+    req.input.data = SMALL_SRC;
+    req.input.len = strlen(SMALL_SRC);
     req.run_lint = 1;
     myc_result_init(&res);
     myc_run(&req, &res);
@@ -117,8 +118,9 @@ int main(void)
     for (i = 0; i <= npoints; i++) {
         g_fail_after = i;
         myc_request_init(&req);
-        req.source = SMALL_SRC;
-        req.source_len = strlen(SMALL_SRC);
+        req.input.kind = MYC_SOURCE_MEMORY;
+        req.input.data = SMALL_SRC;
+        req.input.len = strlen(SMALL_SRC);
         req.run_lint = 1;
         myc_result_init(&res);
         myc_run(&req, &res);

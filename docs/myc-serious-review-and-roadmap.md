@@ -2797,11 +2797,11 @@ Lihat test matrix di Fase 8.
 
 ---
 
-## Fase 2 — Canonical Ingress dan API Contract ⚠️ PARTIAL SELESAI 2026-08-02 (ingress flag fail-fast ✅ 2026-08-03)
+## Fase 2 — Canonical Ingress dan API Contract ⚠️ PARTIAL SELESAI 2026-08-02 (ingress flag fail-fast ✅ 2026-08-03; size cap + myc_source_input ✅ 2026-08-04)
 
 ### Task
 
-- [ ] Implement `myc_source_input` formal struct.
+- [x] Implement `myc_source_input` formal struct. ✅ 2026-08-04 (MYC-AUDIT-029: enum `myc_source_kind` MEMORY/FILE/STDIN + struct di `myc_request` menggantikan `source`/`source_len`/`file_path`; loader terpusat `myc_source_load()` dengan cap + NUL policy + error typed; pipeline HANYA menerima in-memory — jalur file_path yang baca penuh tanpa cap dihapus; CLI dan MCP memakai loader yang sama dengan API).
 - [x] Terapkan size cap saat membaca, bukan setelah membaca penuh. ✅ 2026-08-04 (MYC-AUDIT-028: `read_file_capped`/`read_stdin_capped` baca bertahap & tolak segera saat cap terlampaui — file raksasa tidak pernah dialokasikan penuh; source 1 MiB, `--run-stdin` baru `MYC_MAX_STDIN_BYTES` 8 MiB; CLI fail-fast exit 2 + pesan cap; `myc_request_validate` cap `run_stdin_len` → `MYC_ERR_STDIN_TOO_LARGE` untuk API/MCP).
 - [ ] File path canonicalization.
 - [x] Embedded NUL policy length-aware. ✅ 2026-08-03 (commit `feat(myc): Embedded NUL policy length-aware` + posisi/total di diagnostic; NUL → `MYC_ERR_NUL_IN_INPUT`).

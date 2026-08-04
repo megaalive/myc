@@ -123,8 +123,9 @@ static void test_zero_driver_cases(void)
     const char *src = "int main(void){return 0;}\n";
 
     myc_request_init(&req);
-    req.source = src;
-    req.source_len = strlen(src);
+    req.input.kind = MYC_SOURCE_MEMORY;
+    req.input.data = src;
+    req.input.len = strlen(src);
     req.run_lint = 1;
     req.driver = 1;
     myc_result_init(&res);
@@ -163,8 +164,9 @@ static void run_fp_long_test(void)
     cwd[3000] = '\0';
 
     myc_request_init(&req);
-    req.source = src;
-    req.source_len = strlen(src);
+    req.input.kind = MYC_SOURCE_MEMORY;
+    req.input.data = src;
+    req.input.len = strlen(src);
     req.run_lint = 1;
     req.cwd = cwd;
 
@@ -299,8 +301,9 @@ static void test_canary_failure(const char *self)
         return;
     }
     myc_request_init(&req);
-    req.source = src;
-    req.source_len = strlen(src);
+    req.input.kind = MYC_SOURCE_MEMORY;
+    req.input.data = src;
+    req.input.len = strlen(src);
     req.run_lint = 1;
     req.run = 1;
     req.clang_program = fake;
@@ -366,8 +369,9 @@ int main(int argc, char **argv)
 
             free(clang);
             myc_request_init(&req);
-            req.source = src;
-            req.source_len = strlen(src);
+            req.input.kind = MYC_SOURCE_MEMORY;
+            req.input.data = src;
+            req.input.len = strlen(src);
             req.run_lint = 1;
             req.run = 1;
             myc_result_init(&res);
@@ -459,8 +463,9 @@ int main(int argc, char **argv)
         int diag1;
 
         myc_request_init(&req);
-        req.source = src1;
-        req.source_len = strlen(src1);
+        req.input.kind = MYC_SOURCE_MEMORY;
+        req.input.data = src1;
+        req.input.len = strlen(src1);
         req.run_lint = 1;
         myc_result_init(&r1);
         myc_run(&req, &r1);
@@ -469,8 +474,8 @@ int main(int argc, char **argv)
 
         /* Jalankan myc_run kedua dengan source berbeda; hasil pertama harus
          * tetap utuh (result immutable, tidak tertimpa static ring). */
-        req.source = src2;
-        req.source_len = strlen(src2);
+        req.input.data = src2;
+        req.input.len = strlen(src2);
         myc_result_init(&r2);
         myc_run(&req, &r2);
 
@@ -503,9 +508,8 @@ int main(int argc, char **argv)
             fwrite(src, 1, strlen(src), f);
             fclose(f);
             myc_request_init(&req);
-            req.file_path = path;
-            req.source = NULL;
-            req.source_len = 0;
+            req.input.kind = MYC_SOURCE_FILE;
+            req.input.file_path = path;
             req.run_lint = 1;
             myc_result_init(&res);
             myc_run(&req, &res);
@@ -524,6 +528,51 @@ int main(int argc, char **argv)
 
     /* T11: canary failure invalidates backend (9.9). */
     test_canary_failure(self);
+
+    /* T12: myc_source_load MEMORY = pointer asli tanpa alokasi. */
+    {
+        static const char src[] = "int main(void){return 0;}\n";
+        myc_source_input in;
+        const char  *out;
+        size_t       len;
+        int          need;
+        in.kind = MYC_SOURCE_MEMORY;
+        in.data = src;
+        in.len = strlen(src);
+        in.file_path = NULL;
+        CHECK(myc_source_load(&in, &out, &len, &need) == MYC_ERR_NONE &&
+              out == src && len == strlen(src) && need == 0,
+              "myc_source_load MEMORY -> pointer asli, tanpa alokasi");
+    }
+
+    /* T13: myc_source_load FILE too-large -> INPUT_TOO_LARGE (bukan
+     * alokasi penuh), dan file tidak ada -> INVALID_PATH. */
+    {
+        myc_source_input in;
+        const char  *out = NULL;
+        size_t       len = 0;
+        int          need = 0;
+        const char  *path = "audit_big_029_tmp.c";
+        FILE *f = fopen(path, "wb");
+        if (f) {
+            size_t i;
+            for (i = 0; i < MYC_MAX_CODE_BYTES + 1; i++)
+                fputc('x', f);
+            fclose(f);
+            in.kind = MYC_SOURCE_FILE;
+            in.data = NULL;
+            in.len = 0;
+            in.file_path = path;
+            CHECK(myc_source_load(&in, &out, &len, &need) ==
+                    MYC_ERR_INPUT_TOO_LARGE,
+                  "myc_source_load FILE >1MiB -> INPUT_TOO_LARGE");
+            remove(path);
+        }
+        in.kind = MYC_SOURCE_FILE;
+        in.file_path = "audit_tidak_ada_029_tmp.c";
+        CHECK(myc_source_load(&in, &out, &len, &need) == MYC_ERR_INVALID_PATH,
+              "myc_source_load FILE tak ada -> INVALID_PATH");
+    }
 
     printf(g_fail ? "audit_lampiran: FAIL (%d)\n" : "audit_lampiran: OK\n", g_fail);
     return g_fail ? 1 : 0;

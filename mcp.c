@@ -171,8 +171,9 @@ static void tool_check(json_value *id, json_value *args)
     flags = json_get(args, "flags");
 
     myc_request_init(&req);
-    req.source = source;
-    req.source_len = strlen(source);
+    req.input.kind = MYC_SOURCE_MEMORY;
+    req.input.data = source;
+    req.input.len = strlen(source);
     req.run_lint = 1;               /* lint memory-safety default ON */
     req.checked_header_dir = g_exe_dir;
     if (cwd)

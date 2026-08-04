@@ -313,10 +313,25 @@ typedef struct {
     myc_confidence confidence; /* tingkat keyakinan (heuristik vs semantik) */
 } myc_diagnostic;
 
+/* Canonical ingress (Fase 2, MYC-AUDIT-029): satu cara formal untuk
+ * menyatakan input program. Setelah ingress, pipeline HANYA menerima
+ * source in-memory (MYC_SOURCE_MEMORY). File/STDIN di-load terpusat oleh
+ * myc_source_load() dengan cap + policy NUL + error typed. */
+typedef enum {
+    MYC_SOURCE_MEMORY = 0, /* data/len diisi (bytes C, boleh ber-NUL) */
+    MYC_SOURCE_FILE,       /* file_path diisi */
+    MYC_SOURCE_STDIN       /* baca stdin saat load */
+} myc_source_kind;
+
 typedef struct {
-    const char *source;         /* bytes C (atau NULL bila pakai file_path) */
-    size_t      source_len;     /* panjang source dalam byte */
-    const char *file_path;      /* alternatif input: path file C */
+    myc_source_kind kind;
+    const char     *data;      /* MEMORY: bytes; FILE/STDIN: NULL */
+    size_t          len;       /* MEMORY: panjang byte; FILE/STDIN: 0 */
+    const char     *file_path; /* FILE: path; MEMORY/STDIN: NULL */
+} myc_source_input;
+
+typedef struct {
+    myc_source_input input;     /* sumber program: MEMORY/FILE/STDIN */
     int         timeout_ms;     /* 0 = default */
     int         max_output_bytes;
     const char *cwd;            /* workspace root; NULL = cwd proses */
@@ -658,6 +673,16 @@ void myc_request_init(myc_request *req);
 
 /* Validasi request; mengembalikan error code atau NONE. */
 myc_error_code myc_request_validate(const myc_request *req);
+
+/* MYC-AUDIT-029 (Fase 2): muat input canonical ke memory. Untuk
+ * MYC_SOURCE_MEMORY mengembalikan (data,len) asli tanpa alokasi (return 0);
+ * untuk FILE/STDIN mengalokasikan buffer (caller free) + cap + NUL policy.
+ * Return myc_error_code: NONE / INVALID_REQUEST / INVALID_PATH /
+ * INPUT_TOO_LARGE / NUL_IN_INPUT / INTERNAL. Untuk MEMORY, *out mengarah ke
+ * req->input.data (bukan milik caller); untuk FILE/STDIN caller harus free. */
+myc_error_code myc_source_load(const myc_source_input *in,
+                               const char **out, size_t *out_len,
+                               int *needs_free);
 
 /* Siapkan result dengan alokasi internal. Harus dibebaskan myc_result_free. */
 void myc_result_init(myc_result *res);

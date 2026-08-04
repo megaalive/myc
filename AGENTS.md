@@ -406,6 +406,30 @@ Poin penting:
   self-dogfooding myc.c/mcp.c OK, receipt deterministik. Terpasang di
   `_regress_run.bat` (section AUDIT-028, +6 cek via `fsutil` big-file) dan
   `_ci_linux.sh` (section 5d, via `dd`/`mktemp`).
+- **MYC-AUDIT-029 selesai 2026-08-04** (Fase 2: canonical ingress —
+  `myc_source_input` formal struct): `myc_request` kini memakai
+  `myc_source_input input` (enum `myc_source_kind`: MYC_SOURCE_MEMORY /
+  FILE / STDIN) menggantikan field `source`/`source_len`/`file_path` yang
+  tersebar. **Loader terpusat `myc_source_load()`** (myc.h + myc.c): satu
+  titik cap + NUL policy + error typed untuk semua kind — MEMORY = pointer
+  asli tanpa alokasi; FILE = `read_file_capped`; STDIN = `read_stdin_capped`
+  (keduanya dipindah keluar blok CLI agar ikut ter-link ke mcp.exe).
+  **Pipeline HANYA menerima in-memory** (`MYC_SOURCE_MEMORY`): blok jalur
+  file_path lama di `myc_run` (fopen/fseek/ftell, baca penuh, hanya
+  cap-check sebelum malloc) DIHAPUS — sekarang semua lewat loader, jadi
+  jalur file_path API/MCP mendapat cap saat membaca juga (bukan hanya CLI).
+  CLI dan MCP memakai loader yang sama dengan API (satu sumber kebenaran,
+  tidak ada duplikasi logika baca). Dampak pemakai: `compile.c` membaca
+  `req->input.data/len`; test API (audit_lampiran/oom_alloc/oom_guards/
+  stress_threads) di-update. Test baru T12/T13 di audit_lampiran:
+  `myc_source_load` MEMORY → pointer asli tanpa alokasi, FILE >1MiB →
+  INPUT_TOO_LARGE, FILE tak ada → INVALID_PATH. Receipt TIDAK berubah
+  (source_sha sudah di-hash di compile gate) — `ok_run --run` tetap
+  `8224c23a...`. Verifikasi: Windows regress 0 [FAIL] (audit_lampiran OK,
+  T9 file_path-only tetap hijau, run-stdin L3, MCP smoke utuh), WSL
+  `_ci_linux.sh` PASS=32 FAIL=0. Roadmap Fase 2: size cap (AUDIT-028) +
+  myc_source_input (029) selesai; sisa `File path canonicalization` +
+  `string public pointer+length`.
 - **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
 - **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
   seluruh rule lint.c (intptr_t/uintptr_t cast, realloc ke variabel lain,

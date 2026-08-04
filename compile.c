@@ -16,8 +16,8 @@
  * Windows, "/dev/null" di POSIX) -- "NUL" di POSIX adalah file biasa.
  *
  * Tidak pernah menyusun shell string; source tidak pernah jadi argumen.
- * Catatan ownership: req->source dimiliki caller (myc.c); file loading
- * dilakukan di myc.c, bukan di sini.
+ * Catatan ownership: req->input.data/len dimiliki caller (myc.c); loading
+ * dilakukan di myc.c/myc_source_load (MYC-AUDIT-029), bukan di sini.
  */
 #include "compile.h"
 
@@ -582,8 +582,8 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     size_t      srclen;
     char        hex[65];
 
-    src = req->source;
-    srclen = req->source_len;
+    src = req->input.data;
+    srclen = req->input.len;
 
     /* Inisialisasi gate status (Fase 3). */
     myc_gate_set_status(res, MYC_GATE_PREPROCESS, MYC_GATE_NOT_APPLICABLE, NULL);

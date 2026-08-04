@@ -57,8 +57,9 @@ int main(void)
             memset(src, 'x', big);   /* tanpa NUL: source_len eksplisit,
                                          validasi harus INPUT_TOO_LARGE */
             myc_request_init(&req);
-            req.source = src;
-            req.source_len = big;
+            req.input.kind = MYC_SOURCE_MEMORY;
+            req.input.data = src;
+            req.input.len = big;
             myc_result_init(&res);
             myc_run(&req, &res);
             CHECK(res.verdict == MC_ERROR && res.err == MYC_ERR_INPUT_TOO_LARGE,
@@ -78,8 +79,9 @@ int main(void)
         myc_request req;
         myc_result  res;
         myc_request_init(&req);
-        req.source = src;
-        req.source_len = sizeof(src);   /* termasuk NUL + trailing */
+        req.input.kind = MYC_SOURCE_MEMORY;
+        req.input.data = src;
+        req.input.len = sizeof(src);   /* termasuk NUL + trailing */
         myc_result_init(&res);
         myc_run(&req, &res);
         CHECK(res.verdict == MC_ERROR && res.err == MYC_ERR_NUL_IN_INPUT,
@@ -107,8 +109,9 @@ int main(void)
         myc_request req;
         myc_result  res;
         myc_request_init(&req);
-        req.source = src;
-        req.source_len = strlen(src);
+        req.input.kind = MYC_SOURCE_MEMORY;
+        req.input.data = src;
+        req.input.len = strlen(src);
         req.run_lint = 1;
         myc_result_init(&res);
         myc_run(&req, &res);

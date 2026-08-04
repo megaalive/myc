@@ -51,8 +51,9 @@ static void worker_run(worker_arg *w)
 
     for (i = 0; i < NITER; i++) {
         myc_request_init(&req);
-        req.source = buf;
-        req.source_len = strlen(buf);
+        req.input.kind = MYC_SOURCE_MEMORY;
+        req.input.data = buf;
+        req.input.len = strlen(buf);
         req.run_lint = 1;
         myc_result_init(&res);
         myc_run(&req, &res);

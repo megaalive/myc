@@ -119,13 +119,28 @@ myc_error_code myc_request_validate(const myc_request *req)
 
     if (!req)
         return MYC_ERR_INVALID_REQUEST;
-    if (!req->source && !req->file_path)
+    /* MYC-AUDIT-029: ingress canonical via myc_source_input. Validasi
+     * struktur input (NUL/cap di-load oleh myc_source_load, bukan di sini,
+     * agar jalur FILE juga mendapat policy yang sama). */
+    switch (req->input.kind) {
+    case MYC_SOURCE_MEMORY:
+        if (!req->input.data)
+            return MYC_ERR_INVALID_REQUEST;
+        break;
+    case MYC_SOURCE_FILE:
+        if (!req->input.file_path || req->input.file_path[0] == '\0')
+            return MYC_ERR_INVALID_REQUEST;
+        break;
+    case MYC_SOURCE_STDIN:
+        break;
+    default:
         return MYC_ERR_INVALID_REQUEST;
-    if (req->source && req->source_len > 0) {
+    }
+    if (req->input.kind == MYC_SOURCE_MEMORY) {
         nul_count = 0;
         nul_pos = SIZE_MAX;
-        for (i = 0; i < req->source_len; i++) {
-            if (req->source[i] == '\0') {
+        for (i = 0; i < req->input.len; i++) {
+            if (req->input.data[i] == '\0') {
                 nul_count++;
                 if (i < nul_pos)
                     nul_pos = i;
@@ -133,9 +148,9 @@ myc_error_code myc_request_validate(const myc_request *req)
         }
         if (nul_count > 0)
             return MYC_ERR_NUL_IN_INPUT;
+        if (req->input.len > MYC_MAX_CODE_BYTES)
+            return MYC_ERR_INPUT_TOO_LARGE;
     }
-    if (req->source_len > MYC_MAX_CODE_BYTES)
-        return MYC_ERR_INPUT_TOO_LARGE;
     /* MYC-AUDIT-028 (Fase 2): cap run_stdin -- CLI fail-fast + API/MCP
      * divalidasi di ingress, bukan setelah buffer raksasa dialokasikan. */
     if (req->run_stdin && req->run_stdin_len > MYC_MAX_STDIN_BYTES)
@@ -151,6 +166,177 @@ myc_error_code myc_request_validate(const myc_request *req)
     if (req->cwd && req->cwd[0] == '\0')
         return MYC_ERR_INVALID_CWD;
     return MYC_ERR_NONE;
+}
+
+/* Baca stdin dengan cap (Fase 2): berhenti segera saat cap terlampaui,
+ * JANGAN membaca penuh dulu baru menolak -- file raksasa tidak boleh
+ * dialokasikan seluruhnya. Return: 1 sukses, 0 gagal, 2 terlalu besar. */
+static int read_stdin_capped(size_t cap, char **out, size_t *out_len)
+{
+    size_t bufcap = 65536, len = 0;
+    char  *buf;
+    int    ch;
+    if (bufcap > cap)
+        bufcap = cap < 1 ? 1 : cap;
+    buf = (char *)malloc(bufcap);
+    if (!buf)
+        return 0;
+    while ((ch = getchar()) != EOF) {
+        if (len + 2 > cap)
+            goto too_large;
+        if (len + 2 > bufcap) {
+            size_t ncap = bufcap * 2;
+            char  *nb;
+            if (ncap > cap)
+                ncap = cap;
+            nb = (char *)realloc(buf, ncap);
+            if (!nb) {
+                free(buf);
+                return 0;
+            }
+            buf = nb;
+            bufcap = ncap;
+        }
+        buf[len++] = (char)ch;
+    }
+    buf[len] = '\0';
+    *out = buf;
+    *out_len = len;
+    return 1;
+too_large:
+    free(buf);
+    return 2;
+}
+
+/* Baca file dengan cap (Fase 2): baca bertahap, tolak segera saat cap
+ * terlampaui (bukan malloc penuh dulu). Return: 1 sukses, 0 gagal,
+ * 2 terlalu besar. */
+static int read_file_capped(const char *path, size_t cap, char **out,
+                            size_t *out_len)
+{
+    FILE *f = fopen(path, "rb");
+    size_t bufcap = 65536;
+    size_t len = 0;
+    char  *buf;
+    if (!f)
+        return 0;
+    if (bufcap > cap)
+        bufcap = cap < 1 ? 1 : cap;
+    buf = (char *)malloc(bufcap);
+    if (!buf) {
+        fclose(f);
+        return 0;
+    }
+    for (;;) {
+        size_t chunk = bufcap - len;
+        size_t got;
+        if (chunk == 0) {
+            if (len + 1 > cap)
+                goto too_large;
+            {
+                size_t ncap = bufcap * 2;
+                char  *nb;
+                if (ncap > cap)
+                    ncap = cap;
+                nb = (char *)realloc(buf, ncap);
+                if (!nb) {
+                    free(buf);
+                    fclose(f);
+                    return 0;
+                }
+                buf = nb;
+                bufcap = ncap;
+                chunk = bufcap - len;
+            }
+        }
+        got = fread(buf + len, 1, chunk, f);
+        len += got;
+        if (got < chunk) {
+            if (ferror(f)) {
+                free(buf);
+                fclose(f);
+                return 0;
+            }
+            break; /* EOF */
+        }
+        if (len + 1 > cap)
+            goto too_large;
+    }
+    buf[len] = '\0';
+    fclose(f);
+    *out = buf;
+    *out_len = len;
+    return 1;
+too_large:
+    free(buf);
+    fclose(f);
+    return 2;
+}
+
+/* MYC-AUDIT-029 (Fase 2): muat input canonical ke memory dengan cap + NUL
+ * policy + error typed. MEMORY = pointer asli tanpa alokasi; FILE = baca
+ * ber-cap (read_file_capped); STDIN = baca ber-cap (read_stdin_capped).
+ * Untuk FILE/STDIN caller harus free(*out) bila return NONE. */
+myc_error_code myc_source_load(const myc_source_input *in,
+                               const char **out, size_t *out_len,
+                               int *needs_free)
+{
+    size_t nul_count, nul_pos, i;
+    if (!in || !out || !out_len || !needs_free)
+        return MYC_ERR_INVALID_REQUEST;
+    switch (in->kind) {
+    case MYC_SOURCE_MEMORY:
+        if (!in->data)
+            return MYC_ERR_INVALID_REQUEST;
+        nul_count = 0;
+        nul_pos = SIZE_MAX;
+        for (i = 0; i < in->len; i++) {
+            if (in->data[i] == '\0') {
+                nul_count++;
+                if (i < nul_pos)
+                    nul_pos = i;
+            }
+        }
+        if (nul_count > 0)
+            return MYC_ERR_NUL_IN_INPUT;
+        if (in->len > MYC_MAX_CODE_BYTES)
+            return MYC_ERR_INPUT_TOO_LARGE;
+        *out = in->data;
+        *out_len = in->len;
+        *needs_free = 0;
+        return MYC_ERR_NONE;
+    case MYC_SOURCE_FILE: {
+        char  *buf;
+        size_t len;
+        int    rr;
+        if (!in->file_path || in->file_path[0] == '\0')
+            return MYC_ERR_INVALID_REQUEST;
+        rr = read_file_capped(in->file_path, MYC_MAX_CODE_BYTES, &buf, &len);
+        if (rr == 2)
+            return MYC_ERR_INPUT_TOO_LARGE;
+        if (rr == 0)
+            return MYC_ERR_INVALID_PATH;
+        *out = buf;
+        *out_len = len;
+        *needs_free = 1;
+        return MYC_ERR_NONE;
+    }
+    case MYC_SOURCE_STDIN: {
+        char  *buf;
+        size_t len;
+        int    rr = read_stdin_capped(MYC_MAX_CODE_BYTES, &buf, &len);
+        if (rr == 2)
+            return MYC_ERR_INPUT_TOO_LARGE;
+        if (rr == 0)
+            return MYC_ERR_INTERNAL;
+        *out = buf;
+        *out_len = len;
+        *needs_free = 1;
+        return MYC_ERR_NONE;
+    }
+    default:
+        return MYC_ERR_INVALID_REQUEST;
+    }
 }
 
 void myc_result_free(myc_result *res)
@@ -407,12 +593,12 @@ void myc_run(const myc_request *req, myc_result *res)
     if (ve != MYC_ERR_NONE) {
         res->verdict = MC_ERROR;
         res->err = ve;
-        if (ve == MYC_ERR_NUL_IN_INPUT && req->source && req->source_len > 0) {
+        if (ve == MYC_ERR_NUL_IN_INPUT && req->input.kind == MYC_SOURCE_MEMORY) {
             size_t nul_pos = SIZE_MAX;
             size_t nul_count = 0;
             size_t i;
-            for (i = 0; i < req->source_len; i++) {
-                if (req->source[i] == '\0') {
+            for (i = 0; i < req->input.len; i++) {
+                if (req->input.data[i] == '\0') {
                     nul_count++;
                     if (i < nul_pos)
                         nul_pos = i;
@@ -458,53 +644,34 @@ void myc_run(const myc_request *req, myc_result *res)
     }
     res->require_complete = req->require_complete;
 
-    /* MYC-AUDIT-007: bila caller memakai file_path tanpa source,
-      * load file di sini sebelum masuk pipeline. Pipeline selalu
-      * menerima source in-memory; tidak ada NULL dereference di bawah. */
-    if (!req->source && req->file_path) {
-        FILE  *f = fopen(req->file_path, "rb");
-        long   sz;
-        char  *buf;
-        myc_request req2;
-        if (!f) {
+    /* MYC-AUDIT-029 (Fase 2): canonical ingress -- muat input MEMORY/FILE/
+     * STDIN via SATU loader terpusat (myc_source_load: cap + NUL policy +
+     * error typed). Pipeline HANYA menerima source in-memory
+     * (MYC_SOURCE_MEMORY); tidak ada NULL dereference, tidak ada jalur
+     * file_path yang membaca penuh tanpa cap (MYC-AUDIT-007/028). */
+    if (req->input.kind == MYC_SOURCE_FILE ||
+        req->input.kind == MYC_SOURCE_STDIN) {
+        myc_request  req2;
+        const char  *buf;
+        size_t       len;
+        int          needs_free;
+        myc_error_code le = myc_source_load(&req->input, &buf, &len, &needs_free);
+        if (le != MYC_ERR_NONE) {
             res->verdict = MC_ERROR;
-            res->err = MYC_ERR_INVALID_PATH;
+            res->err = le;
             return;
         }
-        fseek(f, 0, SEEK_END);
-        sz = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        if (sz < 0 || (size_t)sz > MYC_MAX_CODE_BYTES) {
-            fclose(f);
-            res->verdict = MC_ERROR;
-            res->err = sz < 0 ? MYC_ERR_INVALID_PATH : MYC_ERR_INPUT_TOO_LARGE;
-            return;
-        }
-        buf = (char *)malloc((size_t)sz + 1);
-        if (!buf) {
-            fclose(f);
-            res->verdict = MC_ERROR;
-            res->err = MYC_ERR_INTERNAL;
-            return;
-        }
-        if (sz > 0 && fread(buf, 1, (size_t)sz, f) != (size_t)sz) {
-            free(buf);
-            fclose(f);
-            res->verdict = MC_ERROR;
-            res->err = MYC_ERR_INVALID_PATH;
-            return;
-        }
-        buf[sz] = '\0';
-        fclose(f);
         req2 = *req;
-        req2.source = buf;
-        req2.source_len = (size_t)sz;
+        req2.input.kind = MYC_SOURCE_MEMORY;
+        req2.input.data = buf;
+        req2.input.len = len;
         myc_pipeline(&req2, res);
-        /* #3: quorum juga dihitung di jalur file_path-only (API/MCP),
+        /* #3: quorum juga dihitung di jalur file_path/STDIN (API/MCP),
          * konsisten dengan jalur source in-memory. */
         myc_quorum_analysis(&req2, res);
         enforce_require_complete(&req2, res);
-        free(buf);
+        if (needs_free)
+            free((void *)buf);
         res->capsule = myc_build_capsule(&req2, res);
         return;
     }
@@ -565,111 +732,6 @@ static void usage(void)
         "  myc policy\n"
         "  myc probe\n"
         "  myc version\n");
-}
-
-/* Baca stdin dengan cap (Fase 2): berhenti segera saat cap terlampaui,
- * JANGAN membaca penuh dulu baru menolak -- file raksasa tidak boleh
- * dialokasikan seluruhnya. Return: 1 sukses, 0 gagal, 2 terlalu besar. */
-static int read_stdin_capped(size_t cap, char **out, size_t *out_len)
-{
-    size_t bufcap = 65536, len = 0;
-    char  *buf;
-    int    ch;
-    if (bufcap > cap)
-        bufcap = cap < 1 ? 1 : cap;
-    buf = (char *)malloc(bufcap);
-    if (!buf)
-        return 0;
-    while ((ch = getchar()) != EOF) {
-        if (len + 2 > cap)
-            goto too_large;
-        if (len + 2 > bufcap) {
-            size_t ncap = bufcap * 2;
-            char  *nb;
-            if (ncap > cap)
-                ncap = cap;
-            nb = (char *)realloc(buf, ncap);
-            if (!nb) {
-                free(buf);
-                return 0;
-            }
-            buf = nb;
-            bufcap = ncap;
-        }
-        buf[len++] = (char)ch;
-    }
-    buf[len] = '\0';
-    *out = buf;
-    *out_len = len;
-    return 1;
-too_large:
-    free(buf);
-    return 2;
-}
-
-/* Baca file dengan cap (Fase 2): baca bertahap, tolak segera saat cap
- * terlampaui (bukan malloc penuh dulu). Return: 1 sukses, 0 gagal,
- * 2 terlalu besar. */
-static int read_file_capped(const char *path, size_t cap, char **out,
-                            size_t *out_len)
-{
-    FILE *f = fopen(path, "rb");
-    size_t bufcap = 65536;
-    size_t len = 0;
-    char  *buf;
-    if (!f)
-        return 0;
-    if (bufcap > cap)
-        bufcap = cap < 1 ? 1 : cap;
-    buf = (char *)malloc(bufcap);
-    if (!buf) {
-        fclose(f);
-        return 0;
-    }
-    for (;;) {
-        size_t chunk = bufcap - len;
-        size_t got;
-        if (chunk == 0) {
-            if (len + 1 > cap)
-                goto too_large;
-            {
-                size_t ncap = bufcap * 2;
-                char  *nb;
-                if (ncap > cap)
-                    ncap = cap;
-                nb = (char *)realloc(buf, ncap);
-                if (!nb) {
-                    free(buf);
-                    fclose(f);
-                    return 0;
-                }
-                buf = nb;
-                bufcap = ncap;
-                chunk = bufcap - len;
-            }
-        }
-        got = fread(buf + len, 1, chunk, f);
-        len += got;
-        if (got < chunk) {
-            if (ferror(f)) {
-                free(buf);
-                fclose(f);
-                return 0;
-            }
-            break; /* EOF */
-        }
-        if (len + 1 > cap)
-            goto too_large;
-    }
-    buf[len] = '\0';
-    fclose(f);
-    *out = buf;
-    *out_len = len;
-    return 1;
-too_large:
-    free(buf);
-    fclose(f);
-    return 2;
 }
 
 /* Parse bilangan bulat ketat (MYC-AUDIT-020): seluruh string harus angka
@@ -971,42 +1033,46 @@ int main(int argc, char **argv)
         }
     }
 
-    if (strcmp(argv[2], "-") == 0) {
-        char *src;
-        size_t len;
-        int   rr = read_stdin_capped(MYC_MAX_CODE_BYTES, &src, &len);
-        if (rr == 2) {
-            fprintf(stderr, "myc: source stdin melebihi cap %u byte\n",
+    /* MYC-AUDIT-029: CLI memakai loader canonical yang sama dengan API
+     * (myc_source_load: cap + NUL policy + error typed). Tidak ada duplikasi
+     * logika baca file/stdin di CLI dan pipeline. */
+    {
+        const char *src;
+        size_t      len;
+        int         needs_free = 0;
+        myc_source_input in;
+        myc_error_code   le;
+        int              is_stdin = (strcmp(argv[2], "-") == 0);
+        if (is_stdin) {
+            in.kind = MYC_SOURCE_STDIN;
+            in.data = NULL; in.len = 0; in.file_path = NULL;
+        } else {
+            in.kind = MYC_SOURCE_FILE;
+            in.data = NULL; in.len = 0; in.file_path = argv[2];
+        }
+        le = myc_source_load(&in, &src, &len, &needs_free);
+        if (le == MYC_ERR_INPUT_TOO_LARGE) {
+            fprintf(stderr, "myc: %s: ukuran melebihi cap %u byte\n",
+                    is_stdin ? "source stdin" : argv[2],
                     (unsigned)MYC_MAX_CODE_BYTES);
             myc_result_free(&res);
             return 2;
         }
-        if (!rr) {
-            fprintf(stderr, "myc: gagal membaca stdin\n");
-            return 1;
-        }
-        req.source = src;
-        req.source_len = len;
-        myc_run(&req, &res);
-        free(src);
-    } else {
-        char *src;
-        size_t len;
-        int   rr = read_file_capped(argv[2], MYC_MAX_CODE_BYTES, &src, &len);
-        if (rr == 2) {
-            fprintf(stderr, "myc: %s: ukuran melebihi cap %u byte\n",
-                    argv[2], (unsigned)MYC_MAX_CODE_BYTES);
-            myc_result_free(&res);
-            return 2;
-        }
-        if (!rr) {
+        if (le == MYC_ERR_INVALID_PATH) {
             fprintf(stderr, "myc: tidak dapat membaca %s\n", argv[2]);
             return 1;
         }
-        req.source = src;
-        req.source_len = len;
+        if (le != MYC_ERR_NONE) {
+            fprintf(stderr, "myc: gagal memuat source (error %d)\n", (int)le);
+            myc_result_free(&res);
+            return 1;
+        }
+        req.input.kind = MYC_SOURCE_MEMORY;
+        req.input.data = src;
+        req.input.len = len;
         myc_run(&req, &res);
-        free(src);
+        if (needs_free)
+            free((void *)src);
     }
 
     if (req.as_json)
