@@ -384,6 +384,28 @@ Poin penting:
   (ok_driver L3, harness sha IDENTIK lintas platform `6919dfb9...`,
   bounded coverage-first 32 kasus). Verifikasi: `_ci_linux.sh` WSL
   PASS=30 FAIL=0 (sebelumnya PASS=21 FAIL=1).
+- **MYC-AUDIT-028 selesai 2026-08-04** (Fase 2: size cap saat membaca, bukan
+  setelah membaca penuh): `read_file`/`read_stdin` lama membaca PENUH tanpa
+  batas (file 10 GB → `malloc` 10 GB sebelum validasi menolak; `--run-stdin`
+  tanpa cap sama sekali; MCP `run_stdin` tak divalidasi). Kini
+  `read_file_capped(path, cap, ...)`/`read_stdin_capped(cap, ...)` (myc.c)
+  baca BERTAHAP chunk 64 KiB dan menolak SEGERA saat `len+1 > cap` — buffer
+  raksasa tidak pernah dialokasikan. Cap: source `MYC_MAX_CODE_BYTES` 1 MiB,
+  `--run-stdin` konstanta baru `MYC_MAX_STDIN_BYTES` 8 MiB (myc.h). CLI
+  fail-fast exit 2 + pesan (`myc: <file>: ukuran melebihi cap N byte`) untuk
+  source file, source stdin (`-`), dan `--run-stdin`. API/MCP: cap
+  `run_stdin_len` di `myc_request_validate` → error baru
+  `MYC_ERR_STDIN_TOO_LARGE` (mapping report.c `stdin_too_large`); MCP
+  `run_stdin` sudah ter-cover + perlindungan lapis kedua `MCP_MAX_LINE` 8 MiB
+  yang menolak baris JSON raksasa (parse error). Receipt TIDAK berubah
+  (cap validasi bukan bagian hash) — `ok_run --run` tetap `8224c23a...`.
+  Verifikasi: source 1.05 MiB → exit 2, run-stdin 9 MiB → exit 2, stdin
+  source 1.05 MiB → exit 2, MCP payload 9 MiB → parse error (MCP_MAX_LINE);
+  regress Windows 0 [FAIL] (flaky transient "inject requires pure rusak"
+  muncul sekali dari race run-gate berturut, hilang pada run ulang),
+  self-dogfooding myc.c/mcp.c OK, receipt deterministik. Terpasang di
+  `_regress_run.bat` (section AUDIT-028, +6 cek via `fsutil` big-file) dan
+  `_ci_linux.sh` (section 5d, via `dd`/`mktemp`).
 - **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
 - **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
   seluruh rule lint.c (intptr_t/uintptr_t cast, realloc ke variabel lain,

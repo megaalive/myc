@@ -175,6 +175,32 @@ else
     fail "driver debt NONZERO_CASES hilang"
 fi
 
+# --- 5d. size cap saat membaca (MYC-AUDIT-028, Fase 2) ---
+BIGSRC=$(mktemp -u /tmp/myc_big_028_XXXX.c)
+BIGRUN=$(mktemp -u /tmp/myc_bigstdin_028_XXXX.bin)
+dd if=/dev/zero of="$BIGSRC" bs=1M count=2 status=none
+dd if=/dev/zero of="$BIGRUN" bs=1M count=10 status=none
+if ./myc check "$BIGSRC" >/dev/null 2>&1; then
+    fail "source >1MiB tidak ditolak"
+else
+    if ./myc check "$BIGSRC" 2>&1 | grep -qF "melebihi cap 1048576"; then
+        note "source >1MiB ditolak cap saat membaca (exit!=0)"
+    else
+        fail "pesan cap source hilang"
+    fi
+fi
+if ./myc check test/fixtures/ok_run.c --run --run-stdin "$BIGRUN" >/dev/null 2>&1; then
+    fail "run-stdin >8MiB tidak ditolak"
+else
+    if ./myc check test/fixtures/ok_run.c --run --run-stdin "$BIGRUN" 2>&1 | \
+        grep -qF "melebihi cap 8388608"; then
+        note "run-stdin >8MiB ditolak cap saat membaca"
+    else
+        fail "pesan cap run-stdin hilang"
+    fi
+fi
+rm -f "$BIGSRC" "$BIGRUN"
+
 # --- 6. dogfood tool ---
 for f in dogfood/dogfood_ring.c dogfood/dogfood_config.c dogfood/dogfood_tilemap.c; do
     assert_out "dogfood $(basename "$f") -> OK" "verdict:   OK" "$f"

@@ -360,6 +360,32 @@ if errorlevel 1 (
     exit /b 1
   )
 )
+echo --- MYC-AUDIT-028: size cap saat membaca (bukan setelah baca penuh)
+set BIGSRC=%TEMP%\myc_big_028.c
+set BIGRUN=%TEMP%\myc_bigstdin_028.bin
+fsutil file createnew "%BIGSRC%" 2097152 >nul 2>&1
+fsutil file createnew "%BIGRUN%" 10000000 >nul 2>&1
+if exist "%BIGSRC%" (
+  myc.exe check "%BIGSRC%" > %OUT% 2>&1
+  if errorlevel 2 (
+    echo [OK] source ^> 1MiB ditolak exit2 fail-fast (cap saat membaca)
+  ) else (
+    echo [FAIL] source besar tidak ditolak ec=%ERRORLEVEL%
+  )
+  findstr /C:"melebihi cap 1048576" %OUT% >nul && echo [OK] pesan cap source tampil || echo [FAIL] pesan cap source hilang
+  if exist "%BIGRUN%" (
+    myc.exe check tests\ok_hello.c --run --run-stdin "%BIGRUN%" > %OUT% 2>&1
+    if errorlevel 2 (
+      echo [OK] run-stdin ^> 8MiB ditolak exit2 fail-fast
+    ) else (
+      echo [FAIL] run-stdin besar tidak ditolak ec=%ERRORLEVEL%
+    )
+    findstr /C:"melebihi cap 8388608" %OUT% >nul && echo [OK] pesan cap run-stdin tampil || echo [FAIL] pesan cap run-stdin hilang
+    del "%BIGRUN%" >nul 2>&1
+  )
+  del "%BIGSRC%" >nul 2>&1
+)
+del %OUT%
 echo --- MCP smoke (P9): mcp.exe harus menjawab JSON-RPC
 call test\_mcp_smoke.bat
 echo --- MCP SDK interop (opsional): hanya bila SDK MCP Python resmi terpasang

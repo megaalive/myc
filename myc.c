@@ -136,6 +136,10 @@ myc_error_code myc_request_validate(const myc_request *req)
     }
     if (req->source_len > MYC_MAX_CODE_BYTES)
         return MYC_ERR_INPUT_TOO_LARGE;
+    /* MYC-AUDIT-028 (Fase 2): cap run_stdin -- CLI fail-fast + API/MCP
+     * divalidasi di ingress, bukan setelah buffer raksasa dialokasikan. */
+    if (req->run_stdin && req->run_stdin_len > MYC_MAX_STDIN_BYTES)
+        return MYC_ERR_STDIN_TOO_LARGE;
     if (req->timeout_ms < 0 || (int)req->timeout_ms > MYC_MAX_TIMEOUT_MS)
         return MYC_ERR_INVALID_TIMEOUT;
     /* MYC-AUDIT-020: nilai NEGATIF juga ditolak -- tanpa ini, -N yang
@@ -563,23 +567,34 @@ static void usage(void)
         "  myc version\n");
 }
 
-static int read_stdin(char **out, size_t *out_len)
+/* Baca stdin dengan cap (Fase 2): berhenti segera saat cap terlampaui,
+ * JANGAN membaca penuh dulu baru menolak -- file raksasa tidak boleh
+ * dialokasikan seluruhnya. Return: 1 sukses, 0 gagal, 2 terlalu besar. */
+static int read_stdin_capped(size_t cap, char **out, size_t *out_len)
 {
-    size_t cap = 65536, len = 0;
-    char  *buf = (char *)malloc(cap);
+    size_t bufcap = 65536, len = 0;
+    char  *buf;
     int    ch;
+    if (bufcap > cap)
+        bufcap = cap < 1 ? 1 : cap;
+    buf = (char *)malloc(bufcap);
     if (!buf)
         return 0;
     while ((ch = getchar()) != EOF) {
-        if (len + 2 > cap) {
-            size_t ncap = cap * 2;
-            char  *nb = (char *)realloc(buf, ncap);
+        if (len + 2 > cap)
+            goto too_large;
+        if (len + 2 > bufcap) {
+            size_t ncap = bufcap * 2;
+            char  *nb;
+            if (ncap > cap)
+                ncap = cap;
+            nb = (char *)realloc(buf, ncap);
             if (!nb) {
                 free(buf);
                 return 0;
             }
             buf = nb;
-            cap = ncap;
+            bufcap = ncap;
         }
         buf[len++] = (char)ch;
     }
@@ -587,37 +602,74 @@ static int read_stdin(char **out, size_t *out_len)
     *out = buf;
     *out_len = len;
     return 1;
+too_large:
+    free(buf);
+    return 2;
 }
 
-static int read_file(const char *path, char **out, size_t *out_len)
+/* Baca file dengan cap (Fase 2): baca bertahap, tolak segera saat cap
+ * terlampaui (bukan malloc penuh dulu). Return: 1 sukses, 0 gagal,
+ * 2 terlalu besar. */
+static int read_file_capped(const char *path, size_t cap, char **out,
+                            size_t *out_len)
 {
     FILE *f = fopen(path, "rb");
-    long  sz;
-    char *buf;
+    size_t bufcap = 65536;
+    size_t len = 0;
+    char  *buf;
     if (!f)
         return 0;
-    fseek(f, 0, SEEK_END);
-    sz = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (sz < 0) {
-        fclose(f);
-        return 0;
-    }
-    buf = (char *)malloc((size_t)sz + 1);
+    if (bufcap > cap)
+        bufcap = cap < 1 ? 1 : cap;
+    buf = (char *)malloc(bufcap);
     if (!buf) {
         fclose(f);
         return 0;
     }
-    if (sz > 0 && fread(buf, 1, (size_t)sz, f) != (size_t)sz) {
-        free(buf);
-        fclose(f);
-        return 0;
+    for (;;) {
+        size_t chunk = bufcap - len;
+        size_t got;
+        if (chunk == 0) {
+            if (len + 1 > cap)
+                goto too_large;
+            {
+                size_t ncap = bufcap * 2;
+                char  *nb;
+                if (ncap > cap)
+                    ncap = cap;
+                nb = (char *)realloc(buf, ncap);
+                if (!nb) {
+                    free(buf);
+                    fclose(f);
+                    return 0;
+                }
+                buf = nb;
+                bufcap = ncap;
+                chunk = bufcap - len;
+            }
+        }
+        got = fread(buf + len, 1, chunk, f);
+        len += got;
+        if (got < chunk) {
+            if (ferror(f)) {
+                free(buf);
+                fclose(f);
+                return 0;
+            }
+            break; /* EOF */
+        }
+        if (len + 1 > cap)
+            goto too_large;
     }
-    buf[sz] = '\0';
+    buf[len] = '\0';
     fclose(f);
     *out = buf;
-    *out_len = (size_t)sz;
+    *out_len = len;
     return 1;
+too_large:
+    free(buf);
+    fclose(f);
+    return 2;
 }
 
 /* Parse bilangan bulat ketat (MYC-AUDIT-020): seluruh string harus angka
@@ -844,12 +896,22 @@ int main(int argc, char **argv)
             } else if (strcmp(argv[i], "--run-stdin") == 0) {
                 char *buf;
                 size_t len;
+                int   rr;
                 if (i + 1 >= argc) {
                     fprintf(stderr, "myc: --run-stdin membutuhkan argumen FILE\n");
                     myc_result_free(&res);
                     return 2;
                 }
-                if (!read_file(argv[i + 1], &buf, &len)) {
+                rr = read_file_capped(argv[i + 1], MYC_MAX_STDIN_BYTES,
+                                      &buf, &len);
+                if (rr == 2) {
+                    fprintf(stderr, "myc: --run-stdin %s: ukuran melebihi "
+                                    "cap %u byte\n", argv[i + 1],
+                            (unsigned)MYC_MAX_STDIN_BYTES);
+                    myc_result_free(&res);
+                    return 2;
+                }
+                if (!rr) {
                     fprintf(stderr, "myc: tidak dapat membaca run-stdin %s\n", argv[i + 1]);
                     myc_result_free(&res);
                     return 1;
@@ -912,7 +974,14 @@ int main(int argc, char **argv)
     if (strcmp(argv[2], "-") == 0) {
         char *src;
         size_t len;
-        if (!read_stdin(&src, &len)) {
+        int   rr = read_stdin_capped(MYC_MAX_CODE_BYTES, &src, &len);
+        if (rr == 2) {
+            fprintf(stderr, "myc: source stdin melebihi cap %u byte\n",
+                    (unsigned)MYC_MAX_CODE_BYTES);
+            myc_result_free(&res);
+            return 2;
+        }
+        if (!rr) {
             fprintf(stderr, "myc: gagal membaca stdin\n");
             return 1;
         }
@@ -923,7 +992,14 @@ int main(int argc, char **argv)
     } else {
         char *src;
         size_t len;
-        if (!read_file(argv[2], &src, &len)) {
+        int   rr = read_file_capped(argv[2], MYC_MAX_CODE_BYTES, &src, &len);
+        if (rr == 2) {
+            fprintf(stderr, "myc: %s: ukuran melebihi cap %u byte\n",
+                    argv[2], (unsigned)MYC_MAX_CODE_BYTES);
+            myc_result_free(&res);
+            return 2;
+        }
+        if (!rr) {
             fprintf(stderr, "myc: tidak dapat membaca %s\n", argv[2]);
             return 1;
         }

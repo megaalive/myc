@@ -22,6 +22,7 @@ extern "C" {
 
 #define MYC_MAX_CODE_BYTES  (1u << 20)        /* 1 MiB */
 #define MYC_MAX_OUTPUT_BYTES (1u << 20)       /* 1 MiB per channel */
+#define MYC_MAX_STDIN_BYTES  (8u << 20)       /* 8 MiB: run_stdin (Fase 2) */
 #define MYC_MAX_DIAGNOSTICS 128
 #define MYC_DEFAULT_TIMEOUT_MS 30000
 #define MYC_MAX_TIMEOUT_MS   600000           /* 10 menit */
@@ -234,6 +235,7 @@ typedef enum {
     MYC_ERR_INVALID_TIMEOUT,
     MYC_ERR_INVALID_OUTPUT_CAP,
     MYC_ERR_INVALID_CWD,
+    MYC_ERR_STDIN_TOO_LARGE,
     MYC_ERR_PROCESS_TREE_CLEANUP_FAILED,
     MYC_ERR_RUNTIME_VIOLATION,
     MYC_ERR_PROVE_VIOLATION,
