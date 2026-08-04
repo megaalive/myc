@@ -24,10 +24,13 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <process.h>
+#include <direct.h>
 #define myc_getpid _getpid
+#define myc_getcwd _getcwd
 #else
 #include <unistd.h>
 #define myc_getpid getpid
+#define myc_getcwd getcwd
 #endif
 
 #include "myc.h"
@@ -572,6 +575,79 @@ int main(int argc, char **argv)
         in.file_path = "audit_tidak_ada_029_tmp.c";
         CHECK(myc_source_load(&in, &out, &len, &need) == MYC_ERR_INVALID_PATH,
               "myc_source_load FILE tak ada -> INVALID_PATH");
+    }
+
+    /* T14: cwd canonicalization (MYC-AUDIT-030, Fase 2). Representasi
+     * berbeda dari direktori SAMA harus menghasilkan fingerprint IDENTIK
+     * (canonical): ".", "./", absolut, dan "x/../x". Direktori berbeda
+     * tetap berbeda. Canonicalization lexical (tidak menyentuh filesystem);
+     * pada request relatif, base = cwd proses -> fingerprint stabil selama
+     * cwd proses tidak berubah (deterministik dalam satu proses). */
+    {
+        myc_request req;
+        myc_result  r1, r2, r3, r3b, r4, r5;
+        const char *src = "int main(void){return 0;}\n";
+        char        cwdbuf[4096];
+        int         have_cwd = 0;
+
+        myc_request_init(&req);
+        req.input.kind = MYC_SOURCE_MEMORY;
+        req.input.data = src;
+        req.input.len = strlen(src);
+        req.run_lint = 1;
+
+        req.cwd = ".";
+        myc_result_init(&r1);
+        myc_run(&req, &r1);
+
+        req.cwd = "./";
+        myc_result_init(&r2);
+        myc_run(&req, &r2);
+
+        req.cwd = "audit_canon_tmp/../audit_canon_tmp";
+        myc_result_init(&r3);
+        myc_run(&req, &r3);
+
+        req.cwd = "audit_canon_tmp";
+        myc_result_init(&r3b);
+        myc_run(&req, &r3b);
+
+        req.cwd = "audit_canon_other";
+        myc_result_init(&r4);
+        myc_run(&req, &r4);
+
+        if (myc_getcwd(cwdbuf, sizeof(cwdbuf))) {
+            have_cwd = 1;
+            req.cwd = cwdbuf;
+            myc_result_init(&r5);
+            myc_run(&req, &r5);
+        }
+
+        CHECK(r1.fingerprint && r2.fingerprint &&
+              strcmp(r1.fingerprint, r2.fingerprint) == 0,
+              "cwd '.' vs './' -> fingerprint IDENTIK (canonical)");
+        /* "audit_canon_tmp/../audit_canon_tmp" == "audit_canon_tmp" (lexical). */
+        CHECK(r3.fingerprint && r3b.fingerprint &&
+              strcmp(r3.fingerprint, r3b.fingerprint) == 0,
+              "cwd 'audit_canon_tmp/../audit_canon_tmp' vs 'audit_canon_tmp' -> fingerprint IDENTIK (canonical)");
+        if (have_cwd) {
+            CHECK(r1.fingerprint && r5.fingerprint &&
+                  strcmp(r1.fingerprint, r5.fingerprint) == 0,
+                  "cwd '.' vs absolut -> fingerprint IDENTIK (canonical)");
+        } else {
+            printf("[SKIP] cwd absolut (getcwd gagal) -- fingerprint absolut tak diverifikasi\n");
+        }
+        CHECK(r1.fingerprint && r4.fingerprint &&
+              strcmp(r1.fingerprint, r4.fingerprint) != 0,
+              "cwd berbeda -> fingerprint BERBEDA");
+
+        myc_result_free(&r1);
+        myc_result_free(&r2);
+        myc_result_free(&r3);
+        myc_result_free(&r3b);
+        myc_result_free(&r4);
+        if (have_cwd)
+            myc_result_free(&r5);
     }
 
     printf(g_fail ? "audit_lampiran: FAIL (%d)\n" : "audit_lampiran: OK\n", g_fail);

@@ -385,6 +385,45 @@ if exist "%BIGSRC%" (
   )
   del "%BIGSRC%" >nul 2>&1
 )
+echo --- MYC-AUDIT-030: canonicalisasi path cwd (Fase 2)
+rem Representasi berbeda dari direktori SAMA harus menghasilkan cwd canonical
+rem IDENTIK (lexical canonicalization: absolutize + resolve "."/"..").
+rem "tests\..\tests" == "tests" -> cwd capsule sama; direktori berbeda -> beda.
+rem Catatan: fingerprint dibandingkan via baris 'cwd:' capsule (teks), bukan
+rem seluruh baris JSON (JSON memuat duration_ms yang berubah tiap run).
+myc.exe check tests\ok_hello.c --cwd tests > %OUT% 2>&1
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] cwd relatif 'tests' OK || echo [FAIL] cwd relatif 'tests' gagal
+set FPCANON1=
+for /f "delims=" %%g in ('myc.exe check tests\ok_hello.c --cwd tests 2^>^&1 ^| findstr /C:"cwd:"') do set FPCANON1=%%g
+for /f "delims=" %%g in ('myc.exe check tests\ok_hello.c --cwd "tests\..\tests" 2^>^&1 ^| findstr /C:"cwd:"') do set FPCANON2=%%g
+for /f "delims=" %%g in ('myc.exe check tests\ok_hello.c --cwd ".\tests" 2^>^&1 ^| findstr /C:"cwd:"') do set FPCANON3=%%g
+for /f "delims=" %%g in ('myc.exe check tests\ok_hello.c --cwd "tests/../tests" 2^>^&1 ^| findstr /C:"cwd:"') do set FPCANON4=%%g
+rem cwd berbeda (repo root vs tests) harus berbeda cwd canonical
+for /f "delims=" %%g in ('myc.exe check tests\ok_hello.c --cwd . 2^>^&1 ^| findstr /C:"cwd:"') do set FPCANON5=%%g
+if "%FPCANON1%"=="" (
+  echo [FAIL] cwd canonicalization: baris 'cwd:' tak tertangkap
+) else if "%FPCANON1%"=="%FPCANON2%" (
+  echo [OK] 'tests' vs 'tests\..\tests' -> cwd canonical IDENTIK
+) else (
+  echo [FAIL] 'tests' vs 'tests\..\tests' cwd canonical berbeda
+  echo        FPCANON1='%FPCANON1%'
+  echo        FPCANON2='%FPCANON2%'
+)
+if "%FPCANON1%"=="%FPCANON3%" (
+  echo [OK] 'tests' vs '.\tests' -> cwd canonical IDENTIK
+) else (
+  echo [FAIL] 'tests' vs '.\tests' cwd canonical berbeda
+)
+if "%FPCANON1%"=="%FPCANON4%" (
+  echo [OK] 'tests' vs 'tests/../tests' -> cwd canonical IDENTIK
+) else (
+  echo [FAIL] 'tests' vs 'tests/../tests' cwd canonical berbeda
+)
+if "%FPCANON1%"=="%FPCANON5%" (
+  echo [FAIL] cwd berbeda ('.' vs 'tests') justru cwd canonical sama
+) else (
+  echo [OK] cwd berbeda -> cwd canonical BERBEDA
+)
 del %OUT%
 echo --- MCP smoke (P9): mcp.exe harus menjawab JSON-RPC
 call test\_mcp_smoke.bat

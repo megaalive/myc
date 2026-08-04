@@ -201,6 +201,25 @@ else
 fi
 rm -f "$BIGSRC" "$BIGRUN"
 
+# --- 5e. canonicalisasi path cwd (MYC-AUDIT-030, Fase 2) ---
+C1=$(./myc check tests/ok_hello.c --cwd tests 2>&1 | grep 'cwd:' | tr -d ' ')
+C2=$(./myc check tests/ok_hello.c --cwd "tests/../tests" 2>&1 | grep 'cwd:' | tr -d ' ')
+C3=$(./myc check tests/ok_hello.c --cwd "./tests" 2>&1 | grep 'cwd:' | tr -d ' ')
+C4=$(./myc check tests/ok_hello.c --cwd . 2>&1 | grep 'cwd:' | tr -d ' ')
+if [ -z "$C1" ]; then
+    fail "cwd canonical: baris cwd: tak tertangkap"
+elif [ "$C1" = "$C2" ] && [ "$C1" = "$C3" ]; then
+    note "cwd canonical: tests/../tests dan ./tests IDENTIK"
+else
+    fail "cwd canonical: ejaan berbeda tapi cwd tak identik (C1=$C1 C2=$C2 C3=$C3)"
+fi
+if [ "$C1" != "$C4" ]; then
+    note "cwd berbeda -> cwd canonical BERBEDA"
+else
+    fail "cwd berbeda justru sama"
+fi
+unset C1 C2 C3 C4
+
 # --- 6. dogfood tool ---
 for f in dogfood/dogfood_ring.c dogfood/dogfood_config.c dogfood/dogfood_tilemap.c; do
     assert_out "dogfood $(basename "$f") -> OK" "verdict:   OK" "$f"

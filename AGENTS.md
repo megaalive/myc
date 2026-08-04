@@ -430,6 +430,31 @@ Poin penting:
   `_ci_linux.sh` PASS=32 FAIL=0. Roadmap Fase 2: size cap (AUDIT-028) +
   myc_source_input (029) selesai; sisa `File path canonicalization` +
   `string public pointer+length`.
+- **MYC-AUDIT-030 selesai 2026-08-04** (Fase 2: File path
+  canonicalization): helper static `myc_absolutize()` di `myc.c` —
+  canonicalization **lexical** (absolutize path relatif terhadap
+  `my_getcwd` buffer 4096, normalisasi `\`→`/` di Windows, resolve `.`/`..`
+  dengan pop yang tidak melewati root/drive, prefix drive `X:` + root `/`
+  dipertahankan; **tanpa menyentuh filesystem** sehingga cwd boleh tidak
+  ada). `myc_run()` kini canonicalisasi `req->cwd` di ingress ke salinan
+  efektif `reqc` (tanpa memutasi request caller), dipakai pipeline/quorum/
+  enforce/capsule; `free(canon_cwd)` di semua jalur keluar termasuk error
+  path. NON-blocking: `my_getcwd` gagal atau OOM → pakai nilai cwd asli.
+  Ejaan cwd-ekuivalen (`tests`, `tests\..\tests`, `.\tests`,
+  `tests/../tests`) → cwd capsule canonical + fingerprint IDENTIK
+  (`7252ee12...`); direktori berbeda → berbeda (`166dc682...`). **Bug nyata
+  yang diperbaiki saat verifikasi**: (1) array segmen diresize memakai
+  counter `j` (0 untuk path absolut) → heap corruption exit `0xC0000374`;
+  diganti ukuran `strlen(work)+1` tetap tanpa grow; (2) `realloc`-grow yang
+  men-trigger `-Wuse-after-free` false positive → pre-alokasi tetap.
+  T14 di audit_lampiran (fingerprint identik antar ejaan + berbeda antar
+  direktori, macro `myc_getcwd`). Regresi `_regress_run.bat` seksi AUDIT-030
+  membandingkan baris capsule `cwd:` (bukan JSON penuh yang memuat
+  `duration_ms`). Receipt TIDAK berubah (cwd canonical setara untuk input
+  tanpa `--cwd`) — `ok_run --run` tetap `8224c23a...`. Roadmap Fase 2:
+  canonicalization selesai; sisa `string public pointer+length` (efektif
+  terpenuhi AUDIT-029: source → `input.data/len`, run_stdin → `run_stdin_len`;
+  cwd/file_path adalah path OS yang NUL tak valid).
 - **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
 - **MYC-AUDIT-014 selesai 2026-08-02** (lint heuristik TIDAK hard lagi):
   seluruh rule lint.c (intptr_t/uintptr_t cast, realloc ke variabel lain,

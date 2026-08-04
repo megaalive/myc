@@ -339,6 +339,143 @@ myc_error_code myc_source_load(const myc_source_input *in,
     }
 }
 
+/* MYC-AUDIT-030 (Fase 2): canonicalize path lexical -- absolutize bila
+ * relatif (terhadap cwd proses), samakan separator (Windows -> '/'),
+ * resolve "." dan ".." TANPA menyentuh filesystem (cwd boleh belum ada,
+ * mis. request fingerprint panjang). Return malloc'd string atau NULL
+ * (getcwd gagal / OOM) -- non-blocking: caller memakai nilai asli. */
+static char *myc_absolutize(const char *path)
+{
+    size_t plen, blen, cap, i, j, k;
+    const char *base = NULL;
+    char  cwdbuf[4096];
+    char *work;
+    char *out;
+    int   is_abs = 0;
+    int   has_drive = 0;
+    int   has_root = 0;
+    size_t *starts, *lens, nseg = 0;
+    size_t  outlen, o;
+
+    if (!path || !*path)
+        return NULL;
+    plen = strlen(path);
+
+#ifdef _WIN32
+    if (path[0] == '/' || path[0] == '\\' ||
+        (((path[0] >= 'A' && path[0] <= 'Z') ||
+          (path[0] >= 'a' && path[0] <= 'z')) && path[1] == ':'))
+        is_abs = 1;
+#else
+    if (path[0] == '/')
+        is_abs = 1;
+#endif
+
+    if (!is_abs) {
+        if (!my_getcwd(cwdbuf, sizeof(cwdbuf)))
+            return NULL;
+        base = cwdbuf;
+    }
+    blen = base ? strlen(base) : 0;
+
+    cap = blen + 1 + plen + 1;
+    work = (char *)malloc(cap);
+    if (!work)
+        return NULL;
+    j = 0;
+    if (blen) {
+        memcpy(work, base, blen);
+        j = blen;
+        if (j > 0 && work[j - 1] != '/' && work[j - 1] != '\\')
+            work[j++] = '/';
+    }
+    memcpy(work + j, path, plen + 1);
+
+#ifdef _WIN32
+    for (i = 0; work[i]; i++)
+        if (work[i] == '\\')
+            work[i] = '/';
+#endif
+
+    /* prefix: drive "X:" dan/atau root '/' */
+    i = 0;
+#ifdef _WIN32
+    if (((work[0] >= 'A' && work[0] <= 'Z') ||
+         (work[0] >= 'a' && work[0] <= 'z')) && work[1] == ':') {
+        has_drive = 1;
+        i = 2;
+    }
+#endif
+    if (work[i] == '/') {
+        has_root = 1;
+        i++;
+    }
+
+    starts = (size_t *)malloc((strlen(work) + 1) * sizeof(size_t));
+    lens   = (size_t *)malloc((strlen(work) + 1) * sizeof(size_t));
+    if (!starts || !lens) {
+        free(starts);
+        free(lens);
+        free(work);
+        return NULL;
+    }
+
+    while (work[i]) {
+        size_t ss, sl;
+        if (work[i] == '/') {
+            i++;
+            continue;
+        }
+        ss = i;
+        while (work[i] && work[i] != '/')
+            i++;
+        sl = i - ss;
+        if (sl == 1 && work[ss] == '.')
+            continue;                       /* "." */
+        if (sl == 2 && work[ss] == '.' && work[ss + 1] == '.') {
+            if (nseg > 0)
+                nseg--;                     /* ".." pop, tidak melewati root */
+            continue;
+        }
+        starts[nseg] = ss;
+        lens[nseg]   = sl;
+        nseg++;
+    }
+
+    outlen = (has_drive ? 2 : 0) + (has_root ? 1 : 0);
+    if ((has_drive || has_root) && nseg > 0)
+        outlen += 1;                        /* separator setelah prefix */
+    for (k = 0; k < nseg; k++)
+        outlen += lens[k] + (k ? 1 : 0);
+    outlen += 1;                            /* NUL */
+    out = (char *)malloc(outlen);
+    if (!out) {
+        free(starts);
+        free(lens);
+        free(work);
+        return NULL;
+    }
+    o = 0;
+    if (has_drive) {
+        out[o++] = work[0];
+        out[o++] = ':';
+    }
+    if (has_root)
+        out[o++] = '/';
+    for (k = 0; k < nseg; k++) {
+        if (k)
+            out[o++] = '/';
+        memcpy(out + o, work + starts[k], lens[k]);
+        o += lens[k];
+    }
+    out[o] = '\0';
+
+    free(starts);
+    free(lens);
+    free(work);
+    return out;
+}
+
 void myc_result_free(myc_result *res)
 {
     size_t i;
@@ -644,42 +781,68 @@ void myc_run(const myc_request *req, myc_result *res)
     }
     res->require_complete = req->require_complete;
 
-    /* MYC-AUDIT-029 (Fase 2): canonical ingress -- muat input MEMORY/FILE/
-     * STDIN via SATU loader terpusat (myc_source_load: cap + NUL policy +
-     * error typed). Pipeline HANYA menerima source in-memory
-     * (MYC_SOURCE_MEMORY); tidak ada NULL dereference, tidak ada jalur
-     * file_path yang membaca penuh tanpa cap (MYC-AUDIT-007/028). */
-    if (req->input.kind == MYC_SOURCE_FILE ||
-        req->input.kind == MYC_SOURCE_STDIN) {
-        myc_request  req2;
-        const char  *buf;
-        size_t       len;
-        int          needs_free;
-        myc_error_code le = myc_source_load(&req->input, &buf, &len, &needs_free);
-        if (le != MYC_ERR_NONE) {
-            res->verdict = MC_ERROR;
-            res->err = le;
+    /* MYC-AUDIT-030 (Fase 2): canonicalize cwd di ingress. cwd relatif
+     * (".", "./test/../test", dll) disamakan ke bentuk absolut+lexical
+     * agar fingerprint (`cwd:%s` di compile.c) dan chdir child (proc.c)
+     * deterministik terhadap representasi. Canonicalization lexical
+     * (tidak menyentuh filesystem) -- cwd boleh belum ada. Bila gagal
+     * (getcwd gagal/OOM) NON-blocking: pakai nilai asli + jalur normal. */
+    {
+        myc_request  reqc;
+        const myc_request *eff = req;
+        char        *canon_cwd = NULL;
+
+        if (req->cwd) {
+            canon_cwd = myc_absolutize(req->cwd);
+            if (canon_cwd) {
+                reqc = *req;
+                reqc.cwd = canon_cwd;
+                eff = &reqc;
+            }
+        }
+
+        /* MYC-AUDIT-029 (Fase 2): canonical ingress -- muat input MEMORY/FILE/
+         * STDIN via SATU loader terpusat (myc_source_load: cap + NUL policy +
+         * error typed). Pipeline HANYA menerima source in-memory
+         * (MYC_SOURCE_MEMORY); tidak ada NULL dereference, tidak ada jalur
+         * file_path yang membaca penuh tanpa cap (MYC-AUDIT-007/028). */
+        if (eff->input.kind == MYC_SOURCE_FILE ||
+            eff->input.kind == MYC_SOURCE_STDIN) {
+            const char  *buf;
+            size_t       len;
+            int          needs_free;
+            myc_error_code le = myc_source_load(&eff->input, &buf, &len, &needs_free);
+            if (le != MYC_ERR_NONE) {
+                res->verdict = MC_ERROR;
+                res->err = le;
+                free(canon_cwd);
+                return;
+            }
+            {
+                myc_request req2;
+                req2 = *eff;
+                req2.input.kind = MYC_SOURCE_MEMORY;
+                req2.input.data = buf;
+                req2.input.len = len;
+                myc_pipeline(&req2, res);
+                /* #3: quorum juga dihitung di jalur file_path/STDIN (API/MCP),
+                 * konsisten dengan jalur source in-memory. */
+                myc_quorum_analysis(&req2, res);
+                enforce_require_complete(&req2, res);
+                if (needs_free)
+                    free((void *)buf);
+                res->capsule = myc_build_capsule(&req2, res);
+            }
+            free(canon_cwd);
             return;
         }
-        req2 = *req;
-        req2.input.kind = MYC_SOURCE_MEMORY;
-        req2.input.data = buf;
-        req2.input.len = len;
-        myc_pipeline(&req2, res);
-        /* #3: quorum juga dihitung di jalur file_path/STDIN (API/MCP),
-         * konsisten dengan jalur source in-memory. */
-        myc_quorum_analysis(&req2, res);
-        enforce_require_complete(&req2, res);
-        if (needs_free)
-            free((void *)buf);
-        res->capsule = myc_build_capsule(&req2, res);
-        return;
-    }
 
-    myc_pipeline(req, res);
-    myc_quorum_analysis(req, res);
-    enforce_require_complete(req, res);
-    res->capsule = myc_build_capsule(req, res);
+        myc_pipeline(eff, res);
+        myc_quorum_analysis(eff, res);
+        enforce_require_complete(eff, res);
+        res->capsule = myc_build_capsule(eff, res);
+        free(canon_cwd);
+    }
 }
 
 /* Direktori yang memuat myc.exe (tempat myc_buf.h diharapkan ada).
