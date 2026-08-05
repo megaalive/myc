@@ -450,9 +450,11 @@ static void tool_lint(json_value *id, json_value *args)
             json_obj_set(diag, "message",
                          json_new_str(d->message ? d->message : ""));
             json_obj_set(diag, "why",
-                         json_new_str(myc_lint_why(d->message) ?: ""));
+                         json_new_str(myc_lint_why(d->message)
+                                      ? myc_lint_why(d->message) : ""));
             json_obj_set(diag, "fix",
-                         json_new_str(myc_lint_fix(d->message) ?: ""));
+                         json_new_str(myc_lint_fix(d->message)
+                                      ? myc_lint_fix(d->message) : ""));
             json_arr_push(diag_arr, diag);
         }
         json_obj_set(result, "structuredContent", structured);
