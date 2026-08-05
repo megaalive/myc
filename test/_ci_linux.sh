@@ -45,10 +45,14 @@ assert_out() { # assert_out <desc> <pattern> <file> [flags...]
 # Panggil via `bash` (bukan ./build.sh): executable bit TIDAK dijamin
 # ter-set di repo Windows (core.filemode=false) sehingga `./build.sh`
 # gagal Permission denied di Linux CI (ext4). WSL/drvfs mengabaikan bit.
-if bash build.sh >/dev/null 2>&1; then
+# Output build TIDAK disembunyikan: bila gagal, error gcc harus terlihat di
+# log CI (sebelumnya disembunyikan -> [FAIL] build.sh tanpa penyebab).
+bash build.sh > /tmp/myc_build.log 2>&1
+BUILD_RC=$?
+if [ $BUILD_RC -eq 0 ]; then
     note "build.sh (myc/mcp/argv_probe)"
 else
-    echo "[FAIL] build.sh"
+    echo "[FAIL] build.sh (rc=$BUILD_RC)"; tail -30 /tmp/myc_build.log
     exit 1
 fi
 
