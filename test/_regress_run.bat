@@ -15,9 +15,9 @@ if errorlevel 1 (
 echo --- Fase 5 reentrancy (MYC-AUDIT-008): myc_run paralel bebas race/stale
 gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\stress_threads.exe test\stress_threads.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c >nul 2>&1
 if exist test\stress_threads.exe (
-  test\stress_threads.exe | findstr "no race" >nul && echo [OK] stress_threads deterministik, no race || echo [WARN] stress_threads race/stale (stress test; lihat issue)
+  test\stress_threads.exe | findstr "no race" >nul && echo [OK] stress_threads deterministik, no race || echo [WARN] stress_threads race/stale - stress test; lihat issue
 ) else (
-  echo [WARN] stress_threads gagal dibangun (stress test; lihat issue)
+  echo [WARN] stress_threads gagal dibangun - stress test; lihat issue
 )
 del test\stress_threads.exe 2>nul
 echo --- Fase 6 JSON ketat (MYC-AUDIT-009): corpus valid/invalid tak crash
@@ -362,11 +362,11 @@ findstr /C:"MYC-INCOMPLETE-GATE-UNAVAILABLE" %OUT% >nul && echo [OK] backend tak
 del %OUT%
 echo --- MYC-AUDIT-018: test portabel concurrency/deadlock/flood/OOM (via bash)
 if defined GITHUB_ACTIONS (
-  echo [SKIP] audit018 portabel dilewati di CI (stress/audit soak test, non-blocking)
+  echo [SKIP] audit018 portabel dilewati di CI - stress/audit soak test, non-blocking
 ) else (
   where bash >nul 2>&1
   if errorlevel 1 (
-    echo [WARN] bash tidak tersedia (test portabel audit018 dilewati; jalankan test/_audit018.sh di POSIX)
+    echo [WARN] bash tidak tersedia - test portabel audit018 dilewati; jalankan test/_audit018.sh di POSIX
   ) else (
     bash test/_audit018.sh
     if errorlevel 1 (
