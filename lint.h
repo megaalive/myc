@@ -28,4 +28,9 @@
  */
 int myc_lint_source(const char *source, size_t len, myc_result *res);
 
+/* WHY+FIX (Item 4): alasan dan saran perbaikan untuk observasi lint.
+ * Mengembalikan string malloc'd atau NULL jika tidak dikenali. Caller free(). */
+const char *myc_lint_why(const char *message);
+const char *myc_lint_fix(const char *message);
+
 #endif /* MYC_LINT_H */

@@ -416,9 +416,15 @@ static void tool_lint(json_value *id, json_value *args)
     }
     for (i = 0; i < res.diag_count; i++) {
         const myc_diagnostic *d = &res.diags[i];
+        const char *why = myc_lint_why(d->message);
+        const char *fix = myc_lint_fix(d->message);
         json_sb_printf(&b, "  [%d:%d] [%s] %s\n", d->line, d->col,
                        myc_confidence_name(d->confidence),
                        d->message ? d->message : "");
+        if (why)
+            json_sb_printf(&b, "    why: %s\n", why);
+        if (fix)
+            json_sb_printf(&b, "    fix: %s\n", fix);
     }
     json_sb_putc(&b, '\0');
 
@@ -429,6 +435,28 @@ static void tool_lint(json_value *id, json_value *args)
     json_obj_set(item, "text", json_new_str(b.buf));
     json_arr_push(content, item);
     json_obj_set(result, "content", content);
+    {
+        json_value *structured = json_new_obj();
+        json_value *diag_arr = json_new_arr();
+        json_obj_set(structured, "observations", json_new_num(res.diag_count));
+        json_obj_set(structured, "diagnostics", diag_arr);
+        for (i = 0; i < res.diag_count; i++) {
+            const myc_diagnostic *d = &res.diags[i];
+            json_value *diag = json_new_obj();
+            json_obj_set(diag, "line", json_new_num(d->line));
+            json_obj_set(diag, "col", json_new_num(d->col));
+            json_obj_set(diag, "confidence",
+                         json_new_str(myc_confidence_name(d->confidence)));
+            json_obj_set(diag, "message",
+                         json_new_str(d->message ? d->message : ""));
+            json_obj_set(diag, "why",
+                         json_new_str(myc_lint_why(d->message) ?: ""));
+            json_obj_set(diag, "fix",
+                         json_new_str(myc_lint_fix(d->message) ?: ""));
+            json_arr_push(diag_arr, diag);
+        }
+        json_obj_set(result, "structuredContent", structured);
+    }
     json_obj_set(result, "isError", json_new_bool(0));
     send_result(id, result);
     json_sb_free(&b);

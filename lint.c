@@ -640,3 +640,60 @@ int myc_lint_source(const char *source, size_t len, myc_result *res)
 
     return observations;
 }
+
+/* WHY+FIX (Item 4): alasan dan saran perbaikan untuk observasi lint. */
+const char *myc_lint_why(const char *message)
+{
+    if (!message)
+        return NULL;
+    if (strstr(message, "cast pointer -> integer"))
+        return "Cast pointer ke integer menghilangkan provenance pointer; "
+               "aritmetika atau pembandingan berdasarkan nilai integer bisa "
+               "menimbulkan use-after-free atau null-dereference yang tidak "
+               "terdeteksi statis.";
+    if (strstr(message, "realloc ke variabel lain"))
+        return "realloc() mengembalikan pointer baru, tetapi pointer lama masih "
+               "digunakan di tempat lain. Jika realloc gagal (NULL) atau kode "
+               "melanjutkan dengan pointer lama, terjadi use-after-free.";
+    if (strstr(message, "memcpy/memmove/memset tanpa sizeof"))
+        return "Ukuran salinan ditulis hard-coded atau berasal dari variabel; "
+               "tanpa sizeof(), perubahan tipe struct tidak diperbarui otomatis "
+               "dan berisiko buffer overflow.";
+    if (strstr(message, "ukuran alokasi memuat perkalian tanpa sizeof"))
+        return "Perkalian dua nilai integer dalam ukuran alokasi bisa overflow "
+               "sebelum pemanggilan malloc/calloc, menghasilkan alokasi lebih "
+               "kecil dari yang diharapkan (heap overflow).";
+    if (strstr(message, "akses langsung [..] pada variabel MYC_BUF"))
+        return "Akses indeks langsung ke variabel MYC_BUF melewati lapisan "
+               "keamanan checked build (L4 SPATIAL). MYC_AT() wajib digunakan "
+               "agar bounds check berlaku.";
+    return "Pola memory-safety berisiko terdeteksi oleh heuristik teks; "
+           "hard verification memerlukan gate semantik (gcc/sanitizer/checked).";
+}
+
+const char *myc_lint_fix(const char *message)
+{
+    if (!message)
+        return NULL;
+    if (strstr(message, "cast pointer -> integer"))
+        return "Hindari cast pointer ke integer. Gunakan pointer langsung "
+               "atau uintptr_t hanya untuk tujuan hashing/metadata, bukan "
+               "aritmetika pointer.";
+    if (strstr(message, "realloc ke variabel lain"))
+        return "Gunakan variabel sementara: "
+               "void *tmp = realloc(p, new_size); "
+               "if (!tmp) { handle_error(); } "
+               "p = tmp;";
+    if (strstr(message, "memcpy/memmove/memset tanpa sizeof"))
+        return "Gunakan sizeof(expr) atau snprintf untuk ukuran yang aman: "
+               "memcpy(dst, src, sizeof(*dst));";
+    if (strstr(message, "ukuran alokasi memuat perkalian tanpa sizeof"))
+        return "Gunakan calloc(a, b) atau periksa overflow sebelum perkalian: "
+               "size_t n = a; if (b && a > SIZE_MAX / b) n = 0; "
+               "p = malloc(n * b);";
+    if (strstr(message, "akses langsung [..] pada variabel MYC_BUF"))
+        return "Ganti akses langsung b[i] dengan MYC_AT(b, i) agar checked "
+               "build (L4 SPATIAL) dapat memverifikasi bounds.";
+    return "Tinjau pola dan sesuaikan dengan pola aman yang didokumentasikan "
+           "di policy myc.";
+}
