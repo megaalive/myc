@@ -5,6 +5,9 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build ${{ matrix.os }}
@@ -101,7 +104,8 @@ jobs:
           prerelease: false
 
       - name: Upload Linux binaries to Release
-        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
           for f in artifacts/myc-linux/*; do
@@ -111,7 +115,8 @@ jobs:
           done
 
       - name: Upload Windows binaries to Release
-        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
           for f in artifacts/myc-windows/*; do
