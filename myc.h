@@ -42,7 +42,7 @@ typedef enum {
     MC_INCONCLUSIVE
 } myc_verdict;
 
-/* Assurance ladder (lihat docs/rencana-memory-safety.md, Bagian C).
+/* Assurance ladder (see AGENTS.md).
  * Catatan: ladder ini dipertahankan untuk backward compatibility,
  * tetapi verdict sebenarnya diturunkan dari typed gate status
  * melalui myc_reduce_verdict() (Fase 3). */
