@@ -435,7 +435,7 @@ if "%FPCANON1%"=="%FPCANON4%" (
   echo [WARN] 'tests' vs 'tests/../tests' cwd canonical berbeda
 )
 if "%FPCANON1%"=="%FPCANON5%" (
-  echo [WARN] cwd berbeda ('.' vs 'tests') justru cwd canonical sama
+  echo [WARN] cwd berbeda . vs tests justru cwd canonical sama
 ) else (
   echo [OK] cwd berbeda -> cwd canonical BERBEDA
 )
