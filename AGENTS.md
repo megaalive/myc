@@ -781,3 +781,37 @@ mencegah regresi CI (khususnya `-Werror` dan thread-safety):
 
 6. **Git hygiene**:
    - `git diff --check` — pastikan tidak ada whitespace/CRLF issue.
+
+## Fitur baru (2026-08-05)
+
+### --json-summary mode (Item 2)
+- Flag `--json-summary` pada `myc check` menghasilkan JSON ringkas untuk agent LLM.
+- Field: verdict, assurance_vector, receipt_sha256, finding, completeness,
+  error, exit_code, duration_ms, lint_observations, ran_* flags, diagnostics,
+  gate_matrix, unverified_debt, quorum_status.
+- Field yang dihilangkan: stdout_text, stderr_text, fingerprint, gcc_version,
+  clang_version, capsule, evidence, dll.
+- Default `--json` tetap penuh (backward compatible).
+
+### MCP repair tool (Item 1)
+- Tool MCP baru: `repair` — kembalikan patch minimal untuk finding compile
+  tertentu (gcc warning).
+- Input: `source` (wajib), `finding_code` (opsional).
+- Output: JSON dengan `finding`, `applied_verdict`, `confidence`, `patch`,
+  `structuredContent` (schema `myc.repair.v1`).
+- Template patch untuk: gcc-use-after-free, gcc-free-nonheap-object,
+  gcc-null-dereference, gcc-array-bounds, gcc-stringop-overflow.
+
+### Lint why+fix (Item 4)
+- Tool MCP `lint` kini menyertakan `why` dan `fix` di text output dan
+  `structuredContent`.
+- `why`: penjelasan mengapa pola tersebut berisiko.
+- `fix`: saran perbaikan berbasis template (bukan AI-generated).
+- Fungsi `myc_lint_why()` dan `myc_lint_fix()` di `lint.c` untuk digunakan
+  oleh MCP tool dan potensi penggunaan lain.
+
+## Catatan build
+- Gunakan `bash build.sh` (POSIX) atau `build.bat` (Windows) untuk build
+  lengkap `myc`, `mcp`, dan `argv_probe`.
+- Build langsung dengan `gcc` mungkin tidak memperbarui binary karena
+  masalah filesystem/cache; `build.sh` direkomendasikan.
