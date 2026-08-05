@@ -969,6 +969,88 @@ char *myc_result_to_json(const myc_result *res)
      return b.buf;
  }
 
+void myc_report_json_summary(const myc_result *res)
+{
+    json_sb b;
+    int     i;
+    if (!json_sb_init(&b))
+        return;
+    json_sb_puts(&b, "{");
+    json_sb_printf(&b, "\"verdict\":\"%s\",", myc_verdict_name(res->verdict));
+    json_sb_puts(&b, "\"assurance_vector\":{");
+    {
+        static const char dim_chars[MYC_DIM_COUNT] = {
+            'C', 'S', 'R', 'B', 'P', 'D', 'F'
+        };
+        int dim_i;
+        for (dim_i = 0; dim_i < MYC_DIM_COUNT; dim_i++) {
+            if (dim_i)
+                json_sb_puts(&b, ",");
+            json_sb_printf(&b, "\"%c\":\"%s\"",
+                           dim_chars[dim_i],
+                           myc_dim_status_name(
+                               res->assurance_vector.status[dim_i]));
+        }
+    }
+    json_sb_puts(&b, "},");
+    json_sb_printf(&b, "\"receipt_sha256\":");
+    json_sb_escape(&b, res->receipt_sha256);
+    json_sb_puts(&b, ",");
+    json_sb_printf(&b, "\"finding\":\"%s\",", myc_finding_name(res->finding));
+    json_sb_printf(&b, "\"completeness\":\"%s\",", myc_completeness_name(res->completeness));
+    json_sb_printf(&b, "\"error\":\"%s\",", myc_error_name(res->err));
+    json_sb_printf(&b, "\"exit_code\":%d,", res->exit_code);
+    json_sb_printf(&b, "\"duration_ms\":%llu,", (unsigned long long)res->duration_ms);
+    json_sb_printf(&b, "\"lint_observations\":%d,", res->lint_observations);
+    json_sb_printf(&b, "\"ran_runtime\":%s,", res->ran_runtime ? "true" : "false");
+    json_sb_printf(&b, "\"ran_checked\":%s,", res->ran_checked ? "true" : "false");
+    json_sb_printf(&b, "\"ran_prove\":%s,", res->ran_prove ? "true" : "false");
+    json_sb_printf(&b, "\"ran_filc\":%s,", res->ran_filc ? "true" : "false");
+    json_sb_printf(&b, "\"ran_driver\":%s,", res->ran_driver ? "true" : "false");
+    json_sb_printf(&b, "\"ran_negative\":%s,", res->ran_negative ? "true" : "false");
+    json_sb_printf(&b, "\"ran_metamorphic\":%s,", res->ran_metamorphic ? "true" : "false");
+    json_sb_printf(&b, "\"diagnostics\":[");
+    for (i = 0; i < res->diag_count; i++) {
+        const myc_diagnostic *d = &res->diags[i];
+        if (i)
+            json_sb_puts(&b, ",");
+        json_sb_printf(&b,
+                       "{\"line\":%d,\"col\":%d,\"confidence\":\"%s\","
+                       "\"message\":",
+                       d->line, d->col, myc_confidence_name(d->confidence));
+        json_sb_escape(&b, d->message);
+        json_sb_puts(&b, "}");
+    }
+    json_sb_puts(&b, "],");
+    json_sb_printf(&b, "\"gate_matrix\":[");
+    for (i = 0; i < (int)res->gate_count; i++) {
+        const myc_gate_result *g = &res->gates[i];
+        if (i)
+            json_sb_puts(&b, ",");
+        json_sb_printf(&b, "{\"id\":\"%s\",\"status\":\"%s\"}",
+                       (int)g->id < MYC_GATE_COUNT ?
+                           myc_gate_id_short((myc_gate_id)g->id) : "?",
+                       myc_gate_status_name(g->status));
+    }
+    json_sb_puts(&b, "],");
+    json_sb_printf(&b, "\"unverified_debt\":[");
+    for (i = 0; i < (int)res->debt_count; i++) {
+        const myc_debt_item *d = &res->debt[i];
+        if (i)
+            json_sb_puts(&b, ",");
+        json_sb_printf(&b, "{\"code\":\"%s\",\"text\":",
+                       myc_debt_code(d->type));
+        json_sb_escape(&b, d->text);
+        json_sb_puts(&b, "}");
+    }
+    json_sb_puts(&b, "],");
+    json_sb_printf(&b, "\"quorum_status\":\"%s\"",
+                   myc_quorum_status_name(res->quorum_status));
+    json_sb_puts(&b, "}");
+    json_sb_putc(&b, '\0');
+    printf("%s\n", b.buf);
+}
+
 void myc_report_json(const myc_result *res)
 {
     char *s = myc_result_to_json(res);

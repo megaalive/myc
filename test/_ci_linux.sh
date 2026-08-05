@@ -78,6 +78,44 @@ for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
 done
 [ "$FAIL" -eq 0 ] && note "self-dogfooding 16 source myc"
 
+# --- 1b. --json-summary mode (ringkas untuk agent) ---
+if ./myc check tests/ok_hello.c --json-summary 2>&1 | grep -qF '"verdict":"OK"'; then
+    note "--json-summary verdict OK"
+else
+    fail "--json-summary verdict missing"
+fi
+if ./myc check tests/ok_hello.c --json-summary 2>&1 | grep -qF '"assurance_vector"'; then
+    note "--json-summary assurance_vector ada"
+else
+    fail "--json-summary assurance_vector hilang"
+fi
+if ./myc check tests/ok_hello.c --json-summary 2>&1 | grep -qF '"receipt_sha256"'; then
+    note "--json-summary receipt_sha256 ada"
+else
+    fail "--json-summary receipt_sha256 hilang"
+fi
+if ./myc check tests/ok_hello.c --json-summary 2>&1 | grep -qF '"diagnostics"'; then
+    note "--json-summary diagnostics ada"
+else
+    fail "--json-summary diagnostics hilang"
+fi
+if ./myc check tests/ok_hello.c --json-summary 2>&1 | grep -qF '"gate_matrix"'; then
+    note "--json-summary gate_matrix ada"
+else
+    fail "--json-summary gate_matrix hilang"
+fi
+# pastikan field besar TIDAK muncul di summary
+if ./myc check tests/ok_hello.c --json-summary 2>&1 | grep -qF '"stdout_text"'; then
+    fail "--json-summary seharusnya tidak mengandung stdout_text"
+else
+    note "--json-summary tidak mengandung stdout_text"
+fi
+if ./myc check tests/ok_hello.c --json-summary 2>&1 | grep -qF '"stderr_text"'; then
+    fail "--json-summary seharusnya tidak mengandung stderr_text"
+else
+    note "--json-summary tidak mengandung stderr_text"
+fi
+
 # --- 2. fixture dasar + diagnostic JSON (AUDIT-022) ---
 assert_out "ok_hello -> OK"               "verdict:   OK" tests/ok_hello.c
 assert_out "bad_syntax -> COMPILE_ERROR"  "verdict:   COMPILE_ERROR" tests/bad_syntax.c

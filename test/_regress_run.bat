@@ -90,6 +90,17 @@ for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c r
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%
 )
+echo --- --json-summary: ringkas untuk agent (tanpa stdout/stderr/fingerprint)
+myc.exe check tests\ok_hello.c --json-summary > %OUT% 2>&1
+findstr /C:"verdict" %OUT% >nul && echo [OK] --json-summary verdict ada || echo [WARN] --json-summary verdict hilang
+findstr /C:"assurance_vector" %OUT% >nul && echo [OK] --json-summary assurance_vector ada || echo [WARN] --json-summary assurance_vector hilang
+findstr /C:"receipt_sha256" %OUT% >nul && echo [OK] --json-summary receipt_sha256 ada || echo [WARN] --json-summary receipt_sha256 hilang
+findstr /C:"diagnostics" %OUT% >nul && echo [OK] --json-summary diagnostics ada || echo [WARN] --json-summary diagnostics hilang
+findstr /C:"gate_matrix" %OUT% >nul && echo [OK] --json-summary gate_matrix ada || echo [WARN] --json-summary gate_matrix hilang
+findstr /C:"stdout_text" %OUT% >nul && echo [WARN] --json-summary seharusnya tanpa stdout_text || echo [OK] --json-summary tanpa stdout_text
+findstr /C:"stderr_text" %OUT% >nul && echo [WARN] --json-summary seharusnya tanpa stderr_text || echo [OK] --json-summary tanpa stderr_text
+findstr /C:"fingerprint" %OUT% >nul && echo [WARN] --json-summary seharusnya tanpa fingerprint || echo [OK] --json-summary tanpa fingerprint
+del %OUT%
 echo --- run fixtures (--run) harus RUNTIME_VIOLATION utk bad_run*
 for %%f in (tests\ok_run.c tests\bad_run_oob.c tests\bad_run_uaf.c tests\bad_run_intovf.c test\fixtures\ok_contract.c test\fixtures\bad_contract_pre.c) do (
   echo === %%f

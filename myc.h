@@ -368,9 +368,12 @@ typedef struct {
                                     pemeriksaan hasil alokasi); NON-blocking,
                                     HANYA diagnostic + confidence */
     int         require_complete; /* 9.10 Silence Is a Finding: bila set,
-                                    verification gap (unverified_debt) membuat
-                                    hasil gagal (verdict INCONCLUSIVE, exit 1)
-                                    -- bukan kesunyian */
+                                     verification gap (unverified_debt) membuat
+                                     hasil gagal (verdict INCONCLUSIVE, exit 1)
+                                     -- bukan kesunyian */
+    int         json_summary;     /* --json-summary: output JSON ringkas
+                                     (tanpa stdout/stderr/fingerprint) untuk
+                                     agent LLM */
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
@@ -716,6 +719,7 @@ void myc_run(const myc_request *req, myc_result *res);
 /* Output teks / JSON hasil ke stdout. */
 void myc_report_text(const myc_result *res);
 void myc_report_json(const myc_result *res);
+void myc_report_json_summary(const myc_result *res);
 
 /* Nama error code (statis). */
 const char *myc_error_name(myc_error_code c);

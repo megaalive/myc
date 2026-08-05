@@ -886,11 +886,11 @@ static void usage(void)
     printf(
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
-        "  myc check <file.c> [--json] [--analyze] [--strict] [--no-lint] [--cwd DIR]\n"
+        "  myc check <file.c> [--json] [--json-summary] [--analyze] [--strict] [--no-lint] [--cwd DIR]\n"
         "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--metamorphic] [--negative] [--quorum] [--require-complete]\n"
         "  myc check <file.c> [--timeout MS] [--output-cap BYTES]\n"
         "                        (timeout 0-600000 ms, 0 = default 30000; output-cap 0-104857600 byte, 0 = default 1 MiB)\n"
-        "  myc check -          [--json] [--analyze] [--strict] [--no-lint]\n"
+        "  myc check -          [--json] [--json-summary] [--analyze] [--strict] [--no-lint]\n"
         "                        (source dari stdin)\n"
         "  myc policy\n"
         "  myc probe\n"
@@ -1118,6 +1118,8 @@ int main(int argc, char **argv)
                 req.negative = 1; known = 1;
             } else if (strcmp(argv[i], "--require-complete") == 0) {
                 req.require_complete = 1; known = 1;
+            } else if (strcmp(argv[i], "--json-summary") == 0) {
+                req.json_summary = 1; known = 1;
             } else if (strcmp(argv[i], "--run-stdin") == 0) {
                 char *buf;
                 size_t len;
@@ -1240,6 +1242,8 @@ int main(int argc, char **argv)
 
     if (req.as_json)
         myc_report_json(&res);
+    else if (req.json_summary)
+        myc_report_json_summary(&res);
     else
         myc_report_text(&res);
 
