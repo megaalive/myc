@@ -363,6 +363,12 @@ static void run_gcc(const myc_request *req,
     preq.max_output_bytes = max_out;
 
     myc_proc_run(&preq, pr);
+    /* Kegagalan launch (gcc tak terjangkau, CreateProcessA gagal, dst.)
+     * meninggalkan exit_code=0 dari memset -> gate di bawah akan salah
+     * klaim kompilasi bersih (false OK). Tandai sebagai gagal bila proses
+     * tidak benar-benar berjalan dan bukan timeout. */
+    if (!pr->ok && !pr->timed_out)
+        pr->exit_code = 1;
     free(argv);
 }
 
