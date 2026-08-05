@@ -1,0 +1,121 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: myc-linux
+            binary_name: myc
+          - os: windows-latest
+            artifact_name: myc-windows
+            binary_name: myc.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup toolchain (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          for d in "/c/msys64/mingw64/bin" "/c/ProgramData/mingw64/mingw64/bin" "/c/mingw64/bin"; do
+            if [ -x "$d/gcc.exe" ]; then
+              cygpath -w "$d" >> "$GITHUB_PATH"
+              echo "gcc dir: $d"
+              break
+            fi
+          done
+          if [ -x "/c/Program Files/LLVM/bin/clang.exe" ]; then
+            cygpath -w "/c/Program Files/LLVM/bin" >> "$GITHUB_PATH"
+          fi
+          ASAN_LIB=$(ls -d "/c/Program Files/LLVM/lib/clang"/*/lib/windows 2>/dev/null | head -1)
+          if [ -n "$ASAN_LIB" ]; then
+            cygpath -w "$ASAN_LIB" >> "$GITHUB_PATH"
+          fi
+          cygpath -w "/c/Program Files/Git/bin" >> "$GITHUB_PATH"
+
+      - name: Install clang (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+
+      - name: Build (POSIX)
+        if: runner.os == 'Linux'
+        run: bash build.sh
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: build.bat
+
+      - name: Upload Linux binaries
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            myc
+            mcp
+            argv_probe
+
+      - name: Upload Windows binaries
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            myc.exe
+            mcp.exe
+            argv_probe.exe
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Linux binaries to Release
+        shell: bash
+        run: |
+          set -e
+          for f in artifacts/myc-linux/*; do
+            if [ -f "$f" ]; then
+              gh release upload "${{ github.ref_name }}" "$f"
+            fi
+          done
+
+      - name: Upload Windows binaries to Release
+        shell: bash
+        run: |
+          set -e
+          for f in artifacts/myc-windows/*; do
+            if [ -f "$f" ]; then
+              gh release upload "${{ github.ref_name }}" "$f"
+            fi
+          done
