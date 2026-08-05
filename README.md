@@ -80,6 +80,14 @@ the static result plus a diagnostic.
 `mcp.exe` exposes `myc check` as an MCP tool (JSON-RPC 2.0 over stdio). See
 `docs/mcp-tools.md`. A dependency-free example client is `mcp_client.py`.
 
+## Learn more
+
+- `docs/quickstart.md` — build, basic check, `MYC_BUF` (L4), `--run`,
+  contracts, CI.
+- `docs/capabilities.md` — honest gate matrix and limitations (what each flag
+  guarantees, and what it does **not**).
+- `docs/mcp-tools.md` — MCP server tool reference for coding agents.
+
 ## Build
 
 ```
