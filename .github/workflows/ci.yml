@@ -42,6 +42,16 @@ jobs:
           else
             echo "::warning::LLVM clang tidak ditemukan; gate --run akan jadi UNAVAILABLE"
           fi
+          # clang ASan runtime DLL (libclang_rt.asan_dynamic-*.dll) harus ada di
+          # PATH agar gate --run bisa dieksekusi di Windows runner; bila absen,
+          # binary verifikasi gagal launch dan guard anti-false-OK ikut gagal.
+          ASAN_LIB=$(ls -d "/c/Program Files/LLVM/lib/clang"/*/lib/windows 2>/dev/null | head -1)
+          if [ -n "$ASAN_LIB" ]; then
+            cygpath -w "$ASAN_LIB" >> "$GITHUB_PATH"
+            echo "asan lib dir: $ASAN_LIB"
+          else
+            echo "::warning::clang ASan runtime DLL tidak ditemukan; gate --run mungkin gagal launch"
+          fi
           cygpath -w "/c/Program Files/Git/bin" >> "$GITHUB_PATH"
 
       - name: Verify toolchain
