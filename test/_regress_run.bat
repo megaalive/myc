@@ -1,5 +1,7 @@
 @echo off
 setlocal
+rem Guard anti-false-OK: gagal cepat bila myc salah melaporkan OK (MYC-AUDIT-031).
+call test\_anti_false_ok.bat || exit /b 1
 set OUT=test\_tmp_run_out.txt
 echo --- Fase 5 reentrancy (MYC-AUDIT-008): myc_run paralel bebas race/stale
 gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\stress_threads.exe test\stress_threads.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c >nul 2>&1
