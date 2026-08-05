@@ -148,7 +148,8 @@ typedef enum {
     MYC_EVIDENCE_DIAGNOSTIC,
     MYC_EVIDENCE_FINDING,
     MYC_EVIDENCE_SKIP,
-    MYC_EVIDENCE_ERROR
+    MYC_EVIDENCE_ERROR,
+    MYC_EVIDENCE_CLEAN
 } myc_evidence_type;
 
 typedef struct {
