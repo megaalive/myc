@@ -370,7 +370,7 @@ if defined GITHUB_ACTIONS (
   ) else (
     bash test/_audit018.sh
     if errorlevel 1 (
-      echo [WARN] audit018 portable: lihat log (stress/audit test, non-fatal)
+      echo [WARN] audit018 portable: lihat log - stress/audit test, non-fatal
     )
   )
 )
@@ -445,11 +445,11 @@ call test\_mcp_smoke.bat
 echo --- MCP SDK interop (opsional): hanya bila SDK MCP Python resmi terpasang
 python -m pip show mcp >nul 2>&1
 if errorlevel 1 (
-  echo [SKIP] SDK MCP Python tidak terpasang (pip install mcp)
+  echo [SKIP] SDK MCP Python tidak terpasang - pip install mcp
 ) else (
   python test\_mcp_sdk_interop.py
    if errorlevel 1 (
-     echo [WARN] interop SDK MCP resmi gagal (non-fatal)
+     echo [WARN] interop SDK MCP resmi gagal - non-fatal
    )
 )
 exit /b 0
