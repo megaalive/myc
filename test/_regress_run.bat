@@ -3,6 +3,15 @@ setlocal
 rem Guard anti-false-OK: gagal cepat bila myc salah melaporkan OK (MYC-AUDIT-031).
 call test\_anti_false_ok.bat || exit /b 1
 set OUT=test\_tmp_run_out.txt
+echo --- Pre-flight: prove.c compile -Werror (MYC-AUDIT-023)
+gcc -O2 -std=c11 -Wall -Wextra -Werror -pedantic -Werror=implicit-function-declaration -c prove.c -o test\_tmp_prove_preflight.o 2>&1
+if errorlevel 1 (
+  echo [FAIL] pre-flight prove.c -Werror
+  exit /b 1
+) else (
+  echo [OK] pre-flight prove.c -Werror clean
+  del test\_tmp_prove_preflight.o 2>nul
+)
 echo --- Fase 5 reentrancy (MYC-AUDIT-008): myc_run paralel bebas race/stale
 gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\stress_threads.exe test\stress_threads.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c >nul 2>&1
 if exist test\stress_threads.exe (

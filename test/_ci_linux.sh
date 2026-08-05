@@ -56,6 +56,16 @@ else
     exit 1
 fi
 
+# --- 0b. pre-flight: prove.c compile dengan -Werror (MYC-AUDIT-023) ---
+# prove.c adalah kantor terdepan untuk -Werror karena WSL/Frama-C code.
+# Jika gagal di sini, fail-fast dengan pesan jelas.
+if ! gcc -O2 -std=c11 -Wall -Wextra -Werror -pedantic -Werror=implicit-function-declaration -c prove.c -o /tmp/prove_preflight.o 2>&1; then
+    echo "[FAIL] pre-flight prove.c -Werror (lihat error di atas)"
+    FAIL=1
+else
+    note "pre-flight prove.c -Werror clean"
+fi
+
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c; do

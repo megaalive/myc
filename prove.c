@@ -101,6 +101,7 @@ static void add_diag_prove(myc_result *res, const char *msg)
     res->diag_count++;
 }
 
+#ifdef _WIN32
 /* Jalankan perintah WSL via proc.c; 1 sukses, 0 gagal (res->err diisi). */
 static int run_wsl(const myc_request *req, const char *wsl_path,
                    const char *cmd, const void *stdin_data, size_t stdin_len,
@@ -126,6 +127,7 @@ static int run_wsl(const myc_request *req, const char *wsl_path,
     preq.max_output_bytes = max_out;
     return myc_proc_run(&preq, pr);
 }
+#endif
 
 /* Ambil baris alarm dari output Eva: "[eva:alarm]" -> diagnostic; hitung. */
 static int ingest_eva_alarms(myc_result *res, const char *text)
@@ -232,7 +234,6 @@ static int count_proof_obligations(const char *text)
 int myc_prove_gate(const myc_request *req, const char *source, size_t source_len,
                     myc_result *res)
 {
-    char *wsl_path = NULL;
     size_t max_out = req->max_output_bytes > 0
                          ? (size_t)req->max_output_bytes
                          : MYC_MAX_OUTPUT_BYTES;
@@ -243,7 +244,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
 
 #ifdef _WIN32
     /* Windows: cari wsl.exe, jalankan frama-c via WSL. */
-    wsl_path = myc_find_executable("wsl.exe");
+    char *wsl_path = NULL;
     if (!wsl_path) {
         add_diag_prove(res, "gate Eva di-skip: wsl.exe tidak ditemukan "
                             "(Frama-C hanya tersedia via WSL di Windows)");

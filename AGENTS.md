@@ -249,7 +249,13 @@ Poin penting:
   `'` sedangkan gcc 15 (MinGW) ASCII `'` pada pesan `pointer 'buf' used
   after 'realloc'` → pola regex cocok keduanya; (d) bug cmd: parens `(CI-
   portabel)` di teks echo dalam blok `if (...)` memutus parsing (`)` tak
-  terduga) → bentuk `if defined ...` tanpa blok. Verifikasi: Linux (WSL)
+  terduga) → bentuk `if defined ...` tanpa blok. **Perbaikan CI lanjutan
+  (2026-08-05)**: (e) `prove.c` -Werror gagal di Linux gcc 13 karena
+  `run_wsl()` + `wsl_path` unconditional di file yang juga dikompilasi di
+  POSIX → di-`#ifdef _WIN32`; (f) `fingerprint_cache_update` crash saat
+  `cwd == NULL` pada run kedua → guard `(!cwd || strcmp(...))`; (g)
+  `fp_cache` static global menyebabkan data race di `stress_threads` →
+  diubah jadi `_Thread_local`. Verifikasi: Linux (WSL)
   `_ci_linux.sh` PASS=18 FAIL=0 (audit018 SELESAI OK incl. filc + verify_
   descendants); Windows regress 153 [OK] 0 [FAIL]. Catatan: job CI windows
   memakai clang MSVC-target LLVM (ASan DLL `clang_rt.asan_dynamic-x86_64`)
@@ -744,3 +750,34 @@ Ciri tool dogfooding yang baik:
 - Sebaiknya relevan dengan domain user (hardware/game/web/dst) agar sekaligus
   mengekspos kebutuhan library baru → bahan revisi whitelist.
 - Setiap fitur baru di tool tersebut = uji nyata untuk myc.
+
+## CI Guards (checklist wajib sebelum push)
+
+Setiap perubahan ke kode inti myc **wajib** melewati checklist ini untuk
+mencegah regresi CI (khususnya `-Werror` dan thread-safety):
+
+1. **Compile `-Werror` eksplisit** (Linux + Windows):
+   - Linux: `gcc -O2 -std=c11 -Wall -Wextra -Werror -pedantic -Werror=implicit-function-declaration -c prove.c`
+   - Windows (MSYS2 gcc): compile `prove.c` dengan `-Werror` via `build.bat`
+   - `prove.c` adalah kantor terdepan untuk `-Werror` karena WSL/Frama-C code.
+
+2. **Pre-flight `prove.c` di CI script**:
+   - `_ci_linux.sh`: tambah step pre-flight `prove.c -Werror` setelah build.
+   - `_regress_run.bat`: tambah step pre-flight `prove.c -Werror` setelah anti-false-OK.
+
+3. **Audit static mutable global**:
+   - Setiap `static` non-`const` yang **ditulis** harus `_Thread_local` atau
+     dipindah ke `myc_result` arena.
+   - Pengecualian: test fixture yang tidak dijalankan paralel dalam satu proses.
+   - Cek cepat: `grep -rn '^static .*=' myc.c proc.c ... | grep -v 'static const' | grep -v '_Thread_local'`
+
+4. **Build + test lokal**:
+   - `build.bat` (Windows) atau `bash build.sh` (POSIX) sukses.
+   - `test/_tmp_ci_subset.sh` (subset CI Linux) PASS.
+   - `test/_regress_run.bat` (Windows) PASS.
+
+5. **Self-dogfooding**:
+   - Semua 16 source myc harus `verdict:   OK` via `./myc check <file>`.
+
+6. **Git hygiene**:
+   - `git diff --check` — pastikan tidak ada whitespace/CRLF issue.

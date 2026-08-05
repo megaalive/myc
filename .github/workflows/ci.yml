@@ -27,6 +27,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check whitespace / CRLF issues
+        run: git diff --check
+
       - name: Setup toolchain PATH (MSYS2 gcc + LLVM clang + git bash)
         shell: bash
         run: |
@@ -60,6 +63,17 @@ jobs:
           gcc --version | head -1 || { echo "::error::gcc tidak ditemukan di PATH"; exit 1; }
           clang --version | head -1 || { echo "::error::clang tidak ditemukan di PATH"; exit 1; }
 
+      - name: Compile -Werror check (all source files)
+        shell: bash
+        run: |
+          set -e
+          echo "--- Compile each .c with -Werror (gcc) ---"
+          for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c; do
+            echo "=== $f ==="
+            gcc -O2 -std=c11 -Wall -Wextra -Werror -pedantic -Werror=implicit-function-declaration -c "$f" -o "/tmp/${f%.c}.o" 2>&1
+          done
+          echo "--- All source files compiled clean with -Werror ---"
+
       - name: Build (build.bat)
         shell: cmd
         run: build.bat
@@ -74,10 +88,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check whitespace / CRLF issues
+        run: git diff --check
+
       - name: Install clang (gcc sudah preinstalled di ubuntu-latest)
         run: |
           sudo apt-get update
           sudo apt-get install -y clang
+
+      - name: Compile -Werror check (all source files)
+        run: |
+          set -e
+          echo "--- Compile each .c with -Werror (gcc) ---"
+          for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c; do
+            echo "=== $f ==="
+            gcc -O2 -std=c11 -Wall -Wextra -Werror -pedantic -Werror=implicit-function-declaration -c "$f" -o "/tmp/${f%.c}.o" 2>&1
+          done
+          echo "--- All source files compiled clean with -Werror ---"
 
       - name: Build + trust-core POSIX
         run: bash test/_ci_linux.sh

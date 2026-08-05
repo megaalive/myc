@@ -65,7 +65,7 @@ typedef struct {
     int  valid;
 } fingerprint_cache_t;
 
-static fingerprint_cache_t fp_cache = {0};
+static _Thread_local fingerprint_cache_t fp_cache = {0};
 
 static void fingerprint_cache_invalidate(void)
 {
@@ -80,7 +80,7 @@ static void fingerprint_cache_update(const char *gcc_path,
 {
     if (fp_cache.valid &&
         strcmp(fp_cache.gcc_path, gcc_path) == 0 &&
-        strcmp(fp_cache.cwd, cwd) == 0 &&
+        (!cwd || strcmp(fp_cache.cwd, cwd) == 0) &&
         strcmp(fp_cache.policy_hex, policy_hex) == 0 &&
         strcmp(fp_cache.flags, flags_str) == 0 &&
         fp_cache.buf_rev == buf_rev) {
@@ -703,16 +703,16 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         char  flags_str[256];
         myc_policy_hash(policy_hex);
         snprintf(flags_str, sizeof(flags_str),
-                     "c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s;%s",
-                     req->strict ? "strict" : "default",
-                     req->run ? "run" : "norun",
-                     req->prove ? "prove" : "noprove",
-                     req->checked ? "checked" : "nochecked",
-                     req->filc ? "filc" : "nofilc",
-                     req->driver ? "driver" : "nodriver",
-                     req->metamorphic ? "meta" : "nometa",
-                     req->negative ? "neg" : "noneg",
-                     req->require_complete ? "reqc" : "noreqc");
+                      "c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s;%s",
+                      req->strict ? "strict" : "default",
+                      req->run ? "run" : "norun",
+                      req->prove ? "prove" : "noprove",
+                      req->checked ? "checked" : "nochecked",
+                      req->filc ? "filc" : "nofilc",
+                      req->driver ? "driver" : "nodriver",
+                      req->metamorphic ? "meta" : "nometa",
+                      req->negative ? "neg" : "noneg",
+                      req->require_complete ? "reqc" : "noreqc");
         fingerprint_cache_update(gcc_path, req->cwd, policy_hex,
                                      flags_str, MYC_BUF_RUNTIME_REV);
         fingerprint_compute_incremental(res->source_sha256, hex);
