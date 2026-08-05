@@ -1330,3 +1330,88 @@ void myc_quorum_analysis(const myc_request *req, myc_result *res)
         res->quorum_report = myc_result_arena_dup(res, qreport, qoff);
     }
 }
+
+/* ------------------------- repair: minimal patch untuk finding tertentu ------------------------- */
+
+const repair_template_t REPAIR_TEMPLATES[] = {
+    {
+        "gcc-use-after-free",
+        "Gunakan variabel sementara untuk menghindari use-after-free:\n"
+        "  void *tmp = realloc(p, new_size);\n"
+        "  if (!tmp) { /* handle error */ }\n"
+        "  p = tmp;",
+        2
+    },
+    {
+        "gcc-free-nonheap-object",
+        "Pastikan free() hanya dipanggil pada pointer dari malloc/calloc/realloc.\n"
+        "Jika variabel berada di stack, jangan free().",
+        2
+    },
+    {
+        "gcc-null-dereference",
+        "Tambahkan pemeriksaan NULL sebelum dereference:\n"
+        "  if (p == NULL) {\n"
+        "      /* handle error */\n"
+        "      return -1;\n"
+        "  }",
+        1
+    },
+    {
+        "gcc-array-bounds",
+        "Periksa batas array sebelum akses:\n"
+        "  if (index < 0 || index >= ARRAY_SIZE) {\n"
+        "      /* handle error */\n"
+        "      return -1;\n"
+        "  }",
+        1
+    },
+    {
+        "gcc-stringop-overflow",
+        "Gunakan snprintf atau periksa ukuran buffer sebelum operasi string:\n"
+        "  snprintf(dst, sizeof(dst), \"%s\", src);",
+        1
+    }
+};
+
+const size_t REPAIR_TEMPLATES_COUNT = sizeof(REPAIR_TEMPLATES) / sizeof(REPAIR_TEMPLATES[0]);
+
+const char *repair_find_code(const char *message)
+{
+    if (!message)
+        return NULL;
+    if (strstr(message, "used after 'realloc'") || strstr(message, "use-after-free"))
+        return "gcc-use-after-free";
+    if (strstr(message, "free of non-heap"))
+        return "gcc-free-nonheap-object";
+    if (strstr(message, "null pointer") || strstr(message, "NULL") ||
+        strstr(message, "dereference of null"))
+        return "gcc-null-dereference";
+    if (strstr(message, "array bounds") || strstr(message, "outside array bounds"))
+        return "gcc-array-bounds";
+    if (strstr(message, "stringop-overflow") || strstr(message, "overflow"))
+        return "gcc-stringop-overflow";
+    return NULL;
+}
+
+/* Dapatkan patch untuk finding tertentu. Mengembalikan string malloc'd
+ * atau NULL bila tidak ada template yang cocok. Caller harus free(). */
+char *myc_repair_get_patch(const char *finding_code)
+{
+    size_t i;
+    if (!finding_code)
+        return NULL;
+    for (i = 0; i < REPAIR_TEMPLATES_COUNT; i++) {
+        if (strcmp(REPAIR_TEMPLATES[i].finding_code, finding_code) == 0) {
+            return myc_strdup(REPAIR_TEMPLATES[i].patch_template);
+        }
+    }
+    return NULL;
+}
+
+/* Cari patch berdasarkan diagnostic message. */
+char *myc_repair_from_diagnostic(const char *message)
+{
+    const char *code = repair_find_code(message);
+    return myc_repair_get_patch(code);
+}

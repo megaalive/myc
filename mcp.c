@@ -7,8 +7,11 @@
  *
  * Tool yang diekspos (tools/list + tools/call):
  *   check   -- jalankan pipeline myc pada source C (verdict/assurance/dll)
+ *   repair  -- kembalikan patch minimal untuk finding compile tertentu
  *   version -- versi myc + ketersediaan gcc/clang
  *   policy  -- whitelist header default
+ *   contracts -- scan kontrak-lite //@ requires/ensures
+ *   lint    -- lint memory-safety (heuristik, non-blocking)
  *
  * MYC-AUDIT-016 (2026-08-02):
  *   - JSON-RPC ketat: field "jsonrpc" wajib "2.0", id hanya string/angka/null,
@@ -35,6 +38,7 @@
 #include "policy.h"
 #include "proc.h"
 #include "report.h"
+#include "compile.h"
 
 #include "contract.h"
 #include "lint.h"
@@ -431,6 +435,96 @@ static void tool_lint(json_value *id, json_value *args)
     myc_result_free(&res);
 }
 
+/* ------------------------- tool: repair ---------------------------- */
+
+static void tool_repair(json_value *id, json_value *args)
+{
+    const char *source = NULL;
+    myc_request req;
+    myc_result  res;
+    const char *finding_code = NULL;
+    char       *patch = NULL;
+    const char *applied_verdict = NULL;
+    int         confidence = 0;
+    json_value *result = NULL;
+    json_value *content = NULL;
+    json_value *item = NULL;
+    int         i;
+
+    if (!args) {
+        send_error(id, -32602, "Invalid params: arguments wajib");
+        return;
+    }
+    source = json_get_str(args, "source");
+    if (!source) {
+        send_error(id, -32602, "Invalid params: 'source' wajib (string kode C)");
+        return;
+    }
+    finding_code = json_get_str(args, "finding_code");
+
+    myc_request_init(&req);
+    req.input.kind = MYC_SOURCE_MEMORY;
+    req.input.data = source;
+    req.input.len = strlen(source);
+    req.run_lint = 1;
+    myc_result_init(&res);
+    myc_run(&req, &res);
+
+    applied_verdict = myc_verdict_name(res.verdict);
+
+    if (res.diag_count > 0 && !finding_code) {
+        const char *code = repair_find_code(res.diags[0].message);
+        if (code)
+            finding_code = code;
+    }
+
+    if (finding_code) {
+        patch = myc_repair_get_patch(finding_code);
+        for (i = 0; i < (int)REPAIR_TEMPLATES_COUNT; i++) {
+            if (strcmp(REPAIR_TEMPLATES[i].finding_code, finding_code) == 0) {
+                confidence = REPAIR_TEMPLATES[i].confidence;
+                break;
+            }
+        }
+    }
+
+    result = json_new_obj();
+    content = json_new_arr();
+    item = json_new_obj();
+    json_obj_set(item, "type", json_new_str("text"));
+    if (patch) {
+        char buf[512];
+        snprintf(buf, sizeof(buf),
+                 "repair: finding=%s\nconfidence=%d\napplied_verdict=%s\npatch:\n%s\n",
+                 finding_code ? finding_code : "unknown",
+                 confidence,
+                 applied_verdict,
+                 patch);
+        json_obj_set(item, "text", json_new_str(buf));
+    } else {
+        json_obj_set(item, "text", json_new_str(
+            "repair: patch tidak tersedia untuk finding ini"));
+    }
+    json_arr_push(content, item);
+    json_obj_set(result, "content", content);
+
+    {
+        json_value *structured = json_new_obj();
+        json_obj_set(structured, "finding", json_new_str(finding_code ? finding_code : "unknown"));
+        json_obj_set(structured, "applied_verdict", json_new_str(applied_verdict));
+        json_obj_set(structured, "confidence", json_new_num(confidence));
+        json_obj_set(structured, "patch", json_new_str(patch ? patch : "null"));
+        json_obj_set(structured, "schema", json_new_str("myc.repair.v1"));
+        json_obj_set(result, "structuredContent", structured);
+    }
+
+    json_obj_set(result, "isError", json_new_bool(0));
+    send_result(id, result);
+
+    free(patch);
+    myc_result_free(&res);
+}
+
 /* ------------------------- tool: policy ----------------------------- */
 
 static void tool_policy(json_value *id)
@@ -541,6 +635,45 @@ static json_value *tools_list_body(void)
     }
     json_arr_push(tools, t);
 
+    /* repair */
+    t = json_new_obj();
+    json_obj_set(t, "name", json_new_str("repair"));
+    json_obj_set(t, "description", json_new_str(
+        "Kembalikan patch minimal untuk finding compile tertentu "
+        "(gcc warning). source: kode C (string, wajib). "
+        "finding_code: opsional, contoh gcc-use-after-free, "
+        "gcc-null-dereference, gcc-array-bounds, gcc-stringop-overflow. "
+        "Jika tidak diisi, repair menggunakan diagnostic pertama dari check."));
+    {
+        json_value *schema = json_new_obj();
+        json_value *props = json_new_obj();
+        json_value *p;
+
+        json_obj_set(schema, "type", json_new_str("object"));
+
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("string"));
+        json_obj_set(p, "description", json_new_str("Kode sumber C yang akan diperbaiki (wajib)."));
+        json_obj_set(props, "source", p);
+
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("string"));
+        json_obj_set(p, "description", json_new_str(
+            "Kode finding (opsional). Contoh: gcc-use-after-free, "
+            "gcc-null-dereference, gcc-array-bounds, gcc-stringop-overflow. "
+            "Jika kosong, repair menggunakan diagnostic pertama."));
+        json_obj_set(props, "finding_code", p);
+
+        json_obj_set(schema, "properties", props);
+        {
+            json_value *req = json_new_arr();
+            json_arr_push(req, json_new_str("source"));
+            json_obj_set(schema, "required", req);
+        }
+        json_obj_set(t, "inputSchema", schema);
+    }
+    json_arr_push(tools, t);
+
     /* version */
     t = json_new_obj();
     json_obj_set(t, "name", json_new_str("version"));
@@ -634,6 +767,8 @@ static void handle_tools_call(json_value *id, json_value *params)
     }
     if (strcmp(name, "check") == 0)
         tool_check(id, args);
+    else if (strcmp(name, "repair") == 0)
+        tool_repair(id, args);
     else if (strcmp(name, "version") == 0)
         tool_version(id);
     else if (strcmp(name, "policy") == 0)
