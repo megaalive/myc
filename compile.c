@@ -164,18 +164,17 @@ static const char *const SYNTAX_BASE[] = {
 
 /* Gate memori: perlu -c + -O2 agar -Warray-bounds/-Wstringop-overflow aktif
  * (gcc menjalankan analisis GIMPLE hanya saat kompilasi dengan optimisasi).
- * MYC-AUDIT-022 (roadmap 7.1): -fdiagnostics-format=json membuat stderr
- * gcc menjadi array JSON terstruktur (kind/message/caret line+col) yang
- * di-parse ingest_gcc_diagnostics (machine-readable diagnostic). */
+ * MYC-AUDIT-022: stderr gcc dalam format teks biasa diparse oleh
+ * ingest_gcc_diagnostics sebagai fallback (<stdin>:<line>:<col>: message). */
 static const char *const MEMORY_GATE[] = {
     "-c", "-O2", "-o", "NUL",
-    "-fdiagnostics-format=json", NULL
+    NULL
 };
 
 /* Flags analyzer: MEMORY_GATE + -fanalyzer. */
 static const char *const ANALYZER_EXTRA[] = {
     "-c", "-O2", "-fanalyzer", "-o", "NUL",
-    "-fdiagnostics-format=json", NULL
+    NULL
 };
 
 /* Susun satu array argv gabungan (semua pointer statis, tak perlu bebas).
@@ -225,15 +224,14 @@ static void add_diag_copy(myc_result *res, int line, int col, const char *msg)
 
 /* Tambah diagnostic dari stderr gcc.
  *
- * MYC-AUDIT-022 (roadmap 7.1): gate kompilasi kini memakai
- * -fdiagnostics-format=json (machine-readable). Bila stderr adalah array
- * JSON (dimulai '['), parse terstruktur: kind/message/caret line+col dari
- * tiap entri top-level; kind "note" di-skip (konsisten dengan parser teks
- * lama yang melewatkan baris lanjutan indented). Bila parse JSON gagal
- * (mis. output terpotong oleh bounded capture 1 MiB) atau stderr format
- * teks (gate preprocess gcc -E TANPA flag JSON), fallback ke parser baris
- * sederhana ("<stdin>:<line>:<col>:"). Keduanya menghasilkan diagnostic
- * confidence CONFIRMED (bukti SEMANTIK compiler, bukan heuristik teks). */
+ * MYC-AUDIT-022 (roadmap 7.1): ingest_gcc_diagnostics memiliki dua jalur:
+ * 1. JSON — dipicu jika stderr dimulai '[' (mis. gcc mendukung
+ *    -fdiagnostics-format=json di masa depan atau platform lain).
+ * 2. Teks — fallback default untuk output teks gcc biasa
+ *    ("<stdin>:<line>:<col>: warning: ...").
+ *
+ * Keduanya menghasilkan diagnostic confidence CONFIRMED (bukti SEMANTIK
+ * compiler, bukan heuristik teks). */
 static void ingest_gcc_diagnostics(myc_result *res, const char *text)
 {
     size_t      len;
@@ -243,7 +241,7 @@ static void ingest_gcc_diagnostics(myc_result *res, const char *text)
         return;
     len = strlen(text);
 
-    /* 1. Jalur JSON (gcc -fdiagnostics-format=json). */
+    /* 1. Jalur JSON (jika stderr berupa array JSON). */
     if (text[0] == '[' && json_parse(text, len, &root) && root &&
         root->type == JSON_ARR) {
         size_t i;
@@ -526,7 +524,6 @@ static void run_checked_gate(const myc_request *req, const char *gcc_path,
     static const char *const CHECKED_EXTRA[] = {
         "-c", "-O2", "-o", "NUL",
         "-DMYC_CHECKED=1",
-        "-fdiagnostics-format=json",
         NULL
     };
     const char *const *lists[4];

@@ -207,19 +207,19 @@ Poin penting:
   regresi AUDIT-021 (`ok_filc_stdin --filc --run-stdin` → `got:halo-filc-stdin`;
   di sistem tanpa Fil-C = INFO, bukan FAIL). Lampiran A kini **28/28** `[x]`.
   Receipt tidak berubah.
-- **MYC-AUDIT-022 selesai 2026-08-03** (roadmap 7.1: machine-readable
-  diagnostic + exact tool identity): (1) **diagnostic JSON** — gate kompilasi
-  (compile, analyzer, checked) kini memakai `-fdiagnostics-format=json`;
-  `ingest_gcc_diagnostics` di compile.c mem-parse array JSON (reuse parser
-  ketat json.c): `kind`/`message`/`locations[0].caret.line/column` →
-  `myc_diagnostic` terstruktur (kind `note` di-skip, konsisten parser teks
-  lama); bila parse JSON gagal (output terpotong bounded capture) atau
-  stderr format teks (gate preprocess `gcc -E` tanpa flag) → fallback parser
-  baris lama. Verifikasi: `bad_realloc.c` → diag `[17:12] pointer 'buf' used
-  after 'realloc'` (dari JSON, confidence CONFIRMED); (2) **exact tool
-  identity** — helper baru `myc_tool_version()` di proc.c (jalankan `<exe>
-  --version`, ambil baris pertama stdout, buang trailing CR) → field baru
-  `myc_result.gcc_version`/`clang_version` (di-set pipeline setelah
+ - **MYC-AUDIT-022 selesai 2026-08-03** (roadmap 7.1: machine-readable
+   diagnostic + exact tool identity): (1) **diagnostic JSON** — gate kompilasi
+   (compile, analyzer, checked) dapat mengekstrak diagnostik terstruktur
+   jika GCC mendukung format JSON; `ingest_gcc_diagnostics` di compile.c
+   mem-parse array JSON (reuse parser ketat json.c): `kind`/`message`/
+   `locations[0].caret.line/column` → `myc_diagnostic` terstruktur
+   (kind `note` di-skip, konsisten parser teks lama); bila parse JSON gagal
+   (output terpotong bounded capture) atau stderr format teks (gate preprocess
+   `gcc -E` tanpa flag JSON) → fallback parser baris lama. Verifikasi: `bad_realloc.c` → diag `[17:12] pointer 'buf' used
+   after 'realloc'` (dari JSON, confidence CONFIRMED); (2) **exact tool
+   identity** — helper baru `myc_tool_version()` di proc.c (jalankan `<exe>
+   --version`, ambil baris pertama stdout, buang trailing CR) → field baru
+   `myc_result.gcc_version`/`clang_version` (di-set pipeline setelah
   resolve gcc/clang, guard NULL agar run+driver tidak double-free),
   ditampilkan di teks (`gcc_version:`/`clang_version:`) + JSON (`"gcc_version"`/
   `"clang_version"`, NULL → null); `myc version` CLI kini mencetak versi
