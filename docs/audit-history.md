@@ -1154,7 +1154,27 @@ Semua 18 source files (termasuk ledger.c): `verdict: OK` (self-dogfooding).
 - Non-blocking: bila `.myc/` tidak dapat ditulis, ledger dilewati dengan
   diagnostic (bukan error).
 
----
+### Fase 2 — Repair Transaction + Preservation + Sabotage Detection (2026-08-06)
 
-> Terakhir diperbarui: 2026-08-06 (Fase 1 lengkap). Isi kronologis
+- **`transaction.h`/`transaction.c`**: Repair Transaction state machine
+  (BEGIN → PROPOSED → VERIFIED → ACCEPTED | REJECTED_*).
+- `--tx-verify` CLI flag + `--finding-id ID` + `--edit-region R`.
+- `myc_transaction_init/free/verify/json` — lifecycle transaksi.
+- `myc_transaction_new_id()` — generate ID unik via SHA-256 timestamp.
+- **Preservation obligations**: finding harus hilang, verdict OK/INCONCLUSIVE,
+  completeness tetap COMPLETE, assurance tidak turun.
+- **Sabotage detector** (`myc_sabotage_scan`): scan source diff untuk:
+  - disable sanitizer (`-fsanitize=`)
+  - disable warning (`-Wno-`, `-w`, `--no-warnings`)
+  - disable assert (`NDEBUG`, `-DNDEBUG`)
+  - add void cast, pragma, early return
+  - narrow requires, remove test
+  - disable frama-c/filc, change scenario
+- `myc_tx_result_name()` + `myc_sabotage_name()` untuk laporan.
+- `myc_request` fields: `tx_verify`, `tx_finding_id`, `tx_edit_region`.
+- Build: `transaction.c` ditambahkan ke PIPELINE (build.bat + build.sh).
+- Semua 19 source files: `verdict: OK` (self-dogfooding).
+
+---
+> Terakhir diperbarui: 2026-08-06 (Fase 2: ledger + transaction selesai).
 > di atas tidak diubah/dihilangkan — dipindahkan verbatim dari AGENTS.md lama.

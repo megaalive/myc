@@ -9,6 +9,8 @@
  *   myc check <file.c> --strict   -- tier ketat (-Wconversion dll)
  *   myc check <file.c> --no-lint  -- matikan lint memory-safety
  *   myc check <file.c> --write-repro -- tulis .myc-witness/ repro dir
+ *   myc check <file.c> --tx-verify <patch.c --finding-id ID --edit-region R>
+ *                          -- verifikasi patch dalam transaksi (Fase 2)
  *   myc policy                     -- tampilkan whitelist header
  *   myc probe                      -- self-test boundary argv (argv_probe)
  *   myc version                    -- tampilkan versi & gcc
@@ -35,6 +37,7 @@
 #include "report.h"
 #include "witness.h"
 #include "ledger.h"
+#include "transaction.h"
 #include "sha256.h"
 #include "agent.h"
 
@@ -1242,6 +1245,24 @@ int main(int argc, char **argv)
                 req.agent = 1; known = 1;
             } else if (strcmp(argv[i], "--write-repro") == 0) {
                 req.write_repro = 1; known = 1;
+            } else if (strcmp(argv[i], "--tx-verify") == 0) {
+                req.tx_verify = 1; known = 1;
+            } else if (strcmp(argv[i], "--finding-id") == 0) {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "myc: --finding-id membutuhkan argumen ID\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                req.tx_finding_id = myc_strdup(argv[i + 1]);
+                i++; known = 1;
+            } else if (strcmp(argv[i], "--edit-region") == 0) {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "myc: --edit-region membutuhkan argumen\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                req.tx_edit_region = myc_strdup(argv[i + 1]);
+                i++; known = 1;
             } else if (strcmp(argv[i], "--json-summary") == 0) {
                 req.json_summary = 1; known = 1;
             } else if (strcmp(argv[i], "--run-stdin") == 0) {
@@ -1385,6 +1406,8 @@ int main(int argc, char **argv)
         myc_report_text(&res);
 
     myc_result_free(&res);
+    free(req.tx_finding_id);
+    free(req.tx_edit_region);
     if (req.run_stdin)
         free((void *)req.run_stdin);
     return res.verdict == MC_OK ? 0 : 1;

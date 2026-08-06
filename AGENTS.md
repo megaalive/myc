@@ -70,12 +70,16 @@ scan includes (whitelist, non-blocking) → lint heuristik ber-confidence
 | `contract.c` | Contract-lite `//@ requires/ensures` + validasi purity |
 | `negative.c` | Negative-space: mining "pola yang hilang" |
 | `lint.c` | Heuristik memory-safety ber-confidence (non-blocking) + `why`/`fix` |
-| `gate.c` | Status gate bertipe, evidence, claim compiler, debt, receipt |
-| `proc.c` | Exec program+argv eksplisit tanpa shell, env deterministik, WSLENV |
-| `mcp.c` | MCP server (JSON-RPC 2.0 ketat) |
-| `report.c` / `json.c` | Laporan teks/JSON, capsule, parser JSON ketat |
-| `policy.c` | Profil header/fungsi (non-blocking) |
-| `scanner.c` | Scanner leksikal source |
+ | `gate.c` | Status gate bertipe, evidence, claim compiler, debt, receipt |
+ | `ledger.c` | Temporal ledger (receipt chain, delta detection) |
+ | `transaction.c` | Repair transaction, preservation obligations, sabotage detector |
+ | `proc.c` | Exec program+argv eksplisit tanpa shell, env deterministik, WSLENV |
+ | `mcp.c` | MCP server (JSON-RPC 2.0 ketat) |
+ | `report.c` / `json.c` | Laporan teks/JSON, capsule, parser JSON ketat |
+ | `policy.c` | Profil header/fungsi (non-blocking) |
+ | `scanner.c` | Scanner leksikal source |
+ | `witness.c` | Witness pipeline: repro, minimizer, slice |
+ | `agent.c` | Agent Evidence Protocol (myc.agent.v2) |
 
 ## Dogfooding (wajib dipertahankan)
 
@@ -101,7 +105,8 @@ Setiap perubahan ke kode inti myc **wajib** melewati checklist ini:
 4. **Build + test lokal**: `build.bat` (Windows) / `bash build.sh` (POSIX)
    sukses; `test/_tmp_ci_subset.sh` PASS; `test/_regress_run.bat` (Windows)
    PASS.
-5. **Self-dogfooding**: semua 16 source myc harus `verdict: OK`.
+5. **Self-dogfooding**: semua source myc harus `verdict: OK` (termasuk
+      `ledger.c`, `transaction.c`, `witness.c`, `agent.c`).
 6. **Git hygiene**: `git diff --check` — tidak ada whitespace/CRLF issue.
 7. **Release process** (wajib untuk setiap release):
    - Jalankan `bash release-guard.sh` — verifikasi `master` sudah di-push,

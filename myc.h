@@ -374,9 +374,12 @@ typedef struct {
     int         json_summary;     /* --json-summary: output JSON ringkas
                                      (tanpa stdout/stderr/fingerprint) untuk
                                      agent LLM */
-    int         agent;            /* --agent: output protokol agent
-                                     (myc.agent.v2) untuk konsumsi LLM */
-    int         write_repro;     /* --write-repro: tulis .myc-witness/ repro dir */
+     int         agent;            /* --agent: output protokol agent
+                                      (myc.agent.v2) untuk konsumsi LLM */
+     int         write_repro;     /* --write-repro: tulis .myc-witness/ repro dir */
+     int         tx_verify;       /* --tx-verify: verifikasi patch dalam transaksi */
+     char       *tx_finding_id;   /* --finding-id ID: finding target */
+     char       *tx_edit_region;  /* --edit-region R: region yang diizinkan diedit */
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
