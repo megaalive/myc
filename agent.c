@@ -4,6 +4,7 @@
 #include "json.h"
 #include "frontier.h"
 #include "observation.h"
+#include "causal.h"
 #include <string.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -80,6 +81,7 @@ void myc_agent_result_free(myc_agent_result *ar)
         free(ar->frontier[i]);
     }
     free(ar->experiments_json);
+    free(ar->causal_json);
     free(ar->delta_receipt_sha);
 }
 
@@ -219,6 +221,7 @@ const char *myc_agent_result_json(const myc_agent_result *ar)
     }
 
     agent_add_str(root, "experiments", ar->experiments_json);
+    agent_add_str(root, "causal", ar->causal_json);
     agent_add_str(root, "delta_receipt_sha", ar->delta_receipt_sha);
 
     ok = json_serialize(root, &out);
@@ -292,24 +295,44 @@ int myc_build_agent_result(const myc_result *res,
         ar->receipt_sha256 = agent_strdup(res->receipt_sha256);
     }
 
-    /* Primary finding: pick the first CONFIRMED diagnostic. */
-    if (res->finding == MYC_FINDING_FINDINGS && res->diag_count > 0) {
-        for (i = 0; i < (size_t)res->diag_count; i++) {
-            if (res->diags[i].confidence >= MYC_CONF_CONFIRMED) {
+    /* Primary finding: ROOT CAUSE dari causal graph dulu (SOL-09) --
+     * bukan sekadar diag CONFIRMED pertama. Setelah root hilang,
+     * dependent findings diverifikasi ulang (lihat ar->causal_json). */
+    if (res->diag_count > 1 ||
+        (res->finding == MYC_FINDING_FINDINGS && res->diag_count > 0)) {
+        myc_causal_graph cg;
+        int ridx = -1;
+
+        /* Graph dibangun SEKALI, dipakai untuk primary selection DAN
+         * serialisasi causal_json (hindari kerja duplikat). */
+        myc_causal_build(res, &cg);
+
+        if (res->finding == MYC_FINDING_FINDINGS && res->diag_count > 0) {
+            ridx = myc_causal_first_confirmed_root(&cg);
+            if (ridx < 0 && cg.repair_count > 0)
+                ridx = cg.repair_order[0];
+            if (ridx >= 0) {
+                const myc_diagnostic *d = &res->diags[ridx];
                 myc_agent_finding *pf = &ar->primary_finding;
                 pf->finding_id = agent_printf("f-%08x",
-                    (unsigned)res->diags[i].line);
-                pf->anchor = agent_strdup(res->diags[i].message);
+                    (unsigned)d->line);
+                pf->anchor = agent_strdup(d->message);
                 pf->diagnostic_class = agent_strdup(
                     myc_gate_id_short(MYC_GATE_COMPILE));
-                pf->message = agent_strdup(res->diags[i].message);
-                pf->confidence = res->diags[i].confidence;
+                pf->message = agent_strdup(d->message);
+                pf->confidence = d->confidence;
                 pf->repro = NULL;
                 pf->witness_hash = NULL;
                 ar->has_primary = 1;
-                break;
             }
         }
+
+        /* Causal Finding Graph (Fase 3, SOL-09): serialize cluster finding
+         * agar model tahu root cause dulu + dependent findings yang ditahan. */
+        if (res->diag_count > 1)
+            ar->causal_json = myc_causal_json(&cg);
+
+        myc_causal_free(&cg);
     }
 
     /* Witness from myc_witness (Fase 1) */
@@ -365,16 +388,23 @@ int myc_build_agent_result(const myc_result *res,
         myc_experiment_free(&exps);
     }
 
-    /* Check payload size: bila melebihi cap, buang experiments_json
-     * (field ENRICHMENT opsional) dan cek ulang -- protokol inti
-     * (verdict/finding/primary/witness) harus selalu utuh. Hanya bila
-     * protokol inti pun melebihi cap baru gagal total (-1). */
+    /* Check payload size: bila melebihi cap, buang field ENRICHMENT
+     * bertahap (experiments_json dulu, lalu causal_json) dan cek ulang --
+     * protokol inti (verdict/finding/primary/witness) harus selalu utuh.
+     * Hanya bila protokol inti pun melebihi cap baru gagal total (-1). */
     js = myc_agent_result_json(ar);
     ar->payload_size = js ? strlen(js) : 0;
     free((void *)js);
     if (ar->payload_size > MYC_AGENT_PAYLOAD_CAP && ar->experiments_json) {
         free(ar->experiments_json);
         ar->experiments_json = NULL;
+        js = myc_agent_result_json(ar);
+        ar->payload_size = js ? strlen(js) : 0;
+        free((void *)js);
+    }
+    if (ar->payload_size > MYC_AGENT_PAYLOAD_CAP && ar->causal_json) {
+        free(ar->causal_json);
+        ar->causal_json = NULL;
         js = myc_agent_result_json(ar);
         ar->payload_size = js ? strlen(js) : 0;
         free((void *)js);
