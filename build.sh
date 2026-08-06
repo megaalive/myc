@@ -6,7 +6,7 @@ set -eu
 cd "$(dirname "$0")"
 
 GCC="${GCC:-gcc}"
-PIPELINE="myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c agent.c"
+PIPELINE="myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c"
 FLAGS="-O2 -std=c11 -Wall -Wextra"
 
 echo "[build] myc"
