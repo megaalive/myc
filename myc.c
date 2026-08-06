@@ -41,6 +41,7 @@
 #include "transaction.h"
 #include "sha256.h"
 #include "agent.h"
+#include "context.h"
 
 /* ------------------------------------------------------------------ */
 /* Implementasi kontrak inti myc                                       */
@@ -1032,6 +1033,10 @@ static void usage(void)
         "                        (timeout 0-600000 ms, 0 = default 30000; output-cap 0-104857600 byte, 0 = default 1 MiB)\n"
         "  myc check -          [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache]\n"
         "                        (source dari stdin)\n"
+        "  myc context <file.c> [--finding-id ID] [--budget 4K|8K|16K] [gate flags...]\n"
+        "                        (paket konteks minimal untuk model: function slice,\n"
+        "                        callers/callees, contracts, witness, one action,\n"
+        "                        preservation obligations, verify command; SOL-22)\n"
         "  myc policy\n"
         "  myc probe\n"
         "  myc version\n");
@@ -1190,6 +1195,8 @@ int main(int argc, char **argv)
 {
     myc_request req;
     myc_result  res;
+    int         context_budget_tokens = 0;
+    int         is_context = 0;
 
     if (argc < 2) {
         usage();
@@ -1203,10 +1210,11 @@ int main(int argc, char **argv)
     if (strcmp(argv[1], "probe") == 0)
         return cmd_probe(argv[0]);
 
-    if (strcmp(argv[1], "check") != 0) {
+    if (strcmp(argv[1], "check") != 0 && strcmp(argv[1], "context") != 0) {
         usage();
         return 2;
     }
+    is_context = (strcmp(argv[1], "context") == 0);
 
     if (argc < 3) {
         usage();
@@ -1217,6 +1225,9 @@ int main(int argc, char **argv)
     myc_result_init(&res);
     req.run_lint = 1;               /* lint memory-safety default ON */
     req.checked_header_dir = myc_exe_dirname(argv[0]);
+
+    /* SOL-22: budget token default untuk `myc context` (8K). */
+    context_budget_tokens = 0;
 
     /* Parse flags. Fase-2 (canonical ingress): unknown flag = error
      * (fail-fast), konsisten dengan reject unknown flag pada MCP server
@@ -1284,6 +1295,44 @@ int main(int argc, char **argv)
                 i++; known = 1;
             } else if (strcmp(argv[i], "--json-summary") == 0) {
                 req.json_summary = 1; known = 1;
+            } else if (strcmp(argv[i], "--budget") == 0) {
+                /* SOL-22: budget token paket context (4K/8K/16K, default 8K).
+                 * Hanya bermakna pada subcommand context; pada check flag ini
+                 * ditolak fail-fast (konsisten MYC-AUDIT-019: flag yang
+                 * dipakai di subcommand salah = exit 2, bukan diam-diam). */
+                if (!is_context) {
+                    fprintf(stderr,
+                            "myc: --budget hanya berlaku pada subcommand context\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                const char *a;
+                char       *end;
+                long        v;
+                int         mult = 1;
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "myc: --budget membutuhkan argumen (mis. 8K)\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                a = argv[i + 1];
+                errno = 0;
+                v = strtol(a, &end, 10);
+                if (errno == ERANGE || end == a)
+                    v = -1;
+                if (v >= 1 && end && (*end == 'K' || *end == 'k')) {
+                    mult = 1024;
+                    end++;
+                }
+                if (v < 1 || v > 64 || !end || *end != '\0') {
+                    fprintf(stderr,
+                            "myc: --budget harus 1K..64K (mis. 4K, 8K, 16K)\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                context_budget_tokens = (int)(v * (long)mult);
+                i++;
+                known = 1;
             } else if (strcmp(argv[i], "--run-stdin") == 0) {
                 char *buf;
                 size_t len;
@@ -1415,11 +1464,34 @@ int main(int argc, char **argv)
                 free(repro_dir);
             }
         }
+        /* SOL-22: paket context dibangun DI SINI karena butuh source
+         * (sebelum free(src)). Murni derivasi hasil run; deterministik. */
+        if (is_context) {
+            char  ctx_hash[65];
+            char *pkg = myc_context_build(&res, src, len, &req,
+                                          req.tx_finding_id,
+                                          context_budget_tokens > 0
+                                              ? context_budget_tokens
+                                              : MYC_CONTEXT_BUDGET_DEFAULT,
+                                          ctx_hash);
+            if (pkg) {
+                printf("%s", pkg);
+                free(pkg);
+            } else {
+                fprintf(stderr, "myc: gagal membangun context paket\n");
+                if (needs_free)
+                    free((void *)src);
+                myc_result_free(&res);
+                return 1;
+            }
+        }
         if (needs_free)
             free((void *)src);
     }
 
-    if (req.as_json)
+    if (is_context) {
+        /* paket sudah dicetak di atas (membutuhkan source); tanpa report */
+    } else if (req.as_json)
         myc_report_json(&res);
     else if (req.json_summary)
         myc_report_json_summary(&res);

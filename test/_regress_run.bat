@@ -85,7 +85,7 @@ myc.exe check tests\ok_hello.c --cwd "" > %OUT% 2>&1
 findstr /C:"invalid_cwd" %OUT% >nul && echo [OK] --cwd kosong ditolak (invalid_cwd) || echo [WARN] --cwd kosong tidak ditolak
 del %OUT%
 echo --- self-dogfooding: semua source myc harus OK
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c) do (
   echo === %%f
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%
@@ -462,6 +462,31 @@ if "%FPCANON1%"=="%FPCANON5%" (
   echo [WARN] cwd berbeda . vs tests justru cwd canonical sama
 ) else (
   echo [OK] cwd berbeda -> cwd canonical BERBEDA
+)
+del %OUT%
+echo --- SOL-22: Agent Context Compiler (myc context)
+set OUT=%TEMP%\myc_sol22_out.txt
+myc.exe context tests\ok_run.c --budget 4K > %OUT% 2>&1
+findstr /C:"myc context v1" %OUT% >nul && echo [OK] paket context v1 tampil || echo [WARN] paket context v1 tidak tampil
+findstr /C:"context_sha256" %OUT% >nul && echo [OK] context_sha256 ada || echo [WARN] context_sha256 hilang
+findstr /C:"verify: myc check" %OUT% >nul && echo [OK] verify command ada || echo [WARN] verify command hilang
+findstr /C:"preservation obligations" %OUT% >nul && echo [OK] preservation obligations ada || echo [WARN] preservation obligations hilang
+echo ^<fungsi target^> > %TEMP%\myc_ph_pat.txt
+findstr /G:"%TEMP%\myc_ph_pat.txt" %OUT% >nul && echo [WARN] placeholder fungsi-target bocor ke output || echo [OK] placeholder fungsi-target tidak bocor
+del %TEMP%\myc_ph_pat.txt
+myc.exe context tests\ok_run.c --budget 2K > %OUT% 2>&1
+findstr /C:"[omitted:" %OUT% >nul && echo [OK] pemotongan budget terdeteksi || echo [INFO] tidak ada section yang dipotong pada 2K
+myc.exe check tests\ok_run.c --budget 4K > %OUT% 2>&1
+if errorlevel 1 (
+  findstr /C:"--budget hanya berlaku pada subcommand context" %OUT% >nul && echo [OK] --budget pada check ditolak fail-fast || echo [WARN] --budget pada check ditolak tapi pesan beda
+) else (
+  echo [WARN] --budget pada check TIDAK ditolak
+)
+myc.exe context tests\ok_run.c --budget 99M > %OUT% 2>&1
+if errorlevel 1 (
+  echo [OK] --budget 99M ditolak
+) else (
+  echo [WARN] --budget 99M tidak ditolak
 )
 del %OUT%
 echo --- MCP smoke (P9): mcp.exe harus menjawab JSON-RPC

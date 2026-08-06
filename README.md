@@ -43,8 +43,9 @@ is a warning or a non-blocking observation.
 myc check <file.c> [--json] [--analyze] [--strict] [--no-lint] [--cwd DIR]
 myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver]
 myc check <file.c> [--metamorphic] [--negative] [--quorum] [--require-complete]
-myc check <file.c> [--json-summary] [--timeout MS] [--output-cap BYTES]
+myc check <file.c> [--json-summary] [--timeout MS] [--output-cap BYTES] [--no-cache]
 myc check -            [--json] [--analyze] [--strict] [--no-lint]   (source from stdin)
+myc context <file.c> [--finding-id ID] [--budget 4K|8K|16K] [gate flags...]
 myc policy
 myc probe
 myc version
@@ -78,6 +79,27 @@ Flags:
 - `--output-cap BYTES` — cap captured child output (0–104857600, default 1 MiB).
 - `--strict` — extra strict warnings (`-Wconversion`, `-Wsign-conversion`, …).
 - `--no-lint` — disable the heuristic memory-safety lint.
+- `--no-cache` — disable the incremental evidence cache (replay of identical
+  input + scenario + tool runs from `.myc/evidence_cache.json`).
+- `--budget N` — (with `context`) target package size in tokens: `4K`, `8K`,
+  `16K` (default `8K`). Sections are dropped in priority order when over
+  budget, and `context_sha256` stays deterministic across budgets.
+
+## Agent context (`myc context`)
+
+`myc context <file.c>` runs the normal verification pipeline, then emits a
+minimal, deterministic **context package** (`myc.context.v1`) for an LLM agent:
+
+- header: source hash, receipt hash, verdict, assurance vector, scenario,
+  exact tool identities, and the exact `verify` command to reproduce the run;
+- finding slice: the `--finding-id` target (or the confirmed root), the
+  containing function's source slice, callers/callees, and its `//@` contracts;
+- witness summary and a single **one action** (next-best experiment) with the
+  cheapest ranked experiment for the current frontier;
+- preservation obligations (what the agent must not change).
+
+The hash covers the full package regardless of `--budget`, so agents can
+compare contexts across runs without re-verification.
 
 All optional backends (`--run` / `--checked` / `--filc` / `--driver` /
 `--prove` / `--metamorphic`) are **non-blocking**: if a backend is

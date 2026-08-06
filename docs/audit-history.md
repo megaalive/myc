@@ -315,6 +315,91 @@ canary), `_regress_run.bat` **0 [FAIL]** (306 OK; cap_sync PASS=87).
 
 ---
 
+## Fase 3 — Evidence Planner (bagian 5: Agent Context Compiler), 2026-08-07
+
+### Agent Context Compiler — `context.c/.h` (SOL-22, roadmap 7.12)
+
+Model LLM butuh KONTEKS MINIMAL per finding — bukan dump laporan penuh
+(yang bisa puluhan KiB). `myc context <file.c>` menjalankan pipeline
+verifikasi normal (semua gate flag bisa dipakai), lalu memancarkan paket
+konteks deterministik `myc.context.v1` yang di-prioritaskan per budget:
+
+- **Header**: source_sha256 + receipt_sha256 (paket terikat ke bukti),
+  verdict, assurance vector, scenario hash, flags eksplisit, exact tool
+  identity (gcc/clang version), dan `verify:` command reproduksi penuh
+  (kini juga memuat `--finding-id` bila dipakai).
+- **Finding slice**: `ctx_select_diag` memilih target — `--finding-id
+  f-%08x` (hash → index diagnostic) / nomor baris, atau root causal
+  pertama; lalu slice fungsi yang memuat finding (via `witness`-extract
+  atau skimmer leksikal sendiri), callers/callees, dan `//@` contracts
+  fungsi tsb (via `myc_contract_list`).
+- **Witness** + **one action**: ringkasan witness (bila ada) dan
+  next-best experiment rank 0 (derivasi `myc_nextbest_plan`) — model
+  tidak perlu menebak eksperimen berikutnya.
+- **Preservation obligations**: teks tetap (anti-churn, jangan lemahkan
+  kontrak, jangan sempitkan scenario, pertahankan ABI) + target facts.
+- **Budget & determinisme**: `--budget 4K|8K|16K` (default 8K,
+  batas 1K..64K, parse ketat `parse_budget` — string tak valid ditolak
+  exit 2, konsisten MYC-AUDIT-019/020). Section berprioritas: bila paket
+  melebihi budget, section prioritas rendah dibuang berurutan (`[omitted:
+  ... (budget N tokens)]` tercatat). `context_sha256` dihitung dari
+  PAKET PENUH (tidak tergantung budget) → deterministik lintas budget:
+  dua run budget beda → hash SAMA (agent bisa bandingkan tanpa
+  re-verifikasi).
+- **Reuse**: `myc_witness_build_slice`/`myc_witness_extract_function`
+  (witness.h), `myc_contract_list` (contract.h), `myc_causal_graph`
+  (causal.h), `myc_nextbest_plan` (nextbest.h), `myc_tool_version`
+  (proc.h) — TIDAK ada duplikasi logika verifikasi. Murni derivasi
+  hasil run: NON-blocking, tidak mengubah verdict/debt/receipt.
+
+API: `myc_context_build(res, source, len, req, path, budget_tokens)` →
+paket `char*` (malloc'd, di-free caller; OOM-safe). Wire di `myc.c`
+main(): subcommand `context` (parsing sama dengan `check`, plus
+`--budget`; validasi `myc_request_validate` tetap dijalankan — input
+rusak → ERROR, bukan paket kosong).
+
+### Verifikasi
+
+- Self-dogfooding **27/27 OK** (termasuk context.c); `-Werror` semua
+  source clean (CI step); cap_sync **PASS=92 FAIL=0** (registry
+  `capabilities.json` + README kini memuat `--no-cache`, `--budget`, dan
+  `myc context` — doc `docs/capabilities.md` tidak berubah karena gate
+  matrix tak berubah).
+- Fixture finding (`bad_run_oob --run --budget 4K`): header penuh +
+  `verify: myc check tests/bad_run_oob.c --run` (dengan `--finding-id
+  f-...` saat dipakai), finding slice, next-best rank 0 (`blocked_by_
+  violation: true` — benar: jangan usul eksperimen sebelum root cause
+  fix), preservation obligations.
+- Budget: `--budget 1K` pada myc.c → `[omitted: causal cluster (budget
+  1024 tokens)]` + `omitted sections: 1`; `--budget 99M`/`abc` → pesan
+  + exit 2; hash 4K == hash 8K (deterministik lintas budget).
+- Regresi `_regress_run.bat` **0 [FAIL]** (318 OK — naik dari 306:
+  self-dogfooding + context.c + section SOL-22 dengan 8 cek baru);
+  `_audit018.sh` **SELESAI OK**; `--no-cache`/`--budget` terdaftar di
+  `capabilities.json` (cap_sync lintas-doc konsisten, PASS=92).
+
+### Review fixes (2026-08-07, code-review deepseek-flash)
+
+1. **Placeholder `<fungsi target>` bocor ke output** — preservation
+   obligations merender literal `<fungsi target>` saat fungsi target tak
+   ditemukan (runtime violation tanpa line). Kini: nama fungsi asli bila
+   ada, atau klausa "di atas fungsi target (lokasi target tidak
+   ditemukan)" tanpa angle bracket.
+2. **`line: 0 col: 0`** untuk finding runtime tanpa lokasi → kini
+   `line: (lokasi tidak diketahui)` (jangan render koordinat palsu).
+3. **`--budget` pada subcommand `check` diam-diam diabaikan** —
+   kontradiksi fail-fast MYC-AUDIT-019 (flag dipakai di subcommand
+   salah harus exit 2). Kini: `myc: --budget hanya berlaku pada
+   subcommand context` + exit 2.
+4. **OOM path**: `myc_context_build` NULL → kini `src` di-free dulu +
+   `myc_result_free` + exit 1 (sebelumnya leak `src` di jalur itu).
+5. **Verifikasi mapping `f-%08x`**: `ctx_select_diag` mencocokkan
+   `diags[i].line == v` persis seperti derivasi `agent.c`
+   (`finding_id = f-%08x` dari `d->line`) — konsisten, `--finding-id`
+   dari laporan `--agent` memilih diagnostic yang sama.
+
+---
+
 ## MYC-AUDIT-001..030 dan fase pengembangan (kronologis)
 
 ### P6 — Gate verification run (`--run`), 2026-08-01

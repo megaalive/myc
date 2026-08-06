@@ -21,8 +21,8 @@
     "--analyze", "--checked", "--run", "--run-stdin", "--prove", "--filc",
     "--driver", "--metamorphic", "--negative", "--quorum", "--require-complete",
     "--json", "--json-summary", "--agent", "--strict", "--level", "--no-lint", "--cwd",
-    "--timeout", "--output-cap", "--write-repro",
-    "--tx-verify", "--finding-id", "--edit-region"
+    "--timeout", "--output-cap", "--write-repro", "--no-cache",
+    "--tx-verify", "--finding-id", "--edit-region", "--budget"
   ],
   "mcp_tools": [
     "check", "repair", "version", "policy", "contracts", "lint", "agent_check"
