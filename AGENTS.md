@@ -76,6 +76,7 @@ scan includes (whitelist, non-blocking) → lint heuristik ber-confidence
  | `frontier.c` | Verification frontier map per hazard class (Fase 3, SOL-02) |
  | `observation.c` | Observation-to-Experiment Compiler (Fase 3, SOL-17) |
  | `causal.c` | Causal Finding Graph: root cause dulu, dependent ditahan (Fase 3, SOL-09) |
+ | `nextbest.c` | Next-Best Experiment Rule Table: eksperimen termurah untuk maju dari frontier (Fase 3, SOL-03) |
  | `proc.c` | Exec program+argv eksplisit tanpa shell, env deterministik, WSLENV |
  | `mcp.c` | MCP server (JSON-RPC 2.0 ketat) |
  | `report.c` / `json.c` | Laporan teks/JSON, capsule, parser JSON ketat |
@@ -110,7 +111,7 @@ Setiap perubahan ke kode inti myc **wajib** melewati checklist ini:
    PASS.
 5. **Self-dogfooding**: semua source myc harus `verdict: OK` (termasuk
       `ledger.c`, `transaction.c`, `witness.c`, `agent.c`, `frontier.c`,
-      `observation.c`, `causal.c`).
+      `observation.c`, `causal.c`, `nextbest.c`).
 6. **Git hygiene**: `git diff --check` — tidak ada whitespace/CRLF issue.
 7. **Release process** (wajib untuk setiap release):
    - Jalankan `bash release-guard.sh` — verifikasi `master` sudah di-push,

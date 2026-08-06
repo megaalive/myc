@@ -179,6 +179,60 @@ TIDAK mengubah verdict/completeness/debt.
 
 ---
 
+## Fase 3 — Evidence Planner (bagian 3: Next-Best Experiment Rule Table), 2026-08-06
+
+### Next-Best Experiment Rule Table — `nextbest.c/.h` (SOL-03, roadmap 7.10)
+
+Frontier memberi STATUS per hazard class; observation-to-experiment memberi
+eksperimen dari observasi AKTUAL. Rule table menjawab: dari posisi frontier
+saat ini, eksperimen APA yang paling murah/menjanjikan untuk maju? Murni
+rule DETERMINISTIK (bukan "berpikir seperti LLM"), NON-blocking (derivasi
+frontier + experiments — TIDAK mengubah verdict/completeness/debt).
+
+- **rule table** `NEXTBEST_RULES[]`: 7 hazard class (nama persis
+  `FRONTIER_ROWS[]` frontier.c) → 3 kandidat eksperimen terurut efektivitas
+  (mis. integer/bounds → boundary_input, cross_target, driver_gen;
+  temporal/null-deref → polling_harness, realloc_path, assertion_harness;
+  runtime memory → alloc_fail, leak_check, short_io; dst);
+- **status pemicu**: untested/unknown/observed → direkomendasikan;
+  violation → TIDAK usul eksperimen (fix root cause dulu, lihat causal
+  graph) + flag `blocked_by_violation`; proven/tested → skip (sudah bukti);
+- **observasi aktual menang**: bila `myc_experiment_set` (dari
+  observation-to-experiment) sudah mengusulkan type yang sama, pakai
+  cost/severity/anchor NYATA-nya + rationale "didukung observasi nyata"
+  (lebih menjanjikan daripada default rule table);
+- **skor** = severity×1000 − cost_ms; satu eksperimen terbaik per hazard,
+  tanpa duplikat type; selection sort (skor desc, tie-break cost asc,
+  type asc) → `rank` 0..n-1;
+- **JSON** `next_best`: recommendations[] (rank/type/hazard/
+  frontier_status/command/source_anchor/cost_estimate_ms/severity/
+  rationale) + count + blocked_by_violation.
+
+API: `myc_nextbest_plan` / `myc_nextbest_json` / `myc_nextbest_free`.
+Reentrant, string di-strdup (dibebaskan `myc_nextbest_free`).
+
+### Wiring agent output (`agent.c`)
+
+Field baru `next_best_json` di `myc_agent_result` (agent.h) → JSON agent
+(`"next_best"`); dibangun di blok frontier/experiments
+(`myc_nextbest_plan(&fs, &exps, ...)` — `fs` TIDAK lagi di-free sebelum
+plan, bug urutan yang sempat membuat next_best selalu kosong) dan
+dibebaskan di `myc_agent_result_free`. Degradasi payload cap 16 KiB kini
+3-lapis: experiments_json → causal_json → next_best_json → baru gagal
+total bila protokol inti pun melebihi cap.
+
+### Verifikasi
+
+- Self-dogfooding **25/25 OK** (termasuk nextbest.c).
+- Agent output: `bad_realloc --agent` → `next_best` berisi rekomendasi
+  eksperimen dari frontier status (mis. realloc_path/polling_harness utk
+  temporal; didukung observasi nyata bila ada); file banyak-error →
+  degradasi payload buang next_best tanpa merusak protokol inti.
+- Regresi `_regress_run.bat` 0 [FAIL]; daftar self-dogfooding/-Werror +
+  SRCS audit018 + CI diperbarui (nextbest.c).
+
+---
+
 ## MYC-AUDIT-001..030 dan fase pengembangan (kronologis)
 
 ### P6 — Gate verification run (`--run`), 2026-08-01

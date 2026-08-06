@@ -88,6 +88,11 @@ typedef struct {
      * (myc_causal_json). NULL bila tidak ada finding terkait. */
     char *causal_json;
 
+    /* Next-Best Experiment (Fase 3, SOL-03): rekomendasi eksperimen
+     * termurah/menjanjikan dari frontier status, ranked by score.
+     * Diserialisasi JSON (myc_nextbest_json). NULL bila tidak ada. */
+    char *next_best_json;
+
     /* Delta vs previous receipt (NULL bila run pertama) */
     char *delta_receipt_sha;
 

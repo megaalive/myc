@@ -5,6 +5,7 @@
 #include "frontier.h"
 #include "observation.h"
 #include "causal.h"
+#include "nextbest.h"
 #include <string.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -82,6 +83,7 @@ void myc_agent_result_free(myc_agent_result *ar)
     }
     free(ar->experiments_json);
     free(ar->causal_json);
+    free(ar->next_best_json);
     free(ar->delta_receipt_sha);
 }
 
@@ -222,6 +224,7 @@ const char *myc_agent_result_json(const myc_agent_result *ar)
 
     agent_add_str(root, "experiments", ar->experiments_json);
     agent_add_str(root, "causal", ar->causal_json);
+    agent_add_str(root, "next_best", ar->next_best_json);
     agent_add_str(root, "delta_receipt_sha", ar->delta_receipt_sha);
 
     ok = json_serialize(root, &out);
@@ -380,12 +383,23 @@ int myc_build_agent_result(const myc_result *res,
                      it->reason ? it->reason : "");
             ar->frontier[ar->frontier_count++] = agent_strdup(buf);
         }
-        myc_frontier_free(&fs);
 
         if (exps.count > 0) {
             ar->experiments_json = myc_experiment_json(&exps);
         }
+
+        /* Next-Best Experiment (Fase 3, SOL-03): pilih eksperimen
+         * termurah/menjanjikan untuk maju dari frontier status. */
+        {
+            myc_nextbest_set nb;
+            myc_nextbest_plan(&fs, &exps, &nb);
+            if (nb.count > 0)
+                ar->next_best_json = myc_nextbest_json(&nb);
+            myc_nextbest_free(&nb);
+        }
+
         myc_experiment_free(&exps);
+        myc_frontier_free(&fs);
     }
 
     /* Check payload size: bila melebihi cap, buang field ENRICHMENT
@@ -405,6 +419,13 @@ int myc_build_agent_result(const myc_result *res,
     if (ar->payload_size > MYC_AGENT_PAYLOAD_CAP && ar->causal_json) {
         free(ar->causal_json);
         ar->causal_json = NULL;
+        js = myc_agent_result_json(ar);
+        ar->payload_size = js ? strlen(js) : 0;
+        free((void *)js);
+    }
+    if (ar->payload_size > MYC_AGENT_PAYLOAD_CAP && ar->next_best_json) {
+        free(ar->next_best_json);
+        ar->next_best_json = NULL;
         js = myc_agent_result_json(ar);
         ar->payload_size = js ? strlen(js) : 0;
         free((void *)js);
