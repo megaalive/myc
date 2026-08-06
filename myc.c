@@ -83,19 +83,13 @@ void myc_witness_init(myc_witness *w)
 
 void myc_witness_free(myc_witness *w)
 {
-    size_t i;
     if (!w) return;
-    free(w->source);
-    free(w->stdin_data);
-    for (i = 0; i < MYC_MAX_WITNESS_ARGV; i++)
-        free(w->argv[i]);
-    free(w->slice_file);
-    free(w->violation_kind);
-    free(w->violation_msg);
-    free(w->backend);
-    free(w->backend_version);
-    free(w->pre_state);
-    free(w->operation);
+    /* SELURUH string witness dialokasikan dari ARENA milik hasil
+     * (myc_result_arena_dup di compile.c/run.c/prove.c/filc.c/driver.c) --
+     * arena bump dibebaskan UTUH oleh myc_result_free. free() individual
+     * di sini = invalid free (bug c0000374 ditemukan saat Fase 3).
+     * Struct witness sendiri di-malloc terpisah dan di-free oleh
+     * myc_result_free setelah fungsi ini. */
     memset(w, 0, sizeof(*w));
 }
 

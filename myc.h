@@ -751,7 +751,12 @@ myc_error_code myc_source_load(const myc_source_input *in,
 void myc_result_init(myc_result *res);
 void myc_result_free(myc_result *res);
 
-/* Witness Pipeline (Fase 1): inisialisasi dan bebaskan witness. */
+/* Witness Pipeline (Fase 1): inisialisasi dan bebaskan witness.
+ * CATATAN OWNERSHIP: seluruh string di dalam myc_witness dialokasikan
+ * dari ARENA milik hasil (myc_result_arena_dup) dan dibebaskan utuh oleh
+ * myc_result_free -- myc_witness_free HANYA zero-kan struct (struct itu
+ * sendiri di-malloc terpisah dan di-free oleh myc_result_free). Jangan
+ * pernah mengisi field witness dengan malloc/strdup langsung. */
 void myc_witness_init(myc_witness *w);
 void myc_witness_free(myc_witness *w);
 

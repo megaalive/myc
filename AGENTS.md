@@ -73,6 +73,8 @@ scan includes (whitelist, non-blocking) → lint heuristik ber-confidence
  | `gate.c` | Status gate bertipe, evidence, claim compiler, debt, receipt |
  | `ledger.c` | Temporal ledger (receipt chain, delta detection) |
  | `transaction.c` | Repair transaction, preservation obligations, sabotage detector |
+ | `frontier.c` | Verification frontier map per hazard class (Fase 3, SOL-02) |
+ | `observation.c` | Observation-to-Experiment Compiler (Fase 3, SOL-17) |
  | `proc.c` | Exec program+argv eksplisit tanpa shell, env deterministik, WSLENV |
  | `mcp.c` | MCP server (JSON-RPC 2.0 ketat) |
  | `report.c` / `json.c` | Laporan teks/JSON, capsule, parser JSON ketat |
@@ -106,7 +108,8 @@ Setiap perubahan ke kode inti myc **wajib** melewati checklist ini:
    sukses; `test/_tmp_ci_subset.sh` PASS; `test/_regress_run.bat` (Windows)
    PASS.
 5. **Self-dogfooding**: semua source myc harus `verdict: OK` (termasuk
-      `ledger.c`, `transaction.c`, `witness.c`, `agent.c`).
+      `ledger.c`, `transaction.c`, `witness.c`, `agent.c`, `frontier.c`,
+      `observation.c`).
 6. **Git hygiene**: `git diff --check` — tidak ada whitespace/CRLF issue.
 7. **Release process** (wajib untuk setiap release):
    - Jalankan `bash release-guard.sh` — verifikasi `master` sudah di-push,

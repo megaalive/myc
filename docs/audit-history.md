@@ -24,6 +24,108 @@
 
 ---
 
+## Fase 3 — Evidence Planner (bagian 1: frontier + observation-to-experiment), 2026-08-06
+
+Fase 3 menjadikan observasi heuristik (lint, negative-space) sebagai dasar
+untuk **bekerja di batas pengetahuan** dan **mengubah observasi menjadi
+bukti dengan biaya terkendali**. Bagian pertama ini mengimplementasikan 2
+dari 7 task Fase 3:
+
+### (1) Verification Frontier Map — `frontier.c/.h` (SOL-02, roadmap 7.8)
+
+`unverified_debt` menyebut gap, tetapi tidak menunjukkan BATAS antara
+wilayah yang diketahui dan tidak diketahui. `myc_frontier_build()`
+(murni DERIVASI dari `myc_result` — TIDAK menambah gate, TIDAK mengubah
+verdict, TIDAK menambah debt) membangun peta 7 item — satu per hazard
+class yang bisa dibuktikan satu dimensi assurance:
+
+| Hazard class | Gate | Backend | Next action (bila belum dibuktikan) |
+|---|---|---|---|
+| integer/bounds (static) | compile | gcc | `myc check <file>` |
+| temporal/null-deref (analyzer) | analyzer | gcc -fanalyzer | `myc check <file> --analyze` |
+| runtime memory (ASan/UBSan) | runtime | clang-asan | `myc check <file> --run` |
+| spatial (checked buffers) | checked | myc_buf.h | `myc check <file> --checked` |
+| proof obligation (RTE) | prove | frama-c eva | `myc check <file> --prove` |
+| boundary input (contract) | driver | clang harness | `myc check <file> --driver` |
+| capability safety | filc | fil-c | `myc check <file> --filc` |
+
+Tiap item: `hazard` + `status` (proven/tested/observed/violation/unknown/
+untested — peta dari gate status) + `backend` + `reason` (alasan frontier
+berhenti, statis per status) + `next_action` (eksperimen termurah untuk
+maju). API: `myc_frontier_build` / `myc_frontier_json` /
+`myc_frontier_free`. Reentrant (tanpa global state), string di-strdup.
+
+### (2) Observation-to-Experiment Compiler — `observation.c/.h` (SOL-17)
+
+Ditulis di sesi sebelumnya (belum terverifikasi), kini dirapikan +
+terverifikasi + ter-wire: tiap observasi heuristik ber-confidence
+(OBSERVATION/SUSPICIOUS/LIKELY — CONFIRMED dilewati) di-petakan ke
+EKSPERIMEN verifikasi konkret (9 tipe: alloc_fail, boundary_input,
+short_io, cross_target, polling_harness, realloc_path, leak_check,
+driver_gen, assertion_harness) dengan `command` myc yang dapat
+dieksekusi + `source_anchor` (kini memakai `witness->slice_file` bila
+ada, fallback "source") + `confidence` + `cost_estimate_ms` + `severity`.
+Negative-space deviation → eksperimen `driver_gen`. Rapikan: `EXPERIMENT_DESCS`
+(dead code) dihapus, `(void)source_file` dipindah ke atas (sebelumnya
+unreachable setelah `switch`). API: `myc_observation_to_experiment` /
+`myc_experiment_command` / `myc_experiment_json` / `myc_experiment_free`.
+
+### (3) Wiring ke agent output (`agent.c`)
+
+`myc_build_agent_result()` kini mengisi `ar->frontier[]` (7 string
+"hazard: status (backend) -- reason") dari `myc_frontier_build()` dan
+`ar->experiments_json` (serialisasi `myc_experiment_json()` bila ada
+eksperimen) — LLM dapat bekerja di batas pengetahuan dan tahu eksperimen
+apa yang harus dijalankan, bukan mengulang pemeriksaan yang sudah selesai.
+Field `experiments_json` ditambah ke `myc_agent_result` (agent.h),
+dibebaskan di `myc_agent_result_free`, diserialisasi di JSON agent
+(`"experiments"`). Payload cap 16 KiB tetap dijaga.
+
+### (4) BUG NYATA diperbaiki: heap corruption witness (invalid free arena)
+
+Saat verifikasi fixture ditemukan **`myc.exe check bad_realloc.c` exit 127
+tanpa output** — gdb: `Critical error detected c0000374` (heap corruption)
+di `myc_witness_free` ← `myc_result_free` ← `main`. Akar: SELURUH field
+string witness (`violation_kind`, `violation_msg`, `backend`, `operation`,
+`pre_state`) dialokasikan dari **ARENA milik hasil** (`myc_result_arena_dup`
+di compile.c/run.c/prove.c/filc.c/driver.c), tapi `myc_witness_free`
+memanggil `free()` individual → invalid free (pola yang sama persis dengan
+bug `quorum_report` di #3 yang sudah diperbaiki). Fix: `myc_witness_free`
+kini hanya zero-kan struct (arena yang membebaskan); struct witness sendiri
+tetap di-malloc terpisah dan di-free oleh `myc_result_free`. Regresi
+sebelumnya TIDAK menangkap ini karena cek bad_realloc memakai `[WARN]`
+(bukan FAIL counter) — setelah fix, `bad_realloc` → COMPILE_ERROR exit 1
+normal dan `agent_bad --agent` → verdict findings + witness utuh.
+
+### (5) Test infra ikut diperbaiki: `_audit018.sh` SRCS stale
+
+Unit test portabel (`oom_guards`, `oom_alloc`, `stress_threads`,
+audit_lampiran) gagal dibangun karena `SRCS` di `test/_audit018.sh` belum
+memuat `agent.c`/`witness.c`/`ledger.c`/`transaction.c` (ditambahkan ke
+pipeline di Fase 0–2) → undefined reference `myc_ledger_*`,
+`myc_build_agent_result` dll. SRCS kini = daftar lengkap pipeline
+(+`frontier.c`/`observation.c`). Daftar self-dogfooding di
+`test/_regress_run.bat` dan `test/_ci_linux.sh` juga dilengkapi; `-Werror`
+list di `.github/workflows/ci.yml` ditambah 2 file baru.
+
+### Verifikasi
+
+- Self-dogfooding **23/23 OK** (termasuk frontier.c, observation.c, mcp.c);
+  daftar self-dogfooding di `_regress_run.bat`/`_ci_linux.sh` kini LENGKAP
+  (agent/witness/ledger/transaction ikut di-cover, sebelumnya gap sejak
+  Fase 0–2; CI `-Werror` sudah lengkap lebih dulu).
+- `_audit018.sh` **SELESAI OK** (proc_flood, oom_guards, oom_alloc 49 titik,
+  stress_threads, audit_lampiran T1–T14).
+- `_regress_run.bat` **0 [FAIL]** (344 OK; audit018 + cap_sync PASS=87 +
+  interop SDK MCP 24 cek).
+- Agent output: `negative_dev --agent --negative` → frontier 7 item +
+  experiments count 3 (alloc_fail, driver_gen, dll); `agent_ok` → frontier
+  7, `agent_bad` → witness gcc-use-after-free (tidak crash).
+- Receipt deterministik TIDAK berubah (frontier/experiments bukan bagian
+  hash — hanya derivasi output, bukan status gate baru).
+
+---
+
 ## MYC-AUDIT-001..030 dan fase pengembangan (kronologis)
 
 ### P6 — Gate verification run (`--run`), 2026-08-01

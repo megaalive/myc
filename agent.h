@@ -79,6 +79,10 @@ typedef struct {
     char *frontier[MYC_AGENT_MAX_FRONTIER];
     int frontier_count;
 
+    /* Experiments (Fase 3, SOL-17): set eksperimen dari observasi,
+     * diserialisasi JSON (myc_experiment_json). NULL bila tidak ada. */
+    char *experiments_json;
+
     /* Delta vs previous receipt (NULL bila run pertama) */
     char *delta_receipt_sha;
 

@@ -85,7 +85,7 @@ myc.exe check tests\ok_hello.c --cwd "" > %OUT% 2>&1
 findstr /C:"invalid_cwd" %OUT% >nul && echo [OK] --cwd kosong ditolak (invalid_cwd) || echo [WARN] --cwd kosong tidak ditolak
 del %OUT%
 echo --- self-dogfooding: semua source myc harus OK
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c) do (
   echo === %%f
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%
