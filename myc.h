@@ -374,6 +374,8 @@ typedef struct {
     int         json_summary;     /* --json-summary: output JSON ringkas
                                      (tanpa stdout/stderr/fingerprint) untuk
                                      agent LLM */
+    int         agent;            /* --agent: output protokol agent
+                                     (myc.agent.v2) untuk konsumsi LLM */
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
