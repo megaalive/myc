@@ -319,11 +319,17 @@ static void ingest_gcc_diagnostics(myc_result *res, const char *text)
         }
     }
 
-    /* Isi witness dari diagnostic terakhir yang CONFIRMED (Fase 1).
-     * Witness hanya diisi bila belum ada (prioritas: sanitizer > gcc > eva). */
+    /* Isi witness dari diagnostic yang pertama match (Fase 1).
+     * Witness hanya diisi bila belum ada (prioritas: sanitizer > gcc > eva).
+     * Iterasi semua diagnostic karena note biasanya di akhir. */
     if (res->diag_count > 0 && !res->witness) {
-        const myc_diagnostic *d = &res->diags[res->diag_count - 1];
-        const char *code = repair_find_code(d->message);
+        int di;
+        const myc_diagnostic *d = NULL;
+        const char *code = NULL;
+        for (di = 0; di < res->diag_count; di++) {
+            code = repair_find_code(res->diags[di].message);
+            if (code) { d = &res->diags[di]; break; }
+        }
         if (code) {
             res->witness = (myc_witness *)malloc(sizeof(myc_witness));
             if (res->witness) {

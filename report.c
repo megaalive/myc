@@ -801,7 +801,37 @@ char *myc_result_to_json(const myc_result *res)
         json_sb_escape(&b, ev->message ? ev->message : "");
         json_sb_puts(&b, "}");
     }
-    json_sb_puts(&b, "],");     json_sb_printf(&b, "\"unverified_debt\":[");
+    json_sb_puts(&b, "],");
+    json_sb_puts(&b, "\"witness\":");
+    if (res->witness) {
+        const myc_witness *w = res->witness;
+        json_sb_puts(&b, "{");
+        json_sb_printf(&b, "\"violation_line\":%d,", w->violation_line);
+        json_sb_printf(&b, "\"violation_col\":%d,", w->violation_col);
+        json_sb_printf(&b, "\"backend\":\"%s\",", w->backend);
+        json_sb_printf(&b, "\"kind\":\"%s\",", w->violation_kind);
+        json_sb_printf(&b, "\"message\":");
+        json_sb_escape(&b, w->violation_msg);
+        json_sb_puts(&b, ",");
+        json_sb_printf(&b, "\"source_file\":");
+        json_sb_escape(&b, w->slice_file);
+        json_sb_puts(&b, ",");
+        json_sb_printf(&b, "\"slice_line_start\":%d,", w->slice_line_start);
+        json_sb_printf(&b, "\"slice_line_end\":%d,", w->slice_line_end);
+        json_sb_printf(&b, "\"stdin_bytes\":%d,", (int)w->stdin_len);
+        json_sb_printf(&b, "\"argv\":[");
+        for (i = 0; i < w->argc; i++) {
+            if (i)
+                json_sb_puts(&b, ",");
+            json_sb_escape(&b, w->argv[i]);
+        }
+        json_sb_puts(&b, "]");
+        json_sb_puts(&b, "}");
+    } else {
+        json_sb_puts(&b, "null");
+    }
+    json_sb_puts(&b, ",");
+    json_sb_printf(&b, "\"unverified_debt\":[");
      for (i = 0; i < (int)res->debt_count; i++) {
          const myc_debt_item *d = &res->debt[i];
          if (i)

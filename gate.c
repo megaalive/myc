@@ -577,6 +577,19 @@ void myc_reduce_verdict(myc_result *res)
      * turunan murni dari typed gate status di atas. */
     myc_build_assurance_vector(res);
 
+    /* Downgrade hard finding → observation tanpa witness (Fase 1, Task 1.8).
+     * Bila verdict adalah VIOLATION/COMPILE_ERROR tapi tidak ada witness,
+     * downgrade ke INCONCLUSIVE + catat di diagnostic. Ini memaksa backend
+     * untuk menyediakan bukti replayable sebelum finding dianggap keras. */
+    if ((res->verdict == MC_VIOLATION || res->verdict == MC_COMPILE_ERROR ||
+         res->verdict == MC_RUNTIME_VIOLATION || res->verdict == MC_PROVE_VIOLATION ||
+         res->verdict == MC_DRIVER_VIOLATION || res->verdict == MC_FILC_VIOLATION) &&
+        !res->witness) {
+        myc_result_add_evidence(res, MYC_GATE_COMPILE, MYC_EVIDENCE_DIAGNOSTIC,
+                                "downgrade: hard finding tanpa witness → observation");
+        res->finding = MYC_FINDING_INCONCLUSIVE;
+    }
+
     myc_build_debt(res);
     myc_build_receipt(res);
 }

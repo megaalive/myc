@@ -307,8 +307,20 @@ int myc_build_agent_result(const myc_result *res,
         }
     }
 
-    /* Witness from capsule */
-    if (res->capsule) {
+    /* Witness from myc_witness (Fase 1) */
+    if (res->witness) {
+        /* witness_text = ringkasan violation */
+        if (res->witness->violation_kind) {
+            ar->witness_text = agent_strdup(res->witness->violation_kind);
+        } else if (res->witness->violation_msg) {
+            ar->witness_text = agent_strdup(res->witness->violation_msg);
+        }
+        /* witness_repro = backend info */
+        if (res->witness->backend) {
+            ar->witness_repro = agent_strdup(res->witness->backend);
+        }
+    } else if (res->capsule) {
+        /* Fallback ke capsule bila tidak ada witness */
         ar->witness_text = agent_strdup(
             res->capsule->source_sha256);
         if (res->capsule->stdin_sha256) {
