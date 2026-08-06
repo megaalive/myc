@@ -73,7 +73,7 @@ while read -r t; do
     else
         fail "MCP tool $t TIDAK ada sebagai seksi di mcp-tools.md"
     fi
-done < <(sed -n '/"mcp_tools"/,/]/p' "$REG" | grep -oE '"(check|repair|version|policy|contracts|lint)"' | tr -d '"' | sort -u)
+done < <(sed -n '/"mcp_tools"/,/]/p' "$REG" | grep -oE '"(check|repair|version|policy|contracts|lint|agent_check)"' | tr -d '"' | sort -u)
 
 # --- 5. tiap schema di registry terdeklarasi di mcp.c + didokumentasikan ---
 while read -r s; do

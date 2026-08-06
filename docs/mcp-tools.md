@@ -144,6 +144,22 @@ Contoh:
   "finding_code":"gcc-stringop-overflow"}}
 ```
 
+### 7. `agent_check` — verifikasi source C dengan protokol agent (myc.agent.v2)
+
+- `source` (string, **wajib**): kode C yang akan diperiksa.
+- **Hasil** JSON: `schema: "myc.agent.v2"`, `verdict`, `finding`,
+  `primary_action`, `witness`, `next_check_command`, `payload_size`.
+  Untuk konsumsi LLM agent.
+- **Batasan**: mengikuti pipeline `check` standar (compile gate), output
+  dalam format agent-ready.
+
+Contoh:
+
+```
+{"name":"agent_check","arguments":{
+  "source":"int main(void){char*p=malloc(10);free(p);return *p;}"}}
+```
+
 ## Catatan untuk agent
 
 - Selalu cek `verdict`/`assurance`/`error` di hasil `check`, bukan hanya
