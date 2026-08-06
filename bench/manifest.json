@@ -1,0 +1,100 @@
+{
+  "benchmark": "myc-assistance-baseline",
+  "version": "v1",
+  "schema_version": "1.0",
+  "doc": "Baseline LLM-assistance benchmark (SOL-24, Fase -1). Uses existing verified test fixtures. run_bench.sh drives myc check and asserts expected verdicts. A bad file that passes clean = missed bug (false negative); a good file that fails = false positive. Reports detection/precision + runtime metrics.",
+  "tasks": [
+    {
+      "id": "t01-stack-oob",
+      "category": "spatial",
+      "bad": "tests/bad_run_oob.c",
+      "good": "tests/ok_run.c",
+      "flags": ["--run"],
+      "expect_bad": "RUNTIME_VIOLATION",
+      "expect_good": "OK"
+    },
+    {
+      "id": "t02-use-after-free",
+      "category": "temporal",
+      "bad": "tests/bad_run_uaf.c",
+      "good": "tests/ok_run.c",
+      "flags": ["--run"],
+      "expect_bad": "RUNTIME_VIOLATION",
+      "expect_good": "OK"
+    },
+    {
+      "id": "t03-int-overflow",
+      "category": "integer",
+      "bad": "tests/bad_run_intovf.c",
+      "good": "tests/ok_run.c",
+      "flags": ["--run"],
+      "expect_bad": "RUNTIME_VIOLATION",
+      "expect_good": "OK"
+    },
+    {
+      "id": "t04-checked-direct",
+      "category": "checked",
+      "bad": "tests/bad_checked.c",
+      "good": "tests/ok_checked.c",
+      "flags": ["--checked"],
+      "expect_bad": "COMPILE_ERROR",
+      "expect_good": "OK"
+    },
+    {
+      "id": "t05-checked-oob",
+      "category": "checked",
+      "bad": "tests/bad_checked_oob.c",
+      "good": "tests/ok_checked.c",
+      "flags": ["--run", "--checked"],
+      "expect_bad": "RUNTIME_VIOLATION",
+      "expect_good": "OK"
+    },
+    {
+      "id": "t06-malloc-return",
+      "category": "memory",
+      "bad": "tests/bad_realloc.c",
+      "good": "tests/ok_hello.c",
+      "flags": [],
+      "expect_bad": "COMPILE_ERROR",
+      "expect_good": "OK"
+    },
+    {
+      "id": "t07-driver-oob",
+      "category": "driver",
+      "bad": "test/fixtures/bad_driver_oob.c",
+      "good": "test/fixtures/ok_driver.c",
+      "flags": ["--driver"],
+      "expect_bad": "DRIVER_VIOLATION",
+      "expect_good": "OK"
+    },
+    {
+      "id": "t08-contract-pre",
+      "category": "contract",
+      "bad": "test/fixtures/bad_contract_pre.c",
+      "good": "test/fixtures/ok_contract.c",
+      "flags": ["--run"],
+      "expect_bad": "INCONCLUSIVE",
+      "expect_good": "OK"
+    },
+    {
+      "id": "t09-intptr-cast",
+      "category": "lint",
+      "bad": "tests/bad_intptr.c",
+      "good": "tests/ok_hello.c",
+      "flags": [],
+      "expect_bad": "OK",
+      "expect_good": "OK",
+      "expect_bad_has_observations": true
+    },
+    {
+      "id": "t10-negative-gap",
+      "category": "negative",
+      "bad": "tests/negative_dev.c",
+      "good": "tests/negative_ok.c",
+      "flags": ["--negative"],
+      "expect_bad": "OK",
+      "expect_good": "OK",
+      "expect_bad_has_observations": true
+    }
+  ]
+}
