@@ -42,6 +42,7 @@
 
 #include "contract.h"
 #include "lint.h"
+#include "agent.h"
 
 #define MCP_VERSION  "0.1.0"
 #define MCP_PROTOCOL "2024-11-05"
@@ -465,6 +466,84 @@ static void tool_lint(json_value *id, json_value *args)
     myc_result_free(&res);
 }
 
+/* ------------------------- tool: agent_check ------------------------ */
+
+static void tool_agent_check(json_value *id, json_value *args)
+{
+    const char *source = NULL;
+    myc_request req;
+    myc_result  res;
+    myc_agent_result ar;
+    json_value *result = NULL;
+    json_value *content = NULL;
+    json_value *item = NULL;
+    const char *js = NULL;
+
+    if (!args) {
+        send_error(id, -32602, "Invalid params: arguments wajib");
+        return;
+    }
+    source = json_get_str(args, "source");
+    if (!source) {
+        send_error(id, -32602, "Invalid params: 'source' wajib (string kode C)");
+        return;
+    }
+
+    myc_request_init(&req);
+    req.input.kind = MYC_SOURCE_MEMORY;
+    req.input.data = source;
+    req.input.len = strlen(source);
+    req.run_lint = 1;
+    req.checked_header_dir = g_exe_dir;
+
+    myc_result_init(&res);
+    myc_pipeline(&req, &res);
+
+    memset(&ar, 0, sizeof(ar));
+    if (myc_build_agent_result(&res, &ar, NULL, NULL) < 0) {
+        send_error(id, -32603, "Internal error: gagal build agent result");
+        myc_agent_result_free(&ar);
+        myc_result_free(&res);
+        return;
+    }
+
+    js = myc_agent_result_json(&ar);
+    result = json_new_obj();
+    content = json_new_arr();
+    item = json_new_obj();
+    json_obj_set(item, "type", json_new_str("text"));
+    json_obj_set(item, "text", json_new_str(js ? js : "{}"));
+    json_arr_push(content, item);
+    json_obj_set(result, "content", content);
+
+    /* structuredContent: objek agent v2 langsung */
+    {
+        json_value *structured = json_new_obj();
+        json_obj_set(structured, "schema", json_new_str("myc.agent.v2"));
+        json_obj_set(structured, "verdict",
+                     json_new_str(myc_verdict_name(ar.verdict)));
+        json_obj_set(structured, "finding",
+                     json_new_str(myc_finding_name(ar.finding)));
+        json_obj_set(structured, "primary_action",
+                     json_new_str(ar.has_primary ? "investigate" : "none"));
+        json_obj_set(structured, "witness",
+                     json_new_str(ar.witness_text ? ar.witness_text : ""));
+        json_obj_set(structured, "next_check_command",
+                     json_new_str(ar.next_check.command
+                                  ? ar.next_check.command : ""));
+        json_obj_set(structured, "payload_size",
+                     json_new_num((int64_t)ar.payload_size));
+        json_obj_set(result, "structuredContent", structured);
+    }
+
+    json_obj_set(result, "isError", json_new_bool(0));
+    send_result(id, result);
+
+    if (js) free((void *)js);
+    myc_agent_result_free(&ar);
+    myc_result_free(&res);
+}
+
 /* ------------------------- tool: repair ---------------------------- */
 
 static void tool_repair(json_value *id, json_value *args)
@@ -778,6 +857,33 @@ static json_value *tools_list_body(void)
     }
     json_arr_push(tools, t);
 
+    /* agent_check */
+    t = json_new_obj();
+    json_obj_set(t, "name", json_new_str("agent_check"));
+    json_obj_set(t, "description", json_new_str(
+        "Jalankan pipeline myc pada source dan kembalikan hasil dalam "
+        "format protokol agent (myc.agent.v2): finding_id, primary action, "
+        "witness, next_check. Untuk konsumsi LLM agent. "
+        "source: kode C (string, wajib)."));
+    {
+        json_value *schema = json_new_obj();
+        json_value *props = json_new_obj();
+        json_value *p;
+        json_obj_set(schema, "type", json_new_str("object"));
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("string"));
+        json_obj_set(p, "description", json_new_str("Kode sumber C yang akan diperiksa (wajib)."));
+        json_obj_set(props, "source", p);
+        json_obj_set(schema, "properties", props);
+        {
+            json_value *req = json_new_arr();
+            json_arr_push(req, json_new_str("source"));
+            json_obj_set(schema, "required", req);
+        }
+        json_obj_set(t, "inputSchema", schema);
+    }
+    json_arr_push(tools, t);
+
     json_obj_set(result, "tools", tools);
     return result;
 }
@@ -807,6 +913,8 @@ static void handle_tools_call(json_value *id, json_value *params)
         tool_contracts(id, args);
     else if (strcmp(name, "lint") == 0)
         tool_lint(id, args);
+    else if (strcmp(name, "agent_check") == 0)
+        tool_agent_check(id, args);
     else
         send_error(id, -32602, "Unknown tool");
 }
