@@ -6,7 +6,7 @@
 # Mirror ringkas _regress_run.bat untuk platform tanpa cmd.exe. Menguji
 # invariants inti myc pada Linux:
 #   1. build.sh (myc/mcp/argv_probe)
-#   2. self-dogfooding: 22 source myc harus verdict OK
+#   2. self-dogfooding: 23 source myc harus verdict OK
 #   3. fixture kunci: ok_hello OK; bad_syntax/bad_realloc COMPILE_ERROR;
 #      diagnostic JSON machine-readable (MYC-AUDIT-022)
 #   4. exact tool identity: `myc version` cetak versi gcc/clang (AUDIT-022)
@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-         agent.c witness.c ledger.c transaction.c frontier.c observation.c; do
+         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -84,7 +84,7 @@ for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
         FAIL=1
     fi
 done
-[ "$FAIL" -eq 0 ] && note "self-dogfooding 22 source myc"
+[ "$FAIL" -eq 0 ] && note "self-dogfooding 23 source myc"
 
 # --- 1b. --json-summary mode (ringkas untuk agent) ---
 if ./myc check tests/ok_hello.c --json-summary 2>&1 | grep -qF '"verdict":"OK"'; then

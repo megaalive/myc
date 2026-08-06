@@ -83,6 +83,11 @@ typedef struct {
      * diserialisasi JSON (myc_experiment_json). NULL bila tidak ada. */
     char *experiments_json;
 
+    /* Causal Finding Graph (Fase 3, SOL-09): cluster finding terkait,
+     * root cause dulu + dependent findings ditahan. Diserialisasi JSON
+     * (myc_causal_json). NULL bila tidak ada finding terkait. */
+    char *causal_json;
+
     /* Delta vs previous receipt (NULL bila run pertama) */
     char *delta_receipt_sha;
 

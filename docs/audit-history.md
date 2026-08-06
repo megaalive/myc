@@ -126,6 +126,59 @@ list di `.github/workflows/ci.yml` ditambah 2 file baru.
 
 ---
 
+## Fase 3 — Evidence Planner (bagian 2: Causal Finding Graph), 2026-08-06
+
+### Causal Finding Graph — `causal.c/.h` (SOL-09)
+
+Satu kesalahan ukuran dapat menghasilkan puluhan warning sekunder; daftar
+nasihat panjang membuat model memperbaiki SEMUANYA sekaligus → churn.
+Graph mengubah daftar diagnostic menjadi **kurikulum mikro**: model
+memperbaiki ROOT CAUSE dulu, dependent findings ditahan dan diverifikasi
+ulang setelah root hilang.
+
+Implementasi awal = **rule deterministik TANPA solver** (sesuai rencana
+SOL-09):
+
+- **symbol sama** — ekstrak identifier dalam kutip gcc (`'buf'`, `'p'`,
+  `'realloc'`; hanya identifier C wajar, operator/string kosong diabaikan)
+  dari `message` tiap diagnostic; irisan symbol → terhubung;
+- **lokasi sama** — line sama (catatan: gcc error+note di baris yang sama
+  otomatis ter-cluster);
+- **witness overlap** — keduanya pada `witness->violation_line`.
+
+Cluster via union-find (path halving). Root per cluster = confidence
+tertinggi (note/pre-state TIDAK pernah root), tie-break line+col terkecil.
+`repair_order[]` = root clusters dulu, dependents ditahan.
+
+API: `myc_causal_build` / `myc_causal_json` (nodes + cluster + root flag +
+`repair_order`) / `myc_causal_first_confirmed_root` /
+`myc_causal_free`. Reentrant, string symbol di-strdup (dibebaskan
+`myc_causal_free`). Murni derivasi `myc_result.diags[]` — non-blocking:
+TIDAK mengubah verdict/completeness/debt.
+
+### Wiring agent output (`agent.c`)
+
+- `primary_finding` kini dipilih dari **root cause** causal graph
+  (`myc_causal_first_confirmed_root`, fallback repair_order[0]) —
+  sebelumnya hanya diag CONFIRMED pertama (bisa jadi warning turunan);
+- field baru `causal_json` di `myc_agent_result` (agent.h) → JSON agent
+  (`"causal"`): nodes ber-cluster + root flag + repair_order; dibebaskan
+  di `myc_agent_result_free`; hanya dibangun bila `diag_count > 1`;
+- payload cap 16 KiB tetap dijaga (degradasi anggun: experiments/causal
+  dibuang bila protokol inti harus utuh).
+
+### Verifikasi
+
+- Self-dogfooding **24/24 OK** (termasuk causal.c, mcp.c).
+- Agent output `bad_realloc --agent`: primary = root CONFIRMED baris 17
+  (use-after-free), `causal` memuat cluster + repair_order, dependent
+  (note baris 16) ditahan; `agent_bad` tetap witness utuh.
+- Regresi `_regress_run.bat` 0 [FAIL]; `_audit018.sh` SELESAI OK;
+  daftar self-dogfooding/-Werror + SRCS audit018 + CI diperbarui
+  (causal.c).
+
+---
+
 ## MYC-AUDIT-001..030 dan fase pengembangan (kronologis)
 
 ### P6 — Gate verification run (`--run`), 2026-08-01
