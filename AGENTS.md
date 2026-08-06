@@ -782,6 +782,23 @@ mencegah regresi CI (khususnya `-Werror` dan thread-safety):
 6. **Git hygiene**:
    - `git diff --check` — pastikan tidak ada whitespace/CRLF issue.
 
+7. **Release process** (wajib untuk setiap release):
+   - Jalankan `bash release-guard.sh` untuk memverifikasi:
+     - `master` branch sudah di-push ke remote
+     - CI (`ci.yml`) hijau untuk `master`
+     - Release workflow (`release.yml`) siap
+   - Buat tag hanya setelah semua cek di atas lolos:
+     - `git tag vX.Y.Z`
+     - `git push --tags`
+   - Workflow `release.yml` akan otomatis:
+     - Build binary Linux + Windows
+     - Buat GitHub Release
+     - Upload semua binary ke release
+
+## Catatan penting
+- Jangan pernah membuat tag sebelum memastikan `master` sudah di-push dan CI hijau.
+- Jika `release-guard.sh` gagal, perbaiki masalahnya sebelum melanjutkan.
+
 ## Fitur baru (2026-08-05)
 
 ### --json-summary mode (Item 2)
