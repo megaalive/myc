@@ -374,6 +374,8 @@ typedef struct {
     int         json_summary;     /* --json-summary: output JSON ringkas
                                      (tanpa stdout/stderr/fingerprint) untuk
                                      agent LLM */
+     int         no_cache;        /* --no-cache: matikan incremental evidence
+                                     cache (SOL-18); default 0 = cache ON */
      int         agent;            /* --agent: output protokol agent
                                       (myc.agent.v2) untuk konsumsi LLM */
      int         write_repro;     /* --write-repro: tulis .myc-witness/ repro dir */
@@ -631,6 +633,14 @@ typedef struct {
     /* Apakah require-complete diminta (untuk laporan). Enforcement
      * dilakukan di myc_run(): gap verifikasi (debt) -> INCONCLUSIVE. */
     int         require_complete;
+
+    /* --- Incremental Evidence Cache (Fase 3, SOL-18) ---
+     * cache_hit=1 bila hasil di-replay dari .myc/evidence_cache.json
+     * (bukan dihitung ulang); cache_delta_report = string "N fungsi
+     * berubah, M identik, dependents" untuk source yang BERUBAH
+     * (malloc'd, di-free myc_result_free). */
+    int         cache_hit;
+    char       *cache_delta_report;
 
     /* internal: gate mana yang dijalankan terakhir */
     int         ran_preprocess;

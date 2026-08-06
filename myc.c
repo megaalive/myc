@@ -37,6 +37,7 @@
 #include "report.h"
 #include "witness.h"
 #include "ledger.h"
+#include "cache.h"
 #include "transaction.h"
 #include "sha256.h"
 #include "agent.h"
@@ -582,6 +583,10 @@ void myc_result_free(myc_result *res)
     }
     /* bebaskan ledger fields (Fase 2) */
     free(res->receipt_parent);
+    /* bebaskan cache delta report (Fase 3, SOL-18) */
+    free(res->cache_delta_report);
+    res->cache_delta_report = NULL;
+    res->cache_hit = 0;
     free(res->delta_kind);
     free(res->delta_gate);
     /* quorum_report (#3) TIDAK di-free di sini: ia dialokasikan dari
@@ -939,12 +944,23 @@ void myc_run(const myc_request *req, myc_result *res)
                 req2.input.kind = MYC_SOURCE_MEMORY;
                 req2.input.data = buf;
                 req2.input.len = len;
-                myc_pipeline(&req2, res);
-                /* #3: quorum juga dihitung di jalur file_path/STDIN (API/MCP),
-                 * konsisten dengan jalur source in-memory. */
-                 myc_quorum_analysis(&req2, res);
-                 enforce_require_complete(&req2, res);
-                 myc_ledger_integrate(&req2, res);
+                /* SOL-18: incremental evidence cache — bila input + scenario
+                 * + tool identity sama dengan run sebelumnya, REPLAY hasil
+                 * (skip seluruh pipeline/backend). NON-blocking: miss /
+                 * .myc/ tak terbaca = jalur normal. Delta report di-set
+                 * bila source berubah (fungsi berubah + dependents). */
+                if (!myc_cache_try_replay(&req2, res, buf, len)) {
+                    myc_pipeline(&req2, res);
+                    /* #3: quorum juga dihitung di jalur file_path/STDIN
+                     * (API/MCP), konsisten dengan jalur source in-memory. */
+                    myc_quorum_analysis(&req2, res);
+                    enforce_require_complete(&req2, res);
+                    myc_ledger_integrate(&req2, res);
+                    myc_cache_store(&req2, res, buf, len);
+                } else {
+                    myc_quorum_analysis(&req2, res);
+                    enforce_require_complete(&req2, res);
+                }
                  if (needs_free)
                      free((void *)buf);
                  res->capsule = myc_build_capsule(&req2, res);
@@ -953,10 +969,17 @@ void myc_run(const myc_request *req, myc_result *res)
              return;
          }
 
-        myc_pipeline(eff, res);
-        myc_quorum_analysis(eff, res);
-        enforce_require_complete(eff, res);
-        myc_ledger_integrate(eff, res);
+        if (!myc_cache_try_replay(eff, res, eff->input.data,
+                                  eff->input.len)) {
+            myc_pipeline(eff, res);
+            myc_quorum_analysis(eff, res);
+            enforce_require_complete(eff, res);
+            myc_ledger_integrate(eff, res);
+            myc_cache_store(eff, res, eff->input.data, eff->input.len);
+        } else {
+            myc_quorum_analysis(eff, res);
+            enforce_require_complete(eff, res);
+        }
         res->capsule = myc_build_capsule(eff, res);
         free(canon_cwd);
     }
@@ -1003,11 +1026,11 @@ static void usage(void)
     printf(
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
-        "  myc check <file.c> [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--cwd DIR]\n"
+        "  myc check <file.c> [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache] [--cwd DIR]\n"
         "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--metamorphic] [--negative] [--quorum] [--require-complete]\n"
         "  myc check <file.c> [--timeout MS] [--output-cap BYTES]\n"
         "                        (timeout 0-600000 ms, 0 = default 30000; output-cap 0-104857600 byte, 0 = default 1 MiB)\n"
-        "  myc check -          [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint]\n"
+        "  myc check -          [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache]\n"
         "                        (source dari stdin)\n"
         "  myc policy\n"
         "  myc probe\n"
@@ -1217,6 +1240,8 @@ int main(int argc, char **argv)
                     i++;
             } else if (strcmp(argv[i], "--no-lint") == 0) {
                 req.run_lint = 0; known = 1;
+            } else if (strcmp(argv[i], "--no-cache") == 0) {
+                req.no_cache = 1; known = 1;
             } else if (strcmp(argv[i], "--run") == 0) {
                 req.run = 1; known = 1;
             } else if (strcmp(argv[i], "--prove") == 0) {
@@ -1374,6 +1399,10 @@ int main(int argc, char **argv)
         req.input.kind = MYC_SOURCE_MEMORY;
         req.input.data = src;
         req.input.len = len;
+        /* Metadata path asli untuk cache delta (path matching + label
+         * report). Aman: kind=MEMORY tidak membaca file_path di loader;
+         * hanya dipakai sebagai identitas sumber asal (SOL-18). */
+        req.input.file_path = is_stdin ? NULL : argv[2];
         myc_run(&req, &res);
         /* --write-repro: tulis .myc-witness/ repro directory (Fase 1).
          * Harus sebelum free(src) karena membutuhkan source. */

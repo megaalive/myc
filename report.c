@@ -236,6 +236,10 @@ void myc_report_text(const myc_result *res)
     printf("duration:  %llu ms\n", res->duration_ms);
     if (res->receipt_sha256[0])
         printf("receipt_sha256: %s\n", res->receipt_sha256);
+    if (res->cache_hit)
+        printf("cache:     hit (replay dari .myc/evidence_cache.json)\n");
+    else if (res->cache_delta_report)
+        printf("cache:     %s\n", res->cache_delta_report);
     if (res->resolved_gcc)
         printf("gcc:       %s\n", res->resolved_gcc);
     /* MYC-AUDIT-022 (roadmap 7.1): exact tool identity. */
@@ -586,6 +590,13 @@ char *myc_result_to_json(const myc_result *res)
     json_sb_puts(&b, ",");
     json_sb_printf(&b, "\"require_complete\":%s,",
                    res->require_complete ? "true" : "false");
+    json_sb_printf(&b, "\"cache_hit\":%s,",
+                   res->cache_hit ? "true" : "false");
+    if (res->cache_delta_report) {
+        json_sb_printf(&b, "\"cache_delta\":");
+        json_sb_escape(&b, res->cache_delta_report);
+        json_sb_puts(&b, ",");
+    }
     json_sb_printf(&b, "\"resolved_gcc\":");
     json_sb_escape(&b, res->resolved_gcc);
     json_sb_puts(&b, ",");

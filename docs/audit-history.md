@@ -233,6 +233,88 @@ total bila protokol inti pun melebihi cap.
 
 ---
 
+## Fase 3 — Evidence Planner (bagian 4: Incremental Evidence Cache), 2026-08-06
+
+### Incremental Evidence Cache — `cache.c/.h` (SOL-18)
+
+Menjalankan seluruh gate setelah edit satu fungsi itu boros. Cache
+menyimpan evidence receipt per (source + scenario + tool identity) di
+`.myc/evidence_cache.json` (NON-blocking: tak bisa ditulis = dilewati):
+
+- **Key deterministik** = sha256(source_sha256 + scenario_hash +
+  tool_key + cwd). Scenario = flags lengkap (strict/analyzer/run/prove/
+  checked/filc/driver/meta/neg/quorum/reqc via
+  `myc_ledger_build_scenario_hash`); tool_key = versi gcc + clang
+  (`myc_tool_version`); cache TIDAK dipakai bila flags/tool/scenario
+  berubah (SOL-18).
+- **Hit → replay penuh**: verdict/assurance/assurance_vector/finding/
+  completeness/claim/receipt/gates/debt/diags/counts disalin ke `res`
+  (skip seluruh pipeline/backend). Receipt IKUT di-replay — deterministik
+  karena receipt adalah hash dari status yang sama (`res->cache_hit=1`,
+  dilaporkan `cache: hit`).
+- **Miss + source berubah (scenario sama) → delta report**: ekstrak
+  fungsi (skimmer leksikal: `<name>(...){...}` di brace level 0,
+  hash = sha256 body), bandingkan hash vs entry lama → `N fungsi
+  berubah (a,b), M identik (c), dependents: x` (fungsi yang memanggil
+  fungsi berubah — deteksi token di rentang body). Di-set di
+  `res->cache_delta_report`, dilaporkan `cache: ...` — NON-blocking,
+  tidak mengubah verdict.
+- **Store**: hanya untuk hasil non-error/non-timeout (hasil valid),
+  merge key sama / append / buang tertua (cap 64 entries).
+- **`--no-cache`** mematikan cache (CLI + `req.no_cache`).
+
+API: `myc_cache_try_replay` / `myc_cache_store` /
+`myc_cache_extract_functions` / `myc_cache_delta_report` /
+`myc_cache_entry_free`. Wire di `myc_run()`: try-replay sebelum pipeline
+(kedua branch file/stdin + memory), store setelah pipeline; pada hit,
+quorum + require-complete tetap dijalankan (murni derivasi gates yang
+sudah di-replay), ledger di-skip (hasil identik dengan run asli yang
+sudah tercatat). Replay mengisi komponen receipt (gates/debt/
+verdict/completeness) agar `receipt_sha256` konsisten dengan run asli.
+
+### Verifikasi
+
+- Self-dogfooding **26/26 OK** (termasuk cache.c).
+- Run fixture 2× dengan input sama → run kedua `cache: hit` (receipt
+  SAMA, durasi ~0); edit satu fungsi → `cache:` delta (fungsi berubah +
+  dependents); `--no-cache` → selalu miss; flags beda → miss.
+- Regresi `_regress_run.bat` 0 [FAIL]; daftar self-dogfooding/-Werror +
+  SRCS audit018 + CI diperbarui (cache.c).
+
+### Bug ditemukan & diperbaiki (review sesi lanjutan, 2026-08-07)
+
+Dua bug nyata ditemukan saat verifikasi lebih dalam dari jalur delta
+report dan replay determinisme (audit_lampiran T11 canary-failure)
+menjadi tidak stabil run-ke-run:
+
+1. **Ekstraktor fungsi tidak mendukung gaya Allman** (hanya skip
+   spasi/tab antara `)` dan `{`; newline → ekstraksi 0 fungsi). Karena
+   seluruh source myc dan fixture memakai brace di baris berikutnya,
+   delta report SELALU kosong ("0 berubah; 0 identik") untuk kode
+   nyata. Diperbaiki di `myc_cache_extract_functions` DAN varian lokal
+   `extract_ranges` (delta report) dengan helper `skip_ws_comments`
+   (whitespace incl. newline + komentar). Verifikasi: edit satu fungsi
+   pada fixture Allman → `cache: 1 berubah (ok_sum); 1 identik
+   (ok_copy); 0 baru; 0 hilang`.
+2. **Clamp verdict di `cache_read_all` memakai `MC_DRIVER_VIOLATION`
+   (9) padahal nilai terakhir `myc_verdict` adalah `MC_INCONCLUSIVE`
+   (10)** → verdict INCONCLUSIVE DITOLAK saat deserialisasi → replay
+   mengembalikan MC_OK (0). Konsekuensi parah: hasil INCONCLUSIVE
+   (gate runtime canary gagal, backend tak tersedia) di-replay sebagai
+   OK — false-clean, melanggar aturan kejujuran (jangan klaim lebih
+   dari bukti). Kena deteksi karena `audit_lampiran` T11 (canary
+   failure → INCONCLUSIVE) lulus run pertama (pipeline) tapi GAGAL
+   run kedua (replay verdict=0). Diperbaiki: clamp `<= MC_INCONCLUSIVE`;
+   semua clamp enum lain sudah benar (err `< MYC_ERR_INTERNAL`, sisanya
+   `<=` nilai enum terakhir). Verifikasi: t11test reproduksi minimal 3×
+   berturut → verdict=10 konsisten (pipeline & replay); `audit_lampiran`
+   3× berturut → OK deterministik.
+
+Setelah perbaikan: `_audit018.sh` **SELESAI OK** (sebelumnya GAGAL di
+canary), `_regress_run.bat` **0 [FAIL]** (306 OK; cap_sync PASS=87).
+
+---
+
 ## MYC-AUDIT-001..030 dan fase pengembangan (kronologis)
 
 ### P6 — Gate verification run (`--run`), 2026-08-01
