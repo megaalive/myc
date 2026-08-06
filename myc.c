@@ -70,6 +70,27 @@ void myc_result_init(myc_result *res)
     res->completeness = MYC_COMPLETENESS_UNKNOWN;
 }
 
+void myc_witness_init(myc_witness *w)
+{
+    memset(w, 0, sizeof(*w));
+}
+
+void myc_witness_free(myc_witness *w)
+{
+    size_t i;
+    if (!w) return;
+    free(w->source);
+    free(w->stdin_data);
+    for (i = 0; i < MYC_MAX_WITNESS_ARGV; i++)
+        free(w->argv[i]);
+    free(w->slice_file);
+    free(w->violation_kind);
+    free(w->violation_msg);
+    free(w->backend);
+    free(w->backend_version);
+    memset(w, 0, sizeof(*w));
+}
+
 char *myc_result_arena_dup(myc_result *res, const char *s, size_t string_len)
 {
     struct myc_arena *a = res->arena;
@@ -550,6 +571,12 @@ void myc_result_free(myc_result *res)
         }
         free(cap);
         res->capsule = NULL;
+    }
+    /* bebaskan witness (Fase 1) */
+    if (res->witness) {
+        myc_witness_free(res->witness);
+        free(res->witness);
+        res->witness = NULL;
     }
     /* quorum_report (#3) TIDAK di-free di sini: ia dialokasikan dari
      * arena milik hasil (myc_result_arena_dup) dan ikut dibebaskan utuh

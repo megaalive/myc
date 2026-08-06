@@ -700,6 +700,38 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
                                 MYC_GATE_COMPLETED_FINDINGS, note);
             myc_result_add_evidence(res, MYC_GATE_RUNTIME,
                                     MYC_EVIDENCE_FINDING, note);
+            /* Isi witness dari sanitizer (Fase 1). Sanitizer punya
+             * prioritas tertinggi karena bukti non-spoofable. */
+            if (!res->witness && ev) {
+                res->witness = (myc_witness *)malloc(sizeof(myc_witness));
+                if (res->witness) {
+                    myc_witness_init(res->witness);
+                    /* Map sanitizer marker ke violation kind */
+                    if (strstr(ev, "use-after-free"))
+                        res->witness->violation_kind =
+                            myc_result_arena_dup(res, "use-after-free", 0);
+                    else if (strstr(ev, "out-of-bounds") ||
+                             strstr(ev, "heap-buffer-overflow"))
+                        res->witness->violation_kind =
+                            myc_result_arena_dup(res, "out-of-bounds", 0);
+                    else if (strstr(ev, "null") || strstr(ev, "nonnull"))
+                        res->witness->violation_kind =
+                            myc_result_arena_dup(res, "null-deref", 0);
+                    else if (strstr(ev, "double-free"))
+                        res->witness->violation_kind =
+                            myc_result_arena_dup(res, "double-free", 0);
+                    else if (strstr(ev, "stack-overflow"))
+                        res->witness->violation_kind =
+                            myc_result_arena_dup(res, "stack-overflow", 0);
+                    else
+                        res->witness->violation_kind =
+                            myc_result_arena_dup(res, ev, 0);
+                    res->witness->violation_msg =
+                        myc_result_arena_dup(res, note, 0);
+                    res->witness->backend =
+                        myc_result_arena_dup(res, "clang-asan", 0);
+                }
+            }
             free(asan_rpt);
             free(ubsan_rpt);
             myc_remove_sanitizer_reports(tmp_dir, "myc_run_asan_rpt");

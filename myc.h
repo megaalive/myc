@@ -453,6 +453,36 @@ typedef struct {
     myc_quorum_status quorum_status;
 } myc_replay_capsule;
 
+/* --- Witness Pipeline (Fase 1) --- */
+/* Setiap hard finding harus disertai witness yang dapat direplay.
+ * Witness berisi reproducer, causal slice, dan violation info. */
+#define MYC_MAX_WITNESS_ARGV 8
+
+typedef struct {
+    /* Reproducer */
+    char *source;           /* source penuh atau slice */
+    size_t source_len;
+    char *stdin_data;       /* stdin input (NULL bila tidak ada) */
+    size_t stdin_len;
+    char *argv[MYC_MAX_WITNESS_ARGV]; /* argv tambahan */
+    int   argc;
+
+    /* Causal slice */
+    char *slice_file;       /* nama file asli */
+    int   slice_line_start; /* baris awal slice */
+    int   slice_line_end;   /* baris akhir slice */
+
+    /* Violation info */
+    char *violation_kind;   /* "use-after-free", "OOB", "null-deref", dst */
+    char *violation_msg;    /* pesan lengkap dari backend */
+    int   violation_line;   /* baris pelanggaran */
+    int   violation_col;    /* kolom pelanggaran */
+
+    /* Backend provenance */
+    char *backend;          /* "gcc", "clang-asan", "eva", "fil-c", "driver" */
+    char *backend_version;  /* "gcc 13.2", "frama-c 33.0", dst */
+} myc_witness;
+
 typedef struct {
     myc_verdict verdict;
     myc_assurance assurance;    /* level jaminan yang DIBUKTIKAN */
@@ -649,6 +679,11 @@ typedef struct {
      * Dibebaskan oleh myc_result_free(). */
     myc_replay_capsule *capsule;
 
+    /* --- Witness Pipeline (Fase 1) --- */
+    /* Witness untuk hard finding: reproducible reproduction info.
+     * NULL bila tidak ada hard finding atau witness belum dibangun. */
+    myc_witness *witness;
+
     /* --- Differential Backend Quorum (#3) --- */
     /* Hasil quorum: apakah semua backend yang tersedia setuju.
      * QUORUM_CLEAN: SEMUA backend SETUJU -- bisa bersepakat clean ATAU
@@ -694,6 +729,10 @@ myc_error_code myc_source_load(const myc_source_input *in,
 /* Siapkan result dengan alokasi internal. Harus dibebaskan myc_result_free. */
 void myc_result_init(myc_result *res);
 void myc_result_free(myc_result *res);
+
+/* Witness Pipeline (Fase 1): inisialisasi dan bebaskan witness. */
+void myc_witness_init(myc_witness *w);
+void myc_witness_free(myc_witness *w);
 
 /* Arena milik hasil (Fase 5, MYC-AUDIT-008): alokasikan buffer di arena yang
  * dimiliki res; dibebaskan bersamaan dengan myc_result_free. Mengembalikan

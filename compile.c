@@ -318,6 +318,24 @@ static void ingest_gcc_diagnostics(myc_result *res, const char *text)
             p = nl + 1;
         }
     }
+
+    /* Isi witness dari diagnostic terakhir yang CONFIRMED (Fase 1).
+     * Witness hanya diisi bila belum ada (prioritas: sanitizer > gcc > eva). */
+    if (res->diag_count > 0 && !res->witness) {
+        const myc_diagnostic *d = &res->diags[res->diag_count - 1];
+        const char *code = repair_find_code(d->message);
+        if (code) {
+            res->witness = (myc_witness *)malloc(sizeof(myc_witness));
+            if (res->witness) {
+                myc_witness_init(res->witness);
+                res->witness->violation_kind = myc_result_arena_dup(res, code, 0);
+                res->witness->violation_msg = myc_result_arena_dup(res, d->message, 0);
+                res->witness->violation_line = d->line;
+                res->witness->violation_col = d->col;
+                res->witness->backend = myc_result_arena_dup(res, "gcc", 0);
+            }
+        }
+    }
 }
 
 /* Jalankan gcc dengan argumen tertentu; return hasil proses. */

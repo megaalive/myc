@@ -1611,6 +1611,20 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
                                     MYC_EVIDENCE_FINDING,
                                     "driver: DRIVER_VIOLATION "
                                     "(report sanitizer / marker + exit != 0)");
+            /* Isi witness dari driver (Fase 1). */
+            if (!res->witness) {
+                res->witness = (myc_witness *)malloc(sizeof(myc_witness));
+                if (res->witness) {
+                    myc_witness_init(res->witness);
+                    res->witness->violation_kind =
+                        myc_result_arena_dup(res, "driver-sanitizer", 0);
+                    res->witness->violation_msg =
+                        myc_result_arena_dup(res,
+                            "driver: sanitizer menangkap bug pada kasus tepi", 0);
+                    res->witness->backend =
+                        myc_result_arena_dup(res, "driver", 0);
+                }
+            }
             goto out;
         }
         if (omarker) {

@@ -399,6 +399,19 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
             myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_COMPLETED_FINDINGS,
                                 note);
             myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_FINDING, note);
+            /* Isi witness dari Eva (Fase 1). */
+            if (!res->witness) {
+                res->witness = (myc_witness *)malloc(sizeof(myc_witness));
+                if (res->witness) {
+                    myc_witness_init(res->witness);
+                    res->witness->violation_kind =
+                        myc_result_arena_dup(res, "rte-alarm", 0);
+                    res->witness->violation_msg =
+                        myc_result_arena_dup(res, note, 0);
+                    res->witness->backend =
+                        myc_result_arena_dup(res, "eva", 0);
+                }
+            }
             free(wsl_path);
             return 0;
         }

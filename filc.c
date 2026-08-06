@@ -375,6 +375,19 @@ static int run_filc_exe(const myc_request *req, const char *exe,
         panic_diag(res, panics);
         res->verdict = MC_FILC_VIOLATION;
         res->err = MYC_ERR_FILC_VIOLATION;
+        /* Isi witness dari Fil-C (Fase 1). */
+        if (!res->witness) {
+            res->witness = (myc_witness *)malloc(sizeof(myc_witness));
+            if (res->witness) {
+                myc_witness_init(res->witness);
+                res->witness->violation_kind =
+                    myc_result_arena_dup(res, "filc-panic", 0);
+                res->witness->violation_msg =
+                    myc_result_arena_dup(res, "Fil-C panic: memory safety violation", 0);
+                res->witness->backend =
+                    myc_result_arena_dup(res, "fil-c", 0);
+            }
+        }
         return 0;
     }
     if (panics > 0) {
