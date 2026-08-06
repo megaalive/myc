@@ -376,6 +376,7 @@ typedef struct {
                                      agent LLM */
     int         agent;            /* --agent: output protokol agent
                                      (myc.agent.v2) untuk konsumsi LLM */
+    int         write_repro;     /* --write-repro: tulis .myc-witness/ repro dir */
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */

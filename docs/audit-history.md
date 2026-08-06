@@ -1113,14 +1113,26 @@ Setiap hard finding dapat dipahami dan direplay model.
 - **1.10**: Fixtures — `witness_uaf.c`, `witness_oob.c`, `witness_clean.c`.
 - **report.c**: serialisasi witness ke JSON (violation, backend, slice, argv).
 
-### Sisa Fase 1
+### Stage 4: pre_state + operation + Replay test (`578fec2`)
 
-- [ ] `pre-state → operation → violation` — tambah field `pre_state` dan
-  `operation` ke witness struct agar LLM memahami kronologi pelanggaran.
-- [ ] Replay test lintas Windows/Linux — verifikasi `.myc-witness/` replay
-  konsisten.
+- **1.11**: `myc.h` — tambah field `pre_state` dan `operation` ke
+  `myc_witness`; kronologi pelanggaran: pre_state → operation → violation.
+- `compile.c` — isi pre_state dari note diagnostic, operation dari error.
+- `run.c` — isi pre_state/operation dari sanitizer stack trace.
+- `prove.c` — isi pre_state/operation dari Eva RTE alarm.
+- `filc.c` — isi pre_state/operation dari Fil-C panic.
+- `driver.c` — isi pre_state/operation dari driver sanitizer finding.
+- `myc.c` — `--write-repro` CLI flag, panggil `myc_witness_write_repro()`.
+- `witness.c` — perbaiki `json_serialize` return check (bug: `!= 0` harus
+  `== 0` agar witness.json tidak kosong); tambah pre_state/operation ke
+  witness.json serialization.
+- Replay test Windows: `myc check fixture.c --write-repro` → `.myc-witness/`
+  berisi source.c, witness.json, replay.sh, replay.bat; replay.bat
+  berhasil compile + run fixture.
+
+Semua 17 source files: `verdict: OK` (self-dogfooding).
 
 ---
 
-> Terakhir diperbarui: 2026-08-06 (Fase 1 Stage 3 selesai). Isi kronologis
+> Terakhir diperbarui: 2026-08-06 (Fase 1 lengkap). Isi kronologis
 > di atas tidak diubah/dihilangkan — dipindahkan verbatim dari AGENTS.md lama.

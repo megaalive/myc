@@ -110,9 +110,13 @@ char *myc_witness_write_repro(const myc_witness *w,
                          json_new_num((int64_t)w->violation_line));
             json_obj_set(root, "violation_col",
                          json_new_num((int64_t)w->violation_col));
+            if (w->pre_state)
+                json_obj_set(root, "pre_state", json_new_str(w->pre_state));
+            if (w->operation)
+                json_obj_set(root, "operation", json_new_str(w->operation));
 
             js = NULL;
-            if (json_serialize(root, &js) != 0) {
+            if (json_serialize(root, &js) == 0) {
                 js = NULL;
             }
             json_free(root);

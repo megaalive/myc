@@ -8,6 +8,7 @@
  *   myc check <file.c> --analyze  -- jalankan gate -fanalyzer
  *   myc check <file.c> --strict   -- tier ketat (-Wconversion dll)
  *   myc check <file.c> --no-lint  -- matikan lint memory-safety
+ *   myc check <file.c> --write-repro -- tulis .myc-witness/ repro dir
  *   myc policy                     -- tampilkan whitelist header
  *   myc probe                      -- self-test boundary argv (argv_probe)
  *   myc version                    -- tampilkan versi & gcc
@@ -32,6 +33,7 @@
 #include "policy.h"
 #include "proc.h"
 #include "report.h"
+#include "witness.h"
 #include "sha256.h"
 #include "agent.h"
 
@@ -1150,6 +1152,8 @@ int main(int argc, char **argv)
                 req.require_complete = 1; known = 1;
             } else if (strcmp(argv[i], "--agent") == 0) {
                 req.agent = 1; known = 1;
+            } else if (strcmp(argv[i], "--write-repro") == 0) {
+                req.write_repro = 1; known = 1;
             } else if (strcmp(argv[i], "--json-summary") == 0) {
                 req.json_summary = 1; known = 1;
             } else if (strcmp(argv[i], "--run-stdin") == 0) {
@@ -1268,6 +1272,17 @@ int main(int argc, char **argv)
         req.input.data = src;
         req.input.len = len;
         myc_run(&req, &res);
+        /* --write-repro: tulis .myc-witness/ repro directory (Fase 1).
+         * Harus sebelum free(src) karena membutuhkan source. */
+        if (req.write_repro && res.witness) {
+            char *repro_dir = myc_witness_write_repro(res.witness,
+                                                      src, len,
+                                                      req.cwd ? req.cwd : ".");
+            if (repro_dir) {
+                fprintf(stderr, "[myc] witness repro written to %s\n", repro_dir);
+                free(repro_dir);
+            }
+        }
         if (needs_free)
             free((void *)src);
     }
