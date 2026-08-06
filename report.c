@@ -10,6 +10,7 @@
 #include "json.h"
 #include "myc.h"
 #include "gate.h"
+#include "agent.h"
 
 const char *myc_verdict_name(myc_verdict v)
 {
@@ -1058,4 +1059,26 @@ void myc_report_json(const myc_result *res)
         printf("%s\n", s);
         free(s);
     }
+}
+
+int myc_report_agent(const myc_result *res)
+{
+    myc_agent_result ar;
+    const char *js;
+
+    if (!res) return -1;
+
+    memset(&ar, 0, sizeof(ar));
+
+    if (myc_build_agent_result(res, &ar, NULL, NULL) < 0)
+        return -1;
+
+    js = myc_agent_result_json(&ar);
+    if (js) {
+        printf("%s\n", js);
+        free((void *)js);
+    }
+
+    myc_agent_result_free(&ar);
+    return 0;
 }

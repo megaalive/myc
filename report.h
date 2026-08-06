@@ -16,4 +16,8 @@ const char *myc_gate_status_name(myc_gate_status s);
 /* Nama status quorum (untuk laporan differential backend). */
 const char *myc_quorum_status_name(myc_quorum_status s);
 
+/* Cetak protokol agent JSON ke stdout.
+ * Return 0 bila sukses, -1 bila gagal. */
+int myc_report_agent(const myc_result *res);
+
 #endif /* MYC_REPORT_H */
