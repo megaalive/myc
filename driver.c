@@ -1623,6 +1623,12 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
                             "driver: sanitizer menangkap bug pada kasus tepi", 0);
                     res->witness->backend =
                         myc_result_arena_dup(res, "driver", 0);
+                    res->witness->operation =
+                        myc_result_arena_dup(res,
+                            "driver: sanitizer menangkap bug pada kasus tepi", 0);
+                    res->witness->pre_state =
+                        myc_result_arena_dup(res,
+                            "driver: kasus tepi dari kontrak", 0);
                 }
             }
             goto out;

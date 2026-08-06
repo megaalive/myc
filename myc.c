@@ -88,6 +88,8 @@ void myc_witness_free(myc_witness *w)
     free(w->violation_msg);
     free(w->backend);
     free(w->backend_version);
+    free(w->pre_state);
+    free(w->operation);
     memset(w, 0, sizeof(*w));
 }
 

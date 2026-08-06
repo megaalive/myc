@@ -386,6 +386,10 @@ static int run_filc_exe(const myc_request *req, const char *exe,
                     myc_result_arena_dup(res, "Fil-C panic: memory safety violation", 0);
                 res->witness->backend =
                     myc_result_arena_dup(res, "fil-c", 0);
+                res->witness->operation =
+                    myc_result_arena_dup(res, "Fil-C panic: memory safety violation", 0);
+                res->witness->pre_state =
+                    myc_result_arena_dup(res, "Fil-C checked program execution", 0);
             }
         }
         return 0;

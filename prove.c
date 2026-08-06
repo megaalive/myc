@@ -410,6 +410,10 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
                         myc_result_arena_dup(res, note, 0);
                     res->witness->backend =
                         myc_result_arena_dup(res, "eva", 0);
+                    res->witness->operation =
+                        myc_result_arena_dup(res, note, 0);
+                    res->witness->pre_state =
+                        myc_result_arena_dup(res, "Eva precondition check", 0);
                 }
             }
             free(wsl_path);

@@ -481,6 +481,13 @@ typedef struct {
     /* Backend provenance */
     char *backend;          /* "gcc", "clang-asan", "eva", "fil-c", "driver" */
     char *backend_version;  /* "gcc 13.2", "frama-c 33.0", dst */
+
+    /* Kronologi pelanggaran (Fase 1, pre-state → operation → violation).
+     * pre_state : keadaan sebelum pelanggaran (mis. "p freed at line 7")
+     * operation : operasi yang melanggar (mis. "access p[10] out of bounds")
+     * Agar LLM memahami urutan kronologis, bukan hanya titik pelanggaran. */
+    char *pre_state;        /* deskripsi keadaan awal, NULL bila tidak diketahui */
+    char *operation;        /* deskripsi operasi pelanggaran, NULL bila tidak diketahui */
 } myc_witness;
 
 typedef struct {

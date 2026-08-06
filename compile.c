@@ -321,7 +321,10 @@ static void ingest_gcc_diagnostics(myc_result *res, const char *text)
 
     /* Isi witness dari diagnostic yang pertama match (Fase 1).
      * Witness hanya diisi bila belum ada (prioritas: sanitizer > gcc > eva).
-     * Iterasi semua diagnostic karena note biasanya di akhir. */
+     * Iterasi semua diagnostic karena note biasanya di akhir.
+     * Kronologi (Fase 1, pre-state → operation → violation):
+     *   - operation = pesan dari diagnostic error (violation_msg)
+     *   - pre_state = pesan dari diagnostic note terdekat (mis. "call to 'free' here") */
     if (res->diag_count > 0 && !res->witness) {
         int di;
         const myc_diagnostic *d = NULL;
@@ -339,6 +342,17 @@ static void ingest_gcc_diagnostics(myc_result *res, const char *text)
                 res->witness->violation_line = d->line;
                 res->witness->violation_col = d->col;
                 res->witness->backend = myc_result_arena_dup(res, "gcc", 0);
+                /* operation: deskripsi operasi pelanggaran dari error message */
+                res->witness->operation = myc_result_arena_dup(res, d->message, 0);
+                /* pre_state: cari note diagnostic terdekat (sebelum atau sesudah error) */
+                for (di = 0; di < res->diag_count; di++) {
+                    const myc_diagnostic *n = &res->diags[di];
+                    if (n != d && n->message &&
+                        (strstr(n->message, "note:") || strstr(n->message, "call to"))) {
+                        res->witness->pre_state = myc_result_arena_dup(res, n->message, 0);
+                        break;
+                    }
+                }
             }
         }
     }

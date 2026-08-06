@@ -730,6 +730,9 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
                         myc_result_arena_dup(res, note, 0);
                     res->witness->backend =
                         myc_result_arena_dup(res, "clang-asan", 0);
+                    /* Kronologi: sanitizer memberikan stack trace */
+                    res->witness->operation = myc_result_arena_dup(res, ev, 0);
+                    res->witness->pre_state = myc_result_arena_dup(res, note, 0);
                 }
             }
             free(asan_rpt);

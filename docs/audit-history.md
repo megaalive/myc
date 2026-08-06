@@ -1053,6 +1053,74 @@ dari gate status yang sudah di-hash). Fixture: `ok_run --run` → `C1 R1`,
 
 ---
 
-> Terakhir diperbarui: 2026-08-06 (pemisahan dari AGENTS.md agar aturan
-> stabil tidak tenggelam dalam sejarah). Isi kronologis di atas tidak
-> diubah/dihilangkan — dipindahkan verbatim dari AGENTS.md lama.
+## Fase -1 — Truth Freeze (2026-08-05)
+
+Dokumentasi, baseline, dan kompatibilitas sebelum fitur baru.
+
+- **AGENTS.md split**: aturan stabil di root, sejarah di `docs/audit-history.md`.
+- **README cleanup**: hapus fitur yang belum diimplementasi.
+- **capabilities.json**: registry MCP tools + CLI flags dengan test sinkronisasi.
+- **Baseline benchmark**: 20 task, catat latency, binary size, payload.
+
+---
+
+## Fase 0 — Agent Evidence Protocol (2026-08-05)
+
+Memberi LLM satu paket aksi yang dapat dipercaya.
+
+Commits: `a625fbf..35b65e3` (6 commits).
+
+- **P0-1**: `agent.h` + `agent.c` — `myc_agent_result` struct, build agent result,
+  JSON serialization, `select_primary`, witness integration, `next_check`.
+- **P0-2**: `report.c` — `myc_report_agent()` untuk `--agent` CLI output.
+- **P0-3**: `mcp.c` — MCP tool `agent_check` (structuredContent schema `myc.agent.v2`).
+- **P0-4**: `myc.c` — `--agent` CLI flag + `myc_request.agent` field.
+- **P0-5**: Fixtures — `agent_ok.c`, `agent_bad.c`.
+- **P0-6**: CI wiring — `capabilities.json` updated, `_cap_sync.sh`, `docs/mcp-tools.md`.
+
+---
+
+## Fase 1 — Witness Pipeline (2026-08-06)
+
+Setiap hard finding dapat dipahami dan direplay model.
+
+### Stage 1: Witness struct + isi witness (`64a70d0`)
+
+- **1.1**: `myc_witness` struct di `myc.h` — source, stdin, argv, slice, violation
+  kind/msg/line/col, backend.
+- **1.2**: Witness dari GCC diagnostics — `ingest_gcc_diagnostics()` di `compile.c`
+  mengisi witness via `repair_find_code()`.
+- **1.3**: Witness dari sanitizer — `run.c` memetakan ASan/UBSan markers ke
+  violation kinds.
+- **1.4**: Witness dari Eva/Fil-C/driver — `prove.c`, `filc.c`, `driver.c`.
+- `myc_witness_init/free` di `myc.c`; `myc_result_free` diupdate untuk free witness.
+
+### Stage 2: Repro + Minimizer + Slice (`9aeb287`)
+
+- **1.5**: `witness.c` — `myc_witness_write_repro()` menulis `.myc-witness/<kind>/`
+  (source.c, stdin.bin, witness.json, replay.sh, replay.bat).
+- **1.6**: `myc_witness_minimize_input()` — line-by-line removal skeleton.
+- **1.7**: `myc_witness_build_slice()` + `myc_witness_extract_function()`.
+- `witness.c` ditambahkan ke PIPELINE di build.sh/build.bat.
+
+### Stage 3: Serialization + Downgrade + Agent wiring (`6bbec72`)
+
+- **1.8**: `gate.c` — `myc_reduce_verdict()` downgrades hard→observation
+  bila `!res->witness` (MYC-AUDIT-014: tanpa bukti replayable, finding
+  tidak dianggap keras).
+- **1.9**: `agent.c` — witness diintegrasikan ke agent output; bila
+  `res->witness` ada, gunakan itu; fallback ke capsule.
+- **1.10**: Fixtures — `witness_uaf.c`, `witness_oob.c`, `witness_clean.c`.
+- **report.c**: serialisasi witness ke JSON (violation, backend, slice, argv).
+
+### Sisa Fase 1
+
+- [ ] `pre-state → operation → violation` — tambah field `pre_state` dan
+  `operation` ke witness struct agar LLM memahami kronologi pelanggaran.
+- [ ] Replay test lintas Windows/Linux — verifikasi `.myc-witness/` replay
+  konsisten.
+
+---
+
+> Terakhir diperbarui: 2026-08-06 (Fase 1 Stage 3 selesai). Isi kronologis
+> di atas tidak diubah/dihilangkan — dipindahkan verbatim dari AGENTS.md lama.

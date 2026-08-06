@@ -813,6 +813,12 @@ char *myc_result_to_json(const myc_result *res)
         json_sb_printf(&b, "\"message\":");
         json_sb_escape(&b, w->violation_msg);
         json_sb_puts(&b, ",");
+        json_sb_printf(&b, "\"pre_state\":");
+        json_sb_escape(&b, w->pre_state);
+        json_sb_puts(&b, ",");
+        json_sb_printf(&b, "\"operation\":");
+        json_sb_escape(&b, w->operation);
+        json_sb_puts(&b, ",");
         json_sb_printf(&b, "\"source_file\":");
         json_sb_escape(&b, w->slice_file);
         json_sb_puts(&b, ",");
