@@ -17,3 +17,7 @@ docs/myc-serious-review-and-roadmap.md
 deepseek-plan.md
 gptsol_deepseek-plan.md
 next-plan.md
+
+# runtime artifacts
+.myc/
+.myc-witness/

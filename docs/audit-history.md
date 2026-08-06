@@ -1130,7 +1130,29 @@ Setiap hard finding dapat dipahami dan direplay model.
   berisi source.c, witness.json, replay.sh, replay.bat; replay.bat
   berhasil compile + run fixture.
 
-Semua 17 source files: `verdict: OK` (self-dogfooding).
+Semua 18 source files (termasuk ledger.c): `verdict: OK` (self-dogfooding).
+
+### Fase 2 — Temporal Ledger (2026-08-06, partial)
+
+- **`ledger.c`/`ledger.h`**: persistent append-only ledger di `.myc/ledger.json`.
+  Mencatat source_sha256, receipt_sha256, receipt_parent (chain), scenario_hash,
+  timestamp, delta_kind, gate_status, verdict, finding.
+- `myc_ledger_read()` — parse ledger JSON (strict, via json.c).
+- `myc_ledger_write()` — append/update entry berdasarkan source_sha256.
+- `myc_ledger_find()` — cari entry terakhir untuk source yang sama.
+- `myc_ledger_compute_delta()` — FIXED/NEW/PERSISTENT/CHURN berdasarkan
+  perbandingan gate status & verdict.
+- `myc_ledger_build_anchor()` — semantic anchor (function + token hash + line).
+- `myc_ledger_build_scenario_hash()` — hash deterministik dari request flags.
+- `myc.c`: `myc_ledger_integrate()` dipanggil setelah pipeline + quorum +
+  require_complete; mengisi `res->receipt_parent`, `res->delta_kind`,
+  `res->delta_changed`, `res->ledger_parent_found`.
+- `report.c`: ledger fields (receipt_parent, delta_kind, delta_changed)
+  ditambahkan ke output teks + JSON.
+- Receipt chain: `receipt_parent` menunjuk ke receipt run sebelumnya untuk
+  source yang sama. Bila run pertama, receipt_parent kosong (first run).
+- Non-blocking: bila `.myc/` tidak dapat ditulis, ledger dilewati dengan
+  diagnostic (bukan error).
 
 ---
 

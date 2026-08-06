@@ -703,6 +703,16 @@ typedef struct {
      * QUORUM_NOT_REQUESTED: quorum tidak diminta. */
     myc_quorum_status quorum_status;
     char *quorum_report;    /* teks laporan konflik, freed oleh arena */
+
+    /* --- Temporal Ledger (Fase 2, roadmap 7.2) --- */
+    /* Receipt chain: hash run sebelumnya untuk source yang sama.
+     * NULL bila run pertama kali. Dibebaskan oleh myc_result_free. */
+    char *receipt_parent;   /* parent receipt_sha256 (chain) */
+    /* Delta vs run sebelumnya: fixed/new/persistent/churn */
+    int  ledger_parent_found; /* 1 = ditemukan parent di .myc/ledger.json */
+    char *delta_kind;       /* "fixed" / "new" / "persistent" / "churn" */
+    char *delta_gate;       /* gate yang berubah */
+    int  delta_changed;     /* 1 jika ada perubahan dari run sebelumnya */
 } myc_result;
 
 /* Nama debt type (statis). */

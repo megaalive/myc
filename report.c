@@ -444,13 +444,24 @@ if (res->debt_count > 0) {
                     "menjadikan hasil GAGAL (INCONCLUSIVE)\n");
      }
 
-     /* Differential Backend Quorum (#3). */
-     if (res->quorum_status != MYC_QUORUM_NOT_REQUESTED) {
-         printf("quorum: %s\n",
-                myc_quorum_status_name(res->quorum_status));
-         if (res->quorum_report)
-             printf("%s", res->quorum_report);
-     }
+      /* Differential Backend Quorum (#3). */
+      if (res->quorum_status != MYC_QUORUM_NOT_REQUESTED) {
+          printf("quorum: %s\n",
+                 myc_quorum_status_name(res->quorum_status));
+          if (res->quorum_report)
+              printf("%s", res->quorum_report);
+      }
+
+      /* Temporal Ledger (Fase 2): delta vs run sebelumnya. */
+      if (res->ledger_parent_found) {
+          printf("ledger:\n");
+          printf("  receipt_parent: %s\n",
+                 res->receipt_parent ? res->receipt_parent : "(none)");
+          printf("  delta: %s\n",
+                 res->delta_kind ? res->delta_kind : "persistent");
+          printf("  delta_changed: %s\n",
+                 res->delta_changed ? "yes" : "no");
+      }
 
      /* Counterexample Replay Capsule (#2). */
      if (res->capsule) {
@@ -850,11 +861,20 @@ char *myc_result_to_json(const myc_result *res)
      json_sb_puts(&b, "],");
 
      /* Differential Backend Quorum (#3). */
-     json_sb_printf(&b, "\"quorum_status\":\"%s\",",
-                    myc_quorum_status_name(res->quorum_status));
-     json_sb_printf(&b, "\"quorum_report\":");
-     json_sb_escape(&b, res->quorum_report);
-     json_sb_puts(&b, ",");
+      json_sb_printf(&b, "\"quorum_status\":\"%s\",",
+                     myc_quorum_status_name(res->quorum_status));
+      json_sb_printf(&b, "\"quorum_report\":");
+      json_sb_escape(&b, res->quorum_report);
+      json_sb_puts(&b, ",");
+      json_sb_printf(&b, "\"receipt_parent\":");
+      json_sb_escape(&b, res->receipt_parent);
+      json_sb_puts(&b, ",");
+      json_sb_printf(&b, "\"ledger_parent_found\":%s,",
+                     res->ledger_parent_found ? "true" : "false");
+      json_sb_printf(&b, "\"delta_kind\":\"%s\",",
+                     res->delta_kind ? res->delta_kind : "");
+      json_sb_printf(&b, "\"delta_changed\":%s,",
+                     res->delta_changed ? "true" : "false");
 
      /* Counterexample Replay Capsule (#2). */
      json_sb_printf(&b, "\"capsule\":");

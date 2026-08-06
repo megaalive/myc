@@ -34,6 +34,7 @@
 #include "proc.h"
 #include "report.h"
 #include "witness.h"
+#include "ledger.h"
 #include "sha256.h"
 #include "agent.h"
 
@@ -582,6 +583,10 @@ void myc_result_free(myc_result *res)
         free(res->witness);
         res->witness = NULL;
     }
+    /* bebaskan ledger fields (Fase 2) */
+    free(res->receipt_parent);
+    free(res->delta_kind);
+    free(res->delta_gate);
     /* quorum_report (#3) TIDAK di-free di sini: ia dialokasikan dari
      * arena milik hasil (myc_result_arena_dup) dan ikut dibebaskan utuh
      * oleh arena di atas. free() individual = invalid free (bug #3). */
@@ -756,6 +761,87 @@ static void enforce_require_complete(const myc_request *req, myc_result *res)
     myc_rebuild_receipt(res);
 }
 
+/* Temporal ledger integration (Fase 2): cari parent receipt di .myc/ledger.json,
+ * hitung delta vs run sebelumnya, tulis entry baru. Non-blocking. */
+static void myc_ledger_integrate(const myc_request *req, myc_result *res)
+{
+    myc_ledger ledger;
+    const myc_ledger_entry *prev;
+    myc_ledger_entry entry;
+    char *scenario_hash;
+    const char *curr_verdict;
+    const char *curr_gate_status;
+    const char *dn;
+
+    if (!res->source_sha256)
+        return;
+
+    memset(&ledger, 0, sizeof(ledger));
+    myc_ledger_read(&ledger);
+
+    prev = myc_ledger_find(&ledger, res->source_sha256);
+    if (prev && prev->receipt_sha256[0]) {
+        res->receipt_parent = myc_strdup(prev->receipt_sha256);
+        res->ledger_parent_found = 1;
+    }
+
+    /* Bangun scenario hash dari request. */
+    scenario_hash = myc_ledger_build_scenario_hash(req, NULL);
+
+    /* Compute delta: bandingkan verdict string vs run sebelumnya. */
+    curr_verdict = myc_verdict_name(res->verdict);
+    res->delta_kind = NULL;
+    res->delta_gate = NULL;
+    res->delta_changed = 0;
+
+    if (prev && prev->verdict) {
+        myc_delta_kind delta;
+        if (strcmp(prev->verdict, curr_verdict) == 0) {
+            delta = MYC_DELTA_PERSISTENT;
+        } else if (strstr(prev->verdict, "VIOLATION") &&
+                   strcmp(curr_verdict, "OK") == 0) {
+            delta = MYC_DELTA_FIXED;
+        } else if (strstr(curr_verdict, "VIOLATION") &&
+                   strcmp(prev->verdict, "OK") == 0) {
+            delta = MYC_DELTA_NEW;
+        } else {
+            delta = MYC_DELTA_CHURN;
+        }
+        dn = delta == MYC_DELTA_FIXED ? "fixed" :
+             delta == MYC_DELTA_NEW ? "new" :
+             delta == MYC_DELTA_PERSISTENT ? "persistent" : "churn";
+        res->delta_kind = myc_strdup(dn);
+        res->delta_changed = (delta != MYC_DELTA_PERSISTENT) ? 1 : 0;
+    }
+
+    /* Tulis entry ke ledger */
+    memset(&entry, 0, sizeof(entry));
+    entry.source_sha256 = res->source_sha256;
+    entry.receipt_sha256 = res->receipt_sha256;
+    entry.receipt_parent = res->receipt_parent;
+    entry.scenario_hash = scenario_hash;
+    entry.timestamp = myc_ledger_timestamp();
+    if (res->delta_kind) {
+        if (strcmp(res->delta_kind, "fixed") == 0) entry.delta = MYC_DELTA_FIXED;
+        else if (strcmp(res->delta_kind, "new") == 0) entry.delta = MYC_DELTA_NEW;
+        else if (strcmp(res->delta_kind, "persistent") == 0) entry.delta = MYC_DELTA_PERSISTENT;
+        else entry.delta = MYC_DELTA_CHURN;
+    }
+    curr_gate_status = myc_gate_status_name(
+        res->gates[0].status);
+    entry.gate_status = myc_strdup(curr_gate_status ? curr_gate_status : "");
+    entry.verdict = myc_strdup(curr_verdict);
+    entry.finding = myc_strdup(myc_finding_name(res->finding));
+
+    myc_ledger_write(&entry);
+
+    free(scenario_hash);
+    free(entry.gate_status);
+    free(entry.verdict);
+    free(entry.finding);
+    myc_ledger_free(&ledger);
+}
+
 void myc_run(const myc_request *req, myc_result *res)
 {
     myc_error_code ve = myc_request_validate(req);
@@ -859,19 +945,21 @@ void myc_run(const myc_request *req, myc_result *res)
                 myc_pipeline(&req2, res);
                 /* #3: quorum juga dihitung di jalur file_path/STDIN (API/MCP),
                  * konsisten dengan jalur source in-memory. */
-                myc_quorum_analysis(&req2, res);
-                enforce_require_complete(&req2, res);
-                if (needs_free)
-                    free((void *)buf);
-                res->capsule = myc_build_capsule(&req2, res);
-            }
-            free(canon_cwd);
-            return;
-        }
+                 myc_quorum_analysis(&req2, res);
+                 enforce_require_complete(&req2, res);
+                 myc_ledger_integrate(&req2, res);
+                 if (needs_free)
+                     free((void *)buf);
+                 res->capsule = myc_build_capsule(&req2, res);
+             }
+             free(canon_cwd);
+             return;
+         }
 
         myc_pipeline(eff, res);
         myc_quorum_analysis(eff, res);
         enforce_require_complete(eff, res);
+        myc_ledger_integrate(eff, res);
         res->capsule = myc_build_capsule(eff, res);
         free(canon_cwd);
     }
