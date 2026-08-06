@@ -27,6 +27,10 @@ gcc -c -O2 -fanalyzer        (--analyze, optional) -> COMPILE_ERROR
 gcc -c -O2 -DMYC_CHECKED=1   (--checked, optional) -> L4 SPATIAL (fat-pointer bounds)
 clang -O0 -fsanitize=address,undefined (--run, optional) -> L3 RUNTIME
 driver-generator (--driver, optional) -> L3 RUNTIME on contract edge cases
+metamorphic -O0 vs -O2 (--metamorphic, optional) -> UB / toolchain-sensitive
+negative-space (--negative, optional) -> "missing pattern" observations
+quorum (--quorum, optional) -> cross-backend agreement
+--require-complete -> verification gap = CI failure (MYC-INCOMPLETE-*)
 ```
 
 The hard gates come only from **semantic evidence** (compiler diagnostics,
@@ -38,6 +42,8 @@ is a warning or a non-blocking observation.
 ```
 myc check <file.c> [--json] [--analyze] [--strict] [--no-lint] [--cwd DIR]
 myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver]
+myc check <file.c> [--metamorphic] [--negative] [--quorum] [--require-complete]
+myc check <file.c> [--json-summary] [--timeout MS] [--output-cap BYTES]
 myc check -            [--json] [--analyze] [--strict] [--no-lint]   (source from stdin)
 myc policy
 myc probe
@@ -58,12 +64,24 @@ Flags:
 - `--filc` — run under Fil-C (optional backend, Linux/x86_64).
 - `--driver` — generate and run a driver that exercises contract-tagged
   functions at edge cases (optional backend).
+- `--metamorphic` — build and run the source twice (`-O0` vs `-O2`) and
+  compare results; a discrepancy signals UB / toolchain-sensitive code.
+- `--negative` — negative-space analysis: mine "missing patterns" (e.g. an
+  unchecked `malloc`), as confidence-scored observations.
+- `--quorum` — compare all requested backends; report clean / conflict /
+  inconclusive agreement.
+- `--require-complete` — treat verification gaps as CI failures (emits
+  `MYC-INCOMPLETE-*` debt), never silent silence.
+- `--json-summary` — compact JSON for LLM agents (verdict, assurance vector,
+  receipt, finding, gate matrix, debt).
+- `--timeout MS` — per-process timeout (0–600000, default 30000).
+- `--output-cap BYTES` — cap captured child output (0–104857600, default 1 MiB).
 - `--strict` — extra strict warnings (`-Wconversion`, `-Wsign-conversion`, …).
 - `--no-lint` — disable the heuristic memory-safety lint.
 
-All `--run` / `--checked` / `--filc` / `--driver` / `--prove` steps are
-**optional and non-blocking**: if a backend is unavailable, myc still reports
-the static result plus a diagnostic.
+All optional backends (`--run` / `--checked` / `--filc` / `--driver` /
+`--prove` / `--metamorphic`) are **non-blocking**: if a backend is
+unavailable, myc still reports the static result plus a diagnostic.
 
 ## Policy
 
@@ -77,7 +95,10 @@ the static result plus a diagnostic.
 
 ## MCP server
 
-`mcp.exe` exposes `myc check` as an MCP tool (JSON-RPC 2.0 over stdio). See
+`mcp.exe` exposes myc as an MCP server (JSON-RPC 2.0 over stdio) with six
+tools: `check`, `version`, `policy`, `contracts`, `lint`, and `repair` (minimal
+template patch for a compile finding). Results use typed `structuredContent`
+schemas (`myc.result.v1`, `myc.repair.v1`) plus a text JSON payload. See
 `docs/mcp-tools.md`. A dependency-free example client is `mcp_client.py`.
 
 ## Learn more
@@ -144,13 +165,13 @@ Pre-built binaries are attached to GitHub Releases. Download the latest
 
 ## License
 
-No license file yet — please check with the author before reuse.
+MIT License — see [`LICENSE`](LICENSE). Copyright (c) 2026 megaalive.
 
 ## Assurance
 
 Results are reported as an **assurance vector** `C1 S0 R1 B0 P0 D0 F0`
 (Compile / Static / Runtime / Checked / Proof / Driver / Filc; `0` = n/a,
-`1` = clean, `2` = findings, `3` = inconclusive).
+`1` = clean, `2` = findings, `3` = inconclusive, `4` = observations).
 
 The older scalar L1–L5 labels are **legacy and experimental**: they describe
 the strongest backend that happened to run, not a formal guarantee. Treat the

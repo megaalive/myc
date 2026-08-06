@@ -118,6 +118,32 @@ lain (suspicious), memcpy/memmove/memset tanpa `sizeof` (observation),
 ukuran alokasi perkalian tanpa `sizeof` (observation), akses langsung
 `b[i]` pada variabel `MYC_BUF` (observation; hard = checked gate).
 
+`lint` juga menyertakan **`why`** dan **`fix`** (template, bukan AI-generated)
+di text output dan `structuredContent`: `why` = alasan pola berisiko, `fix` =
+saran perbaikan berbasis template. Fungsi `myc_lint_why()` / `myc_lint_fix()`
+di `lint.c`.
+
+### 6. `repair` — patch minimal untuk finding compile
+
+- `source` (string, **wajib**): kode C yang akan diperbaiki.
+- `finding_code` (string, opsional): salah satu dari `gcc-use-after-free`,
+  `gcc-null-dereference`, `gcc-array-bounds`, `gcc-stringop-overflow`,
+  `gcc-free-nonheap-object`. Bila kosong, repair memakai diagnostic pertama
+  dari hasil `check` source yang sama.
+- **Hasil** JSON: `finding`, `applied_verdict`, `confidence`, `patch`
+  (diff siap-apply, `null` bila tidak tersedia), dan objek
+  `structuredContent` (schema `myc.repair.v1`).
+- **Batasan**: patch murni template deterministik (bukan AI-generated). Tidak
+  semua finding punya template — bila tidak, `patch` bernilai `null` + alasan.
+
+Contoh:
+
+```
+{"name":"repair","arguments":{
+  "source":"int f(void){char*p=malloc(4);return p[4];free(p);}",
+  "finding_code":"gcc-stringop-overflow"}}
+```
+
 ## Catatan untuk agent
 
 - Selalu cek `verdict`/`assurance`/`error` di hasil `check`, bukan hanya
