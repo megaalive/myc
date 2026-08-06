@@ -14,15 +14,23 @@ Driver / Filc; `0` = n/a, `1` = clean, `2` = findings, `3` = inconclusive).
 | Gate                | Flag       | Requires            | What it guarantees                                  | Notes / limits                                                              |
 | ------------------- | ---------- | ------------------- | --------------------------------------------------- | --------------------------------------------------------------------------- |
 | preprocess          | (always)   | gcc                 | source compiles under `gcc -E`                     | warnings non-blocking                                                        |
-| lint (heuristic)    | (always)   | —                   | memory-safety *observations* (confidence-scored)    | **Non-blocking** (MYC-AUDIT-014); text heuristic, not proof                  |
-| compile (memory)    | (always)   | gcc                 | `-Werror` clean under `-O2 -Wall -Wextra -pedantic` + memory tier (`-Warray-bounds`, `-Wstringop-overflow`, `-Wuse-after-free`, `-Wfree-nonheap-object`, `-Wformat-overflow`, …) | **hard gate**                                                       |
-| include/marker/call | (always)   | —                   | whitelist / `# 1` depth-2 / denylist *warnings*    | **Non-blocking** (intended as extra signal, never a blocker)                |
-| `-fanalyzer`        | `--analyze`| gcc                 | `gcc -fanalyzer` clean                              | extra static analysis                                                        |
-| checked-build       | `--checked`| gcc                 | `MYC_BUF` fat-pointer bounds ⇒ **L4 SPATIAL**       | covers **only `MYC_BUF` buffers**; plain `malloc` arrays not covered         |
+| lint                | (always)   | —                   | memory-safety *observations* (confidence-scored)    | **Non-blocking** (MYC-AUDIT-014); text heuristic, not proof                  |
+| compile             | (always)   | gcc                 | `-Werror` clean under `-O2 -Wall -Wextra -pedantic` + memory tier (`-Warray-bounds`, `-Wstringop-overflow`, `-Wuse-after-free`, `-Wfree-nonheap-object`, `-Wformat-overflow`, …) | **hard gate**                                                       |
+| include-marker-call | (always)   | —                   | whitelist / `# 1` depth-2 / denylist *warnings*    | **Non-blocking** (intended as extra signal, never a blocker)                |
+| analyzer            | `--analyze`| gcc                 | `gcc -fanalyzer` clean                              | extra static analysis                                                        |
+| checked             | `--checked`| gcc                 | `MYC_BUF` fat-pointer bounds ⇒ **L4 SPATIAL**       | covers **only `MYC_BUF` buffers**; plain `malloc` arrays not covered         |
 | runtime             | `--run`    | clang + ASan/UBSan  | clean run under sanitizers ⇒ **L3 RUNTIME**        | optional; non-blocking if clang absent                                       |
+| metamorphic         | `--metamorphic` | clang + ASan  | `-O0` vs `-O2` discrepancy ⇒ UB / toolchain-sensitive | optional; non-blocking if clang absent; divergence ≠ proof of bug          |
+| negative            | `--negative` | —                | "missing pattern" observations (e.g. unchecked alloc) | **Non-blocking** (MYC-AUDIT-014); confidence-scored                        |
+| quorum              | `--quorum` | —                   | cross-backend agreement (clean / conflict / inconclusive) | optional; extra signal, never a blocker                                |
+| require-complete    | `--require-complete` | —        | verification gap = CI failure (`MYC-INCOMPLETE-*`) | makes verdict INCONCLUSIVE when debt exists                                 |
 | driver              | `--driver` | clang + ASan        | edge-case harness on contract-tagged functions     | optional; non-blocking if clang absent / no contracts                        |
 | prove               | `--prove`  | Frama-C (Eva)       | abstract interpretation ⇒ **L2 EVA**               | optional; non-blocking if Frama-C absent (typically Linux)                   |
 | filc                | `--filc`   | Fil-C               | memory-safe execution ⇒ **L5 FILC**                | optional; non-blocking if Fil-C absent (Linux/x86_64)                       |
+
+> Registry: daftar kanonik gate/flag/tool ada di `capabilities.json` (single
+> source of truth). `test/_cap_sync.sh` memverifikasi doc ini sinkron dengan
+> registry dan implementasi.
 
 ## Honest limitations
 

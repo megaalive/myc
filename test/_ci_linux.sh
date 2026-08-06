@@ -56,7 +56,14 @@ else
     exit 1
 fi
 
-# --- 0b. pre-flight: prove.c compile dengan -Werror (MYC-AUDIT-023) ---
+# --- 0b. capabilities registry sync (SOL-23) ---
+if bash test/_cap_sync.sh; then
+    note "capabilities registry sinkron (capabilities.json vs source+docs)"
+else
+    fail "capabilities registry sync"
+fi
+
+# --- 0c. pre-flight: prove.c compile dengan -Werror (MYC-AUDIT-023) ---
 # prove.c adalah kantor terdepan untuk -Werror karena WSL/Frama-C code.
 # Jika gagal di sini, fail-fast dengan pesan jelas.
 if ! gcc -O2 -std=c11 -Wall -Wextra -Werror -pedantic -Werror=implicit-function-declaration -c prove.c -o /tmp/prove_preflight.o 2>&1; then

@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "doc": "Single source of truth for myc capabilities (gates, CLI flags, MCP tools, schemas). CI (_cap_sync.sh) verifies this file stays consistent with myc.c, mcp.c, README.md, and docs/*.md. See docs/audit-history.md -> SOL-23. Edit here first; a mismatch makes CI fail.",
+  "gates": [
+    { "id": "preprocess",        "flag": null,              "dimension": "C", "backend": "gcc",        "hard": false, "docs_anchor": "preprocess" },
+    { "id": "lint",              "flag": null,              "dimension": "C", "backend": null,          "hard": false, "docs_anchor": "lint" },
+    { "id": "include-marker-call","flag": null,             "dimension": "C", "backend": null,          "hard": false, "docs_anchor": "include/marker/call" },
+    { "id": "compile",           "flag": null,              "dimension": "C", "backend": "gcc",        "hard": true,   "docs_anchor": "compile" },
+    { "id": "analyzer",          "flag": "--analyze",       "dimension": "S", "backend": "gcc",        "hard": false,  "docs_anchor": "-fanalyzer" },
+    { "id": "checked",           "flag": "--checked",       "dimension": "B", "backend": "gcc",        "hard": false,  "docs_anchor": "checked-build" },
+    { "id": "runtime",           "flag": "--run",           "dimension": "R", "backend": "clang+asan",  "hard": false,  "docs_anchor": "runtime" },
+    { "id": "metamorphic",       "flag": "--metamorphic",   "dimension": "R", "backend": "clang",      "hard": false,  "docs_anchor": "metamorphic" },
+    { "id": "negative",          "flag": "--negative",      "dimension": "C", "backend": null,          "hard": false,  "docs_anchor": "negative-space" },
+    { "id": "quorum",            "flag": "--quorum",        "dimension": null, "backend": null,         "hard": false,  "docs_anchor": "quorum" },
+    { "id": "require-complete",  "flag": "--require-complete", "dimension": null, "backend": null,      "hard": false,  "docs_anchor": "require-complete" },
+    { "id": "driver",            "flag": "--driver",        "dimension": "D", "backend": "gcc+clang",   "hard": false,  "docs_anchor": "driver" },
+    { "id": "prove",             "flag": "--prove",         "dimension": "P", "backend": "frama-c",     "hard": false,  "docs_anchor": "prove" },
+    { "id": "filc",              "flag": "--filc",          "dimension": "F", "backend": "fil-c",       "hard": false,  "docs_anchor": "filc" }
+  ],
+  "cli_flags": [
+    "--analyze", "--checked", "--run", "--run-stdin", "--prove", "--filc",
+    "--driver", "--metamorphic", "--negative", "--quorum", "--require-complete",
+    "--json", "--json-summary", "--strict", "--level", "--no-lint", "--cwd",
+    "--timeout", "--output-cap"
+  ],
+  "mcp_tools": [
+    "check", "repair", "version", "policy", "contracts", "lint"
+  ],
+  "schemas": [
+    "myc.result.v1", "myc.repair.v1"
+  ],
+  "dimensions": {
+    "C": "Compile", "S": "Static", "R": "Runtime", "B": "Checked",
+    "P": "Proof", "D": "Driver", "F": "Filc"
+  }
+}

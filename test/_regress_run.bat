@@ -386,6 +386,19 @@ if defined GITHUB_ACTIONS (
   )
 )
 )
+echo --- capabilities registry sync (SOL-23): capabilities.json vs source+docs
+where bash >nul 2>&1
+if errorlevel 1 (
+  echo [WARN] bash tidak tersedia - cap sync dilewati; jalankan test/_cap_sync.sh di POSIX
+) else (
+  bash test/_cap_sync.sh
+  if errorlevel 1 (
+    echo [FAIL] capabilities registry sync - capabilities.json tidak sinkron dengan source/docs
+    set FAILCOUNT=1
+  ) else (
+    echo [OK] capabilities registry sinkron
+  )
+)
 echo --- MYC-AUDIT-028: size cap saat membaca (bukan setelah baca penuh)
 set BIGSRC=%TEMP%\myc_big_028.c
 set BIGRUN=%TEMP%\myc_bigstdin_028.bin
