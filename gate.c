@@ -113,6 +113,7 @@ const char *myc_debt_type_name(myc_debt_type t)
     case MYC_DEBT_RAW_BUFFERS:        return "raw_buffers";
     case MYC_DEBT_OUTPUT_TRUNCATED:   return "output_truncated";
     case MYC_DEBT_BUDGET:             return "budget_unmet";
+    case MYC_DEBT_ASSUMPTION:         return "assumption_open";
     case MYC_DEBT_COUNT:              return "count";
     }
     return "unknown";
@@ -133,6 +134,7 @@ const char *myc_debt_code(myc_debt_type t)
     case MYC_DEBT_RAW_BUFFERS:       return "MYC-INCOMPLETE-RAW-BUFFERS";
     case MYC_DEBT_OUTPUT_TRUNCATED:  return "MYC-INCOMPLETE-OUTPUT-TRUNCATED";
     case MYC_DEBT_BUDGET:            return "MYC-INCOMPLETE-BUDGET-UNMET";
+    case MYC_DEBT_ASSUMPTION:        return "MYC-INCOMPLETE-ASSUMPTIONS-OPEN";
     case MYC_DEBT_NONE:              return "MYC-INCOMPLETE-NONE";
     case MYC_DEBT_COUNT:             return "MYC-INCOMPLETE-COUNT";
     }

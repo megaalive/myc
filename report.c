@@ -11,6 +11,7 @@
 #include "myc.h"
 #include "gate.h"
 #include "agent.h"
+#include "assume.h"
 
 const char *myc_verdict_name(myc_verdict v)
 {
@@ -267,6 +268,29 @@ void myc_report_text(const myc_result *res)
                    cl->expr ? cl->expr : "(tak terbaca)",
                    myc_clause_status_name(cl->status));
         }
+    }
+    /* Fase 4 A1: ledger asumsi portabilitas (observasi NON-blocking;
+     * verdict tidak turun karenanya kecuali --require-assumptions-closed). */
+    if (res->assumption_count > 0) {
+        printf("assumptions (A1 ledger): %d terdeteksi, %d terbuka "
+               "(status: observed/contradicted)\n",
+               res->assumption_detected, res->assumption_unclosed);
+        for (i = 0; i < res->assumption_count; i++) {
+            const myc_assumption *a = &res->assumptions[i];
+            printf("  [%d] %s line %d %s (conf %d) status=%s\n",
+                   i + 1, a->id ? a->id : "(null)", a->line,
+                   a->kind ? a->kind : "(null)", a->confidence,
+                   myc_assumption_status_name(
+                       (myc_assumption_status)a->status));
+            printf("      host: %s | risiko: %s\n",
+                   a->host_fact ? a->host_fact : "(null)",
+                   a->risk ? a->risk : "(null)");
+            printf("      next: %s\n",
+                   a->next_action ? a->next_action : "(null)");
+        }
+        if (res->assumption_ack_applied > 0)
+            printf("ack: %d asumsi ditutup run ini (--assumption-ack)\n",
+                   res->assumption_ack_applied);
     }
     if (res->ran_negative)
         printf("negative (9.8): callsites=%d deviations=%d\n",
@@ -608,6 +632,39 @@ char *myc_result_to_json(const myc_result *res)
         json_sb_escape(&b, res->cache_delta_report);
         json_sb_puts(&b, ",");
     }
+    /* Fase 4 A1: ledger asumsi portabilitas. */
+    json_sb_printf(&b, "\"assumptions\":{\"detected\":%d,\"count\":%d,"
+                       "\"unclosed\":%d,\"ok\":%s,\"ack_applied\":%d,"
+                       "\"items\":[",
+                   res->assumption_detected, res->assumption_count,
+                   res->assumption_unclosed,
+                   res->assumption_ok ? "true" : "false",
+                   res->assumption_ack_applied);
+    for (i = 0; i < res->assumption_count; i++) {
+        const myc_assumption *a = &res->assumptions[i];
+        if (i)
+            json_sb_puts(&b, ",");
+        json_sb_printf(&b, "{\"id\":");
+        json_sb_escape(&b, a->id);
+        json_sb_printf(&b, ",\"kind\":");
+        json_sb_escape(&b, a->kind);
+        json_sb_printf(&b,
+                       ",\"line\":%d,\"status\":\"%s\","
+                       "\"confidence\":%d,\"anchor\":",
+                       a->line,
+                       myc_assumption_status_name(
+                           (myc_assumption_status)a->status),
+                       a->confidence);
+        json_sb_escape(&b, a->anchor);
+        json_sb_printf(&b, ",\"host_fact\":");
+        json_sb_escape(&b, a->host_fact);
+        json_sb_printf(&b, ",\"risk\":");
+        json_sb_escape(&b, a->risk);
+        json_sb_printf(&b, ",\"next_action\":");
+        json_sb_escape(&b, a->next_action);
+        json_sb_puts(&b, "}");
+    }
+    json_sb_puts(&b, "]},");
     json_sb_printf(&b, "\"resolved_gcc\":");
     json_sb_escape(&b, res->resolved_gcc);
     json_sb_puts(&b, ",");
@@ -1140,6 +1197,10 @@ void myc_report_json_summary(const myc_result *res)
     json_sb_printf(&b, "\"budget_report\":");
     json_sb_escape(&b, res->budget_report);
     json_sb_puts(&b, ",");
+    json_sb_printf(&b, "\"assumptions\":{\"count\":%d,\"unclosed\":%d,"
+                       "\"ok\":%s},",
+                   res->assumption_count, res->assumption_unclosed,
+                   res->assumption_ok ? "true" : "false");
     json_sb_printf(&b, "\"quorum_status\":\"%s\"",
                    myc_quorum_status_name(res->quorum_status));
     json_sb_puts(&b, "}");

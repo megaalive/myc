@@ -159,6 +159,27 @@ char *myc_ledger_build_scenario_hash(const myc_request *req,
                   req->checked, req->filc, req->driver,
                   req->metamorphic, req->negative, req->quorum,
                   req->require_complete);
+    /* Fase 4 A1/DS-01: flags asumsi + hash ack masuk scenario hash — run
+     * dengan --require-assumptions-closed / --assumption-ack berbeda
+     * TIDAK boleh berbagi cache entry (hasil enforcement/status asumsi
+     * bergantung pada keduanya). */
+    n += snprintf(buf + n, sizeof(buf) - n,
+                  "|asm_r=%d|asm_no=%d",
+                  req->require_assumptions_closed, req->no_assumptions);
+    if (req->assumption_acks) {
+        sha256_ctx actx;
+        uint8_t    amd[32];
+        char       ahex[65];
+        sha256_init(&actx);
+        sha256_update(&actx, req->assumption_acks,
+                      strlen(req->assumption_acks));
+        sha256_final(&actx, amd);
+        sha256_hex(amd, 32, ahex);
+        ahex[16] = '\0';
+        n += snprintf(buf + n, sizeof(buf) - n, "|asm_ack=%s", ahex);
+    }
+    if (n >= (int)sizeof(buf))
+        n = sizeof(buf) - 1;
     /* Fase 3, SOL-30: budget contract masuk scenario hash — run dengan
      * kontrak berbeda TIDAK boleh berbagi cache entry (enforcement
      * bergantung pada target yang diminta). Hash kontrak (bukan raw

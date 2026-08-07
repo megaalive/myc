@@ -23,7 +23,8 @@
     "--json", "--json-summary", "--agent", "--strict", "--level", "--no-lint", "--cwd",
     "--timeout", "--output-cap", "--write-repro", "--no-cache",
     "--tx-verify", "--finding-id", "--edit-region", "--budget",
-    "--budget-contract"
+    "--budget-contract", "--no-assumptions", "--require-assumptions-closed",
+    "--assumption-ack"
   ],
   "mcp_tools": [
     "check", "repair", "version", "policy", "contracts", "lint", "agent_check"

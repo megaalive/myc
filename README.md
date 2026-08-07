@@ -92,6 +92,19 @@ Flags:
   (`MYC-INCOMPLETE-BUDGET-UNMET`), the verdict becomes `INCONCLUSIVE`
   (unless a real bug already set it), and the report lists exactly which
   dimension was sacrificed.
+- `--no-assumptions` — disable the portability **assumption ledger** (Fase 4
+  A1): a non-blocking scan that lists which code bets on implementation-
+  defined facts (char signedness, int width, bit-field endianness, alignment
+  casts, `sizeof` assumptions) next to the host toolchain truth from
+  `gcc -dM -E`.
+- `--require-assumptions-closed` — treat open assumptions (status
+  `observed`/`contradicted`) as a verification gap (`MYC-INCOMPLETE-`
+  `ASSUMPTIONS-OPEN`), making the verdict `INCONCLUSIVE` (DS-01 closure
+  loop).
+- `--assumption-ack id:status,...` — close specific assumptions
+  (`declared|tested|contradicted|eliminated|accepted-risk`); the status is
+  persisted in `.myc/assumptions.json` so later runs show which assumptions
+  are closed, without removing them from the receipt.
 
 ## Agent context (`myc context`)
 

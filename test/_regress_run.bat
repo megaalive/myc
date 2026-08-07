@@ -85,7 +85,7 @@ myc.exe check tests\ok_hello.c --cwd "" > %OUT% 2>&1
 findstr /C:"invalid_cwd" %OUT% >nul && echo [OK] --cwd kosong ditolak (invalid_cwd) || echo [WARN] --cwd kosong tidak ditolak
 del %OUT%
 echo --- self-dogfooding: semua source myc harus OK
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c) do (
   echo === %%f
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%
@@ -157,7 +157,7 @@ echo --- checked audit MYC-AUDIT-026: coverage count + semantics parity
 echo === tests\semantics_parity.c --checked (L4 + coverage 2/2/6/2)
 myc.exe check tests\semantics_parity.c --checked > %OUT% 2>&1
 findstr /C:"buffers=2 allocations=2 accesses=6 frees=2" %OUT% >nul && echo [OK] checked coverage: 2 buffer 6 titik akses terhitung || echo [WARN] checked coverage count salah
-findstr /C:"assurance: L4" %OUT% >nul && echo [OK] semantics_parity --checked -> L4 || echo [WARN] semantics_parity --checked bukan L4
+findstr /C:"assurance: L4" %OUT% >nul && echo [OK] semantics_parity --checked = L4 || echo [WARN] semantics_parity --checked bukan L4
 echo === coverage ok_checked (1/1/2/1)
 myc.exe check tests\ok_checked.c --checked > %OUT% 2>&1
 findstr /C:"buffers=1 allocations=1 accesses=2 frees=1" %OUT% >nul && echo [OK] ok_checked coverage 1/1/2/1 || echo [WARN] ok_checked coverage count salah
@@ -195,7 +195,7 @@ myc.exe version > %OUT% 2>&1
 findstr /C:"filc:" %OUT% >nul && echo [OK] myc version cetak status filc || echo [WARN] status filc hilang di myc version
 myc.exe check test\fixtures\bad_filc_oob.c --filc > %OUT% 2>&1
 findstr /C:"verdict:   FILC_VIOLATION" %OUT% >nul && echo [OK] bad_filc_oob FILC_VIOLATION || echo [INFO] bad_filc_oob --filc bukan violation - Fil-C tak tersedia
-findstr /C:"filc: 1 panic -> bug memori terbukti (main @" %OUT% >nul && echo [OK] diagnostic panic memuat lokasi origin || echo [INFO] lokasi origin tidak ter-parse
+findstr /C:"filc: 1 panic = bug memori terbukti (main @" %OUT% >nul && echo [OK] diagnostic panic memuat lokasi origin || echo [INFO] lokasi origin tidak ter-parse
 findstr /C:"case #1:" %OUT% >nul && echo [OK] per-case scope ter-parse || echo [INFO] per-case panic tidak ter-parse
 findstr /C:"  version: clang version" %OUT% >nul && echo [OK] filc version identity tampil || echo [INFO] filc version tidak tampil - Fil-C tak tersedia
 myc.exe check test\fixtures\ok_filc.c --filc > %OUT% 2>&1
@@ -288,7 +288,7 @@ findstr /C:"case=2 run" %OUT% >nul && echo [OK] bad_driver_oob tereksekusi 2 kas
 findstr /C:"verdict:   DRIVER_VIOLATION" %OUT% >nul && echo [OK] bad_driver_oob tetap DRIVER_VIOLATION || echo [WARN] bad_driver_oob bukan violation
 myc.exe check test\fixtures\ok_driver_bounded.c --driver > %OUT% 2>&1
 findstr /C:"strategy=coverage-first" %OUT% >nul && echo [OK] combinatorial coverage-first utk produk besar || echo [WARN] coverage-first tidak muncul
-findstr /C:"combinatorial: max_product=64 budget=32" %OUT% >nul && echo [OK] max_product+budget jujur (64>32) || echo [WARN] max_product/budget hilang
+findstr /C:"combinatorial: max_product=64 budget=32" %OUT% >nul && echo [OK] max_product+budget jujur (64^>32) || echo [WARN] max_product/budget hilang
 findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] bounded harness run bersih || echo [WARN] bounded harness gagal
 del %OUT%
 echo --- semantic canary (gagasan 9.9): run bersih tetap L3 HANYA bila backend ASan sehat
@@ -442,26 +442,26 @@ for /f "delims=" %%g in ('myc.exe check tests\ok_hello.c --cwd . 2^>^&1 ^| finds
 if "%FPCANON1%"=="" (
   echo [WARN] cwd canonicalization: baris 'cwd:' tak tertangkap
 ) else if "%FPCANON1%"=="%FPCANON2%" (
-  echo [OK] 'tests' vs 'tests\..\tests' -> cwd canonical IDENTIK
+  echo [OK] 'tests' vs 'tests\..\tests' = cwd canonical IDENTIK
 ) else (
   echo [WARN] 'tests' vs 'tests\..\tests' cwd canonical berbeda
   echo        FPCANON1='%FPCANON1%'
   echo        FPCANON2='%FPCANON2%'
 )
 if "%FPCANON1%"=="%FPCANON3%" (
-  echo [OK] 'tests' vs '.\tests' -> cwd canonical IDENTIK
+  echo [OK] 'tests' vs '.\tests' = cwd canonical IDENTIK
 ) else (
   echo [WARN] 'tests' vs '.\tests' cwd canonical berbeda
 )
 if "%FPCANON1%"=="%FPCANON4%" (
-  echo [OK] 'tests' vs 'tests/../tests' -> cwd canonical IDENTIK
+  echo [OK] 'tests' vs 'tests/../tests' = cwd canonical IDENTIK
 ) else (
   echo [WARN] 'tests' vs 'tests/../tests' cwd canonical berbeda
 )
 if "%FPCANON1%"=="%FPCANON5%" (
   echo [WARN] cwd berbeda . vs tests justru cwd canonical sama
 ) else (
-  echo [OK] cwd berbeda -> cwd canonical BERBEDA
+  echo [OK] cwd berbeda = cwd canonical BERBEDA
 )
 del %OUT%
 echo --- SOL-22: Agent Context Compiler (myc context)
@@ -494,7 +494,7 @@ set OUT=%TEMP%\myc_sol30_out.txt
 myc.exe check tests\ok_run.c --budget-contract "{\"required\":{\"compile\":\"clean\"}}" > %OUT% 2>&1
 findstr /C:"target TERCAPAI" %OUT% >nul && echo [OK] kontrak compile=clean tercapai || echo [FAIL] kontrak compile=clean TIDAK tercapai
 myc.exe check tests\ok_run.c --budget-contract "{\"required\":{\"runtime\":\"clean\"}}" > %OUT% 2>&1
-findstr /C:"target TIDAK tercapai" %OUT% >nul && echo [OK] runtime wajib tanpa --run -> target tidak tercapai || echo [FAIL] runtime wajib tanpa --run tercapai (recipe lebih lemah lolos)
+findstr /C:"target TIDAK tercapai" %OUT% >nul && echo [OK] runtime wajib tanpa --run = target tidak tercapai || echo [FAIL] runtime wajib tanpa --run tercapai (recipe lebih lemah lolos)
 findstr /C:"MYC-INCOMPLETE-BUDGET-UNMET" %OUT% >nul && echo [OK] debt budget-unmet muncul || echo [FAIL] debt budget-unmet hilang
 findstr /C:"runtime: TIDAK tercapai" %OUT% >nul && echo [OK] dimensi runtime dikorbankan disebut || echo [FAIL] dimensi runtime tidak disebut
 myc.exe check tests\bad_run_oob.c --run --budget-contract "{\"required\":{\"runtime\":\"clean\"}}" > %OUT% 2>&1
@@ -505,6 +505,29 @@ if errorlevel 1 (
   echo [OK] --budget-contract JSON invalid ditolak fail-fast
 ) else (
   echo [WARN] --budget-contract JSON invalid tidak ditolak
+)
+del %OUT%
+echo --- SOL-32 (Fase 4 A1): Assumption Closure (--require-assumptions-closed / --assumption-ack)
+set OUT=%TEMP%\myc_sol32_out.txt
+del /Q .myc\assumptions.json 2>nul
+myc.exe check tests\assume_char_signed.c > %OUT% 2>&1
+findstr /C:"assumptions (A1 ledger)" %OUT% >nul && echo [OK] ledger asumsi muncul (non-blocking) || echo [FAIL] ledger asumsi hilang
+findstr /C:"char-signedness" %OUT% >nul && echo [OK] pola char-signedness terdeteksi || echo [FAIL] char-signedness tidak terdeteksi
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] asumsi tidak menurunkan verdict (observasi) || echo [FAIL] asumsi menurunkan verdict
+myc.exe check tests\assume_char_signed.c --require-assumptions-closed > %OUT% 2>&1
+findstr /C:"MYC-INCOMPLETE-ASSUMPTIONS-OPEN" %OUT% >nul && echo [OK] debt asumsi terbuka muncul || echo [FAIL] debt asumsi terbuka hilang
+findstr /C:"INCONCLUSIVE" %OUT% >nul && echo [OK] asumsi terbuka = INCONCLUSIVE || echo [FAIL] asumsi terbuka tidak INCONCLUSIVE
+myc.exe check tests\assume_char_signed.c --assumption-ack asm-char-signedness-2e529781:eliminated > %OUT% 2>&1
+findstr /C:"status=eliminated" %OUT% >nul && echo [OK] ack menutup asumsi (tanpa hilang dari receipt) || echo [FAIL] ack tidak menutup asumsi
+myc.exe check tests\assume_char_signed.c > %OUT% 2>&1
+findstr /C:"status=eliminated" %OUT% >nul && echo [OK] status asumsi persisten lintas run || echo [FAIL] status asumsi tidak persisten
+myc.exe check tests\assume_char_signed.c --no-assumptions > %OUT% 2>&1
+findstr /C:"assumptions (A1 ledger)" %OUT% >nul && echo [FAIL] --no-assumptions masih menampilkan ledger || echo [OK] --no-assumptions mematikan ledger
+myc.exe check tests\assume_char_signed.c --assumption-ack "bad format" > %OUT% 2>&1
+if errorlevel 1 (
+  echo [OK] --assumption-ack format salah ditolak fail-fast
+) else (
+  echo [WARN] --assumption-ack format salah tidak ditolak
 )
 del %OUT%
 echo --- MCP smoke (P9): mcp.exe harus menjawab JSON-RPC

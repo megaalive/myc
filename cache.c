@@ -183,6 +183,14 @@ static int cache_read_all(myc_cache_entry *out, int cap)
             v = json_get(e, "budget_active"); if (v && v->type == JSON_NUM) ce->budget_active = (int)v->num;
             v = json_get(e, "budget_met"); if (v && v->type == JSON_NUM) ce->budget_met = (int)v->num;
             v = json_get(e, "budget_report"); if (v && v->type == JSON_STR) snprintf(ce->budget_report, sizeof(ce->budget_report), "%s", v->str);
+            /* Fase 4 A1: host facts toolchain (replay tanpa exec gcc). */
+            v = json_get(e, "asm_f_ok"); if (v && v->type == JSON_NUM) ce->host_facts_ok = (int)v->num;
+            v = json_get(e, "asm_cu"); if (v && v->type == JSON_NUM) ce->host_char_unsigned = (int)v->num;
+            v = json_get(e, "asm_ib"); if (v && v->type == JSON_NUM) ce->host_int_bits = (int)v->num;
+            v = json_get(e, "asm_pb"); if (v && v->type == JSON_NUM) ce->host_ptr_bits = (int)v->num;
+            v = json_get(e, "asm_le"); if (v && v->type == JSON_NUM) ce->host_little_endian = (int)v->num;
+            v = json_get(e, "asm_stdc"); if (v && v->type == JSON_NUM) ce->host_stdc_version = (long)v->num;
+            v = json_get(e, "asm_cb"); if (v && v->type == JSON_NUM) ce->host_char_bit = (int)v->num;
             v = json_get(e, "drv_funcs"); if (v && v->type == JSON_NUM) ce->driver_funcs = (int)v->num;
             v = json_get(e, "drv_cases"); if (v && v->type == JSON_NUM) ce->driver_cases = (int)v->num;
             v = json_get(e, "drv_skip"); if (v && v->type == JSON_NUM) ce->driver_skipped = (int)v->num;
@@ -446,6 +454,14 @@ static void cache_write_all(const myc_cache_entry *entries, int count)
         json_obj_set(e, "budget_active", json_new_num((int64_t)ce->budget_active));
         json_obj_set(e, "budget_met", json_new_num((int64_t)ce->budget_met));
         json_obj_set(e, "budget_report", json_new_str(ce->budget_report));
+        /* Fase 4 A1: host facts toolchain. */
+        json_obj_set(e, "asm_f_ok", json_new_num((int64_t)ce->host_facts_ok));
+        json_obj_set(e, "asm_cu", json_new_num((int64_t)ce->host_char_unsigned));
+        json_obj_set(e, "asm_ib", json_new_num((int64_t)ce->host_int_bits));
+        json_obj_set(e, "asm_pb", json_new_num((int64_t)ce->host_ptr_bits));
+        json_obj_set(e, "asm_le", json_new_num((int64_t)ce->host_little_endian));
+        json_obj_set(e, "asm_stdc", json_new_num((int64_t)ce->host_stdc_version));
+        json_obj_set(e, "asm_cb", json_new_num((int64_t)ce->host_char_bit));
         json_obj_set(e, "drv_funcs", json_new_num((int64_t)ce->driver_funcs));
         json_obj_set(e, "drv_cases", json_new_num((int64_t)ce->driver_cases));
         json_obj_set(e, "drv_skip", json_new_num((int64_t)ce->driver_skipped));
@@ -944,6 +960,16 @@ static void cache_replay_into(const myc_cache_entry *e, myc_result *res)
         if (!res->budget_report)
             res->budget_report = NULL;
     }
+    /* Fase 4 A1: replay host facts — deteksi asumsi tetap di-scan ulang
+     * di jalur cache-hit (myc.c) memakai facts ini (tanpa exec gcc). */
+    res->assumption_facts_ok = e->host_facts_ok;
+    res->host_facts.ok = e->host_facts_ok;
+    res->host_facts.char_unsigned = e->host_char_unsigned;
+    res->host_facts.int_bits = e->host_int_bits;
+    res->host_facts.ptr_bits = e->host_ptr_bits;
+    res->host_facts.little_endian = e->host_little_endian;
+    res->host_facts.stdc_version = e->host_stdc_version;
+    res->host_facts.char_bit = e->host_char_bit;
 
     snprintf(res->run_sanitizer_marker,
              sizeof(res->run_sanitizer_marker), "%s", e->sanitizer_marker);
@@ -1081,6 +1107,15 @@ int myc_cache_try_replay(const myc_request *req, myc_result *res,
         return 0;
     if (srclen == 0)
         return 0;
+    /* Fase 4 A1 (review fix): run yang MENGUBAH/menggantung pada state
+     * eksternal .myc/assumptions.json (--assumption-ack menulis state;
+     * --require-assumptions-closed menegakkan atas state) TIDAK boleh
+     * di-replay: entry lama bisa memuat verdict/debt/receipt dari state
+     * yang sudah berubah (mis. ack menutup asumsi setelah entry dibuat)
+     * -> hasil stale yang kontradiktif. Run ini selalu lewat pipeline
+     * (filosofi sama dgn fix SOL-30: enforcement stateful tak di-replay). */
+    if (req->require_assumptions_closed || req->assumption_acks)
+        return 0;
 
     entries = (myc_cache_entry *)calloc(MYC_CACHE_MAX_ENTRIES,
                                         sizeof(*entries));
@@ -1134,6 +1169,12 @@ done:
 void myc_cache_store(const myc_request *req, const myc_result *res,
                      const char *src, size_t srclen)
 {
+    /* Fase 4 A1 (review fix): konsisten dgn try_replay — run stateful
+     * (--assumption-ack / --require-assumptions-closed) tidak disimpan
+     * ke cache (state eksternal .myc/assumptions.json bisa berubah;
+     * replay entry lama = hasil stale). */
+    if (req && (req->require_assumptions_closed || req->assumption_acks))
+        return;
     /* Entry cache besar (~100KB): SEMUA di HEAP, bukan stack
      * (64 entries di stack = stack overflow c00000fd). */
     myc_cache_entry *entries;
@@ -1201,6 +1242,14 @@ void myc_cache_store(const myc_request *req, const myc_result *res,
     if (res->budget_report)
         snprintf(ne->budget_report, sizeof(ne->budget_report), "%s",
                  res->budget_report);
+    /* Fase 4 A1: host facts toolchain (replay tanpa exec gcc). */
+    ne->host_facts_ok = res->assumption_facts_ok;
+    ne->host_char_unsigned = res->host_facts.char_unsigned;
+    ne->host_int_bits = res->host_facts.int_bits;
+    ne->host_ptr_bits = res->host_facts.ptr_bits;
+    ne->host_little_endian = res->host_facts.little_endian;
+    ne->host_stdc_version = res->host_facts.stdc_version;
+    ne->host_char_bit = res->host_facts.char_bit;
     ne->driver_funcs = res->driver_funcs;
     ne->driver_cases = res->driver_cases;
     ne->driver_skipped = res->driver_skipped;

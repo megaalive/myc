@@ -43,6 +43,7 @@
 #include "agent.h"
 #include "context.h"
 #include "budget.h"
+#include "assume.h"
 
 /* ------------------------------------------------------------------ */
 /* Implementasi kontrak inti myc                                       */
@@ -955,10 +956,19 @@ void myc_run(const myc_request *req, myc_result *res)
                  * bila source berubah (fungsi berubah + dependents). */
                 if (!myc_cache_try_replay(&req2, res, buf, len)) {
                     myc_pipeline(&req2, res);
+                    /* Fase 4 A1: ledger asumsi portabilitas — deteksi +
+                     * state + ack (NON-blocking; facts dari macro dump
+                     * gcc; jalur cache-hit memakai facts dari entry). */
+                    if (!req2.no_assumptions)
+                        myc_assume_run(&req2, res, buf, len, NULL);
                     /* #3: quorum juga dihitung di jalur file_path/STDIN
                      * (API/MCP), konsisten dengan jalur source in-memory. */
                     myc_quorum_analysis(&req2, res);
                     enforce_require_complete(&req2, res);
+                    /* Fase 4 A1/DS-01: asumsi terbuka = gap verifikasi
+                     * bila --require-assumptions-closed (pola 9.10). */
+                    if (req2.require_assumptions_closed)
+                        myc_assume_enforce(&req2, res);
                     /* SOL-30: assurance budget contract — target eksplisit
                      * user/harness; enforcement TERAKHIR (setelah
                      * require-complete) supaya kontrak dilihat pada hasil
@@ -967,12 +977,22 @@ void myc_run(const myc_request *req, myc_result *res)
                     myc_ledger_integrate(&req2, res);
                     myc_cache_store(&req2, res, buf, len);
                 } else {
+                    /* A1: pada cache-hit asumsi SELALU di-scan ulang
+                     * (murni teks, ~ms, tanpa exec gcc — facts di-replay
+                     * dari entry) supaya status .myc/assumptions.json
+                     * selalu segar; tidak disimpan di cache entry. */
+                    if (!req2.no_assumptions)
+                        myc_assume_run(&req2, res, buf, len,
+                                       res->assumption_facts_ok
+                                           ? &res->host_facts : NULL);
                     myc_quorum_analysis(&req2, res);
                     enforce_require_complete(&req2, res);
                     /* SOL-30: pada cache-hit, hasil enforcement budget
                      * contract sudah di-replay utuh dari entry (verdict/
                      * debt/budget_report asli); TIDAK di-re-enforce agar
                      * deterministik & tanpa duplikat debt. */
+                    if (req2.require_assumptions_closed)
+                        myc_assume_enforce(&req2, res);
                 }
                  if (needs_free)
                      free((void *)buf);
@@ -985,15 +1005,27 @@ void myc_run(const myc_request *req, myc_result *res)
         if (!myc_cache_try_replay(eff, res, eff->input.data,
                                   eff->input.len)) {
             myc_pipeline(eff, res);
+            /* Fase 4 A1: ledger asumsi portabilitas (non-blocking). */
+            if (!eff->no_assumptions)
+                myc_assume_run(eff, res, eff->input.data, eff->input.len,
+                               NULL);
             myc_quorum_analysis(eff, res);
             enforce_require_complete(eff, res);
+            if (eff->require_assumptions_closed)
+                myc_assume_enforce(eff, res);
             myc_budget_enforce(eff, res);
             myc_ledger_integrate(eff, res);
             myc_cache_store(eff, res, eff->input.data, eff->input.len);
         } else {
+            if (!eff->no_assumptions)
+                myc_assume_run(eff, res, eff->input.data, eff->input.len,
+                               res->assumption_facts_ok
+                                   ? &res->host_facts : NULL);
             myc_quorum_analysis(eff, res);
             enforce_require_complete(eff, res);
             /* SOL-30: cache-hit — enforcement budget sudah di-replay. */
+            if (eff->require_assumptions_closed)
+                myc_assume_enforce(eff, res);
         }
         res->capsule = myc_build_capsule(eff, res);
         free(canon_cwd);
@@ -1041,8 +1073,9 @@ static void usage(void)
     printf(
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
-        "  myc check <file.c> [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache] [--cwd DIR]\n"
+        "  myc check <file.c> [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache] [--no-assumptions] [--cwd DIR]\n"
         "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--metamorphic] [--negative] [--quorum] [--require-complete]\n"
+        "  myc check <file.c> [--require-assumptions-closed] [--assumption-ack id:status,...]   (Fase 4 A1: ledger asumsi portabilitas)\n"
         "  myc check <file.c> [--timeout MS] [--output-cap BYTES]\n"
         "                        (timeout 0-600000 ms, 0 = default 30000; output-cap 0-104857600 byte, 0 = default 1 MiB)\n"
         "  myc check <file.c> --budget-contract '{\"required\":{\"runtime\":\"clean\"},\"max_time_ms\":10000}'\n"
@@ -1269,6 +1302,29 @@ int main(int argc, char **argv)
                 req.run_lint = 0; known = 1;
             } else if (strcmp(argv[i], "--no-cache") == 0) {
                 req.no_cache = 1; known = 1;
+            } else if (strcmp(argv[i], "--no-assumptions") == 0) {
+                req.no_assumptions = 1; known = 1;
+            } else if (strcmp(argv[i], "--require-assumptions-closed") == 0) {
+                req.require_assumptions_closed = 1; known = 1;
+            } else if (strcmp(argv[i], "--assumption-ack") == 0) {
+                /* Fase 4 A1/DS-01: tutup asumsi "id:status,..." — format
+                 * salah = fail-fast exit 2 (konsisten MYC-AUDIT-019). */
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "myc: --assumption-ack membutuhkan "
+                                    "argumen (id:status,...)\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                if (myc_assume_ack_validate(argv[i + 1]) != 0) {
+                    fprintf(stderr, "myc: --assumption-ack format salah; "
+                                    "harus \"id:status\" dengan status "
+                                    "declared|tested|contradicted|"
+                                    "eliminated|accepted-risk\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                req.assumption_acks = myc_strdup(argv[i + 1]);
+                i++; known = 1;
             } else if (strcmp(argv[i], "--run") == 0) {
                 req.run = 1; known = 1;
             } else if (strcmp(argv[i], "--prove") == 0) {
@@ -1447,6 +1503,16 @@ int main(int argc, char **argv)
         }
     }
 
+    /* Fase 4 A1: --no-assumptions + --require-assumptions-closed adalah
+     * kontradiksi (tidak ada yang bisa ditutup) -> fail-fast (konsisten
+     * MYC-AUDIT-019). */
+    if (req.no_assumptions && req.require_assumptions_closed) {
+        fprintf(stderr, "myc: --no-assumptions tidak dapat dipakai bersama "
+                        "--require-assumptions-closed\n");
+        myc_result_free(&res);
+        return 2;
+    }
+
     /* MYC-AUDIT-029: CLI memakai loader canonical yang sama dengan API
      * (myc_source_load: cap + NUL policy + error typed). Tidak ada duplikasi
      * logika baca file/stdin di CLI dan pipeline. */
@@ -1539,6 +1605,7 @@ int main(int argc, char **argv)
     myc_result_free(&res);
     free(req.tx_finding_id);
     myc_budget_free(&req.budget);
+    free(req.assumption_acks);
     free(req.tx_edit_region);
     if (req.run_stdin)
         free((void *)req.run_stdin);

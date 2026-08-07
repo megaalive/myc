@@ -107,6 +107,17 @@ typedef struct {
     int   budget_met;
     char  budget_report[1024];
 
+    /* Fase 4 A1: host facts toolchain (macro dump gcc -dM) disimpan agar
+     * cache-hit TIDAK mengeksekusi gcc ulang; deteksi asumsi tetap
+     * di-scan ulang (murni teks, non-blocking). */
+    int   host_facts_ok;
+    int   host_char_unsigned;
+    int   host_int_bits;
+    int   host_ptr_bits;
+    int   host_little_endian;
+    long  host_stdc_version;
+    int   host_char_bit;
+
     char  sanitizer_marker[64];
     char  prove_mode[64];
     char  prove_version[64];

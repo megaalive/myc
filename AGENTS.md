@@ -80,6 +80,7 @@ scan includes (whitelist, non-blocking) → lint heuristik ber-confidence
  | `cache.c` | Incremental Evidence Cache: replay hasil bila input+scenario+tool sama, delta fungsi+dependents (Fase 3, SOL-18) |
  | `context.c` | Agent Context Compiler: paket konteks minimal per finding (SOL-22) |
  | `budget.c` | Assurance Budget Contract: target assurance eksplisit per gate + budget waktu/output, tak tercapai = INCONCLUSIVE + report (SOL-30) |
+ | `assume.c` | Assumption Closure: ledger taruhan fakta implementation-defined vs macro dump toolchain (`gcc -dM -E`), lifecycle observed..accepted-risk, ack + require-assumptions-closed (Fase 4, A1/DS-01) |
  | `proc.c` | Exec program+argv eksplisit tanpa shell, env deterministik, WSLENV |
  | `mcp.c` | MCP server (JSON-RPC 2.0 ketat) |
  | `report.c` / `json.c` | Laporan teks/JSON, capsule, parser JSON ketat |
@@ -115,7 +116,7 @@ Setiap perubahan ke kode inti myc **wajib** melewati checklist ini:
 5. **Self-dogfooding**: semua source myc harus `verdict: OK` (termasuk
       `ledger.c`, `transaction.c`, `witness.c`, `agent.c`, `frontier.c`,
       `observation.c`, `causal.c`, `nextbest.c`, `cache.c`, `context.c`,
-      `budget.c`).
+      `budget.c`, `assume.c`).
 6. **Git hygiene**: `git diff --check` — tidak ada whitespace/CRLF issue.
 7. **Release process** (wajib untuk setiap release):
    - Jalankan `bash release-guard.sh` — verifikasi `master` sudah di-push,

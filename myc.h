@@ -203,6 +203,11 @@ typedef enum {
      * tidak dijalankan / tidak tersedia / menemukan finding, atau budget
      * waktu/output dilampaui). Kode: MYC-INCOMPLETE-BUDGET-*. */
     MYC_DEBT_BUDGET,
+    /* Fase 4, A1/DS-01: Assumption Closure -- ada asumsi portabilitas yang
+     * BELUM ditutup (status observed/contradicted) padahal
+     * --require-assumptions-closed diminta. Kode:
+     * MYC-INCOMPLETE-ASSUMPTIONS-OPEN. */
+    MYC_DEBT_ASSUMPTION,
     MYC_DEBT_COUNT
 } myc_debt_type;
 
@@ -359,6 +364,58 @@ typedef struct myc_budget_contract {
     char *raw;   /* representasi asli kontrak (untuk laporan), malloc'd */
 } myc_budget_contract;
 
+/* --- Assumption Closure (Fase 4, A1 + DS-01) ---
+ * Ledger asumsi: fakta implementation-defined yang DI-PERTARUHKAN source
+ * (signedness char, lebar int, endianness bit-field, alignment cast,
+ * sizeof), disandingkan dengan kebenaran toolchain host (macro dump
+ * `gcc -dM -E`). Observasi NON-blocking: verdict TIDAK pernah turun
+ * karena asumsi, kecuali --require-assumptions-closed diminta (DS-01:
+ * asumsi terbuka = gap verifikasi -> INCONCLUSIVE + debt).
+ * Lifecycle per asumsi (DS-01): observed -> declared / tested /
+ * contradicted / eliminated / accepted-risk. Status dipersisten di
+ * .myc/assumptions.json agar run kedua bisa menunjukkan asumsi mana
+ * yang sudah ditutup; `--assumption-ack id:status` menutup tanpa
+ * menghilangkan asumsi dari receipt. */
+#define MYC_MAX_ASSUMPTIONS 32
+
+typedef enum {
+    MYC_ASM_OBSERVED = 0,      /* terdeteksi, belum ditindaklanjuti */
+    MYC_ASM_DECLARED,          /* ketergantungan disengaja (di-ack) */
+    MYC_ASM_TESTED,            /* sudah diuji pada target relevan */
+    MYC_ASM_CONTRADICTED,      /* target lain mengubah perilaku (masih terbuka) */
+    MYC_ASM_ELIMINATED,        /* kode diubah, tak lagi bergantung */
+    MYC_ASM_ACCEPTED_RISK      /* pengguna menerima keterikatan target */
+} myc_assumption_status;
+
+/* Satu asumsi terdeteksi. String (id/kind/anchor/host_fact/risk/
+ * next_action) disimpan di arena milik hasil (myc_result_arena_dup). */
+typedef struct {
+    char *id;           /* asm-<kind>-<8 hex sha256(anchor)> */
+    char *kind;         /* char-signedness | int-width | bitfield-endian |
+                           alignment-cast | sizeof-assumption */
+    int   line;         /* 1-based */
+    char *anchor;       /* <fungsi>:<line>:<hash window> (stabil) */
+    char *host_fact;    /* fakta toolchain INI, mis. "char=signed" */
+    char *risk;         /* risiko di target lain */
+    char *next_action;  /* saran perbaikan untuk LLM */
+    int   status;       /* myc_assumption_status (persisten lintas run) */
+    int   confidence;   /* 0..100 (observasi) */
+} myc_assumption;
+
+/* Fakta target toolchain host hasil `gcc -dM -E` (predefined macros).
+ * Disimpan per-value di myc_result (dan di cache entry SOL-18) agar
+ * cache-hit TIDAK perlu mengeksekusi gcc ulang. `ok=1` bila macro dump
+ * berhasil dibaca (gcc tersedia). */
+typedef struct {
+    int  ok;             /* facts berhasil dibaca */
+    int  char_unsigned;  /* __CHAR_UNSIGNED__ terdefinisi */
+    int  int_bits;       /* 8 * __SIZEOF_INT__ (0 = tak diketahui) */
+    int  ptr_bits;       /* 8 * __SIZEOF_POINTER__ (0 = tak diketahui) */
+    int  little_endian;  /* __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ */
+    long stdc_version;   /* __STDC_VERSION__ (0 = tak diketahui) */
+    int  char_bit;       /* CHAR_BIT (default 8) */
+} myc_host_facts;
+
 typedef struct {
     myc_source_input input;     /* sumber program: MEMORY/FILE/STDIN */
     int         timeout_ms;     /* 0 = default */
@@ -418,6 +475,18 @@ typedef struct {
       * MYC_DEBT_BUDGET + budget_report rinci dimensi yang dikorbankan.
       * `raw` (malloc'd) dibebaskan caller (myc.c main). */
      myc_budget_contract budget; /* by-value; definisi di atas */
+
+     /* --- Assumption Closure (Fase 4, A1 + DS-01) ---
+      * require_assumptions_closed: --require-assumptions-closed — asumsi
+      * terbuka (observed/contradicted) = gap verifikasi -> INCONCLUSIVE
+      * + debt MYC-INCOMPLETE-ASSUMPTIONS-OPEN (pola 9.10).
+      * assumption_acks: --assumption-ack "id:status,..." (malloc'd,
+      * di-free caller myc.c main) — tutup asumsi terdeteksi tanpa
+      * menghilangkannya dari receipt. no_assumptions: --no-assumptions
+      * — matikan deteksi (default 0 = aktif, seperti --no-lint). */
+     int  require_assumptions_closed;
+     char *assumption_acks;
+     int  no_assumptions;
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
@@ -689,6 +758,22 @@ typedef struct {
     int         budget_active;
     int         budget_met;
     char       *budget_report;
+
+    /* --- Assumption Closure (Fase 4, A1 + DS-01) ---
+     * Hasil ledger asumsi (arena-based strings): host_facts (fakta
+     * toolchain), assumptions[] (deteksi, status persisten), unclosed
+     * (jumlah status observed/contradicted), ok (1 = tak ada yang
+     * terbuka), ack_applied (jumlah ack diterapkan run ini),
+     * assumption_report = teks ledger untuk laporan. */
+    int            assumption_facts_ok;
+    myc_host_facts host_facts;
+    int            assumption_detected;  /* total terdeteksi (bisa > tersimpan) */
+    int            assumption_count;     /* jumlah tersimpan (<= MAX) */
+    myc_assumption assumptions[MYC_MAX_ASSUMPTIONS];
+    int            assumption_unclosed;  /* status observed/contradicted */
+    int            assumption_ok;        /* 1 = tidak ada asumsi terbuka */
+    int            assumption_ack_applied;
+    char          *assumption_report;    /* arena */
 
     /* internal: gate mana yang dijalankan terakhir */
     int         ran_preprocess;

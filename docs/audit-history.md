@@ -470,6 +470,110 @@ budget.h hanya API agar tidak ada include circular).
 
 ---
 
+## Fase 4 — DeepSeek Oracle & Bare-Metal Core (bagian 1: Assumption Closure), 2026-08-07
+
+### Assumption Closure — `assume.c/.h` (A1 + DS-01, roadmap 7.12/7.13)
+
+Model menulis kode yang *mempertaruhkan* fakta implementation-defined
+(signedness `char`, lebar `int`, endianness bit-field, alignment cast,
+`sizeof`) tanpa sadar — dan tidak ada yang menanyakannya. A1 membalik
+arah verifikasi: alih-alih mencari "apa yang salah", daftarkan **fakta
+apa yang dipertaruhkan kode ini** dan sandingkan dengan kebenaran
+aktual toolchain (verifikasi-as-ledger, bukan verifikasi-as-accusation).
+
+- **Host facts**: `gcc -dM -E -` dengan stdin KOSONG (macro predefined
+  murni — deterministik, tidak bergantung source/syntax; fallback bila
+  gcc absen = fakta tak diketahui, NON-blocking). Diekstrak:
+  `__CHAR_UNSIGNED__`, `__SIZEOF_INT__`, `__SIZEOF_POINTER__`,
+  `__BYTE_ORDER__`, `__STDC_VERSION__`, `CHAR_BIT`.
+- **Deteksi** (tokenizer ringan comment/string-aware + operator
+  2-karakter `== <= >= !=` sebagai satu token, line-tracked), 5 kelas
+  taruhan dengan confidence-scored, SEMUA non-blocking:
+  - `char-signedness` (conf 80–90): char var vs literal negatif / `< 0`
+    / `>= 0` — "di ARM (unsigned char) cabang ini mati total";
+  - `int-width` (75): `int n = strlen/sizeof(...)`;
+  - `bitfield-endian` (70): bit-field di struct/union;
+  - `alignment-cast` (80): `(uint16_t *)` dst (termasuk qualifier
+    `(const uint32_t *)`) — alignment fault + endianness;
+  - `sizeof-assumption` (80): `sizeof(T) == N` dst.
+- **Lifecycle DS-01**: `observed → declared / tested / contradicted /
+  eliminated / accepted-risk`; `assumption_id` = `asm-<kind>-<8hex
+  sha256(anchor)>` dengan anchor stabil (`myc_ledger_build_anchor`).
+  Status dipersisten di `.myc/assumptions.json` → run kedua menunjukkan
+  asumsi mana yang sudah ditutup; ack TIDAK menghilangkan asumsi dari
+  receipt (tetap tampil dengan status barunya).
+- **CLI**: `--require-assumptions-closed` (asumsi terbuka = gap
+  verifikasi → INCONCLUSIVE + debt `MYC-INCOMPLETE-ASSUMPTIONS-OPEN`),
+  `--assumption-ack id:status,...` (format salah = fail-fast exit 2),
+  `--no-assumptions` (matikan ledger; kontradiksi dengan
+  require-assumptions-closed = exit 2).
+- **Report**: blok teks `assumptions (A1 ledger)` + JSON `assumptions`
+  (detected/count/unclosed/ok/ack_applied + items per asumsi:
+  id/kind/line/status/confidence/anchor/host_fact/risk/next_action) +
+  `--json-summary` (count/unclosed/ok).
+- **Cache (SOL-18)**: host facts disimpan di entry cache → cache-hit
+  TIDAK mengeksekusi gcc ulang; deteksi SELALU di-scan ulang pada
+  cache-hit (murni teks, ~ms) dan merge state `.myc/assumptions.json`
+  → status selalu segar meski entry lama (terbukti: run1 pipeline
+  observed → ack → run3 cache-hit tampil eliminated, bukan stale).
+  Flags asumsi + hash ack masuk scenario hash (ledger.c) → pemisahan
+  cache konsisten; enforcement dijalankan ulang pada cache-hit
+  (recompute, bukan replay).
+
+API: `myc_assume_fetch_facts` / `myc_assume_run` / `myc_assume_enforce`
+/ `myc_assume_ack_validate` / `myc_assumption_status_name`. Tipe
+(`myc_assumption_status`, `myc_assumption`, `myc_host_facts`) di myc.h;
+assume.h hanya API. Debt baru `MYC_DEBT_ASSUMPTION` (gate.c:
+`assumption_open` / `MYC-INCOMPLETE-ASSUMPTIONS-OPEN`).
+
+### Verifikasi
+
+- Self-dogfooding 29/29 OK (termasuk assume.c, 0 asumsi terdeteksi pada
+  dirinya sendiri); `-Werror` semua source clean; cap_sync PASS=94.
+- Fixture `tests/assume_char_signed.c`: 5/5 pola terdeteksi dengan line
+  benar (char line 24, int-width line 22, bitfield line 14, alignment
+  line 23, sizeof line 26), verdict tetap OK (non-blocking);
+  `assume_clean.c`: 0 asumsi.
+- Lifecycle: require-closed pada 5 terbuka → INCONCLUSIVE +
+  `MYC-INCOMPLETE-ASSUMPTIONS-OPEN`; ack 2 → status berubah + persisten
+  lintas run; ack semua 5 → require-closed OK; `--no-assumptions` →
+  bersih; kontradiksi flag & format ack salah → exit 2.
+- Cache: run2 = hit dengan receipt SAMA; ack (scenario beda) = miss;
+  freshness state pada hit terverifikasi (bukan stale). JSON penuh
+  valid (items per asumsi lengkap).
+- Regresi `_regress_run.bat` **0 [FAIL]** (343 OK; section SOL-32 9 cek:
+  ledger muncul, char-signedness terdeteksi, verdict tidak turun, debt
+  muncul, INCONCLUSIVE, ack menutup, persisten, no-assumptions,
+  format salah ditolak); `_audit018.sh` SELESAI OK.
+
+### Review fixes (code-reviewer, 2026-08-07)
+
+1. **OOB read di detektor alignment-cast** — qualifier loop
+   `while (t < n && ...)` bisa mendorong `t` ke ujung array token lalu
+   `toks[t+2]` dibaca melewati batas (heap OOB/UB). Fix: guard
+   `t + 2 < n` (butuh minimal 3 token tersisa).
+2. **Stale enforcement pada cache-hit** — run `--require-assumptions-
+   closed` setelah ack (state berubah via key berbeda) bisa me-replay
+   entry lama ber-verdict INCONCLUSIVE + debt padahal blok asumsi segar
+   "0 terbuka" (kontradiksi; ack tak pernah bisa membuat
+   require-assumptions-closed lulus). Fix: run dengan
+   `require_assumptions_closed`/`assumption_acks` TIDAK di-cache (baik
+   replay maupun store) — selalu pipeline pada state segar (filosofi
+   sama dgn fix SOL-30: enforcement stateful tak di-replay). Terbukti:
+   flag-on → INCONCLUSIVE, ack semua → OK, flag-on lagi → OK.
+3. **Endianness fact salah di Windows** — `__BYTE_ORDER__` terdefinisi
+   sebagai token `__ORDER_LITTLE_ENDIAN__` (bukan angka) DAN output
+   gcc MSYS2 memakai `\r\n` (trailing CR) → perbandingan teks gagal →
+   "big-endian" palsu di x86. Fix: bandingkan teks value + normalisasi
+   token + trim trailing CR. Terbukti: `little-endian` di host.
+4. **Kejujuran facts tak diketahui** — `int=?`/`ptr=?` (bukan fallback
+   32/64) saat macro dump tak tersedia.
+5. Minor: dedupe nama char var (hilangkan O(nc×n) pada nama duplikat),
+   receipt di-rebuild SEKALI (bukan dua kali), state file hanya ditulis
+   bila berubah (hindari rewrite tiap cache-hit).
+
+---
+
 ## MYC-AUDIT-001..030 dan fase pengembangan (kronologis)
 
 ### P6 — Gate verification run (`--run`), 2026-08-01
