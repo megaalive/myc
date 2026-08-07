@@ -129,6 +129,11 @@ typedef enum {
     MYC_GATE_LINT,           /* (14) lint memory-safety heuristik: HANYA
                                 observasi + confidence (MYC-AUDIT-014),
                                 non-blocking -- bukan finding terkonfirmasi */
+    MYC_GATE_DIVERGENCE,     /* (Fase 4, A2/DS-02) cross-toolchain divergence:
+                                matriks {gcc, clang, [tcc]} x {-O0,-O2};
+                                klasifikasi semantic/diagnostic/sanitizer
+                                divergence (hanya bukti sanitizer / witness
+                                stabil = hard; sisanya observasi) */
     MYC_GATE_COUNT
 } myc_gate_id;
 
@@ -141,6 +146,36 @@ typedef struct {
     char          *output;
     size_t         output_len;
 } myc_gate_result;
+
+/* --- sel matriks cross-toolchain divergence (Fase 4, A2/DS-02) ---
+ * Satu kombinasi {toolchain} x {-O0,-O2}. `available=0` bila compiler
+ * tidak ditemukan (sel di-skip). `built=1` + `ran=1` = sel benar-benar
+ * dieksekusi. `finding` = bukti sanitizer (report log_path non-spoofable
+ * ATAU marker + exit!=0). stdout_sha256 = hash trace stdout penuh untuk
+ * deteksi semantic divergence (deterministik; env LC_ALL=C). */
+typedef struct {
+    char         tool[16];        /* "gcc" / "clang" / "tcc" */
+    char         tool_path[260];  /* path absolut hasil myc_find_executable
+                                     (fixed array agar aman di-copy untuk
+                                     cache replay) */
+    int          opt_level;       /* 0 = -O0, 1 = -O2 */
+    int          available;       /* 0 = compiler tidak ditemukan */
+    int          san;             /* 1 = build+run DENGAN sanitizer
+                                     (finding bisa jadi bukti); 0 = tanpa
+                                     sanitizer (fallback: toolchain tak
+                                     punya ASan, mis. gcc MinGW) */
+    int          built;           /* 1 = build sukses */
+    int          ran;             /* 1 = exe dijalankan */
+    int          timed_out;       /* 1 = run timeout */
+    int          exit_code;       /* exit code run */
+    int          finding;         /* 1 = bukti sanitizer pada sel ini */
+    char         marker[80];      /* marker sanitizer atau "" */
+    char         stdout_sha256[65]; /* sha256 hex trace stdout ("" bila
+                                       tak tersedia) */
+    int          diag_warn;       /* 1 = build menghasilkan warning */
+} myc_divergence_cell;
+
+#define MYC_DIVERGENCE_MAX_CELLS 8   /* 2 toolchains x 2 opt = 4; cadangan */
 
 typedef enum {
     MYC_EVIDENCE_GATE_START = 0,
@@ -452,6 +487,13 @@ typedef struct {
                                     observasi pola yang hilang (konvensi
                                     pemeriksaan hasil alokasi); NON-blocking,
                                     HANYA diagnostic + confidence */
+    int         divergence;     /* gate Cross-Toolchain Divergence (Fase 4,
+                                    A2/DS-02): bangun+jalankan source sama
+                                    dengan {gcc, clang, [tcc]} x {-O0,-O2},
+                                    bandingkan sanitizer + trace stdout penuh
+                                    + set warning; divergensi diklasifikasi
+                                    (semantic/diagnostic/sanitizer). Non-
+                                    blocking: kompiler kedua absen = skip. */
     int         require_complete; /* 9.10 Silence Is a Finding: bila set,
                                      verification gap (unverified_debt) membuat
                                      hasil gagal (verdict INCONCLUSIVE, exit 1)
@@ -539,6 +581,12 @@ typedef struct {
     int meta_o2_exit;
     int meta_o0_finding;   /* 1 = marker sanitizer pada build -O0 */
     int meta_o2_finding;   /* 1 = marker sanitizer pada build -O2 */
+    /* Divergence (Fase 4 A2/DS-02): ringkasan klasifikasi */
+    int divergence_ran;         /* sel yang benar-benar dieksekusi */
+    int divergence_sanitizer_div; /* HARD: satu sel finding, lain clean */
+    int divergence_all_findings;  /* HARD: semua sel menemukan */
+    int divergence_semantic_div;  /* observasi: stdout/exit beda */
+    int divergence_diag_div;      /* observasi: set warning beda */
     /* Negative-space (9.8): hasil observasi */
     int negative_callsites;   /* total callsite alokasi terdeteksi */
     int negative_deviations;  /* jumlah yang tidak memeriksa hasil */
@@ -730,6 +778,25 @@ typedef struct {
     int         ran_negative;         /* 1 bila gate negative dijalankan */
     int         negative_callsites;   /* total callsite alokasi terdeteksi */
     int         negative_deviations;  /* jumlah yang tidak memeriksa hasil */
+
+    /* --- hasil gate cross-toolchain divergence (Fase 4, A2/DS-02) ---
+     * divergence_ran = sel yang benar-benar dieksekusi (build+run sukses),
+     * divergence_planned = sel non-unavailable. Klasifikasi DS-02:
+     * sanitizer_div=1 (satu sel finding, lainnya clean -> HARD),
+     * all_findings=1 (semua sel menemukan — bug konsisten, hard),
+     * semantic_div=1 (stdout/exit beda tanpa sanitizer -> observasi),
+     * diag_div=1 (set warning build beda -> observasi). divergence_report
+     * = tabel matriks (arena). */
+    int            ran_divergence;
+    int            divergence_ran;
+    int            divergence_planned;
+    int            divergence_sanitizer_div;
+    int            divergence_all_findings;
+    int            divergence_semantic_div;
+    int            divergence_diag_div;
+    char          *divergence_report;   /* arena */
+    myc_divergence_cell divergence_cells[MYC_DIVERGENCE_MAX_CELLS];
+    int            divergence_ncells;   /* sel terisi (valid) */
 
     /* --- hasil lint memory-safety heuristik (P5; MYC-AUDIT-014) --- */
     /* Jumlah observasi heuristik (bukan finding terkonfirmasi).

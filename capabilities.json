@@ -10,6 +10,7 @@
     { "id": "checked",           "flag": "--checked",       "dimension": "B", "backend": "gcc",        "hard": false,  "docs_anchor": "checked-build" },
     { "id": "runtime",           "flag": "--run",           "dimension": "R", "backend": "clang+asan",  "hard": false,  "docs_anchor": "runtime" },
     { "id": "metamorphic",       "flag": "--metamorphic",   "dimension": "R", "backend": "clang",      "hard": false,  "docs_anchor": "metamorphic" },
+    { "id": "divergence",         "flag": "--divergence",     "dimension": "R", "backend": "gcc+clang+tcc", "hard": false,  "docs_anchor": "divergence" },
     { "id": "negative",          "flag": "--negative",      "dimension": "C", "backend": null,          "hard": false,  "docs_anchor": "negative-space" },
     { "id": "quorum",            "flag": "--quorum",        "dimension": null, "backend": null,         "hard": false,  "docs_anchor": "quorum" },
     { "id": "require-complete",  "flag": "--require-complete", "dimension": null, "backend": null,      "hard": false,  "docs_anchor": "require-complete" },
@@ -19,7 +20,7 @@
   ],
   "cli_flags": [
     "--analyze", "--checked", "--run", "--run-stdin", "--prove", "--filc",
-    "--driver", "--metamorphic", "--negative", "--quorum", "--require-complete",
+    "--driver", "--metamorphic", "--divergence", "--negative", "--quorum", "--require-complete",
     "--json", "--json-summary", "--agent", "--strict", "--level", "--no-lint", "--cwd",
     "--timeout", "--output-cap", "--write-repro", "--no-cache",
     "--tx-verify", "--finding-id", "--edit-region", "--budget",

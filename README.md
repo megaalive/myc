@@ -28,6 +28,7 @@ gcc -c -O2 -DMYC_CHECKED=1   (--checked, optional) -> L4 SPATIAL (fat-pointer bo
 clang -O0 -fsanitize=address,undefined (--run, optional) -> L3 RUNTIME
 driver-generator (--driver, optional) -> L3 RUNTIME on contract edge cases
 metamorphic -O0 vs -O2 (--metamorphic, optional) -> UB / toolchain-sensitive
+divergence {gcc,clang,tcc} x {-O0,-O2} (--divergence, optional, Fase 4 A2) -> klasifikasi DS-02
 negative-space (--negative, optional) -> "missing pattern" observations
 quorum (--quorum, optional) -> cross-backend agreement
 --require-complete -> verification gap = CI failure (MYC-INCOMPLETE-*)
@@ -42,7 +43,7 @@ is a warning or a non-blocking observation.
 ```
 myc check <file.c> [--json] [--analyze] [--strict] [--no-lint] [--cwd DIR]
 myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver]
-myc check <file.c> [--metamorphic] [--negative] [--quorum] [--require-complete]
+myc check <file.c> [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete]
 myc check <file.c> [--json-summary] [--timeout MS] [--output-cap BYTES] [--no-cache]
 myc check -            [--json] [--analyze] [--strict] [--no-lint]   (source from stdin)
 myc context <file.c> [--finding-id ID] [--budget 4K|8K|16K] [gate flags...]
@@ -65,6 +66,16 @@ Flags:
 - `--filc` — run under Fil-C (optional backend, Linux/x86_64).
 - `--driver` — generate and run a driver that exercises contract-tagged
   functions at edge cases (optional backend).
+- `--divergence` — build and run the source with a toolchain matrix
+  ({gcc, clang, [tcc]} × {-O0, -O2}); compare exit code, sanitizer
+  findings, sha256 of stdout trace, and build warning set. Classification
+  (DS-02): `sanitizer_divergence` (finding in one cell, clean in another
+  → hard RUNTIME_VIOLATION, toolchain-sensitive bug), `all_findings`
+  (consistent bug), `semantic_divergence` / `diagnostic_divergence`
+  (observations, non-blocking). Toolchains that lack ASan (e.g. gcc
+  MinGW) fall back to a no-sanitizer build and never claim sanitizer
+  evidence. Non-blocking: missing toolchain / failed build = cell
+  skipped.
 - `--metamorphic` — build and run the source twice (`-O0` vs `-O2`) and
   compare results; a discrepancy signals UB / toolchain-sensitive code.
 - `--negative` — negative-space analysis: mine "missing patterns" (e.g. an

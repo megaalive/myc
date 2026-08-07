@@ -712,6 +712,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     myc_gate_set_status(res, MYC_GATE_METAMORPHIC, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_NEGATIVE, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_LINT, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_DIVERGENCE, MYC_GATE_NOT_APPLICABLE, NULL);
 
     /* hash source */
     sha256_hex(src, srclen, hex);
@@ -738,7 +739,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         char  flags_str[256];
         myc_policy_hash(policy_hex);
         snprintf(flags_str, sizeof(flags_str),
-                      "c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s;%s",
+                      "c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s",
                       req->strict ? "strict" : "default",
                       req->run ? "run" : "norun",
                       req->prove ? "prove" : "noprove",
@@ -747,6 +748,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                       req->driver ? "driver" : "nodriver",
                       req->metamorphic ? "meta" : "nometa",
                       req->negative ? "neg" : "noneg",
+                      req->divergence ? "div" : "nodiv",
                       req->require_complete ? "reqc" : "noreqc");
         fingerprint_cache_update(gcc_path, req->cwd, policy_hex,
                                      flags_str, MYC_BUF_RUNTIME_REV);
@@ -1012,7 +1014,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                     "checked build di-skip: tanpa MYC_BUF");
         }
         if (!req->run && !req->prove && !req->filc && !req->driver &&
-            !req->metamorphic) {
+            !req->metamorphic && !req->divergence) {
             free(gcc_path);
             myc_reduce_verdict(res);
             return;
@@ -1073,7 +1075,8 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                         "Frama-C Eva unavailable (gap)");
             }
         }
-        if (!req->run && !req->filc && !req->driver && !req->metamorphic) {
+        if (!req->run && !req->filc && !req->driver && !req->metamorphic &&
+            !req->divergence) {
             free(gcc_path);
             myc_reduce_verdict(res);
             return;
@@ -1119,7 +1122,8 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_SKIP,
                                     "Fil-C unavailable (gap)");
         }
-        if (!req->run && !req->driver && !req->metamorphic) {
+        if (!req->run && !req->driver && !req->metamorphic &&
+            !req->divergence) {
             free(gcc_path);
             myc_reduce_verdict(res);
             return;
@@ -1157,7 +1161,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_SKIP,
                                     "verification run di-skip");
         }
-        if (!req->driver && !req->metamorphic) {
+        if (!req->driver && !req->metamorphic && !req->divergence) {
             free(gcc_path);
             myc_reduce_verdict(res);
             return;
@@ -1208,6 +1212,62 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             myc_result_add_evidence(res, MYC_GATE_METAMORPHIC,
                                     MYC_EVIDENCE_SKIP,
                                     "metamorphic di-skip");
+        }
+        if (!req->driver && !req->divergence) {
+            free(gcc_path);
+            myc_reduce_verdict(res);
+            return;
+        }
+    }
+
+    /* --- Gate opsional: Cross-Toolchain Divergence (Fase 4, A2/DS-02,
+     * --divergence) ---
+     * Bangun + jalankan source SAMA dengan matriks {gcc, clang, [tcc]}
+     * x {-O0,-O2}; bandingkan exit / sanitizer finding / sha256 stdout /
+     * set warning per sel. Klasifikasi DS-02: sanitizer_divergence (satu
+     * sel finding, lain clean -> HARD RUNTIME_VIOLATION, bug toolchain-
+     * sensitive), all_findings (semua sel menemukan -> bug konsisten),
+     * semantic_divergence / diagnostic_divergence -> OBSERVASI NON-
+     * blocking (tidak menurunkan verdict). Hanya bukti sanitizer = hard.
+     * Non-blocking: toolchain hilang / build gagal = sel di-skip. */
+    if (req->divergence) {
+        int ok = myc_divergence_gate(req, src, srclen, res);
+        if (res->verdict == MC_TIMEOUT ||
+            res->verdict == MC_RUNTIME_VIOLATION ||
+            res->err == MYC_ERR_EXECUTE_FAILED ||
+            res->err == MYC_ERR_INTERNAL) {
+            if (res->verdict == MC_RUNTIME_VIOLATION) {
+                /* finding nyata (sanitizer divergence antar toolchain) */
+                res->assurance = MYC_ASSURANCE_NONE;
+                myc_gate_set_status(res, MYC_GATE_DIVERGENCE,
+                                    MYC_GATE_COMPLETED_FINDINGS,
+                                    res->divergence_report
+                                        ? res->divergence_report
+                                        : "divergence finding");
+                myc_result_add_evidence(res, MYC_GATE_DIVERGENCE,
+                                        MYC_EVIDENCE_FINDING,
+                                        "divergence: RUNTIME_VIOLATION");
+            } else {
+                myc_gate_set_status(res, MYC_GATE_DIVERGENCE,
+                                    MYC_GATE_INFRA_FAILED,
+                                    "divergence infra failed");
+                myc_result_add_evidence(res, MYC_GATE_DIVERGENCE,
+                                        MYC_EVIDENCE_ERROR,
+                                        "divergence: infra failed");
+            }
+            free(gcc_path);
+            myc_reduce_verdict(res);
+            return;
+        }
+        if (ok && res->ran_divergence) {
+            /* status sudah di-set oleh myc_divergence_gate */
+        } else {
+            myc_gate_set_status(res, MYC_GATE_DIVERGENCE,
+                                MYC_GATE_INCONCLUSIVE,
+                                "divergence di-skip");
+            myc_result_add_evidence(res, MYC_GATE_DIVERGENCE,
+                                    MYC_EVIDENCE_SKIP,
+                                    "divergence di-skip");
         }
         if (!req->driver) {
             free(gcc_path);

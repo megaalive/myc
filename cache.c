@@ -45,8 +45,9 @@ static void cache_tool_key(const myc_request *req, char *out, size_t cap)
     if (gcc)
         gcc_ver = myc_tool_version(gcc);
 
-    /* clang hanya dipakai bila gate runtime/driver/metamorphic diminta. */
-    if (req->run || req->driver || req->metamorphic) {
+    /* clang dipakai bila gate runtime/driver/metamorphic/divergence
+     * diminta (divergence Fase 4 A2 membangun matriks dengan clang). */
+    if (req->run || req->driver || req->metamorphic || req->divergence) {
         clang = myc_find_executable(
             req->clang_program ? req->clang_program : "clang");
         if (clang)
@@ -191,6 +192,38 @@ static int cache_read_all(myc_cache_entry *out, int cap)
             v = json_get(e, "asm_le"); if (v && v->type == JSON_NUM) ce->host_little_endian = (int)v->num;
             v = json_get(e, "asm_stdc"); if (v && v->type == JSON_NUM) ce->host_stdc_version = (long)v->num;
             v = json_get(e, "asm_cb"); if (v && v->type == JSON_NUM) ce->host_char_bit = (int)v->num;
+            /* Fase 4 A2/DS-02: hasil gate divergence (replay identik). */
+            v = json_get(e, "div_ran"); if (v && v->type == JSON_NUM) ce->divergence_ran = (int)v->num;
+            v = json_get(e, "div_planned"); if (v && v->type == JSON_NUM) ce->divergence_planned = (int)v->num;
+            v = json_get(e, "div_ncells"); if (v && v->type == JSON_NUM) ce->divergence_ncells = (int)v->num;
+            v = json_get(e, "div_san"); if (v && v->type == JSON_NUM) ce->divergence_sanitizer_div = (int)v->num;
+            v = json_get(e, "div_all"); if (v && v->type == JSON_NUM) ce->divergence_all_findings = (int)v->num;
+            v = json_get(e, "div_sem"); if (v && v->type == JSON_NUM) ce->divergence_semantic_div = (int)v->num;
+            v = json_get(e, "div_diag"); if (v && v->type == JSON_NUM) ce->divergence_diag_div = (int)v->num;
+            v = json_get(e, "div_report"); if (v && v->type == JSON_STR) snprintf(ce->divergence_report, sizeof(ce->divergence_report), "%s", v->str);
+            {
+                json_value *dc = json_get(e, "div_cells");
+                if (dc && dc->type == JSON_ARR) {
+                    for (k = 0; k < (int)dc->len && k < MYC_DIVERGENCE_MAX_CELLS; k++) {
+                        json_value *co = dc->items[k];
+                        json_value *cv;
+                        if (!co || co->type != JSON_OBJ)
+                            continue;
+                        cv = json_get(co, "t"); if (cv && cv->type == JSON_STR) snprintf(ce->divergence_cells[k].tool, sizeof(ce->divergence_cells[k].tool), "%s", cv->str);
+                        cv = json_get(co, "ol"); if (cv && cv->type == JSON_NUM) ce->divergence_cells[k].opt_level = (char)cv->num;
+                        cv = json_get(co, "av"); if (cv && cv->type == JSON_NUM) ce->divergence_cells[k].available = (char)cv->num;
+                        cv = json_get(co, "sn"); if (cv && cv->type == JSON_NUM) ce->divergence_cells[k].san = (char)cv->num;
+                        cv = json_get(co, "bu"); if (cv && cv->type == JSON_NUM) ce->divergence_cells[k].built = (char)cv->num;
+                        cv = json_get(co, "rn"); if (cv && cv->type == JSON_NUM) ce->divergence_cells[k].ran = (char)cv->num;
+                        cv = json_get(co, "to"); if (cv && cv->type == JSON_NUM) ce->divergence_cells[k].timed_out = (char)cv->num;
+                        cv = json_get(co, "fn"); if (cv && cv->type == JSON_NUM) ce->divergence_cells[k].finding = (char)cv->num;
+                        cv = json_get(co, "dw"); if (cv && cv->type == JSON_NUM) ce->divergence_cells[k].diag_warn = (char)cv->num;
+                        cv = json_get(co, "ec"); if (cv && cv->type == JSON_NUM) ce->divergence_cells[k].exit_code = (int)cv->num;
+                        cv = json_get(co, "mk"); if (cv && cv->type == JSON_STR) snprintf(ce->divergence_cells[k].marker, sizeof(ce->divergence_cells[k].marker), "%s", cv->str);
+                        cv = json_get(co, "sh"); if (cv && cv->type == JSON_STR) snprintf(ce->divergence_cells[k].stdout_sha256, sizeof(ce->divergence_cells[k].stdout_sha256), "%s", cv->str);
+                    }
+                }
+            }
             v = json_get(e, "drv_funcs"); if (v && v->type == JSON_NUM) ce->driver_funcs = (int)v->num;
             v = json_get(e, "drv_cases"); if (v && v->type == JSON_NUM) ce->driver_cases = (int)v->num;
             v = json_get(e, "drv_skip"); if (v && v->type == JSON_NUM) ce->driver_skipped = (int)v->num;
@@ -462,6 +495,37 @@ static void cache_write_all(const myc_cache_entry *entries, int count)
         json_obj_set(e, "asm_le", json_new_num((int64_t)ce->host_little_endian));
         json_obj_set(e, "asm_stdc", json_new_num((int64_t)ce->host_stdc_version));
         json_obj_set(e, "asm_cb", json_new_num((int64_t)ce->host_char_bit));
+        /* Fase 4 A2/DS-02: hasil gate divergence. */
+        json_obj_set(e, "div_ran", json_new_num((int64_t)ce->divergence_ran));
+        json_obj_set(e, "div_planned", json_new_num((int64_t)ce->divergence_planned));
+        json_obj_set(e, "div_ncells", json_new_num((int64_t)ce->divergence_ncells));
+        json_obj_set(e, "div_san", json_new_num((int64_t)ce->divergence_sanitizer_div));
+        json_obj_set(e, "div_all", json_new_num((int64_t)ce->divergence_all_findings));
+        json_obj_set(e, "div_sem", json_new_num((int64_t)ce->divergence_semantic_div));
+        json_obj_set(e, "div_diag", json_new_num((int64_t)ce->divergence_diag_div));
+        json_obj_set(e, "div_report", json_new_str(ce->divergence_report));
+        tmp = json_new_arr();
+        if (tmp) {
+            for (k = 0; k < MYC_DIVERGENCE_MAX_CELLS && k < (int)ce->divergence_ncells; k++) {
+                json_value *co = json_new_obj();
+                if (!co)
+                    continue;
+                json_obj_set(co, "t", json_new_str(ce->divergence_cells[k].tool));
+                json_obj_set(co, "ol", json_new_num((int64_t)ce->divergence_cells[k].opt_level));
+                json_obj_set(co, "av", json_new_num((int64_t)ce->divergence_cells[k].available));
+                json_obj_set(co, "sn", json_new_num((int64_t)ce->divergence_cells[k].san));
+                json_obj_set(co, "bu", json_new_num((int64_t)ce->divergence_cells[k].built));
+                json_obj_set(co, "rn", json_new_num((int64_t)ce->divergence_cells[k].ran));
+                json_obj_set(co, "to", json_new_num((int64_t)ce->divergence_cells[k].timed_out));
+                json_obj_set(co, "fn", json_new_num((int64_t)ce->divergence_cells[k].finding));
+                json_obj_set(co, "dw", json_new_num((int64_t)ce->divergence_cells[k].diag_warn));
+                json_obj_set(co, "ec", json_new_num((int64_t)ce->divergence_cells[k].exit_code));
+                json_obj_set(co, "mk", json_new_str(ce->divergence_cells[k].marker));
+                json_obj_set(co, "sh", json_new_str(ce->divergence_cells[k].stdout_sha256));
+                json_arr_push(tmp, co);
+            }
+            json_obj_set(e, "div_cells", tmp);
+        }
         json_obj_set(e, "drv_funcs", json_new_num((int64_t)ce->driver_funcs));
         json_obj_set(e, "drv_cases", json_new_num((int64_t)ce->driver_cases));
         json_obj_set(e, "drv_skip", json_new_num((int64_t)ce->driver_skipped));
@@ -971,6 +1035,45 @@ static void cache_replay_into(const myc_cache_entry *e, myc_result *res)
     res->host_facts.stdc_version = e->host_stdc_version;
     res->host_facts.char_bit = e->host_char_bit;
 
+    /* Fase 4 A2/DS-02: replay hasil gate divergence (sel matriks). */
+    res->ran_divergence = e->divergence_ran > 0 ? 1 : 0;
+    res->divergence_ran = e->divergence_ran;
+    res->divergence_planned = e->divergence_planned;
+    res->divergence_sanitizer_div = e->divergence_sanitizer_div;
+    res->divergence_all_findings = e->divergence_all_findings;
+    res->divergence_semantic_div = e->divergence_semantic_div;
+    res->divergence_diag_div = e->divergence_diag_div;
+    if (e->divergence_report[0]) {
+        res->divergence_report =
+            myc_result_arena_dup(res, e->divergence_report, 0);
+    }
+    res->divergence_ncells = e->divergence_ncells > MYC_DIVERGENCE_MAX_CELLS
+                                ? MYC_DIVERGENCE_MAX_CELLS
+                                : e->divergence_ncells;
+    for (i = 0; i < res->divergence_ncells; i++) {
+        myc_divergence_cell *c = &res->divergence_cells[i];
+        memset(c, 0, sizeof(*c));
+        c->opt_level = (int)e->divergence_cells[i].opt_level;
+        c->available = (int)e->divergence_cells[i].available;
+        c->san = (int)e->divergence_cells[i].san;
+        c->built = (int)e->divergence_cells[i].built;
+        c->ran = (int)e->divergence_cells[i].ran;
+        c->timed_out = (int)e->divergence_cells[i].timed_out;
+        c->finding = (int)e->divergence_cells[i].finding;
+        c->diag_warn = (int)e->divergence_cells[i].diag_warn;
+        c->exit_code = e->divergence_cells[i].exit_code;
+        snprintf(c->tool, sizeof(c->tool), "%s",
+                 e->divergence_cells[i].tool);
+        /* tool_path: kosong pada replay — path absolut toolchain asli
+         * TIDAK disimpan di cache (hanya nama tool). Jangan isi dengan
+         * nama tool (menyesatkan: field bernama path berisi nama). */
+        c->tool_path[0] = '\0';
+        snprintf(c->marker, sizeof(c->marker), "%s",
+                 e->divergence_cells[i].marker);
+        snprintf(c->stdout_sha256, sizeof(c->stdout_sha256), "%s",
+                 e->divergence_cells[i].stdout_sha256);
+    }
+
     snprintf(res->run_sanitizer_marker,
              sizeof(res->run_sanitizer_marker), "%s", e->sanitizer_marker);
     /* PENTING (SOL-18): myc_result_free memanggil free() INDIVIDUAL pada
@@ -1250,6 +1353,37 @@ void myc_cache_store(const myc_request *req, const myc_result *res,
     ne->host_little_endian = res->host_facts.little_endian;
     ne->host_stdc_version = res->host_facts.stdc_version;
     ne->host_char_bit = res->host_facts.char_bit;
+    /* Fase 4 A2/DS-02: snapshot hasil gate divergence. */
+    ne->divergence_ran = res->divergence_ran;
+    ne->divergence_planned = res->divergence_planned;
+    ne->divergence_ncells = res->divergence_ncells;
+    ne->divergence_sanitizer_div = res->divergence_sanitizer_div;
+    ne->divergence_all_findings = res->divergence_all_findings;
+    ne->divergence_semantic_div = res->divergence_semantic_div;
+    ne->divergence_diag_div = res->divergence_diag_div;
+    if (res->divergence_report)
+        snprintf(ne->divergence_report, sizeof(ne->divergence_report), "%s",
+                 res->divergence_report);
+    for (i = 0; i < (int)res->divergence_ncells &&
+                i < MYC_DIVERGENCE_MAX_CELLS; i++) {
+        const myc_divergence_cell *c = &res->divergence_cells[i];
+        ne->divergence_cells[i].opt_level = (char)c->opt_level;
+        ne->divergence_cells[i].available = (char)c->available;
+        ne->divergence_cells[i].san = (char)c->san;
+        ne->divergence_cells[i].built = (char)c->built;
+        ne->divergence_cells[i].ran = (char)c->ran;
+        ne->divergence_cells[i].timed_out = (char)c->timed_out;
+        ne->divergence_cells[i].finding = (char)c->finding;
+        ne->divergence_cells[i].diag_warn = (char)c->diag_warn;
+        ne->divergence_cells[i].exit_code = c->exit_code;
+        snprintf(ne->divergence_cells[i].tool,
+                 sizeof(ne->divergence_cells[i].tool), "%s", c->tool);
+        snprintf(ne->divergence_cells[i].marker,
+                 sizeof(ne->divergence_cells[i].marker), "%s", c->marker);
+        snprintf(ne->divergence_cells[i].stdout_sha256,
+                 sizeof(ne->divergence_cells[i].stdout_sha256), "%s",
+                 c->stdout_sha256);
+    }
     ne->driver_funcs = res->driver_funcs;
     ne->driver_cases = res->driver_cases;
     ne->driver_skipped = res->driver_skipped;

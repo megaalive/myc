@@ -107,6 +107,33 @@ typedef struct {
     int   budget_met;
     char  budget_report[1024];
 
+    /* Fase 4 A2/DS-02: hasil gate cross-toolchain divergence (replay
+     * identik: flags + cell matriks + report). Deteksi ulang? Tidak —
+     * divergence = eksekusi penuh toolchain; pada cache-hit hasil
+     * di-replay apa adanya (scenario hash sudah memuat flag --divergence). */
+    int   divergence_ran;
+    int   divergence_planned;
+    int   divergence_ncells;
+    int   divergence_sanitizer_div;
+    int   divergence_all_findings;
+    int   divergence_semantic_div;
+    int   divergence_diag_div;
+    char  divergence_report[2048];
+    struct {
+        char tool[16];
+        char opt_level;       /* 0 = -O0, 1 = -O2 */
+        char available;       /* 0/1 */
+        char san;             /* 1 = dgn sanitizer (finding bisa jadi bukti) */
+        char built;
+        char ran;
+        char timed_out;
+        char finding;
+        char diag_warn;
+        int  exit_code;
+        char marker[80];
+        char stdout_sha256[65];
+    } divergence_cells[MYC_DIVERGENCE_MAX_CELLS];
+
     /* Fase 4 A1: host facts toolchain (macro dump gcc -dM) disimpan agar
      * cache-hit TIDAK mengeksekusi gcc ulang; deteksi asumsi tetap
      * di-scan ulang (murni teks, non-blocking). */

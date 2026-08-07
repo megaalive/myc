@@ -21,6 +21,7 @@ Driver / Filc; `0` = n/a, `1` = clean, `2` = findings, `3` = inconclusive).
 | checked             | `--checked`| gcc                 | `MYC_BUF` fat-pointer bounds ⇒ **L4 SPATIAL**       | covers **only `MYC_BUF` buffers**; plain `malloc` arrays not covered         |
 | runtime             | `--run`    | clang + ASan/UBSan  | clean run under sanitizers ⇒ **L3 RUNTIME**        | optional; non-blocking if clang absent                                       |
 | metamorphic         | `--metamorphic` | clang + ASan  | `-O0` vs `-O2` discrepancy ⇒ UB / toolchain-sensitive | optional; non-blocking if clang absent; divergence ≠ proof of bug          |
+| divergence          | `--divergence`  | gcc+clang+[tcc] × {-O0,-O2} | sanitizer divergence across toolchains ⇒ **hard RUNTIME_VIOLATION** (toolchain-sensitive); semantic/diagnostic divergence ⇒ observation | optional; non-blocking if toolchain absent; cells without ASan never claim sanitizer evidence |
 | negative            | `--negative` | —                | "missing pattern" observations (e.g. unchecked alloc) | **Non-blocking** (MYC-AUDIT-014); confidence-scored                        |
 | quorum              | `--quorum` | —                   | cross-backend agreement (clean / conflict / inconclusive) | optional; extra signal, never a blocker                                |
 | require-complete    | `--require-complete` | —        | verification gap = CI failure (`MYC-INCOMPLETE-*`) | makes verdict INCONCLUSIVE when debt exists                                 |

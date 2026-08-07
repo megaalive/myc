@@ -155,6 +155,7 @@ const char *myc_gate_id_short(myc_gate_id id)
     case MYC_GATE_METAMORPHIC:return "metamorphic";
     case MYC_GATE_NEGATIVE:   return "negative";
     case MYC_GATE_LINT:       return "lint";
+    case MYC_GATE_DIVERGENCE: return "divergence";
     default:                  return "?";
     }
 }
@@ -389,7 +390,8 @@ static void myc_build_assurance_vector(myc_result *res)
     static const myc_gate_id dim_gates[MYC_DIM_COUNT][3] = {
         { MYC_GATE_LINT,      MYC_GATE_PREPROCESS, MYC_GATE_COMPILE }, /* COMPILE */
         { MYC_GATE_ANALYZER,  MYC_GATE_COUNT,      MYC_GATE_COUNT },   /* STATIC  */
-        { MYC_GATE_RUNTIME,   MYC_GATE_METAMORPHIC, MYC_GATE_COUNT },  /* RUNTIME */
+        { MYC_GATE_RUNTIME,   MYC_GATE_METAMORPHIC,
+          MYC_GATE_DIVERGENCE },                                       /* RUNTIME */
         { MYC_GATE_CHECKED,   MYC_GATE_COUNT,      MYC_GATE_COUNT },   /* CHECKED */
         { MYC_GATE_PROVE,     MYC_GATE_COUNT,      MYC_GATE_COUNT },   /* PROOF   */
         { MYC_GATE_DRIVER,    MYC_GATE_COUNT,      MYC_GATE_COUNT },   /* DRIVER  */
@@ -499,6 +501,7 @@ void myc_reduce_verdict(myc_result *res)
             switch (g->id) {
             case MYC_GATE_RUNTIME:    has_runtime_clean = 1; break;
             case MYC_GATE_METAMORPHIC:has_runtime_clean = 1; break;
+            case MYC_GATE_DIVERGENCE: has_runtime_clean = 1; break;
             case MYC_GATE_PROVE:      has_prove_clean = 1; break;
             case MYC_GATE_CHECKED:    has_checked_clean = 1; break;
             case MYC_GATE_FILC:       has_filc_clean = 1; break;

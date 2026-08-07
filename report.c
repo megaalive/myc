@@ -438,6 +438,39 @@ void myc_report_text(const myc_result *res)
             printf("  inconsistent: ya (hasil -O0 vs -O2 tidak setuju)\n");
     }
 
+    if (res->ran_divergence) {
+        printf("divergence (A2/DS-02):\n");
+        printf("  cells ran: %d/%d  planned: %d\n",
+               res->divergence_ran, res->divergence_ncells,
+               res->divergence_planned);
+        if (res->divergence_sanitizer_div)
+            printf("  klasifikasi: sanitizer_divergence (HARD — bug "
+                   "toolchain-sensitive)\n");
+        else if (res->divergence_all_findings)
+            printf("  klasifikasi: all_findings (HARD — bug konsisten)\n");
+        else if (res->divergence_semantic_div)
+            printf("  klasifikasi: semantic_divergence (observasi)\n");
+        else
+            printf("  klasifikasi: konsisten antar toolchain\n");
+        if (res->divergence_diag_div)
+            printf("  diagnostic_divergence: set warning build beda "
+                   "(observasi)\n");
+        if (res->divergence_report) {
+            const char *p = res->divergence_report;
+            printf("  matrix:\n");
+            while (*p) {
+                printf("    ");
+                while (*p && *p != '\n') {
+                    putchar(*p);
+                    p++;
+                }
+                putchar('\n');
+                if (*p)
+                    p++;
+            }
+        }
+    }
+
     /* Evidence matrix (Fase 4): ringkasan status per scope, bukan hanya
      * label assurance. Memenuhi prinsip "setiap klaim menyertakan scope". */
     printf("evidence:\n");
@@ -521,6 +554,7 @@ if (res->debt_count > 0) {
          printf("  filc: %s\n", cap->filc ? "yes" : "no");
          printf("  driver: %s\n", cap->driver ? "yes" : "no");
          printf("  metamorphic: %s\n", cap->metamorphic ? "yes" : "no");
+         printf("  divergence: %s\n", cap->divergence_ran ? "yes" : "no");
          printf("  negative: %s\n", cap->negative ? "yes" : "no");
          if (cap->negative)
              printf("  negative_callsites: %d  negative_deviations: %d\n",
@@ -560,6 +594,15 @@ if (res->debt_count > 0) {
                     cap->meta_o0_finding ? "yes" : "no",
                     cap->meta_o2_finding ? "yes" : "no",
                     cap->metamorphic_inconsistent ? "yes" : "no");
+         }
+         if (cap->divergence_ran) {
+             printf("  divergence: cells_ran=%d  san_div=%s  all_find=%s  "
+                    "semantic=%s  diag=%s\n",
+                    cap->divergence_ran,
+                    cap->divergence_sanitizer_div ? "yes" : "no",
+                    cap->divergence_all_findings ? "yes" : "no",
+                    cap->divergence_semantic_div ? "yes" : "no",
+                    cap->divergence_diag_div ? "yes" : "no");
          }
          printf("  verdict: %s\n", myc_verdict_name(cap->verdict));
          printf("  exit_code: %d\n", cap->exit_code);
@@ -807,6 +850,49 @@ char *myc_result_to_json(const myc_result *res)
                        res->meta_o2_finding ? "true" : "false");
         json_sb_printf(&b, "\"metamorphic_inconsistent\":%s,",
                        res->metamorphic_inconsistent ? "true" : "false");
+    }
+    json_sb_printf(&b, "\"ran_divergence\":%s,",
+                   res->ran_divergence ? "true" : "false");
+    if (res->ran_divergence) {
+        int di;
+        json_sb_printf(&b, "\"divergence_ran\":%d,", res->divergence_ran);
+        json_sb_printf(&b, "\"divergence_planned\":%d,",
+                       res->divergence_planned);
+        json_sb_printf(&b, "\"divergence_sanitizer_div\":%s,",
+                       res->divergence_sanitizer_div ? "true" : "false");
+        json_sb_printf(&b, "\"divergence_all_findings\":%s,",
+                       res->divergence_all_findings ? "true" : "false");
+        json_sb_printf(&b, "\"divergence_semantic_div\":%s,",
+                       res->divergence_semantic_div ? "true" : "false");
+        json_sb_printf(&b, "\"divergence_diag_div\":%s,",
+                       res->divergence_diag_div ? "true" : "false");
+        json_sb_puts(&b, "\"divergence_cells\":[");
+        for (di = 0; di < res->divergence_ncells; di++) {
+            const myc_divergence_cell *c = &res->divergence_cells[di];
+            if (di > 0)
+                json_sb_puts(&b, ",");
+            json_sb_puts(&b, "{\"tool\":");
+            json_sb_escape(&b, c->tool);
+            json_sb_printf(&b, ",\"opt\":\"%s\",\"available\":%s,"
+                               "\"built\":%s,\"ran\":%s,\"timed_out\":%s,"
+                               "\"finding\":%s,\"exit\":%d,\"marker\":",
+                           c->opt_level == 0 ? "-O0" : "-O2",
+                           c->available ? "true" : "false",
+                           c->built ? "true" : "false",
+                           c->ran ? "true" : "false",
+                           c->timed_out ? "true" : "false",
+                           c->finding ? "true" : "false",
+                           c->exit_code);
+            json_sb_escape(&b, c->marker);
+            json_sb_puts(&b, ",\"stdout_sha256\":");
+            json_sb_escape(&b, c->stdout_sha256);
+            json_sb_puts(&b, "}");
+        }
+        json_sb_puts(&b, "],");
+        json_sb_puts(&b, "\"divergence_report\":");
+        json_sb_escape(&b, res->divergence_report ? res->divergence_report
+                                                  : "");
+        json_sb_puts(&b, ",");
     }
     json_sb_puts(&b, "\"scope\":{");
     json_sb_printf(&b, "\"contract_requires\":%d,", res->contract_requires);
@@ -1069,6 +1155,18 @@ char *myc_result_to_json(const myc_result *res)
              json_sb_printf(&b, "\"metamorphic_inconsistent\":%s,",
                             cap->metamorphic_inconsistent ? "true" : "false");
          }
+         if (cap->divergence_ran) {
+             json_sb_printf(&b, "\"divergence_ran\":%d,",
+                            cap->divergence_ran);
+             json_sb_printf(&b, "\"divergence_sanitizer_div\":%s,",
+                            cap->divergence_sanitizer_div ? "true" : "false");
+             json_sb_printf(&b, "\"divergence_all_findings\":%s,",
+                            cap->divergence_all_findings ? "true" : "false");
+             json_sb_printf(&b, "\"divergence_semantic_div\":%s,",
+                            cap->divergence_semantic_div ? "true" : "false");
+             json_sb_printf(&b, "\"divergence_diag_div\":%s,",
+                            cap->divergence_diag_div ? "true" : "false");
+         }
          json_sb_printf(&b, "\"verdict\":\"%s\",",
                         myc_verdict_name(cap->verdict));
          json_sb_printf(&b, "\"exit_code\":%d,", cap->exit_code);
@@ -1157,6 +1255,18 @@ void myc_report_json_summary(const myc_result *res)
     json_sb_printf(&b, "\"ran_driver\":%s,", res->ran_driver ? "true" : "false");
     json_sb_printf(&b, "\"ran_negative\":%s,", res->ran_negative ? "true" : "false");
     json_sb_printf(&b, "\"ran_metamorphic\":%s,", res->ran_metamorphic ? "true" : "false");
+    json_sb_printf(&b, "\"ran_divergence\":%s,", res->ran_divergence ? "true" : "false");
+    if (res->ran_divergence) {
+        json_sb_printf(&b, "\"divergence_ran\":%d,", res->divergence_ran);
+        json_sb_printf(&b, "\"divergence_sanitizer_div\":%s,",
+                       res->divergence_sanitizer_div ? "true" : "false");
+        json_sb_printf(&b, "\"divergence_all_findings\":%s,",
+                       res->divergence_all_findings ? "true" : "false");
+        json_sb_printf(&b, "\"divergence_semantic_div\":%s,",
+                       res->divergence_semantic_div ? "true" : "false");
+        json_sb_printf(&b, "\"divergence_diag_div\":%s,",
+                       res->divergence_diag_div ? "true" : "false");
+    }
     json_sb_printf(&b, "\"diagnostics\":[");
     for (i = 0; i < res->diag_count; i++) {
         const myc_diagnostic *d = &res->diags[i];

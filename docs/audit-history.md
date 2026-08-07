@@ -574,6 +574,78 @@ assume.h hanya API. Debt baru `MYC_DEBT_ASSUMPTION` (gate.c:
 
 ---
 
+## Fase 4 — DeepSeek Oracle & Bare-Metal Core (bagian 2: Cross-Toolchain Divergence), 2026-08-07
+
+### A2 Cross-Toolchain Classified Divergence — `run.c` (DS-02)
+
+Toolchain sebagai oracle: bangun + jalankan source SAMA dengan matriks
+`{gcc, clang, [tcc]} x {-O0, -O2}` — gate baru `MYC_GATE_DIVERGENCE`
+(`--divergence`), dim RUNTIME (R1 bila konsisten, seperti metamorphic):
+
+- **Tiap sel matriks** (`myc_divergence_cell`, array 8 di `myc_result`):
+  build (source via stdin, `-Wall -g` + sanitizer bila tersedia) + run
+  terkendali (env deterministik `LC_ALL=C`, `log_path` unik per sel =
+  saluran non-spoofable). Dicatat: exit code, finding sanitizer (report
+  log_path / marker+exit!=0), **sha256 trace stdout** (deteksi semantic
+  divergence deterministik), ada-tidaknya warning build.
+- **Fallback tanpa sanitizer (jujur)**: gcc MinGW tidak punya libasan →
+  build dengan sanitizer gagal → fallback build TANPA sanitizer untuk
+  sel tsb (`cell->san=0`). Sel tanpa sanitizer TIDAK pernah jadi bukti
+  clean/finding untuk klasifikasi sanitizer — hanya semantic compare.
+  (Bug yang ditemukan selama dev: `n` tidak di-reset pada iterasi
+  fallback → OOB write di argv → diperbaiki.)
+- **Klasifikasi DS-02**: `sanitizer_divergence` (≥1 sel finding + ≥1 sel
+  sanitizer-clean yang ran → **HARD RUNTIME_VIOLATION**, bug toolchain-
+  sensitive), `all_findings` (semua sel sanitizer menemukan → bug
+  konsisten, HARD), `semantic_divergence` (stdout sha256/exit beda tanpa
+  sanitizer → OBSERVASI), `diagnostic_divergence` (set warning build beda
+  antar toolchain → OBSERVASI). Hanya bukti sanitizer yang menurunkan
+  verdict (MYC-AUDIT-014).
+- **Report**: tabel matriks per sel (tool, opt, state, marker), klasifikasi
+  + flag di JSON penuh, ringkasan di capsule/json-summary.
+- **Cache**: hasil divergence di-store (flags + cell matriks + report) dan
+  di-replay identik pada cache-hit; `--divergence` masuk scenario hash +
+  fingerprint; tool key kini menyertakan clang saat divergence (identity).
+- **Non-blocking**: toolchain hilang / build gagal = sel di-skip, assurance
+  statis dipertahankan.
+
+### Verifikasi
+
+- Self-dogfooding **29/29 OK**; `-Werror` clean (semua source);
+  `_cap_sync.sh` **PASS=96 FAIL=0**; `_audit018.sh` SELESAI OK.
+- Fixture `divergence_clean.c` (deterministik): verdict OK, klasifikasi
+  konsisten, tidak ada false-positive sanitizer divergence.
+- Fixture `divergence_oob.c` (heap-buffer-overflow): RUNTIME_VIOLATION
+  (HARD) + klasifikasi sanitizer_divergence.
+- Cache: run2 = hit dengan replay identik (verdict + matrix sama);
+  `--no-cache` = miss; tanpa `--divergence` = miss (scenario separation).
+- Regresi `_regress_run.bat` **0 [FAIL]** (352 OK; section SOL-33 8 cek:
+  gate berjalan, fixture clean OK, klasifikasi konsisten, tidak ada
+  false-positive, OOB HARD, sanitizer_divergence, cache hit, no-cache
+  miss).
+
+### Review fixes (code-reviewer, 2026-08-07)
+
+1. **Klaim konsistensi butuh bukti** — bila hampir semua sel gagal
+   build/run (n_ran < 2), gate sebelumnya tetap COMPLETED_CLEAN
+   "konsisten antar toolchain" padahal tidak ada sel yang dibandingkan
+   (klaim tanpa bukti). Fix: `n_ran >= 2` wajib untuk klaim konsisten;
+   selain itu gate = INCONCLUSIVE + diagnostic (gap terlihat).
+2. **`tool_path` menyesatkan pada replay** — replay mengisi field
+   `tool_path` dengan NAMA tool ("gcc") bukan path. Fix: kosongkan pada
+   replay (path asli tidak disimpan di cache; field bernama path tidak
+   boleh berisi nama).
+3. **Harden fallback loop** — jumlah base flags dihitung ulang memakai
+   index yang sama dengan fill loop; keselamatan fallback bergantung
+   pada baris `bfl = 0` di branch sanitizer-gagal (footgun laten). Fix:
+   `static const int NBASE` dihitung sekali, total alokasi independen
+   dari nilai index saat itu.
+4. Minor: hilangkan double-assignment `divergence_ncells` di replay;
+   tool key cache kini menyertakan clang saat `--divergence` (identity
+   toolchain yang benar-benar dipakai matriks).
+
+---
+
 ## MYC-AUDIT-001..030 dan fase pengembangan (kronologis)
 
 ### P6 — Gate verification run (`--run`), 2026-08-01

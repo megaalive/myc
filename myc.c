@@ -673,6 +673,12 @@ static myc_replay_capsule *myc_build_capsule(const myc_request *req,
     cap->meta_o2_exit = res->meta_o2_exit;
     cap->meta_o0_finding = res->meta_o0_finding;
     cap->meta_o2_finding = res->meta_o2_finding;
+    /* Fase 4 A2/DS-02: ringkasan divergence di capsule. */
+    cap->divergence_ran = res->divergence_ran;
+    cap->divergence_sanitizer_div = res->divergence_sanitizer_div;
+    cap->divergence_all_findings = res->divergence_all_findings;
+    cap->divergence_semantic_div = res->divergence_semantic_div;
+    cap->divergence_diag_div = res->divergence_diag_div;
     cap->negative_callsites = res->negative_callsites;
     cap->negative_deviations = res->negative_deviations;
     cap->checked_buffers = res->checked_buffers;
@@ -1074,7 +1080,8 @@ static void usage(void)
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
         "  myc check <file.c> [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache] [--no-assumptions] [--cwd DIR]\n"
-        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--metamorphic] [--negative] [--quorum] [--require-complete]\n"
+        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete]\n"
+        "  myc check <file.c> --divergence   (Fase 4 A2: matriks toolchain {gcc,clang,tcc} x {-O0,-O2}, klasifikasi DS-02)\n"
         "  myc check <file.c> [--require-assumptions-closed] [--assumption-ack id:status,...]   (Fase 4 A1: ledger asumsi portabilitas)\n"
         "  myc check <file.c> [--timeout MS] [--output-cap BYTES]\n"
         "                        (timeout 0-600000 ms, 0 = default 30000; output-cap 0-104857600 byte, 0 = default 1 MiB)\n"
@@ -1339,6 +1346,8 @@ int main(int argc, char **argv)
                 req.quorum = 1; known = 1;
             } else if (strcmp(argv[i], "--metamorphic") == 0) {
                 req.metamorphic = 1; known = 1;
+            } else if (strcmp(argv[i], "--divergence") == 0) {
+                req.divergence = 1; known = 1;
             } else if (strcmp(argv[i], "--negative") == 0) {
                 req.negative = 1; known = 1;
             } else if (strcmp(argv[i], "--require-complete") == 0) {

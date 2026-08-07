@@ -530,6 +530,21 @@ if errorlevel 1 (
   echo [WARN] --assumption-ack format salah tidak ditolak
 )
 del %OUT%
+echo --- SOL-33 (Fase 4 A2): Cross-Toolchain Divergence (--divergence)
+set OUT=%TEMP%\myc_sol33_out.txt
+myc.exe check tests\divergence_clean.c --divergence > %OUT% 2>&1
+findstr /C:"divergence (A2/DS-02)" %OUT% >nul && echo [OK] gate divergence berjalan || echo [FAIL] gate divergence tidak berjalan
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] fixture clean konsisten (verdict OK) || echo [FAIL] fixture clean tidak OK
+findstr /C:"klasifikasi: konsisten" %OUT% >nul && echo [OK] klasifikasi konsisten antar toolchain || echo [FAIL] klasifikasi konsisten hilang
+findstr /C:"sanitizer_divergence" %OUT% >nul && echo [FAIL] false-positive sanitizer divergence || echo [OK] tidak ada sanitizer divergence pada fixture clean
+myc.exe check tests\divergence_oob.c --divergence > %OUT% 2>&1
+findstr /C:"RUNTIME_VIOLATION" %OUT% >nul && echo [OK] OOB terdeteksi (HARD) || echo [FAIL] OOB tidak RUNTIME_VIOLATION
+findstr /C:"sanitizer_divergence" %OUT% >nul && echo [OK] klasifikasi sanitizer_divergence || echo [WARN] klasifikasi bukan sanitizer_divergence
+myc.exe check tests\divergence_clean.c --divergence > %OUT% 2>&1
+findstr /C:"cache:     hit" %OUT% >nul && echo [OK] cache hit divergence (replay identik) || echo [WARN] cache hit divergence tidak terjadi
+myc.exe check tests\divergence_clean.c --divergence --no-cache > %OUT% 2>&1
+findstr /C:"cache:     hit" %OUT% >nul && echo [FAIL] --no-cache masih hit || echo [OK] --no-cache mematikan cache divergence
+del %OUT%
 echo --- MCP smoke (P9): mcp.exe harus menjawab JSON-RPC
 call test\_mcp_smoke.bat
 echo --- MCP SDK interop (opsional): hanya bila SDK MCP Python resmi terpasang

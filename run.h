@@ -35,4 +35,25 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
 int myc_metamorphic_gate(const myc_request *req, const char *source,
                          size_t source_len, myc_result *res);
 
+/*
+ * Gate Cross-Toolchain Divergence (Fase 4, A2/DS-02, --divergence):
+ * bangun + jalankan source SAMA dengan matriks {gcc, clang, [tcc]} x
+ * {-O0,-O2}; tiap sel mencatat exit code, finding sanitizer (report
+ * log_path non-spoofable / marker+exit!=0), sha256 trace stdout, dan
+ * ada-tidaknya warning build. Klasifikasi DS-02:
+ *   - sanitizer_divergence (>=1 sel finding, >=1 sel clean yang ran)
+ *     -> HARD RUNTIME_VIOLATION (bug toolchain-sensitive);
+ *   - all_findings (SEMUA sel yang ran menemukan) -> bug konsisten,
+ *     HARD;
+ *   - semantic_divergence (tanpa finding, stdout/exit beda antar sel)
+ *     dan diagnostic_divergence (set warning beda) -> OBSERVASI,
+ *     NON-blocking (tidak menurunkan verdict).
+ * Non-blocking: toolchain hilang / build gagal / exec gagal = sel
+ * di-skip, assurance statis dipertahankan.
+ *
+ * Kode kembalian: 0 = gate tidak tersedia/di-skip, 1 = selesai.
+ */
+int myc_divergence_gate(const myc_request *req, const char *source,
+                        size_t source_len, myc_result *res);
+
 #endif /* MYC_RUN_H */

@@ -64,7 +64,7 @@ scan includes (whitelist, non-blocking) → lint heuristik ber-confidence
 |---|---|
 | `myc.c`/`myc.h` | Pipeline inti, request/result, arena, ingress canonical |
 | `compile.c` | Gate compile gcc + memory tier, ingest diagnostik GCC JSON |
-| `run.c` | Gate runtime clang ASan/UBSan, canary semantik, metamorfik |
+| `run.c` | Gate runtime clang ASan/UBSan, canary semantik, metamorfik, cross-toolchain divergence (A2/DS-02) |
 | `driver.c` | Generator harness kasus tepi dari kontrak (budget kombinatorial) |
 | `prove.c` / `filc.c` | Backend Frama-C Eva (via WSL) dan Fil-C |
 | `contract.c` | Contract-lite `//@ requires/ensures` + validasi purity |
