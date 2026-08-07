@@ -84,6 +84,14 @@ Flags:
 - `--budget N` — (with `context`) target package size in tokens: `4K`, `8K`,
   `16K` (default `8K`). Sections are dropped in priority order when over
   budget, and `context_sha256` stays deterministic across budgets.
+- `--budget-contract JSON` — an explicit **assurance budget contract**
+  (SOL-30): a target per gate plus optional time/output limits, e.g.
+  `'{"required":{"runtime":"clean"},"max_time_ms":10000}'`. myc never
+  silently picks a weaker recipe: a gate required `clean` that was not run
+  / unavailable / found findings makes the target unmet
+  (`MYC-INCOMPLETE-BUDGET-UNMET`), the verdict becomes `INCONCLUSIVE`
+  (unless a real bug already set it), and the report lists exactly which
+  dimension was sacrificed.
 
 ## Agent context (`myc context`)
 

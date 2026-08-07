@@ -448,6 +448,14 @@ if (res->debt_count > 0) {
                     "menjadikan hasil GAGAL (INCONCLUSIVE)\n");
      }
 
+     /* Fase 3, SOL-30: Assurance Budget Contract. */
+     if (res->budget_active) {
+         printf("budget:      %s\n",
+                res->budget_met ? "target TERCAPAI" : "target TIDAK tercapai");
+         if (res->budget_report)
+             printf("%s", res->budget_report);
+     }
+
       /* Differential Backend Quorum (#3). */
       if (res->quorum_status != MYC_QUORUM_NOT_REQUESTED) {
           printf("quorum: %s\n",
@@ -518,6 +526,9 @@ if (res->debt_count > 0) {
          }
          printf("  require_complete: %s\n",
                 cap->require_complete ? "yes" : "no");
+         if (cap->budget_active)
+             printf("  budget: %s\n",
+                    cap->budget_met ? "target tercapai" : "target tidak tercapai");
          if (cap->metamorphic) {
              printf("  meta_o0_exit: %d  meta_o2_exit: %d\n",
                     cap->meta_o0_exit, cap->meta_o2_exit);
@@ -871,6 +882,15 @@ char *myc_result_to_json(const myc_result *res)
      }
      json_sb_puts(&b, "],");
 
+     /* Fase 3, SOL-30: Assurance Budget Contract. */
+     json_sb_printf(&b, "\"budget_active\":%s,",
+                    res->budget_active ? "true" : "false");
+     json_sb_printf(&b, "\"budget_met\":%s,",
+                    res->budget_met ? "true" : "false");
+     json_sb_printf(&b, "\"budget_report\":");
+     json_sb_escape(&b, res->budget_report);
+     json_sb_puts(&b, ",");
+
      /* Differential Backend Quorum (#3). */
       json_sb_printf(&b, "\"quorum_status\":\"%s\",",
                      myc_quorum_status_name(res->quorum_status));
@@ -979,6 +999,9 @@ char *myc_result_to_json(const myc_result *res)
          }
          json_sb_printf(&b, "\"require_complete\":%s,",
                         cap->require_complete ? "true" : "false");
+         if (cap->budget_active)
+             json_sb_printf(&b, "\"budget_met\":%s,",
+                            cap->budget_met ? "true" : "false");
          if (cap->metamorphic) {
              json_sb_printf(&b, "\"meta_o0_exit\":%d,", cap->meta_o0_exit);
              json_sb_printf(&b, "\"meta_o2_exit\":%d,", cap->meta_o2_exit);
@@ -1112,6 +1135,11 @@ void myc_report_json_summary(const myc_result *res)
         json_sb_puts(&b, "}");
     }
     json_sb_puts(&b, "],");
+    json_sb_printf(&b, "\"budget_met\":%s,",
+                   res->budget_met ? "true" : "false");
+    json_sb_printf(&b, "\"budget_report\":");
+    json_sb_escape(&b, res->budget_report);
+    json_sb_puts(&b, ",");
     json_sb_printf(&b, "\"quorum_status\":\"%s\"",
                    myc_quorum_status_name(res->quorum_status));
     json_sb_puts(&b, "}");

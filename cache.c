@@ -180,6 +180,9 @@ static int cache_read_all(myc_cache_entry *out, int cap)
             v = json_get(e, "chk_a"); if (v && v->type == JSON_NUM) ce->checked_allocations = (int)v->num;
             v = json_get(e, "chk_at"); if (v && v->type == JSON_NUM) ce->checked_accesses = (int)v->num;
             v = json_get(e, "chk_f"); if (v && v->type == JSON_NUM) ce->checked_frees = (int)v->num;
+            v = json_get(e, "budget_active"); if (v && v->type == JSON_NUM) ce->budget_active = (int)v->num;
+            v = json_get(e, "budget_met"); if (v && v->type == JSON_NUM) ce->budget_met = (int)v->num;
+            v = json_get(e, "budget_report"); if (v && v->type == JSON_STR) snprintf(ce->budget_report, sizeof(ce->budget_report), "%s", v->str);
             v = json_get(e, "drv_funcs"); if (v && v->type == JSON_NUM) ce->driver_funcs = (int)v->num;
             v = json_get(e, "drv_cases"); if (v && v->type == JSON_NUM) ce->driver_cases = (int)v->num;
             v = json_get(e, "drv_skip"); if (v && v->type == JSON_NUM) ce->driver_skipped = (int)v->num;
@@ -440,6 +443,9 @@ static void cache_write_all(const myc_cache_entry *entries, int count)
         json_obj_set(e, "chk_a", json_new_num((int64_t)ce->checked_allocations));
         json_obj_set(e, "chk_at", json_new_num((int64_t)ce->checked_accesses));
         json_obj_set(e, "chk_f", json_new_num((int64_t)ce->checked_frees));
+        json_obj_set(e, "budget_active", json_new_num((int64_t)ce->budget_active));
+        json_obj_set(e, "budget_met", json_new_num((int64_t)ce->budget_met));
+        json_obj_set(e, "budget_report", json_new_str(ce->budget_report));
         json_obj_set(e, "drv_funcs", json_new_num((int64_t)ce->driver_funcs));
         json_obj_set(e, "drv_cases", json_new_num((int64_t)ce->driver_cases));
         json_obj_set(e, "drv_skip", json_new_num((int64_t)ce->driver_skipped));
@@ -928,6 +934,16 @@ static void cache_replay_into(const myc_cache_entry *e, myc_result *res)
     res->total_stderr_bytes = e->total_stderr_bytes;
     res->contract_requires = e->contract_requires;
     res->contract_ensures = e->contract_ensures;
+    /* SOL-30: hasil enforcement budget contract di-replay utuh (verdict/
+     * debt/report sudah mencerminkan run asli; kontrak ada di cache key,
+     * jadi re-enforce di jalur cache-hit TIDAK dilakukan). */
+    res->budget_active = e->budget_active;
+    res->budget_met = e->budget_met;
+    if (e->budget_report[0]) {
+        res->budget_report = myc_result_arena_dup(res, e->budget_report, 0);
+        if (!res->budget_report)
+            res->budget_report = NULL;
+    }
 
     snprintf(res->run_sanitizer_marker,
              sizeof(res->run_sanitizer_marker), "%s", e->sanitizer_marker);
@@ -1180,6 +1196,11 @@ void myc_cache_store(const myc_request *req, const myc_result *res,
     ne->checked_allocations = res->checked_allocations;
     ne->checked_accesses = res->checked_accesses;
     ne->checked_frees = res->checked_frees;
+    ne->budget_active = res->budget_active;
+    ne->budget_met = res->budget_met;
+    if (res->budget_report)
+        snprintf(ne->budget_report, sizeof(ne->budget_report), "%s",
+                 res->budget_report);
     ne->driver_funcs = res->driver_funcs;
     ne->driver_cases = res->driver_cases;
     ne->driver_skipped = res->driver_skipped;

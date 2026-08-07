@@ -14,6 +14,7 @@
 #include "json.h"
 #include "sha256.h"
 #include "gate.h"
+#include "budget.h"
 
 #ifdef _WIN32
 #include <direct.h>
@@ -158,6 +159,37 @@ char *myc_ledger_build_scenario_hash(const myc_request *req,
                   req->checked, req->filc, req->driver,
                   req->metamorphic, req->negative, req->quorum,
                   req->require_complete);
+    /* Fase 3, SOL-30: budget contract masuk scenario hash — run dengan
+     * kontrak berbeda TIDAK boleh berbagi cache entry (enforcement
+     * bergantung pada target yang diminta). Hash kontrak (bukan raw
+     * JSON) agar cache key pendek dan stabil. */
+    if (req->budget.active) {
+        sha256_ctx bctx;
+        uint8_t    bmd[32];
+        char       bhex[65];
+        char       braw[256];
+        int        bn = 0;
+        int        bi;
+        bn += snprintf(braw + bn, sizeof(braw) - bn, "b");
+        for (bi = 0; bi < MYC_GATE_COUNT && bn < (int)sizeof(braw) - 2; bi++) {
+            if (req->budget.level[bi] != MYC_BUDGET_UNSET)
+                bn += snprintf(braw + bn, sizeof(braw) - bn, "%d:%d,",
+                               bi, (int)req->budget.level[bi]);
+        }
+        bn += snprintf(braw + bn, sizeof(braw) - bn, "t:%d,o:%d",
+                       req->budget.max_time_ms,
+                       req->budget.max_output_bytes);
+        if (bn >= (int)sizeof(braw))
+            bn = (int)sizeof(braw) - 1;
+        sha256_init(&bctx);
+        sha256_update(&bctx, braw, (size_t)bn);
+        sha256_final(&bctx, bmd);
+        sha256_hex(bmd, 32, bhex);
+        bhex[32] = '\0';
+        n += snprintf(buf + n, sizeof(buf) - n, "|budget=%s", bhex);
+    }
+    if (n >= (int)sizeof(buf))
+        n = sizeof(buf) - 1;
     if (n >= (int)sizeof(buf))
         n = sizeof(buf) - 1;
     if (intent_hash)

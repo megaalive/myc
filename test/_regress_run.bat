@@ -85,7 +85,7 @@ myc.exe check tests\ok_hello.c --cwd "" > %OUT% 2>&1
 findstr /C:"invalid_cwd" %OUT% >nul && echo [OK] --cwd kosong ditolak (invalid_cwd) || echo [WARN] --cwd kosong tidak ditolak
 del %OUT%
 echo --- self-dogfooding: semua source myc harus OK
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c) do (
   echo === %%f
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%
@@ -487,6 +487,24 @@ if errorlevel 1 (
   echo [OK] --budget 99M ditolak
 ) else (
   echo [WARN] --budget 99M tidak ditolak
+)
+del %OUT%
+echo --- SOL-30: Assurance Budget Contract (myc --budget-contract)
+set OUT=%TEMP%\myc_sol30_out.txt
+myc.exe check tests\ok_run.c --budget-contract "{\"required\":{\"compile\":\"clean\"}}" > %OUT% 2>&1
+findstr /C:"target TERCAPAI" %OUT% >nul && echo [OK] kontrak compile=clean tercapai || echo [FAIL] kontrak compile=clean TIDAK tercapai
+myc.exe check tests\ok_run.c --budget-contract "{\"required\":{\"runtime\":\"clean\"}}" > %OUT% 2>&1
+findstr /C:"target TIDAK tercapai" %OUT% >nul && echo [OK] runtime wajib tanpa --run -> target tidak tercapai || echo [FAIL] runtime wajib tanpa --run tercapai (recipe lebih lemah lolos)
+findstr /C:"MYC-INCOMPLETE-BUDGET-UNMET" %OUT% >nul && echo [OK] debt budget-unmet muncul || echo [FAIL] debt budget-unmet hilang
+findstr /C:"runtime: TIDAK tercapai" %OUT% >nul && echo [OK] dimensi runtime dikorbankan disebut || echo [FAIL] dimensi runtime tidak disebut
+myc.exe check tests\bad_run_oob.c --run --budget-contract "{\"required\":{\"runtime\":\"clean\"}}" > %OUT% 2>&1
+findstr /C:"RUNTIME_VIOLATION" %OUT% >nul && echo [OK] finding nyata tetap RUNTIME_VIOLATION (tidak diturunkan) || echo [FAIL] finding nyata diturunkan
+findstr /C:"target TIDAK tercapai" %OUT% >nul && echo [OK] kontrak runtime gagal pada finding || echo [FAIL] kontrak runtime tercapai walau ada finding
+myc.exe check tests\ok_run.c --budget-contract "{bad json}" > %OUT% 2>&1
+if errorlevel 1 (
+  echo [OK] --budget-contract JSON invalid ditolak fail-fast
+) else (
+  echo [WARN] --budget-contract JSON invalid tidak ditolak
 )
 del %OUT%
 echo --- MCP smoke (P9): mcp.exe harus menjawab JSON-RPC

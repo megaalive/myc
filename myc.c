@@ -42,6 +42,7 @@
 #include "sha256.h"
 #include "agent.h"
 #include "context.h"
+#include "budget.h"
 
 /* ------------------------------------------------------------------ */
 /* Implementasi kontrak inti myc                                       */
@@ -658,6 +659,8 @@ static myc_replay_capsule *myc_build_capsule(const myc_request *req,
     cap->metamorphic = req->metamorphic;
     cap->negative = req->negative;
     cap->require_complete = req->require_complete;
+    cap->budget_active = res->budget_active;
+    cap->budget_met = res->budget_met;
 
     /* Execution result */
     cap->verdict = res->verdict;
@@ -956,11 +959,20 @@ void myc_run(const myc_request *req, myc_result *res)
                      * (API/MCP), konsisten dengan jalur source in-memory. */
                     myc_quorum_analysis(&req2, res);
                     enforce_require_complete(&req2, res);
+                    /* SOL-30: assurance budget contract — target eksplisit
+                     * user/harness; enforcement TERAKHIR (setelah
+                     * require-complete) supaya kontrak dilihat pada hasil
+                     * final. NON-blocking bila kontrak tidak aktif. */
+                    myc_budget_enforce(&req2, res);
                     myc_ledger_integrate(&req2, res);
                     myc_cache_store(&req2, res, buf, len);
                 } else {
                     myc_quorum_analysis(&req2, res);
                     enforce_require_complete(&req2, res);
+                    /* SOL-30: pada cache-hit, hasil enforcement budget
+                     * contract sudah di-replay utuh dari entry (verdict/
+                     * debt/budget_report asli); TIDAK di-re-enforce agar
+                     * deterministik & tanpa duplikat debt. */
                 }
                  if (needs_free)
                      free((void *)buf);
@@ -975,11 +987,13 @@ void myc_run(const myc_request *req, myc_result *res)
             myc_pipeline(eff, res);
             myc_quorum_analysis(eff, res);
             enforce_require_complete(eff, res);
+            myc_budget_enforce(eff, res);
             myc_ledger_integrate(eff, res);
             myc_cache_store(eff, res, eff->input.data, eff->input.len);
         } else {
             myc_quorum_analysis(eff, res);
             enforce_require_complete(eff, res);
+            /* SOL-30: cache-hit — enforcement budget sudah di-replay. */
         }
         res->capsule = myc_build_capsule(eff, res);
         free(canon_cwd);
@@ -1031,6 +1045,8 @@ static void usage(void)
         "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--metamorphic] [--negative] [--quorum] [--require-complete]\n"
         "  myc check <file.c> [--timeout MS] [--output-cap BYTES]\n"
         "                        (timeout 0-600000 ms, 0 = default 30000; output-cap 0-104857600 byte, 0 = default 1 MiB)\n"
+        "  myc check <file.c> --budget-contract '{\"required\":{\"runtime\":\"clean\"},\"max_time_ms\":10000}'\n"
+        "                        (SOL-30: target assurance eksplisit; tak tercapai = INCONCLUSIVE + report)\n"
         "  myc check -          [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache]\n"
         "                        (source dari stdin)\n"
         "  myc context <file.c> [--finding-id ID] [--budget 4K|8K|16K] [gate flags...]\n"
@@ -1293,6 +1309,26 @@ int main(int argc, char **argv)
                 }
                 req.tx_edit_region = myc_strdup(argv[i + 1]);
                 i++; known = 1;
+            } else if (strcmp(argv[i], "--budget-contract") == 0) {
+                /* SOL-30: target assurance eksplisit (JSON). Parse KETAT
+                 * (reuse json.c); invalid = fail-fast exit 2 (konsisten
+                 * MYC-AUDIT-019/020). */
+                const char *a;
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "myc: --budget-contract membutuhkan "
+                                    "argumen JSON\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                a = argv[i + 1];
+                if (myc_budget_parse(a, strlen(a), &req.budget) != 0) {
+                    fprintf(stderr, "myc: --budget-contract JSON tidak valid\n"
+                                    "  format: {\"required\":{\"runtime\":\"clean\"}"
+                                    ",\"max_time_ms\":10000}\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                i++; known = 1;
             } else if (strcmp(argv[i], "--json-summary") == 0) {
                 req.json_summary = 1; known = 1;
             } else if (strcmp(argv[i], "--budget") == 0) {
@@ -1502,6 +1538,7 @@ int main(int argc, char **argv)
 
     myc_result_free(&res);
     free(req.tx_finding_id);
+    myc_budget_free(&req.budget);
     free(req.tx_edit_region);
     if (req.run_stdin)
         free((void *)req.run_stdin);

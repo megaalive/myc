@@ -79,6 +79,7 @@ scan includes (whitelist, non-blocking) → lint heuristik ber-confidence
  | `nextbest.c` | Next-Best Experiment Rule Table: eksperimen termurah untuk maju dari frontier (Fase 3, SOL-03) |
  | `cache.c` | Incremental Evidence Cache: replay hasil bila input+scenario+tool sama, delta fungsi+dependents (Fase 3, SOL-18) |
  | `context.c` | Agent Context Compiler: paket konteks minimal per finding (SOL-22) |
+ | `budget.c` | Assurance Budget Contract: target assurance eksplisit per gate + budget waktu/output, tak tercapai = INCONCLUSIVE + report (SOL-30) |
  | `proc.c` | Exec program+argv eksplisit tanpa shell, env deterministik, WSLENV |
  | `mcp.c` | MCP server (JSON-RPC 2.0 ketat) |
  | `report.c` / `json.c` | Laporan teks/JSON, capsule, parser JSON ketat |
@@ -113,7 +114,8 @@ Setiap perubahan ke kode inti myc **wajib** melewati checklist ini:
    PASS.
 5. **Self-dogfooding**: semua source myc harus `verdict: OK` (termasuk
       `ledger.c`, `transaction.c`, `witness.c`, `agent.c`, `frontier.c`,
-      `observation.c`, `causal.c`, `nextbest.c`, `cache.c`, `context.c`).
+      `observation.c`, `causal.c`, `nextbest.c`, `cache.c`, `context.c`,
+      `budget.c`).
 6. **Git hygiene**: `git diff --check` — tidak ada whitespace/CRLF issue.
 7. **Release process** (wajib untuk setiap release):
    - Jalankan `bash release-guard.sh` — verifikasi `master` sudah di-push,

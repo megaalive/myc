@@ -400,6 +400,76 @@ rusak → ERROR, bukan paket kosong).
 
 ---
 
+## Fase 3 — Evidence Planner (bagian 6: Assurance Budget Contract), 2026-08-07
+
+### Assurance Budget Contract — `budget.c/.h` (SOL-30, roadmap 7.13)
+
+User/harness kini dapat meminta TARGET assurance EKSPLISIT sebagai
+kontrak, bukan sekadar memilih flag — dan myc TIDAK boleh diam-diam
+memilih recipe lebih lemah:
+
+```
+myc check <file.c> --budget-contract \
+  '{"required":{"compile":"clean","runtime":"clean","driver":"clean",
+    "proof":"optional"},"max_time_ms":10000,"max_output_bytes":16384}'
+```
+
+- **Parse JSON ketat** (`myc_budget_parse`, reuse json.c): key gate = nama
+  pendek `myc_gate_id_short`; nilai `clean` (wajib) / `optional`;
+  `max_time_ms` 0..600000 (konsisten `--timeout`), `max_output_bytes`
+  0..100 MiB; kontrak tanpa target apa pun DITOLAK (bukan no-op diam-diam).
+  Invalid = fail-fast exit 2 (konsisten MYC-AUDIT-019/020).
+- **Enforcement** (`myc_budget_enforce`, dipanggil SETELAH pipeline +
+  quorum + require-complete di semua branch `myc_run`): tiap gate wajib
+  `clean` harus (1) DIMINTA user via flag (`budget_gate_requested` —
+  kalau tidak, recipe lebih lemah), dan (2) status COMPLETED_CLEAN (atau
+  NOT_APPLICABLE setelah diminta, mis. checked tanpa MYC_BUF). Gate
+  UNAVAILABLE/INFRA_FAILED/INCONCLUSIVE/FINDINGS/not_run = target TIDAK
+  tercapai.
+- **Verification gap = kegagalan, bukan kesunyian** (pola 9.10): target
+  tak tercapai sementara verdict masih MC_OK → verdict INCONCLUSIVE +
+  finding/completeness diselaraskan + debt `MYC_DEBT_BUDGET` (kode
+  `MYC-INCOMPLETE-BUDGET-UNMET`) + receipt dibangun ulang. Verdict
+  findings nyata (RUNTIME_VIOLATION dll.) TIDAK diturunkan — bug tetap
+  finding, kontrak dilaporkan gagal di budget_report.
+- **Report jujur**: `budget_report` (arena) merinci tiap gate
+  ("tercapai (clean)" / "TIDAK tercapai (not_requested) -- dimensi
+  dikorbankan"), `max_time_ms`/`max_output_bytes` yang dilampaui; teks
+  `budget: target TERCAPAI/TIDAK tercapai` + JSON (`budget_active`/
+  `budget_met`/`budget_report`) + capsule.
+- **Cache separation**: scenario hash (ledger.c) kini memuat hash kontrak
+  (`|budget=<sha>`) → run kontrak beda tidak pernah berbagi cache entry.
+- **Replay deterministik**: cache entry menyimpan `budget_active`/
+  `budget_met`/`budget_report`; pada cache-hit enforcement TIDAK
+  dijalankan ulang (hasil asli di-replay utuh — hindari durasi 0 yang
+  membuat `max_time_ms` salah tercapai + debt duplikat).
+
+API: `myc_budget_parse` / `myc_budget_free` / `myc_budget_enforce` /
+`myc_budget_level_name`. Tipe (`myc_budget_level`,
+`myc_budget_contract`) di myc.h (myc_request memuatnya by-value;
+budget.h hanya API agar tidak ada include circular).
+
+### Verifikasi
+
+- Self-dogfooding **28/28 OK** (termasuk budget.c); `-Werror` semua
+  source clean; cap_sync **PASS=93 FAIL=0** (registry + README memuat
+  `--budget-contract`).
+- Kontrak tercapai: `compile=clean` pada ok_hello → OK + target
+  TERCAPAI; `runtime=clean --run` pada ok_run → OK. Kontrak GAGAL:
+  `runtime=clean` tanpa `--run` → INCONCLUSIVE + `runtime: TIDAK
+  tercapai (not_requested) -- dimensi dikorbankan` (recipe lebih lemah
+  TIDAK lolos); `max_time_ms:1` → INCONCLUSIVE; `max_output_bytes:1` →
+  INCONCLUSIVE; `bad_run_oob --run` → RUNTIME_VIOLATION TETAP
+  (finding tidak diturunkan) + kontrak TIDAK tercapai.
+- Cache: kontrak beda → scenario hash beda (miss); replay `max_time_ms`
+  konsisten (run1 pipeline == run2 cache-hit, receipt SAMA); debt
+  budget tidak duplikat.
+- Regresi `_regress_run.bat` **0 [FAIL]** (325 OK; section SOL-30 6 cek:
+  tercapai, gagal recipe-lemah, debt muncul, dimensi disebut, finding
+  tetap, JSON invalid ditolak); `_audit018.sh` SELESAI OK.
+
+---
+
 ## MYC-AUDIT-001..030 dan fase pengembangan (kronologis)
 
 ### P6 — Gate verification run (`--run`), 2026-08-01

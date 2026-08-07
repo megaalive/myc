@@ -198,6 +198,11 @@ typedef enum {
     MYC_DEBT_ENSURES_UNPROVED,    /* ensures di-parse tapi tidak dibuktikan */
     MYC_DEBT_RAW_BUFFERS,         /* terdapat buffer biasa di luar MYC_BUF */
     MYC_DEBT_OUTPUT_TRUNCATED,    /* output backend terpotong (moral hilang) */
+    /* Fase 3, SOL-30: Assurance Budget Contract -- target assurance yang
+     * diminta user/harness tidak tercapai dalam budget (gate wajib clean
+     * tidak dijalankan / tidak tersedia / menemukan finding, atau budget
+     * waktu/output dilampaui). Kode: MYC-INCOMPLETE-BUDGET-*. */
+    MYC_DEBT_BUDGET,
     MYC_DEBT_COUNT
 } myc_debt_type;
 
@@ -331,6 +336,29 @@ typedef struct {
     const char     *file_path; /* FILE: path; MEMORY/STDIN: NULL */
 } myc_source_input;
 
+/* --- Assurance Budget Contract (Fase 3, SOL-30) ---
+ * Level target per gate dalam kontrak --budget-contract. Definisi tipe
+ * ada di myc.h (bukan budget.h) karena myc_request memuatnya by-value
+ * dan budget.h hanya berisi fungsi API (menghindari include circular). */
+typedef enum {
+    MYC_BUDGET_UNSET = 0,   /* gate tidak disebut dalam kontrak */
+    MYC_BUDGET_CLEAN,       /* gate WAJIB completed_clean (target) */
+    MYC_BUDGET_OPTIONAL     /* gate boleh dijalankan bila tersedia */
+} myc_budget_level;
+
+/* Satu kontrak budget. `active=1` artinya user meminta target ini;
+ * `max_time_ms`/`max_output_bytes` 0 = tidak dibatasi. Disimpan
+ * per-value di myc_request (bukan pointer) supaya request tetap
+ * stack-friendly; `raw` (representasi teks kontrak, malloc'd) di-free
+ * oleh caller yang mengalokasikannya (myc.c main / MCP). */
+typedef struct myc_budget_contract {
+    int  active;
+    myc_budget_level level[MYC_GATE_COUNT]; /* per gate id */
+    int  max_time_ms;
+    int  max_output_bytes;
+    char *raw;   /* representasi asli kontrak (untuk laporan), malloc'd */
+} myc_budget_contract;
+
 typedef struct {
     myc_source_input input;     /* sumber program: MEMORY/FILE/STDIN */
     int         timeout_ms;     /* 0 = default */
@@ -382,6 +410,14 @@ typedef struct {
      int         tx_verify;       /* --tx-verify: verifikasi patch dalam transaksi */
      char       *tx_finding_id;   /* --finding-id ID: finding target */
      char       *tx_edit_region;  /* --edit-region R: region yang diizinkan diedit */
+     /* --- Assurance Budget Contract (Fase 3, SOL-30) ---
+      * Target assurance eksplisit yang diminta user/harness. `active=1`
+      * bila kontrak diparse dari --budget-contract; enforcement di
+      * myc_budget_enforce() (budget.c) di akhir myc_run: target tidak
+      * tercapai -> verdict INCONCLUSIVE (bila masih OK) + debt
+      * MYC_DEBT_BUDGET + budget_report rinci dimensi yang dikorbankan.
+      * `raw` (malloc'd) dibebaskan caller (myc.c main). */
+     myc_budget_contract budget; /* by-value; definisi di atas */
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
@@ -419,6 +455,9 @@ typedef struct {
     int     metamorphic;    /* (9.7) flag gate metamorphic */
     int     negative;       /* (9.8) flag gate negative-space */
     int     require_complete; /* (9.10) flag require-complete */
+    /* Fase 3, SOL-30: hasil enforcement budget contract */
+    int     budget_active;
+    int     budget_met;
     /* Execution result */
     myc_verdict verdict;
     int exit_code;
@@ -641,6 +680,15 @@ typedef struct {
      * (malloc'd, di-free myc_result_free). */
     int         cache_hit;
     char       *cache_delta_report;
+
+    /* --- Assurance Budget Contract (Fase 3, SOL-30) ---
+     * Hasil enforcement: budget_active=1 bila kontrak dipakai;
+     * budget_met=1 bila SEMUA target tercapai; budget_report = teks
+     * rinci per-gate ("tercapai (clean)" / "TIDAK tercapai (...)" +
+     * dimensi dikorbankan) di arena milik hasil. */
+    int         budget_active;
+    int         budget_met;
+    char       *budget_report;
 
     /* internal: gate mana yang dijalankan terakhir */
     int         ran_preprocess;

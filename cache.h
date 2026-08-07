@@ -102,6 +102,11 @@ typedef struct {
     unsigned long long total_stdout_bytes, total_stderr_bytes;
     int   contract_requires, contract_ensures;
 
+    /* SOL-30: hasil enforcement budget contract (replay identik). */
+    int   budget_active;
+    int   budget_met;
+    char  budget_report[1024];
+
     char  sanitizer_marker[64];
     char  prove_mode[64];
     char  prove_version[64];
