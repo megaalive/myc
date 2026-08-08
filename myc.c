@@ -46,6 +46,7 @@
 #include "assume.h"
 #include "taxonomy.h"
 #include "prompt.h"
+#include "driver.h"
 
 /* ------------------------------------------------------------------ */
 /* Implementasi kontrak inti myc                                       */
@@ -1114,6 +1115,11 @@ static void usage(void)
         "  myc prompt <file.c>\n"
         "                        (D4/DS-15: system-prompt snippet deterministik\n"
         "                        dari fakta target + kebijakan proyek)\n"
+        "  myc compare <ref.c> <new.c> [func...]\n"
+        "                        (A4/DS-04: differential oracle pair --\n"
+        "                        baterai input bersama dijalankan pada KEDUA\n"
+        "                        versi; identik = behavior-preserving (P1 DIFF),\n"
+        "                        divergen = unexpected_change)\n"
         "  myc version\n");
 }
 
@@ -1267,6 +1273,62 @@ static int cmd_policy(void)
 }
 
 /* D4 (DS-15): system-prompt snippet deterministik untuk harness LLM. */
+static int cmd_compare(const char *ref_path, const char *new_path,
+                       char **funcs, int nfuncs)
+{
+    myc_source_input in;
+    const char *buf_ref, *buf_new;
+    size_t      len_ref, len_new;
+    int         free_ref = 0, free_new = 0;
+    myc_error_code le;
+    myc_request req;
+    myc_result  res;
+    int         rc = 0;
+
+    memset(&in, 0, sizeof(in));
+    in.kind = MYC_SOURCE_FILE;
+    in.file_path = ref_path;
+    le = myc_source_load(&in, &buf_ref, &len_ref, &free_ref);
+    if (le != MYC_ERR_NONE) {
+        fprintf(stderr, "myc: compare: tidak dapat membaca %s (error=%s)\n",
+                ref_path, myc_error_name(le));
+        return 1;
+    }
+    memset(&in, 0, sizeof(in));
+    in.kind = MYC_SOURCE_FILE;
+    in.file_path = new_path;
+    le = myc_source_load(&in, &buf_new, &len_new, &free_new);
+    if (le != MYC_ERR_NONE) {
+        fprintf(stderr, "myc: compare: tidak dapat membaca %s (error=%s)\n",
+                new_path, myc_error_name(le));
+        if (free_ref)
+            free((void *)buf_ref);
+        return 1;
+    }
+
+    memset(&req, 0, sizeof(req));
+    myc_result_init(&res);
+    myc_compare_gate(&req, buf_ref, len_ref, buf_new, len_new,
+                     (const char *const *)funcs, nfuncs, &res);
+    printf("%s\n", res.compare_report ? res.compare_report
+                                       : "compare: (tanpa laporan)");
+    if (res.compare_delta) {
+        printf("  kasus divergen (detail):\n%s\n", res.compare_delta);
+    }
+    if (res.compare_preserved)
+        printf("compare: behavior-preserving (P1 DIFF) -- refactor aman\n");
+    else
+        printf("compare: unexpected_change (DS-04) -- PERILAKU BERUBAH\n");
+    rc = res.compare_preserved ? 0 : 1;
+
+    myc_result_free(&res);
+    if (free_ref)
+        free((void *)buf_ref);
+    if (free_new)
+        free((void *)buf_new);
+    return rc;
+}
+
 static int cmd_prompt(const char *path)
 {
     myc_source_input in;
@@ -1322,6 +1384,15 @@ int main(int argc, char **argv)
             return 2;
         }
         return cmd_prompt(argv[2]);
+    }
+
+    /* A4 (DS-04): myc compare <ref.c> <new.c> [func...]. */
+    if (strcmp(argv[1], "compare") == 0) {
+        if (argc < 4) {
+            fprintf(stderr, "myc: compare membutuhkan ref.c dan new.c\n");
+            return 2;
+        }
+        return cmd_compare(argv[2], argv[3], argv + 4, argc - 4);
     }
 
     if (strcmp(argv[1], "check") != 0 && strcmp(argv[1], "context") != 0) {

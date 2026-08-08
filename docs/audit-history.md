@@ -1917,3 +1917,33 @@ ikut disimpan. `capabilities.json` + `docs/capabilities.md` ditambah gate
 `bad_exhaustive.c` (counterexample), `exhaustive_wide.c` (domain 65536
 → ditolak), `exhaustive_narrow.c` (SCOPE_LAUNDERING bila run setelah
 ok_exhaustive). Regresi `_ci_linux.sh` (5g) + `_regress_run.bat`.
+
+### (5) A4 — Differential Oracle Pair (DS-04) — `myc compare` — `driver.c`
+
+Subcommand `myc compare <ref.c> <new.c> [func...]` menjawab pertanyaan
+paling sering model: "apakah refactor-mu mempertahankan perilaku?"
+`myc_compare_gate()` (di `driver.c`):
+
+- Scan fungsi ber-kontrak di KEDUA file, pasangkan yang nama-nya sama
+  (opsional filter nama via argumen CLI).
+- Bangkitkan **baterai input bersama** dari UNION kontrak kedua versi:
+  kandidat tepi kedua versi + boundary portfolio (0, 1, -1, INT_MAX,
+  INT_MIN) + 16 nilai PRNG deterministik (xorshift32 seed tetap) per
+  parameter dalam rentang gabungan; produk kartesian dibatasi
+  `CMP_MAX_CASES 4096` per fungsi. Baterai IDENTIK untuk kedua versi
+  (case table literal di-embed ke harness).
+- Harness per versi (rename main, clang ASan/UBSan -O0) memanggil fungsi
+  per kasus, print `CASE <f>_<i> ret=... errno=...`; escrow DS-04 ikut
+  dibandingkan: **return value + errno + output digest (sha256) + exit
+  code + ABI signature + domain hash**.
+- Semua kasus identik -> verdict **behavior-preserving (P1 DIFF)**
+  (exit 0). Ada kasus beda / exit beda / ABI berubah / domain berubah
+  -> **unexpected_change (DS-04)** + daftar kasus divergen (maks 20,
+  `compare_delta`, arena). Fungsi yang tak bisa dibandingkan (tidak ada
+  di file lain / tanpa param integer) dicatat `unobserved` -- jujur,
+  bukan kesunyian.
+
+`capabilities.json` + `docs/capabilities.md` ditambah gate `compare`
+(dimensi P). Fixture: `ref_crc16.c` (baseline), `new_crc16_same.c`
+(refactor perilaku-sama -> P1 DIFF), `new_crc16_div.c` (polinomial beda
+-> 53/64 divergen). Regresi `_ci_linux.sh` (5i) + `_regress_run.bat`.

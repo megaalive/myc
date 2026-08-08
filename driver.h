@@ -47,4 +47,16 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
 int myc_exhaustive_gate(const myc_request *req, const char *source,
                         size_t source_len, myc_result *res);
 
+/* A4 (Differential Oracle Pair, DS-04): bandingkan PERILAKU dua versi
+ * source (ref vs new) pada baterai input bersama yang dibangkitkan dari
+ * UNION kontrak kedua versi (deterministik). Escrow DS-04: ret + errno +
+ * output digest + exit code + ABI signature + domain hash. Semua kasus
+ * identik -> behavior-preserving (P1 DIFF). Fungsi dengan nama sama yang
+ * ber-kontrak dipasangkan; func_filter (opsional) membatasi nama. */
+int myc_compare_gate(const myc_request *req,
+                     const char *ref_src, size_t ref_len,
+                     const char *new_src, size_t new_len,
+                     const char *const *func_filter, int nfunc_filter,
+                     myc_result *res);
+
 #endif /* MYC_DRIVER_H */

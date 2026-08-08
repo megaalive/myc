@@ -157,6 +157,7 @@ const char *myc_gate_id_short(myc_gate_id id)
     case MYC_GATE_LINT:       return "lint";
     case MYC_GATE_DIVERGENCE: return "divergence";
     case MYC_GATE_EXHAUSTIVE: return "exhaustive";
+    case MYC_GATE_COMPARE:    return "compare";
     default:                  return "?";
     }
 }

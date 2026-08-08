@@ -390,6 +390,28 @@ else
     fail "D4 prompt: anti-churn hilang"
 fi
 
+# --- 5i. A4 Differential Oracle Pair (myc compare, DS-04) ---
+if ./myc compare test/fixtures/ref_crc16.c test/fixtures/new_crc16_same.c 2>&1 | grep -qF "behavior-preserving (P1 DIFF) -- refactor aman"; then
+    note "A4 compare: refactor yang sama perilakunya -> preserved"
+else
+    fail "A4 compare: behavior-preserving tidak terdeteksi"
+fi
+if ./myc compare test/fixtures/ref_crc16.c test/fixtures/new_crc16_div.c 2>&1 | grep -qF "unexpected_change (DS-04)"; then
+    note "A4 compare: polinomial beda -> unexpected_change"
+else
+    fail "A4 compare: divergence tidak terdeteksi"
+fi
+if ./myc compare test/fixtures/ref_crc16.c test/fixtures/new_crc16_div.c 2>&1 | grep -qF "divergen 53 kasus"; then
+    note "A4 compare: jumlah kasus divergen akurat"
+else
+    fail "A4 compare: jumlah divergen salah"
+fi
+if ./myc compare test/fixtures/ref_crc16.c test/fixtures/new_crc16_same.c 2>&1 | grep -qF "64 identik, 0 divergen"; then
+    note "A4 compare: 64 kasus identik"
+else
+    fail "A4 compare: jumlah identik salah"
+fi
+
 # --- 6. dogfood tool ---
 for f in dogfood/dogfood_ring.c dogfood/dogfood_config.c dogfood/dogfood_tilemap.c; do
     assert_out "dogfood $(basename "$f") -> OK" "verdict:   OK" "$f"

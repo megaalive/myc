@@ -260,6 +260,15 @@ findstr /C:"Fungsi denylist dipanggil di file ini" %OUT% >nul && echo [OK] D4 de
 myc.exe prompt tests\negative_dev.c > %OUT% 2>&1
 findstr /C:"Konvensi alokasi (dari negative-space): 4/5" %OUT% >nul && echo [OK] D4 konvensi alokasi dari negative-space || echo [WARN] D4 konvensi alokasi hilang
 del %OUT%
+rem --- Fase 5 A4 (DS-04): Differential Oracle Pair (myc compare)
+echo --- A4: baterai input bersama vs perilaku kedua versi
+myc.exe compare test\fixtures\ref_crc16.c test\fixtures\new_crc16_same.c > %OUT% 2>&1
+findstr /C:"behavior-preserving (P1 DIFF) -- refactor aman" %OUT% >nul && echo [OK] A4 refactor sama -> preserved || echo [WARN] A4 behavior-preserving tidak terdeteksi
+findstr /C:"64 identik, 0 divergen" %OUT% >nul && echo [OK] A4 64 kasus identik || echo [WARN] A4 jumlah identik salah
+myc.exe compare test\fixtures\ref_crc16.c test\fixtures\new_crc16_div.c > %OUT% 2>&1
+findstr /C:"unexpected_change (DS-04)" %OUT% >nul && echo [OK] A4 polinomial beda -> unexpected_change || echo [WARN] A4 divergence tidak terdeteksi
+findstr /C:"divergen 53 kasus" %OUT% >nul && echo [OK] A4 jumlah divergen akurat || echo [WARN] A4 jumlah divergen salah
+del %OUT%
 rem --- fix review: ; membuang pending basi + komentar blok bukan klausa
 myc.exe check test\fixtures\contract_stale_pending.c > %OUT% 2>&1
 findstr /C:"requires=1" %OUT% >nul && echo [OK] klausa hantu dalam komentar blok tidak dihitung || echo [WARN] klausa hantu komentar ikut dihitung

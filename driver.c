@@ -184,6 +184,69 @@ static int drv_ident_before(const char *s, size_t before,
     return 1;
 }
 
+/* A4 (DS-04): ekstrak return type dari teks signature — token (bisa
+ * multi-kata + '*') tepat sebelum nama fungsi (open_paren = posisi '(').
+ * Normalisasi: spasi ganda diratakan, spasi di sekitar '*' dihilangkan
+ * ("const char *" -> "const char*"). */
+static void drv_ret_type_before(const char *s, size_t open_paren,
+                                char *out, size_t outcap)
+{
+    size_t pos = open_paren;
+    size_t start, k;
+    size_t n;
+    while (pos > 0 && (s[pos - 1] == ' ' || s[pos - 1] == '\t'))
+        pos--;                                /* lewati spasi sebelum '(' */
+    while (pos > 0 && drv_ident_char((unsigned char)s[pos - 1]))
+        pos--;                                /* lewati nama fungsi */
+    while (pos > 0 && (s[pos - 1] == ' ' || s[pos - 1] == '\t'))
+        pos--;                                /* spasi antara tipe & nama */
+    start = pos;
+    while (start > 0) {
+        char c = s[start - 1];
+        if (c == '*' || drv_ident_char((unsigned char)c)) {
+            start--;
+        } else if (c == ' ' || c == '\t') {
+            size_t t = start;
+            while (t > 0 && (s[t - 1] == ' ' || s[t - 1] == '\t'))
+                t--;
+            if (t > 0 && drv_ident_char((unsigned char)s[t - 1]))
+                start = t;   /* kata lain: lanjut (mis. "unsigned long") */
+            else
+                break;
+        } else
+            break;
+    }
+    while (start < pos && (s[start] == ' ' || s[start] == '\t'))
+        start++;
+    n = pos - start;
+    if (n >= outcap)
+        n = outcap - 1;
+    /* salin + normalisasi: buang spasi yang berdampingan dengan '*' */
+    {
+        size_t w = 0;
+        int    prev_star = 0;
+        for (k = 0; k < n && w + 1 < outcap; k++) {
+            char c = s[start + k];
+            if (c == ' ') {
+                if (w > 0 && out[w - 1] != ' ' && !prev_star)
+                    out[w++] = ' ';
+                prev_star = 0;
+            } else if (c == '*') {
+                if (w > 0 && out[w - 1] == ' ')
+                    w--;
+                out[w++] = '*';
+                prev_star = 1;
+            } else {
+                out[w++] = c;
+                prev_star = 0;
+            }
+        }
+        if (w > 0 && out[w - 1] == ' ')
+            w--;
+        out[w] = '\0';
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /* Struktur fungsi ber-kontrak yang di-parse                           */
 /* ------------------------------------------------------------------ */
@@ -198,6 +261,10 @@ typedef struct {
     char  reqs[DRV_MAX_REQS][512];
     int   nreqs;
     int   unsupported;                         /* 1 = lewati fungsi ini */
+    /* A4 (--compare, DS-04): return type hasil ekstraksi signature. */
+    char  ret[DRV_MAX_LEN];                    /* teks return type */
+    int   ret_void;                            /* return type = void */
+    int   ret_ptr;                             /* return type pointer */
 } drv_func;
 
 /* Daftar batas integer hasil parse requires. */
@@ -783,6 +850,13 @@ static int scan_contract_funcs(const char *src, size_t len, drv_func *funcs,
                     memset(&f, 0, sizeof(f));
                     drv_ident_before(src, open_paren, name, sizeof(name));
                     snprintf(f.name, sizeof(f.name), "%s", name);
+                    /* A4 (DS-04): return type untuk ABI signature escrow. */
+                    drv_ret_type_before(src, open_paren, f.ret,
+                                        sizeof(f.ret));
+                    if (strstr(f.ret, "*"))
+                        f.ret_ptr = 1;
+                    else if (strcmp(f.ret, "void") == 0)
+                        f.ret_void = 1;
                     parse_params(src + open_paren + 1,
                                  close_paren > open_paren + 1
                                      ? close_paren - open_paren - 1 : 0,
@@ -2662,4 +2736,788 @@ out:
     }
     free(clang_path);
     return ret;
+}
+
+/* ================================================================== */
+/* A4: Differential Oracle Pair (--compare, DS-04)                    */
+/* Bandingkan PERILAKU dua versi fungsi ber-kontrak pada baterai      */
+/* input bersama. Escrow DS-04: ret + errno + output digest + exit +  */
+/* ABI signature + domain hash.                                      */
+/* ================================================================== */
+
+#define CMP_MAX_CASES   4096        /* budget kasus per fungsi */
+#define CMP_MAX_FUNCS   DRV_MAX_FUNCS
+#define CMP_DELTA_MAX   20          /* kasus divergen yang dicatat */
+#define CMP_PRNG_SEED   0x9E3779B9u
+
+/* Satu fungsi yang dibandingkan: baterai dibangkitkan dari UNION
+ * kontrak kedua versi (deterministik, identik untuk keduanya). */
+typedef struct {
+    char  name[DRV_MAX_LEN];
+    int   ref_fi;                   /* index di funcs_ref */
+    int   new_fi;                   /* index di funcs_new */
+    int   nint;                     /* jumlah param integer */
+    int   intp[DRV_MAX_PARAMS];     /* index param integer */
+    long *cases;                    /* ncases x nint (malloc'd) */
+    int   ncases;
+    int   abi_same;
+    int   domain_same;
+    char  spec[160];                /* domain spec "lo..hi,lo..hi" */
+    char  abi_ref[192];
+    char  abi_new[192];
+} cmp_func;
+
+/* PRNG deterministik (xorshift32). */
+static unsigned cmp_rng_state = CMP_PRNG_SEED;
+static unsigned cmp_rng_next(void)
+{
+    unsigned x = cmp_rng_state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    cmp_rng_state = x;
+    return x;
+}
+
+/* Gabungkan kandidat kedua versi + boundary portfolio + PRNG dalam
+ * rentang gabungan. Hasil di cands (dedup). */
+static int cmp_param_candidates(const drv_func *fr, const drv_func *fn,
+                                int pi, long *cands, int maxc)
+{
+    long local[DRV_MAX_CANDS * 2];
+    int  nlocal = 0;
+    long pf_lo = 0, pf_hi = 0;
+    int  pf_has = 0;
+    int  i, k;
+    memset(local, 0, sizeof(local));
+    build_candidates(fr, pi, local, &nlocal);
+    {
+        long extra[DRV_MAX_CANDS];
+        int  ne = 0;
+        build_candidates(fn, pi, extra, &ne);
+        for (i = 0; i < ne && nlocal < (int)(sizeof(local) / sizeof(local[0]));
+             i++) {
+            int dup = 0;
+            for (k = 0; k < nlocal; k++)
+                if (local[k] == extra[i]) {
+                    dup = 1;
+                    break;
+                }
+            if (!dup)
+                local[nlocal++] = extra[i];
+        }
+    }
+    /* boundary portfolio: 0, 1, -1, INT_MAX, INT_MIN */
+    cand_add(local, &nlocal, 0);
+    cand_add(local, &nlocal, 1);
+    cand_add(local, &nlocal, -1);
+    cand_add(local, &nlocal, 2147483647LL);
+    cand_add(local, &nlocal, -2147483647LL - 1);
+    /* rentang gabungan untuk PRNG */
+    {
+        drv_bounds br, bn;
+        memset(&br, 0, sizeof(br));
+        memset(&bn, 0, sizeof(bn));
+        for (i = 0; i < fr->nreqs; i++)
+            parse_bound(fr->reqs[i], fr->pname[pi], &br);
+        for (i = 0; i < fn->nreqs; i++)
+            parse_bound(fn->reqs[i], fn->pname[pi], &bn);
+        if (br.has_lo || bn.has_lo) {
+            pf_lo = br.has_lo ? br.lo : bn.lo;
+            if (bn.has_lo && bn.lo < pf_lo)
+                pf_lo = bn.lo;
+            pf_has = 1;
+        }
+        if (br.has_hi || bn.has_hi) {
+            pf_hi = br.has_hi ? br.hi : bn.hi;
+            if (bn.has_hi && bn.hi > pf_hi)
+                pf_hi = bn.hi;
+            pf_has = 1;
+        }
+        if (!pf_has) {
+            pf_lo = -64;
+            pf_hi = 64;
+        }
+    }
+    /* 16 nilai PRNG deterministik dalam rentang (perluas 25%) */
+    {
+        long span = pf_hi - pf_lo + 1;
+        long pad = (span + 3) / 4;
+        long lo2 = pf_lo - pad, hi2 = pf_hi + pad;
+        long long rspan = (long long)hi2 - lo2 + 1;
+        long long step = rspan / 65536 + 1;
+        for (i = 0; i < 16 && nlocal < (int)(sizeof(local) / sizeof(local[0]));
+             i++) {
+            long long v = lo2 + (long long)(cmp_rng_next() % 65536) * step;
+            if (v < lo2)
+                v = lo2;
+            if (v > hi2)
+                v = hi2;
+            cand_add(local, &nlocal, v);
+        }
+    }
+    /* pindahkan ke output (dedup sudah oleh cand_add) */
+    if (nlocal > maxc)
+        nlocal = maxc;
+    for (i = 0; i < nlocal; i++)
+        cands[i] = local[i];
+    return nlocal;
+}
+
+/* Bangun baterai untuk satu fungsi: produk kartesian kandidat per param
+ * (deterministik; terbatas CMP_MAX_CASES). Return 0 bila tak ada param
+ * integer. */
+static int cmp_build_battery(cmp_func *cf, const drv_func *fr,
+                             const drv_func *fn)
+{
+    long cands[DRV_MAX_PARAMS][DRV_MAX_CANDS * 2];
+    int  nc[DRV_MAX_PARAMS];
+    int  p;
+    long dim[DRV_MAX_PARAMS];
+    long total = 1;
+    long ix[DRV_MAX_PARAMS];
+    int  q, c;
+    memset(cands, 0, sizeof(cands));
+    memset(nc, 0, sizeof(nc));
+    memset(dim, 0, sizeof(dim));
+    memset(ix, 0, sizeof(ix));
+    cf->nint = 0;
+    for (p = 0; p < fr->nparams && cf->nint < DRV_MAX_PARAMS; p++) {
+        if (fr->is_ptr[p])
+            continue;               /* pointer: bukan dimensi baterai */
+        if (cf->nint >= DRV_MAX_PARAMS)
+            break;
+        nc[cf->nint] = cmp_param_candidates(fr, fn, p,
+                                            cands[cf->nint],
+                                            DRV_MAX_CANDS * 2);
+        dim[cf->nint] = nc[cf->nint] > 0 ? nc[cf->nint] : 1;
+        cf->intp[cf->nint] = p;
+        cf->nint++;
+    }
+    if (cf->nint == 0)
+        return 0;
+    for (q = 0; q < cf->nint; q++) {
+        if (total > CMP_MAX_CASES / dim[q]) {
+            total = CMP_MAX_CASES;
+            break;
+        }
+        total *= dim[q];
+    }
+    if (total > CMP_MAX_CASES)
+        total = CMP_MAX_CASES;
+    cf->ncases = (int)total;
+    cf->cases = (long *)malloc(sizeof(long) * (size_t)cf->ncases *
+                               (size_t)cf->nint);
+    if (!cf->cases) {
+        cf->ncases = 0;
+        return 0;
+    }
+    for (c = 0; c < cf->ncases; c++) {
+        for (q = 0; q < cf->nint; q++)
+            cf->cases[(size_t)c * (size_t)cf->nint + q] =
+                cands[q][ix[q]];
+        /* majukan odometer */
+        for (q = 0; q < cf->nint; q++) {
+            ix[q]++;
+            if (ix[q] < dim[q])
+                break;
+            ix[q] = 0;
+        }
+    }
+    /* spec "lo..hi" per dim (pakai min/max dari baterai) */
+    {
+        size_t off = 0;
+        for (q = 0; q < cf->nint; q++) {
+            long lo = cands[q][0], hi = cands[q][0];
+            int  k;
+            for (k = 1; k < nc[q]; k++) {
+                if (cands[q][k] < lo)
+                    lo = cands[q][k];
+                if (cands[q][k] > hi)
+                    hi = cands[q][k];
+            }
+            {
+                int r = snprintf(cf->spec + off, sizeof(cf->spec) - off,
+                                 "%s%ld..%ld", q ? "," : "", lo, hi);
+                if (r > 0)
+                    off += (size_t)r;
+                if (off >= sizeof(cf->spec))
+                    off = sizeof(cf->spec) - 1;
+            }
+        }
+    }
+    return 1;
+}
+
+/* Generate harness compare untuk SATU versi (case table literal sama
+ * untuk kedua versi — baterai identik). Rename main asli. */
+static char *gen_compare_harness(const char *src, size_t srclen,
+                                 const cmp_func *cf, const drv_func *f,
+                                 int gid_base, size_t *out_len)
+{
+    drv_buf b;
+    int     p, c;
+    memset(&b, 0, sizeof(b));
+    drv_buf_puts(&b, "#include <stdio.h>\n#include <stdlib.h>\n"
+                     "#include <string.h>\n#include <errno.h>\n");
+    drv_buf_puts(&b, "#define main myc_cmp_orig_main\n");
+    drv_buf_putn(&b, src, srclen);
+    drv_buf_puts(&b, "\n#undef main\n\n");
+    drv_buf_puts(&b, "int main(void) {\n");
+    drv_buf_puts(&b, "    setvbuf(stdout, NULL, _IONBF, 0);\n");
+    /* case table literal */
+    drv_buf_printf(&b, "    static const long long CMP_C[%d][%d] = {\n",
+                   cf->ncases, cf->nint);
+    for (c = 0; c < cf->ncases; c++) {
+        drv_buf_puts(&b, "        {");
+        for (p = 0; p < cf->nint; p++) {
+            drv_buf_printf(&b, "%s%lld", p ? "," : "",
+                           (long long)cf->cases[(size_t)c * (size_t)cf->nint
+                                                + p]);
+        }
+        drv_buf_puts(&b, "},\n");
+    }
+    drv_buf_puts(&b, "    };\n");
+    drv_buf_printf(&b,
+        "    for (int i = 0; i < %d; i++) {\n", cf->ncases);
+    for (p = 0; p < f->nparams; p++) {
+        if (f->is_ptr[p]) {
+            drv_buf_printf(&b,
+                "        %s arg%d = (%s)calloc(64, 1);\n",
+                f->type[p], p, f->type[p]);
+        } else {
+            int q;
+            int found = -1;
+            for (q = 0; q < cf->nint; q++)
+                if (cf->intp[q] == p)
+                    found = q;
+            if (found >= 0)
+                drv_buf_printf(&b,
+                    "        %s arg%d = (%s)CMP_C[i][%d];\n",
+                    f->type[p], p, f->type[p], found);
+            else
+                drv_buf_printf(&b, "        %s arg%d = 0;\n",
+                               f->type[p], p);
+        }
+    }
+    drv_buf_puts(&b, "        errno = 0;\n");
+    drv_buf_printf(&b,
+        "        printf(\"CASE %d_%%d \", i);\n", gid_base);
+    drv_buf_printf(&b, "        %s(", f->name);
+    for (p = 0; p < f->nparams; p++)
+        drv_buf_printf(&b, "%sarg%d", p ? "," : "", p);
+    drv_buf_puts(&b, ");\n");
+    if (f->ret_void) {
+        drv_buf_puts(&b, "        printf(\"ret=void errno=%d\\n\", errno);\n");
+    } else if (f->ret_ptr) {
+        drv_buf_puts(&b, "        printf(\"ret=ptr errno=%d\\n\", errno);\n");
+    } else {
+        drv_buf_printf(&b,
+            "        printf(\"ret=%%lld errno=%%d\\n\", (long long)(%s(",
+            f->name);
+        for (p = 0; p < f->nparams; p++)
+            drv_buf_printf(&b, "%sarg%d", p ? "," : "", p);
+        drv_buf_puts(&b, ")), errno);\n");
+    }
+    /* free pointer args */
+    for (p = 0; p < f->nparams; p++) {
+        if (f->is_ptr[p])
+            drv_buf_printf(&b, "        free((void*)arg%d);\n", p);
+    }
+    drv_buf_puts(&b, "    }\n");
+    drv_buf_puts(&b, "    return 0;\n}\n");
+    *out_len = b.len;
+    return b.data;
+}
+
+/* Build + run satu harness compare; isi stdout/exit. Return 1 sukses. */
+static int cmp_build_run(const myc_request *req, const char *harness,
+                         size_t harness_len, const char *clang_path,
+                         const char *tmp_dir, const char *exe_name,
+                         char **out_stdout, int *out_exit,
+                         size_t max_out, myc_result *res)
+{
+    const char **build_argv = NULL;
+    const char **run_argv = NULL;
+    char *exe_path = NULL;
+    myc_proc_request preq;
+    myc_proc_result  pres;
+    static const char *const CMP_BASE_FLAGS[] = {
+        "-x", "c", "-", "-std=c11", "-O0", "-g",
+        "-fsanitize=address,undefined",
+        "-fno-sanitize-recover=all",
+        NULL
+    };
+    static const char *const CMP_RUN_ENV[] = {
+        "ASAN_OPTIONS=log_path=myc_cmp_asan_rpt:abort_on_error=1:"
+        "halt_on_error=1",
+        "UBSAN_OPTIONS=log_path=myc_cmp_ubsan_rpt:halt_on_error=1:"
+        "print_stacktrace=1",
+        "LC_ALL=C",
+        NULL
+    };
+    int bfl, n = 0, total = 0;
+    int ret = 0;
+
+    exe_path = drv_join_path(tmp_dir, exe_name);
+    if (!exe_path)
+        return 0;
+    for (bfl = 0; CMP_BASE_FLAGS[bfl]; bfl++)
+        total++;
+    total += 2 + 1 + 1;   /* clang + flags + -o + exe + NULL */
+    build_argv = (const char **)malloc(sizeof(char *) * (size_t)total);
+    if (!build_argv) {
+        free(exe_path);
+        return 0;
+    }
+    build_argv[n++] = clang_path;
+    for (bfl = 0; CMP_BASE_FLAGS[bfl]; bfl++)
+        build_argv[n++] = CMP_BASE_FLAGS[bfl];
+    build_argv[n++] = "-o";
+    build_argv[n++] = exe_path;
+    build_argv[n] = NULL;
+
+    memset(&preq, 0, sizeof(preq));
+    preq.argv = build_argv;
+    preq.cwd = req->cwd;
+    preq.stdin_data = harness;
+    preq.stdin_len = harness_len;
+    preq.timeout_ms = req->timeout_ms;
+    preq.max_output_bytes = max_out;
+    if (!myc_proc_run(&preq, &pres)) {
+        res->err = pres.timed_out ? MYC_ERR_TIMEOUT
+                                  : MYC_ERR_EXECUTE_FAILED;
+        myc_proc_result_free(&pres);
+        free(build_argv);
+        free(exe_path);
+        return 0;
+    }
+    res->duration_ms += pres.duration_ms;
+    if (pres.exit_code != 0) {
+        myc_proc_result_free(&pres);
+        free(build_argv);
+        free(exe_path);
+        return 0;
+    }
+    myc_proc_result_free(&pres);
+    free(build_argv);
+
+#ifdef _WIN32
+    {
+        char *dll_src = drv_asan_dll_path(clang_path);
+        char *dll_dst = NULL;
+        if (dll_src) {
+            dll_dst = drv_join_path(tmp_dir, ASAN_DLL_NAME);
+            if (dll_dst)
+                drv_copy_file(dll_src, dll_dst);
+        }
+        free(dll_src);
+        free(dll_dst);
+    }
+#endif
+
+    run_argv = (const char **)malloc(sizeof(char *) * 2);
+    if (!run_argv) {
+        free(exe_path);
+        return 0;
+    }
+    run_argv[0] = exe_path;
+    run_argv[1] = NULL;
+    memset(&preq, 0, sizeof(preq));
+    preq.argv = run_argv;
+    preq.cwd = tmp_dir;
+    preq.timeout_ms = req->timeout_ms;
+    preq.max_output_bytes = max_out;
+    preq.env = CMP_RUN_ENV;
+    if (!myc_proc_run(&preq, &pres)) {
+        res->err = pres.timed_out ? MYC_ERR_TIMEOUT
+                                  : MYC_ERR_EXECUTE_FAILED;
+        myc_proc_result_free(&pres);
+        free(run_argv);
+        free(exe_path);
+        return 0;
+    }
+    res->duration_ms += pres.duration_ms;
+    *out_stdout = pres.stdout_data;
+    pres.stdout_data = NULL;
+    *out_exit = pres.exit_code;
+    myc_proc_result_free(&pres);
+    free(run_argv);
+    free(exe_path);
+    ret = 1;
+    return ret;
+}
+
+/* ABI signature: "ret name(t1,t2,...)". */
+static void cmp_abi_sig(const drv_func *f, char *out, size_t cap)
+{
+    size_t off = 0;
+    int    p;
+    off += (size_t)snprintf(out + off, cap - off, "%s %s(",
+                            f->ret[0] ? f->ret : "int", f->name);
+    for (p = 0; p < f->nparams && off < cap; p++)
+        off += (size_t)snprintf(out + off, cap - off, "%s%s",
+                                p ? "," : "", f->type[p]);
+    if (off < cap)
+        off += (size_t)snprintf(out + off, cap - off, ")");
+}
+
+/* --- Gate A4: differential oracle pair --- */
+int myc_compare_gate(const myc_request *req,
+                     const char *ref_src, size_t ref_len,
+                     const char *new_src, size_t new_len,
+                     const char *const *func_filter, int nfunc_filter,
+                     myc_result *res)
+{
+    drv_func funcs_ref[DRV_MAX_FUNCS];
+    drv_func funcs_new[DRV_MAX_FUNCS];
+    cmp_func cf[CMP_MAX_FUNCS];
+    int nref, nnew, ncfs = 0;
+    int i, j, k;
+    char *clang_path = NULL;
+    char *tmp_dir = NULL;
+    char *h_ref = NULL, *h_new = NULL;
+    size_t hl_ref = 0, hl_new = 0;
+    char *out_ref = NULL, *out_new = NULL;
+    int exit_ref = 0, exit_new = 0;
+    size_t max_out = req->max_output_bytes > 0
+                         ? (size_t)req->max_output_bytes
+                         : MYC_MAX_OUTPUT_BYTES;
+    int identical_total = 0, divergent_total = 0;
+    char rep[2048];
+    size_t roff = 0;
+
+    myc_gate_set_status(res, MYC_GATE_COMPARE, MYC_GATE_NOT_APPLICABLE,
+                        NULL);
+    res->compare_preserved = 0;
+    res->compare_abi_same = 1;
+    res->compare_domain_same = 1;
+    res->compare_unobserved = 0;
+
+    /* 1. Scan fungsi ber-kontrak kedua versi. */
+    nref = scan_contract_funcs(ref_src, ref_len, funcs_ref, DRV_MAX_FUNCS);
+    nnew = scan_contract_funcs(new_src, new_len, funcs_new, DRV_MAX_FUNCS);
+    if (nref == 0 || nnew == 0) {
+        add_diag_drv(res, "compare di-skip: salah satu file tanpa fungsi "
+                          "ber-kontrak");
+        myc_gate_set_status(res, MYC_GATE_COMPARE,
+                            MYC_GATE_NOT_APPLICABLE,
+                            "tanpa fungsi ber-kontrak");
+        myc_result_add_evidence(res, MYC_GATE_COMPARE,
+                                MYC_EVIDENCE_SKIP,
+                                "compare: tanpa fungsi ber-kontrak");
+        return 0;
+    }
+
+    /* 2. Pasangkan fungsi dengan nama sama (atau filter). */
+    for (i = 0; i < nref && ncfs < CMP_MAX_FUNCS; i++) {
+        const drv_func *fr = &funcs_ref[i];
+        const drv_func *fn = NULL;
+        int fidx = -1;
+        if (fr->unsupported)
+            continue;
+        if (nfunc_filter > 0) {
+            int hit = 0;
+            for (k = 0; k < nfunc_filter; k++)
+                if (func_filter[k] && strcmp(func_filter[k], fr->name) == 0)
+                    hit = 1;
+            if (!hit)
+                continue;
+        }
+        for (j = 0; j < nnew; j++) {
+            if (!funcs_new[j].unsupported &&
+                strcmp(funcs_new[j].name, fr->name) == 0) {
+                fn = &funcs_new[j];
+                fidx = j;
+                break;
+            }
+        }
+        if (!fn) {
+            res->compare_unobserved++;
+            continue;
+        }
+        memset(&cf[ncfs], 0, sizeof(cf[ncfs]));
+        snprintf(cf[ncfs].name, sizeof(cf[ncfs].name), "%.63s", fr->name);
+        cf[ncfs].ref_fi = i;
+        cf[ncfs].new_fi = fidx;
+        if (!cmp_build_battery(&cf[ncfs], fr, fn)) {
+            res->compare_unobserved++;
+            continue;
+        }
+        cmp_abi_sig(fr, cf[ncfs].abi_ref, sizeof(cf[ncfs].abi_ref));
+        cmp_abi_sig(fn, cf[ncfs].abi_new, sizeof(cf[ncfs].abi_new));
+        cf[ncfs].abi_same =
+            strcmp(cf[ncfs].abi_ref, cf[ncfs].abi_new) == 0;
+        if (!cf[ncfs].abi_same)
+            res->compare_abi_same = 0;
+        {
+            char sref[256], snew[256];
+            int  r;
+            sref[0] = snew[0] = '\0';
+            for (r = 0; r < fr->nreqs && r < DRV_MAX_REQS; r++) {
+                strncat(sref, fr->reqs[r], sizeof(sref) - strlen(sref) - 1);
+                strncat(sref, ";", sizeof(sref) - strlen(sref) - 1);
+            }
+            for (r = 0; r < fn->nreqs && r < DRV_MAX_REQS; r++) {
+                strncat(snew, fn->reqs[r], sizeof(snew) - strlen(snew) - 1);
+                strncat(snew, ";", sizeof(snew) - strlen(snew) - 1);
+            }
+            if (strcmp(sref, snew) != 0)
+                res->compare_domain_same = 0;
+        }
+        ncfs++;
+    }
+    if (ncfs == 0) {
+        add_diag_drv(res, "compare di-skip: tidak ada fungsi ber-kontrak "
+                          "dengan nama sama");
+        myc_gate_set_status(res, MYC_GATE_COMPARE,
+                            MYC_GATE_NOT_APPLICABLE,
+                            "tanpa fungsi berpasangan");
+        myc_result_add_evidence(res, MYC_GATE_COMPARE,
+                                MYC_EVIDENCE_SKIP,
+                                "compare: tanpa fungsi berpasangan");
+        return 0;
+    }
+
+    /* 3. clang + tmp dir. */
+    clang_path = myc_find_executable(req->clang_program
+                                         ? req->clang_program : "clang");
+    if (!clang_path) {
+        res->err = MYC_ERR_CLANG_NOT_FOUND;
+        add_diag_drv(res, "compare di-skip: clang tidak ditemukan");
+        myc_gate_set_status(res, MYC_GATE_COMPARE, MYC_GATE_UNAVAILABLE,
+                            "clang tidak ditemukan");
+        myc_result_add_evidence(res, MYC_GATE_COMPARE,
+                                MYC_EVIDENCE_SKIP,
+                                "compare di-skip: clang hilang");
+        goto out_free_cfs;
+    }
+    tmp_dir = drv_make_temp_dir();
+    if (!tmp_dir) {
+        res->err = MYC_ERR_INTERNAL;
+        goto out_free_cfs;
+    }
+
+    /* 4. Build + run kedua versi (baterai sama). */
+    res->ran_compare = 1;
+    res->compare_funcs = ncfs;
+    res->compare_cases = 0;
+    for (i = 0; i < ncfs; i++) {
+        h_ref = gen_compare_harness(ref_src, ref_len, &cf[i],
+                                    &funcs_ref[cf[i].ref_fi], i,
+                                    &hl_ref);
+        h_new = gen_compare_harness(new_src, new_len, &cf[i],
+                                    &funcs_new[cf[i].new_fi], i,
+                                    &hl_new);
+        if (!h_ref || !h_new) {
+            free(h_ref);
+            free(h_new);
+            res->err = MYC_ERR_INTERNAL;
+            goto out_cleanup;
+        }
+        if (!cmp_build_run(req, h_ref, hl_ref, clang_path, tmp_dir,
+                           "myc_cmp_ref.exe", &out_ref, &exit_ref,
+                           max_out, res) ||
+            !cmp_build_run(req, h_new, hl_new, clang_path, tmp_dir,
+                           "myc_cmp_new.exe", &out_new, &exit_new,
+                           max_out, res)) {
+            add_diag_drv(res, "compare di-skip: build/run harness gagal "
+                              "(fungsi ini tidak ikut)");
+            free(h_ref);
+            free(h_new);
+            free(out_ref);
+            free(out_new);
+            out_ref = out_new = NULL;
+            res->compare_unobserved++;
+            res->compare_funcs--;
+            continue;
+        }
+        /* 5. Bandingkan per baris CASE. */
+        {
+            char line_ref[1024], line_new[1024];
+            size_t pr = 0, pn = 0;
+            int identical = 0, divergent = 0;
+            char delta[2048];
+            size_t doff = 0;
+            delta[0] = '\0';
+            while (pr < strlen(out_ref) && pn < strlen(out_new)) {
+                size_t er = pr, en = pn;
+                while (er < strlen(out_ref) && out_ref[er] != '\n')
+                    er++;
+                while (en < strlen(out_new) && out_new[en] != '\n')
+                    en++;
+                {
+                    size_t nr = er - pr, nn = en - pn;
+                    if (nr >= sizeof(line_ref))
+                        nr = sizeof(line_ref) - 1;
+                    if (nn >= sizeof(line_new))
+                        nn = sizeof(line_new) - 1;
+                    memcpy(line_ref, out_ref + pr, nr);
+                    line_ref[nr] = '\0';
+                    memcpy(line_new, out_new + pn, nn);
+                    line_new[nn] = '\0';
+                }
+                if (strcmp(line_ref, line_new) == 0)
+                    identical++;
+                else {
+                    divergent++;
+                    if (doff < sizeof(delta) && divergent <= CMP_DELTA_MAX) {
+                        int r = snprintf(delta + doff, sizeof(delta) - doff,
+                                         "%s  %s\n    ref : %s\n"
+                                         "    new : %s\n",
+                                         doff ? "\n" : "", line_ref,
+                                         line_ref, line_new);
+                        if (r > 0)
+                            doff += (size_t)r;
+                        if (doff >= sizeof(delta))
+                            doff = sizeof(delta) - 1;
+                    }
+                }
+                pr = er + 1;
+                pn = en + 1;
+            }
+            /* sisa baris yang tak tertandingi (jumlah baris beda) */
+            while (pr < strlen(out_ref)) {
+                size_t er = pr;
+                while (er < strlen(out_ref) && out_ref[er] != '\n')
+                    er++;
+                divergent++;
+                pr = er + 1;
+            }
+            while (pn < strlen(out_new)) {
+                size_t en = pn;
+                while (en < strlen(out_new) && out_new[en] != '\n')
+                    en++;
+                divergent++;
+                pn = en + 1;
+            }
+            if (exit_ref != exit_new)
+                divergent += 1;
+            identical_total += identical;
+            divergent_total += divergent;
+            res->compare_cases += (long)(identical + divergent);
+            if (divergent > 0) {
+                char note[256];
+                snprintf(note, sizeof(note),
+                         "compare: %.63s divergen %d kasus",
+                         cf[i].name, divergent);
+                add_diag_drv(res, note);
+                myc_result_add_evidence(res, MYC_GATE_COMPARE,
+                                        MYC_EVIDENCE_FINDING, note);
+                if (delta[0] && !res->compare_delta) {
+                    res->compare_delta =
+                        myc_result_arena_dup(res, delta, 0);
+                }
+            }
+        }
+        free(h_ref);
+        free(h_new);
+        free(out_ref);
+        free(out_new);
+        h_ref = h_new = NULL;
+        out_ref = out_new = NULL;
+    }
+
+    /* 6. Digest stdout utuh (escrow) */
+    {
+        char hex[65];
+        if (out_ref)
+            sha256_hex(out_ref, strlen(out_ref), hex);
+        else
+            memset(hex, '0', 64), hex[64] = '\0';
+        snprintf(res->compare_ref_digest, sizeof(res->compare_ref_digest),
+                 "%s", hex);
+        if (out_new)
+            sha256_hex(out_new, strlen(out_new), hex);
+        else
+            memset(hex, '0', 64), hex[64] = '\0';
+        snprintf(res->compare_new_digest, sizeof(res->compare_new_digest),
+                 "%s", hex);
+    }
+
+    /* 7. Report ringkas. */
+    res->compare_identical = identical_total;
+    res->compare_divergent = divergent_total;
+    res->compare_preserved =
+        (divergent_total == 0 && ncfs > 0 &&
+         res->compare_cases > 0);
+    {
+        int d;
+        roff += (size_t)snprintf(rep + roff, sizeof(rep) - roff,
+            "compare (A4): %d fungsi, %ld kasus, %ld identik, %ld divergen\n",
+            ncfs, res->compare_cases, (long)identical_total,
+            (long)divergent_total);
+        for (d = 0; d < ncfs; d++) {
+            int r = snprintf(rep + roff, sizeof(rep) - roff,
+                "  %s: %ld kasus%s\n", cf[d].name,
+                res->compare_cases > 0
+                    ? res->compare_cases / (long)ncfs : 0L,
+                cf[d].abi_same ? "" : " -- ABI BERUBAH");
+            if (r > 0)
+                roff += (size_t)r;
+            if (roff >= sizeof(rep))
+                roff = sizeof(rep) - 1;
+        }
+        if (!res->compare_abi_same)
+            roff += (size_t)snprintf(rep + roff, sizeof(rep) - roff,
+                "  ABI signature: BERUBAH (unexpected_change, DS-04)\n");
+        if (!res->compare_domain_same)
+            roff += (size_t)snprintf(rep + roff, sizeof(rep) - roff,
+                "  domain hash: BERUBAH (unexpected_change, DS-04)\n");
+        if (res->compare_unobserved > 0)
+            roff += (size_t)snprintf(rep + roff, sizeof(rep) - roff,
+                "  unobserved: %d fungsi (tak berpasangan / tanpa param "
+                "integer / build gagal)\n", res->compare_unobserved);
+        if (roff >= sizeof(rep))
+            roff = sizeof(rep) - 1;
+        res->compare_report = myc_result_arena_dup(res, rep, 0);
+    }
+
+    /* 8. Verdict + gate status. */
+    if (res->compare_preserved) {
+        myc_gate_set_status(res, MYC_GATE_COMPARE, MYC_GATE_COMPLETED_CLEAN,
+                            "behavior-preserving (P1 DIFF)");
+        myc_result_add_evidence(res, MYC_GATE_COMPARE,
+                                MYC_EVIDENCE_GATE_END,
+                                "compare: behavior-preserving (P1 DIFF)");
+    } else {
+        myc_gate_set_status(res, MYC_GATE_COMPARE,
+                            MYC_GATE_COMPLETED_FINDINGS,
+                            "divergen: unexpected_change (DS-04)");
+        myc_result_add_evidence(res, MYC_GATE_COMPARE,
+                                MYC_EVIDENCE_FINDING,
+                                "compare: unexpected_change (DS-04)");
+        add_diag_drv(res, "compare: perilaku BERUBAH antar versi "
+                          "(unexpected_change, DS-04) -- daftar kasus "
+                          "divergen di compare_delta");
+    }
+
+out_cleanup:
+    free(h_ref);
+    free(h_new);
+    free(out_ref);
+    free(out_new);
+    if (tmp_dir) {
+        {
+            char *p = drv_join_path(tmp_dir, "myc_cmp_ref.exe");
+            if (p) {
+                remove(p);
+                free(p);
+            }
+        }
+        {
+            char *p = drv_join_path(tmp_dir, "myc_cmp_new.exe");
+            if (p) {
+                remove(p);
+                free(p);
+            }
+        }
+        myc_rmdir(tmp_dir);
+        free(tmp_dir);
+    }
+    free(clang_path);
+out_free_cfs:
+    for (i = 0; i < ncfs; i++)
+        free(cf[i].cases);
+    return res->compare_preserved ? 1 : 0;
 }

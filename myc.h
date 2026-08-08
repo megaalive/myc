@@ -142,6 +142,15 @@ typedef enum {
                                 (P1 EXHAUSTIVE). DS-03 domain firewall:
                                 penyempitan domain vs run sebelumnya =
                                 SCOPE_LAUNDERING (diagnostic). */
+    MYC_GATE_COMPARE,        /* (Fase 5, A4/DS-04) differential oracle pair:
+                                myc compare ref.c new.c [func...] --
+                                baterai input bersama dijalankan pada KEDUA
+                                versi, perilaku (return + errno + digest +
+                                exit) dibandingkan per kasus. Semua identik
+                                = behavior-preserving (P1 DIFF); ada
+                                divergen = unexpected_change (finding).
+                                DS-04 semantic delta escrow: ABI signature
+                                + domain hash ikut dibandingkan. */
     MYC_GATE_COUNT
 } myc_gate_id;
 
@@ -568,6 +577,13 @@ typedef struct {
     int  no_assumptions;
     /* Fase 5, A3 (--exhaustive): gate Small-Domain Exhaustive Proof. */
     int         exhaustive;
+    /* Fase 5, A4: subcommand `myc compare ref.c new.c [func...]`.
+     * compare_files = kedua path (argv). compare_funcs = filter nama
+     * fungsi opsional (null-terminated? tidak: pakai count). */
+    char       *compare_ref_path;
+    char       *compare_new_path;
+    char      **compare_funcs;
+    int         compare_nfuncs;
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
@@ -923,6 +939,29 @@ typedef struct {
     char          *exhaustive_harness_sha256;/* malloc'd, freed result_free */
     char          *exhaustive_stdout_text;   /* malloc'd, freed result_free */
     char          *exhaustive_stderr_text;   /* malloc'd, freed result_free */
+    /* --- Fase 5, A4 (differential oracle pair, DS-04) ---
+     * ran_compare=1 setelah myc_compare_gate dijalankan (subcommand
+     * `myc compare`). compare_funcs/cases = fungsi & kasus yang
+     * dibandingkan; identical = kasus dengan perilaku sama (ret + errno +
+     * output digest + exit); divergent = unexpected_change. preserved=1
+     * bila semua identik (behavior-preserving, P1 DIFF). delta = daftar
+     * kasus divergen (teks, arena). abi_same = ABI signature identik;
+     * domain_same = domain hash identik. unobserved = fungsi yang tak
+     * bisa dibandingkan (pointer return / void? / tak ada di kedua file).
+     * compare_report = laporan ringkas (arena). */
+    int            ran_compare;
+    int            compare_funcs;
+    long           compare_cases;
+    long           compare_identical;
+    long           compare_divergent;
+    int            compare_preserved;
+    int            compare_abi_same;
+    int            compare_domain_same;
+    int            compare_unobserved;
+    char          *compare_report;           /* arena */
+    char          *compare_delta;            /* arena */
+    char           compare_ref_digest[65];   /* sha256 stdout ref */
+    char           compare_new_digest[65];   /* sha256 stdout new */
 
     /* internal: gate mana yang dijalankan terakhir */
     int         ran_preprocess;
