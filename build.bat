@@ -4,7 +4,7 @@ rem Menghasilkan myc.exe, mcp.exe (MCP server, P9), dan argv_probe.exe.
 
 setlocal
 set GCC=gcc
-set PIPELINE=myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c
+set PIPELINE=myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c
 set FLAGS=-O2 -std=c11 -Wall -Wextra
 
 echo [build] myc.exe

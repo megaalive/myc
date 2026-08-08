@@ -376,6 +376,8 @@ void myc_report_text(const myc_result *res)
             printf("  run_stdout:\n%s\n", res->run_stdout_text);
         if (res->run_stderr_text && res->run_stderr_text[0])
             printf("  run_stderr:\n%s\n", res->run_stderr_text);
+        if (res->perturb_report)
+            printf("  perturb: %s\n", res->perturb_report);
     }
     if (res->run_sanitizer_detected)
         printf("sanitizer: %s\n", res->run_sanitizer_marker);

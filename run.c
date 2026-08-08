@@ -44,6 +44,7 @@
 
 #include "contract.h"
 #include "gate.h"
+#include "perturb.h"
 #include "proc.h"
 #include "sha256.h"
 
@@ -809,6 +810,13 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
                         "run bersih");
     myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_GATE_END,
                             "verification run selesai: clean");
+
+    /* Fase 6 (--perturb): determinisme lintas env -- jalankan ulang
+     * binary dengan env diubah; observasi NON-blocking (verdict tetap). */
+    if (req->perturb) {
+        myc_perturb_gate(req, res, exe_path, tmp_dir, RUN_ENV,
+                         req->run_stdin, req->run_stdin_len);
+    }
     goto out;
 
 out:

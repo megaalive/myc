@@ -1630,6 +1630,11 @@ int main(int argc, char **argv)
                 /* Fase 5 C4: target matrix bare metal (cross-compiler). */
                 req.matrix = 1;
                 known = 1;
+            } else if (strcmp(argv[i], "--perturb") == 0) {
+                /* Fase 6: environment perturbation -- determinisme lintas
+                 * env (TZ/locale/PATH/HOME); NON-blocking observasi. */
+                req.perturb = 1;
+                known = 1;
             } else if (strcmp(argv[i], "--negative") == 0) {
                 req.negative = 1; known = 1;
             } else if (strcmp(argv[i], "--require-complete") == 0) {

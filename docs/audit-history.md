@@ -2173,3 +2173,17 @@ Perluasan A2 (divergence) ke MATRIKS TARGET: "char di ARM tidak sama
 - Gap = hazard class / backend TANPA fixture, dilaporkan eksplisit
   (NON-blocking observasi). Baseline: 7/7 hazard + 10/10 backend.
 - Regresi CI: `_ci_linux.sh` 6b + `_regress_run.bat`. Self-dogfood OK.
+
+### (15) Fase 6 — Environment Perturbation (--perturb) — `perturb.c/.h`
+
+"Hasil verifikasi tidak boleh bergantung mesin". Flag `--perturb`:
+
+- Setelah run utama, jalankan ulang binary verification dengan 4 env
+  diubah: TZ=UTC+14, LC_ALL=tr_TR.UTF-8, PATH=/nonexistent, HOME+TERM
+  (base env RUN_ENV dipertahankan; override via proc env array).
+- Bandingkan stdout (sha256) + exit code + deteksi sanitizer vs
+  baseline. Semua sama = DETERMINISTIK; ada beda = ENV-SENSITIVE
+  dengan daftar env penyebab (observasi NON-blocking, verdict tetap).
+- Fixture `pert_tz.c` (localtime/TZ-sensitive) diverifikasi terdeteksi
+  ENV-SENSITIVE; ok_hello tetap DETERMINISTIK. Regresi CI 6c.
+  Self-dogfood OK.

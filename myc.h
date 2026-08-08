@@ -641,6 +641,11 @@ typedef struct {
      * tersedia, dump macro target, bandingkan dgn host -> portability
      * matrix (asumsi yang berubah antar target). NON-blocking. */
     int         matrix;
+    /* Fase 6 (Self-Challenge): --perturb -- environment perturbation --
+     * jalankan ulang program verification dengan env diubah (TZ, locale,
+     * PATH, HOME/TERM), bandingkan stdout/exit/sanitizer vs baseline.
+     * NON-blocking observasi: hasil berubah = env-sensitive. */
+    int         perturb;
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
@@ -1103,6 +1108,14 @@ typedef struct {
      * ditemukan; matrix_built = compile -c sukses; matrix_deltas =
      * fakta (char/ptr/endianness) yang berubah vs host; matrix_report
      * (arena) = portability matrix. NON-blocking observasi. */
+    /* --- Fase 6 (--perturb, environment perturbation) ---
+     * perturb_ran=1 setelah gate; perturb_changed = jumlah env variant
+     * yang mengubah perilaku (stdout/exit/sanitizer vs baseline);
+     * perturb_report (arena). NON-blocking observasi. */
+    int            perturb_ran;
+    int            perturb_changed;
+    char          *perturb_report;      /* arena */
+
     int            ran_matrix;
     int            matrix_targets;
     int            matrix_available;
