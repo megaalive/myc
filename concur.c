@@ -162,8 +162,7 @@ static int concur_mutex_id(concur_state *st, const char *name)
 static void concur_collect(const char *source, concur_state *st)
 {
     char *work = (char *)malloc(strlen(source) + 1);
-    char *save = NULL;
-    char *line;
+    char *cur;
     int depth = 0;
     char pending_func[64] = "";
 
@@ -171,11 +170,27 @@ static void concur_collect(const char *source, concur_state *st)
         return;
     strcpy(work, source);
 
-    line = strtok_r(work, "\n", &save);
-    while (line) {
+    /* Split baris manual (strtok_r adalah POSIX: tersembunyi di glibc
+     * dengan -std=c11 -- tidak portabel). */
+    cur = work;
+    while (cur && *cur) {
+        char *nl = strchr(cur, '\n');
+        char linebuf[600];
+        const char *line = cur;
         char cleaned[512];
         char mname[64];
         int i;
+        size_t linelen;
+
+        if (nl)
+            *nl = '\0';
+        linelen = strlen(cur);
+        if (linelen > sizeof(linebuf) - 1)
+            linelen = sizeof(linebuf) - 1;
+        memcpy(linebuf, cur, linelen);
+        linebuf[linelen] = '\0';
+        line = linebuf;
+
         concur_strip_line(cleaned, line, sizeof(cleaned));
 
         /* nama fungsi terduga pada baris ini (heuristik) */
@@ -216,7 +231,7 @@ static void concur_collect(const char *source, concur_state *st)
                     r->locks[r->nlock++] = id;
             }
         }
-        line = strtok_r(NULL, "\n", &save);
+        cur = nl ? nl + 1 : cur + strlen(cur);
     }
     free(work);
 }

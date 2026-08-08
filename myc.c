@@ -866,6 +866,7 @@ static void myc_ledger_integrate(const myc_request *req, myc_result *res)
     myc_ledger_write(&entry);
 
     free(scenario_hash);
+    free(entry.timestamp);
     free(entry.gate_status);
     free(entry.verdict);
     free(entry.finding);
