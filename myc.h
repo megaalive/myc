@@ -622,6 +622,12 @@ typedef struct {
      * malloc, fopen, exit, ...) dilaporkan sebagai observasi NON-blocking
      * (bukan warning senyap). */
     int         freestanding;
+    /* Fase 5, C5 (--scenario <name>): scenario pack (profil JSON) yang
+     * mengaktifkan resep gate per domain sekaligus. "auto" = D3: tebak
+     * dari struktur source. scenario_file = path profil user (opsional;
+     * default scenarios.json di cwd). Malloc'd, di-free caller main. */
+    char       *scenario;
+    char       *scenario_file;
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
@@ -1049,6 +1055,16 @@ typedef struct {
     int            ran_freestanding;
     int            freestanding_api_hits;
     char          *freestanding_report; /* arena */
+    /* --- Fase 5, C5 (--scenario) / D3 (auto) / DS-12 (env contract) ---
+     * scenario_applied=1 bila scenario diterapkan sebelum pipeline;
+     * scenario_auto=1 bila D3 menebak resep dari struktur source;
+     * scenario_name (arena) = profil terpakai; scenario_report (arena)
+     * = desc + flags aktif + env contract (DS-12: stack_budget, no_heap,
+     * no_recursion, ...). Verdict tidak pernah berubah karena scenario. */
+    int            scenario_applied;
+    int            scenario_auto;
+    char          *scenario_name;       /* arena */
+    char          *scenario_report;     /* arena */
 
     /* internal: gate mana yang dijalankan terakhir */
     int         ran_preprocess;

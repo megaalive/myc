@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c; do
+         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -520,6 +520,38 @@ if ./myc check test/fixtures/mmio_bad.c --no-cache 2>&1 | grep -qF "MMIO deref a
     fail "C3 bare-metal: rule aktif tanpa mode freestanding (harus tidak)"
 else
     note "C3 bare-metal: rule hanya aktif di mode freestanding"
+fi
+
+# --- 5o. C5 Scenario Packs + D3 auto (DS-12) ---
+if ./myc scenario list 2>&1 | grep -qF "firmware"; then
+    note "C5 scenario: list memuat profil firmware"
+else
+    fail "C5 scenario: scenario list tidak memuat firmware"
+fi
+if ./myc scenario info firmware 2>&1 | grep -qF "stack_budget=4096"; then
+    note "C5 scenario: env contract (DS-12) terlihat di info firmware"
+else
+    fail "C5 scenario: env DS-12 tidak terlihat di info firmware"
+fi
+if ./myc check test/fixtures/scen_parser.c --scenario auto --no-cache 2>&1 | grep -qF "scenario (C5): library"; then
+    note "C5 scenario: auto menebak library (kontrak //@)"
+else
+    fail "C5 scenario: auto tidak menebak library"
+fi
+if ./myc check test/fixtures/mmio_bad.c --scenario auto --no-cache 2>&1 | grep -qF "scenario (C5): firmware"; then
+    note "C5 scenario: auto menebak firmware (pola volatile/ISR)"
+else
+    fail "C5 scenario: auto tidak menebak firmware"
+fi
+if ./myc check tests/ok_hello.c --scenario cli-daily --no-cache 2>&1 | grep -qF "scenario (C5): cli-daily"; then
+    note "C5 scenario: profil eksplisit diterapkan"
+else
+    fail "C5 scenario: profil eksplisit tidak diterapkan"
+fi
+if ./myc check tests/ok_hello.c --scenario bogus --no-cache 2>&1 | grep -qF "scenario tak dikenal"; then
+    note "C5 scenario: nama tak dikenal = fail-fast"
+else
+    fail "C5 scenario: nama tak dikenal tidak ditolak"
 fi
 
 # --- 6. dogfood tool ---

@@ -2078,3 +2078,31 @@ report teks "bare-metal (C3/DS-11): N observasi", JSON
 fixture `mmio_bad.c` (5 pola) vs `mmio_clean.c` (idiom volatile/READ_REG/
 memcpy) membuktikan deteksi tanpa false-positive; regresi di
 `_ci_linux.sh` 5n + `_regress_run.bat`.
+
+### (11) C5 — Scenario Packs + D3 auto budget (DS-12) — `scenario.c/.h`
+
+"Resep verifikasi per domain" dari profil JSON (bukan hardcode logika),
+modul baru `scenario.c`:
+
+- **Profil = data JSON** (skema divalidasi parser ketat `json.c`):
+  `cli-daily` (run+analyzer), `library` (driver+exhaustive), `parser`
+  (fuzz+run), `firmware` (freestanding+stack+divergence), `auto` (D3).
+  User dapat menimpa/menambah via `scenarios.json` di cwd atau
+  `--scenario-file <path>`; item user menimpa bawaan dengan nama sama.
+- **Satu perintah**: `myc check boot.c --scenario stm32-baremetal`
+  mengaktifkan seluruh resep gate sekaligus; `myc scenario list` /
+  `myc scenario info <name>`. Skema: `{version, scenarios[{name, desc,
+  flags[], env{}}]}`; flags tak dikenal diabaikan (data, non-blocking).
+- **D3 auto budget**: `--scenario auto` menebak resep TERKECIL yang
+  cukup dari struktur source (pola firmware: volatile/ISR/packed;
+  kontrak `//@`; ada `main`) dan melaporkan alasan ("terdeteksi kontrak
+  //@...") — assurance tertinggi yang terjangkau tanpa gate terbuang.
+- **DS-12 env contract**: scenario mendefinisikan DUNIA program
+  (stack_budget, no_heap, no_recursion) — tercatat di scenario_report;
+  enforcement lewat gate yang diaktifkan (freestanding trap heap, stack
+  gate rekursi). Verdict TIDAK pernah berubah karena scenario.
+- Report teks "scenario (C5): <name>", JSON `scenario.applied/auto/name/
+  report`. Nama tak dikenal = fail-fast. Bug ditemukan saat implementasi:
+  `json_parse` return 1=sukses (bukan 0), dan `json_sb_escape` di
+  report.c menambah quotes sendiri (jangan tulis `"` pembuka).
+  Fixture `scen_parser.c`; regresi `_ci_linux.sh` 5o + `_regress_run.bat`.

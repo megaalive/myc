@@ -321,6 +321,11 @@ void myc_report_text(const myc_result *res)
         printf("bare-metal (C3/DS-11): %d observasi MMIO/volatile/alignment/"
                "ISR (mode freestanding, NON-blocking)\n",
                res->lint_embedded_hits);
+    /* C5/DS-12: scenario pack terpakai (resep gate per domain). */
+    if (res->scenario_applied)
+        printf("scenario (C5): %s%s\n  %s\n", res->scenario_name,
+               res->scenario_auto ? " (auto/D3)" : "",
+               res->scenario_report ? res->scenario_report : "");
 
     /* Scope Certificate (Fase 4, 9.11): daftar persis apa yang diperiksa.
      * Hanya memuat metrik yang BENAR-BENAR diukur; kolom yang tidak diukur
@@ -873,6 +878,15 @@ char *myc_result_to_json(const myc_result *res)
     /* MYC-AUDIT-014: jumlah observasi lint heuristik (non-blocking). */
     json_sb_printf(&b, "\"lint_observations\":%d,", res->lint_observations);
     json_sb_printf(&b, "\"lint_embedded_hits\":%d,", res->lint_embedded_hits);
+    if (res->scenario_applied) {
+        json_sb_printf(&b, "\"scenario\":{\"applied\":true,\"auto\":%s,"
+                           "\"name\":",
+                       res->scenario_auto ? "true" : "false");
+        json_sb_escape(&b, res->scenario_name);
+        json_sb_printf(&b, ",\"report\":");
+        json_sb_escape(&b, res->scenario_report);
+        json_sb_puts(&b, "},");
+    }
     json_sb_printf(&b, "\"truncated\":%s,", res->truncated ? "true" : "false");
     json_sb_printf(&b, "\"sanitizer_detected\":%s,", res->run_sanitizer_detected ? "true" : "false");
     if (res->run_sanitizer_detected)
@@ -1463,6 +1477,13 @@ void myc_report_json_summary(const myc_result *res)
     json_sb_printf(&b, "\"duration_ms\":%llu,", (unsigned long long)res->duration_ms);
     json_sb_printf(&b, "\"lint_observations\":%d,", res->lint_observations);
     json_sb_printf(&b, "\"lint_embedded_hits\":%d,", res->lint_embedded_hits);
+    if (res->scenario_applied) {
+        json_sb_printf(&b, "\"scenario\":{\"applied\":true,\"auto\":%s,"
+                           "\"name\":",
+                       res->scenario_auto ? "true" : "false");
+        json_sb_escape(&b, res->scenario_name);
+        json_sb_puts(&b, "},");
+    }
     /* Fase 5 B4 (DS-08): harvest komentar-biasa (observasi). */
     json_sb_printf(&b, "\"harvest\":{\"candidates\":%d,\"validated\":%d,"
                        "\"unbound\":%d},",

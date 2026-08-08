@@ -24,7 +24,7 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-SRCS="myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c"
+SRCS="myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c"
 CC="${CC:-gcc}"
 # POSIX/Windows butuh -pthread untuk stress_threads (pthread_create/join).
 # Deteksi apakah kompiler menerima flag; aman untuk MinGW juga.

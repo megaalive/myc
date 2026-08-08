@@ -47,6 +47,7 @@
 #include "taxonomy.h"
 #include "prompt.h"
 #include "driver.h"
+#include "scenario.h"
 
 /* ------------------------------------------------------------------ */
 /* Implementasi kontrak inti myc                                       */
@@ -1101,7 +1102,7 @@ static void usage(void)
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
         "  myc check <file.c> [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache] [--no-assumptions] [--cwd DIR]\n"
-        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--exhaustive] [--stack [--stack-budget N]] [--fuzz [--fuzz-iters N] [--fuzz-seed S]] [--mutate-audit [--mutate-max N]] [--freestanding] [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete]\n"
+        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--exhaustive] [--stack [--stack-budget N]] [--fuzz [--fuzz-iters N] [--fuzz-seed S]] [--mutate-audit [--mutate-max N]] [--freestanding] [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete] [--scenario NAME [--scenario-file PATH]]\n"
         "  myc check <file.c> --divergence   (Fase 4 A2: matriks toolchain {gcc,clang,tcc} x {-O0,-O2}, klasifikasi DS-02)\n"
         "  myc check <file.c> [--require-assumptions-closed] [--assumption-ack id:status,...]   (Fase 4 A1: ledger asumsi portabilitas)\n"
         "  myc check <file.c> [--timeout MS] [--output-cap BYTES]\n"
@@ -1124,6 +1125,11 @@ static void usage(void)
         "                        baterai input bersama dijalankan pada KEDUA\n"
         "                        versi; identik = behavior-preserving (P1 DIFF),\n"
         "                        divergen = unexpected_change)\n"
+        "  myc scenario list\n"
+        "  myc scenario info <name>\n"
+        "                        (C5/DS-12: scenario packs -- resep verifikasi\n"
+        "                        per domain dari profil JSON; D3: --scenario auto\n"
+        "                        menebak resep dari struktur source)\n"
         "  myc version\n");
 }
 
@@ -1399,6 +1405,37 @@ int main(int argc, char **argv)
         return cmd_compare(argv[2], argv[3], argv + 4, argc - 4);
     }
 
+    /* C5 (DS-12): myc scenario list | info <name>. */
+    if (strcmp(argv[1], "scenario") == 0) {
+        char buf[2048];
+        int  rc;
+        if (argc < 3 || (strcmp(argv[2], "list") != 0 &&
+                         strcmp(argv[2], "info") != 0)) {
+            fprintf(stderr, "myc: scenario membutuhkan `list` atau "
+                            "`info <name>\n");
+            return 2;
+        }
+        if (strcmp(argv[2], "info") == 0 && argc < 4) {
+            fprintf(stderr, "myc: scenario info membutuhkan nama profil\n");
+            return 2;
+        }
+        if (strcmp(argv[2], "list") == 0)
+            rc = myc_scenario_list(NULL, buf, sizeof(buf));
+        else
+            rc = myc_scenario_info(argv[3], NULL, buf, sizeof(buf));
+        if (rc == -2) {
+            fprintf(stderr, "myc: profil scenario (scenarios.json) "
+                            "invalid\n");
+            return 1;
+        }
+        if (rc != 0) {
+            fprintf(stderr, "myc: scenario tak dikenal: %s\n", argv[3]);
+            return 1;
+        }
+        printf("%s", buf);
+        return 0;
+    }
+
     if (strcmp(argv[1], "check") != 0 && strcmp(argv[1], "context") != 0) {
         usage();
         return 2;
@@ -1535,6 +1572,24 @@ int main(int argc, char **argv)
             } else if (strcmp(argv[i], "--freestanding") == 0) {
                 /* Fase 5 C1: mode C tanpa OS (firmware). */
                 req.freestanding = 1;
+                known = 1;
+            } else if (strcmp(argv[i], "--scenario") == 0) {
+                /* Fase 5 C5 (DS-12): scenario pack per domain; "auto"
+                 * = D3 (tebak resep dari struktur source). */
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "myc: --scenario membutuhkan "
+                                    "argumen (nama profil)\n");
+                    return 2;
+                }
+                req.scenario = argv[++i];
+                known = 1;
+            } else if (strcmp(argv[i], "--scenario-file") == 0) {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "myc: --scenario-file membutuhkan "
+                                    "argumen (path profil JSON)\n");
+                    return 2;
+                }
+                req.scenario_file = argv[++i];
                 known = 1;
             } else if (strcmp(argv[i], "--negative") == 0) {
                 req.negative = 1; known = 1;
@@ -1751,6 +1806,24 @@ int main(int argc, char **argv)
          * report). Aman: kind=MEMORY tidak membaca file_path di loader;
          * hanya dipakai sebagai identitas sumber asal (SOL-18). */
         req.input.file_path = is_stdin ? NULL : argv[2];
+        /* C5/D3 (DS-12): terapkan scenario pack SEBELUM pipeline -- ia
+         * mengubah request (mengaktifkan resep gate). auto membaca source
+         * untuk menebak resep. Error profil/skenario = fail-fast. */
+        if (req.scenario) {
+            int serc = myc_scenario_apply(&req, req.scenario, src, len,
+                                          req.scenario_file, &res);
+            if (serc == -2) {
+                fprintf(stderr, "myc: profil scenario invalid\n");
+                myc_result_free(&res);
+                return 1;
+            }
+            if (serc != 0) {
+                fprintf(stderr, "myc: scenario tak dikenal: %s\n",
+                        req.scenario);
+                myc_result_free(&res);
+                return 1;
+            }
+        }
         myc_run(&req, &res);
         /* --write-repro: tulis .myc-witness/ repro directory (Fase 1).
          * Harus sebelum free(src) karena membutuhkan source. */

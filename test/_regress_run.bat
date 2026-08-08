@@ -85,7 +85,7 @@ myc.exe check tests\ok_hello.c --cwd "" > %OUT% 2>&1
 findstr /C:"invalid_cwd" %OUT% >nul && echo [OK] --cwd kosong ditolak (invalid_cwd) || echo [WARN] --cwd kosong tidak ditolak
 del %OUT%
 echo --- self-dogfooding: semua source myc harus OK
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c) do (
   echo === %%f
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%
@@ -312,6 +312,19 @@ findstr /C:"cast uint8_t* ke tipe multi-byte" %OUT% >nul && echo [OK] C3 alignme
 findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] C3 observasi non-blocking || echo [WARN] C3 mengubah verdict
 myc.exe check test\fixtures\mmio_clean.c --freestanding --no-cache > %OUT% 2>&1
 findstr /C:"bare-metal (C3/DS-11)" %OUT% >nul && echo [WARN] C3 fixture bersih memunculkan observasi || echo [OK] C3 idiom benar bersih
+del %OUT%
+rem --- Fase 5 C5: Scenario Packs + D3 auto (DS-12)
+echo --- C5: scenario packs (profil JSON per domain)
+myc.exe scenario list > %OUT% 2>&1
+findstr /C:"firmware" %OUT% >nul && echo [OK] C5 list memuat firmware || echo [WARN] C5 list tanpa firmware
+myc.exe scenario info firmware > %OUT% 2>&1
+findstr /C:"stack_budget=4096" %OUT% >nul && echo [OK] C5 env DS-12 terlihat || echo [WARN] C5 env DS-12 hilang
+myc.exe check test\fixtures\scen_parser.c --scenario auto --no-cache > %OUT% 2>&1
+findstr /C:"scenario (C5): library" %OUT% >nul && echo [OK] C5 auto -> library || echo [WARN] C5 auto bukan library
+myc.exe check test\fixtures\mmio_bad.c --scenario auto --no-cache > %OUT% 2>&1
+findstr /C:"scenario (C5): firmware" %OUT% >nul && echo [OK] C5 auto -> firmware || echo [WARN] C5 auto bukan firmware
+myc.exe check tests\ok_hello.c --scenario bogus --no-cache > %OUT% 2>&1
+findstr /C:"scenario tak dikenal" %OUT% >nul && echo [OK] C5 nama tak dikenal fail-fast || echo [WARN] C5 nama tak dikenal tidak ditolak
 del %OUT%
 rem --- fix review: ; membuang pending basi + komentar blok bukan klausa
 myc.exe check test\fixtures\contract_stale_pending.c > %OUT% 2>&1
