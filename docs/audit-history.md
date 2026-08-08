@@ -2206,3 +2206,21 @@ Perluasan A2 (divergence) ke MATRIKS TARGET: "char di ARM tidak sama
   OK. Bug yang ditemukan saat develop: (a) region detection pakai net
   brace per baris -> fungsi satu-baris tak terbuka; (b) hanya satu lock
   per baris yang diambil; (c) nama fungsi diambil dari '(' terakhir.
+
+### (17) Fase 6 — Counterexample Seeds -> Regression Corpus — `regress.c/.h`
+
+"Counterexample seeds menjadi regression otomatis" + corpus memory:
+
+- Setiap counterexample yang DITEMUKAN auto-disimpan ke
+  `.myc/regression/<kind>_<sha8>.c` + index (idempoten per sha8):
+  fuzz crash (dengan seed PRNG agar input reproduksibel), exhaustive
+  counterexample, driver violation. NON-blocking (gagal menulis =
+  diabaikan senyap).
+- `myc regression list` = isi corpus; `myc regression run` = replay
+  semua seed (backstop deteksi: toolchain berhenti menangkap crash =
+  terlihat); `myc regression run <file.c>` = replay semua seed-INPUT
+  pada source SAAT INI: masih violation = bug belum diperbaiki, OK =
+  RESOLVED (fix tidak bisa regress diam-diam).
+- Fixture `fuzz_div0.c` (buggy) + `fuzz_div0_fixed.c` (fixed): CI
+  memverifikasi seed tersimpan dan replay fixed -> RESOLVED.
+  Self-dogfood OK.

@@ -84,6 +84,16 @@ if errorlevel 2 (
 myc.exe check tests\ok_hello.c --cwd "" > %OUT% 2>&1
 findstr /C:"invalid_cwd" %OUT% >nul && echo [OK] --cwd kosong ditolak (invalid_cwd) || echo [WARN] --cwd kosong tidak ditolak
 del %OUT%
+rem --- Fase 6 Self-Challenge: Regression Corpus (myc regression)
+if exist .myc\regression rmdir /s /q .myc\regression
+myc.exe check test\fixtures\fuzz_div0.c --fuzz --fuzz-iters 2000 --no-cache > %OUT% 2>&1
+findstr /C:"verdict:   DRIVER_VIOLATION" %OUT% >nul && echo [OK] Fase 6 regression fuzz crash ditemukan || echo [WARN] Fase 6 regression fuzz crash tidak ditemukan
+myc.exe regression list > %OUT% 2>&1
+findstr /C:"seed ada" %OUT% >nul && echo [OK] Fase 6 regression seed tersimpan || echo [WARN] Fase 6 regression seed tidak tersimpan
+myc.exe regression run test\fixtures\fuzz_div0_fixed.c > %OUT% 2>&1
+findstr /C:"RESOLVED" %OUT% >nul && echo [OK] Fase 6 regression fix tidak regress || echo [WARN] Fase 6 regression fix tidak resolved
+if exist .myc\regression rmdir /s /q .myc\regression
+del %OUT%
 rem --- Fase 6 Self-Challenge: Concurrency Probe (--thread-probe)
 myc.exe check test\fixtures\con_inv.c --thread-probe --no-cache > %OUT% 2>&1
 findstr /C:"LOCK-ORDER INVERSION" %OUT% >nul && echo [OK] Fase 6 thread-probe inversion terdeteksi || echo [WARN] Fase 6 thread-probe inversion tidak terdeteksi
@@ -108,7 +118,7 @@ myc.exe canary list > %OUT% 2>&1
 findstr /C:"11 canary untuk 9 backend" %OUT% >nul && echo [OK] Fase 6 canary registry lengkap || echo [WARN] Fase 6 canary registry tidak lengkap
 del %OUT%
 echo --- self-dogfooding: semua source myc harus OK
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c) do (
   echo === %%f
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%

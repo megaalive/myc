@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c; do
+         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -618,6 +618,25 @@ if ./myc check test/fixtures/con_inv.c --thread-probe --no-cache 2>&1 | grep -qF
 else
     fail "Fase 6 thread-probe: mengubah verdict (harus observasi)"
 fi
+
+# --- 6e. Fase 6 Self-Challenge: Regression Corpus (myc regression) ---
+rm -rf .myc/regression
+if ./myc check test/fixtures/fuzz_div0.c --fuzz --fuzz-iters 2000 --no-cache 2>&1 | grep -qF "verdict:   DRIVER_VIOLATION"; then
+    note "Fase 6 regression: fuzz crash ditemukan (seed tersimpan)"
+else
+    fail "Fase 6 regression: fuzz crash tidak ditemukan"
+fi
+if ./myc regression list 2>&1 | grep -qF "seed ada"; then
+    note "Fase 6 regression: counterexample tersimpan di corpus"
+else
+    fail "Fase 6 regression: seed tidak tersimpan"
+fi
+if ./myc regression run test/fixtures/fuzz_div0_fixed.c 2>&1 | grep -qF "RESOLVED"; then
+    note "Fase 6 regression: fix tidak regress (seed -> RESOLVED)"
+else
+    fail "Fase 6 regression: fix tidak terdeteksi resolved"
+fi
+rm -rf .myc/regression
 
 # --- 6. dogfood tool ---
 for f in dogfood/dogfood_ring.c dogfood/dogfood_config.c dogfood/dogfood_tilemap.c; do

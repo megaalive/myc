@@ -50,6 +50,7 @@
 #include "scenario.h"
 #include "canary.h"
 #include "testaudit.h"
+#include "regress.h"
 
 /* ------------------------------------------------------------------ */
 /* Implementasi kontrak inti myc                                       */
@@ -1405,6 +1406,18 @@ int main(int argc, char **argv)
             return 2;
         }
         return cmd_compare(argv[2], argv[3], argv + 4, argc - 4);
+    }
+
+    /* Fase 6 (Self-Challenge): myc regression list | run. */
+    if (strcmp(argv[1], "regression") == 0) {
+        if (argc >= 3 && strcmp(argv[2], "list") == 0)
+            return myc_regress_list(stdout);
+        if (argc >= 3 && strcmp(argv[2], "run") == 0)
+            return myc_regress_run(stdout,
+                                   argc >= 4 ? argv[3] : NULL);
+        fprintf(stderr,
+                "myc: regression membutuhkan `list` atau `run [file.c]`\n");
+        return 2;
     }
 
     /* Fase 6 (Self-Challenge): myc audit-tests -- kualitas corpus test. */

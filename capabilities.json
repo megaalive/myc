@@ -31,7 +31,7 @@
     "--analyze", "--checked", "--run", "--run-stdin", "--prove", "--filc",
     "--driver", "--exhaustive", "--stack", "--stack-budget", "--fuzz", "--fuzz-iters", "--fuzz-seed", "--mutate-audit", "--mutate-max", "--freestanding", "--scenario", "--scenario-file", "--matrix", "--metamorphic", "--divergence", "--negative", "--quorum", "--require-complete",
     "compare (subcommand)", "scenario (subcommand)", "canary (subcommand)",
-    "audit-tests (subcommand)",
+    "audit-tests (subcommand)", "regression (subcommand)",
     "--json", "--json-summary", "--agent", "--strict", "--level", "--no-lint", "--cwd",
     "--timeout", "--output-cap", "--write-repro", "--no-cache",
     "--tx-verify", "--finding-id", "--edit-region", "--budget",

@@ -55,6 +55,7 @@ myc canary list | run [backend]          (canary swarm, Fase 6)
 myc audit-tests                          (test-quality audit, Fase 6)
 --perturb                                (environment perturbation, Fase 6)
 --thread-probe                            (concurrency lock-order + TSan, Fase 6)
+myc regression list | run [file.c]        (counterexample seeds, Fase 6)
 myc context <file.c> [--finding-id ID] [--budget 4K|8K|16K] [gate flags...]
 myc policy
 myc probe
