@@ -316,6 +316,36 @@ typedef enum {
     MYC_CONF_CONFIRMED        /* bukti semantik / syntactic pasti */
 } myc_confidence;
 
+/* ------------------------------------------------------------------ */
+/* B3: LLM Error Taxonomy (DS-07)                                      */
+/* ------------------------------------------------------------------ */
+/* Sumbu kedua klasifikasi finding: kelas KOGNITIF -- cara model biasanya
+ * salah -- bukan hanya semantik C. Urutan enum = prioritas coaching
+ * (kecil = diprioritaskan; lihat coach_priority di taxonomy.c).
+ * Classifier rule-based, NON-blocking observasi. */
+typedef enum {
+    MYC_TAX_UNCLASSIFIED = 0,
+    MYC_TAX_HALLUCINATED_API,   /* API dianggap lebih aman dari sebenarnya */
+    MYC_TAX_MISSING_GUARD,      /* null-deref / unchecked alloc / uninit */
+    MYC_TAX_OFF_BY_ONE,         /* batas loop/index salah satu */
+    MYC_TAX_UB_ASSUMPTION,      /* implementation-defined / UB */
+    MYC_TAX_TYPE_CONFUSION,     /* cast / signedness / lebar tipe */
+    MYC_TAX_IGNORED_RETURN,     /* return value dibuang */
+    MYC_TAX_WRONG_CONSTANT,     /* konstanta/batas salah */
+    MYC_TAX_CHURN,              /* mengubah kode yang tidak terkait */
+    MYC_TAX_COUNT
+} myc_taxonomy_class;
+
+/* Satu item coaching (tersimpan di res->coaching[]). String where di
+ * arena milik hasil. */
+typedef struct {
+    myc_taxonomy_class cls;
+    int   line;                  /* 0 bila tak tersedia */
+    char *where;                 /* arena: ringkasan lokasi + pesan */
+} myc_coaching_item;
+
+#define MYC_MAX_COACHING 10
+
 /* Status klausa kontrak (MYC-AUDIT-025, roadmap 7.4): hasil validasi
  * ekspresi kontrak-lite. Purity adalah SYARAT inject: klausa ber-efek
  * samping TIDAK pernah di-inject sebagai assert (safety). */
@@ -727,6 +757,16 @@ typedef struct {
     int         harvest_validated;    /* pure + terikat fungsi */
     int         harvest_unbound;      /* pure tapi tak terikat */
     char       *harvest_report;       /* arena */
+
+    /* --- Fase 5, B3 (LLM Error Taxonomy + coaching transcript, DS-07) ---
+     * Klasifikasi kognitif tiap finding + transcript untuk dibaca model.
+     * coaching[] (arena where), coaching_class_count[] per kelas,
+     * coaching_report = transcript teks (arena). NON-blocking observasi.
+     * Dibangun oleh myc_coach_build() (taxonomy.c) di akhir myc_run. */
+    myc_coaching_item coaching[MYC_MAX_COACHING];
+    int               coaching_count;
+    int               coaching_class_count[MYC_TAX_COUNT];
+    char             *coaching_report;   /* arena */
 
     /* --- hasil checked build (D1.2, P8, --checked) --- */
     int         ran_checked;            /* 1 bila gate checked-build dijalankan */

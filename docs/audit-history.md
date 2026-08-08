@@ -1840,3 +1840,27 @@ Fixture: `test/fixtures/harvest_contracts.c` (6 kandidat: 5 validated,
 1 prose non-C ditolak). Regresi di `_ci_linux.sh` (5f) + `_regress_run.bat`.
 
 Semua source: `verdict: OK` (self-dogfooding); build Windows + POSIX bersih.
+
+### (2) B3 — LLM Error Taxonomy + coaching transcript (DS-07) — `taxonomy.c/.h`
+
+Sumbu kedua klasifikasi finding: kelas **kognitif** (cara model biasanya
+salah), bukan hanya semantik C. `myc_taxonomy_classify()` (rule-based,
+substring case-insensitive, deterministik) memetakan pesan diagnostic ke
+`HALLUCINATED_API / MISSING_GUARD / OFF_BY_ONE / UB_ASSUMPTION /
+TYPE_CONFUSION / IGNORED_RETURN / WRONG_CONSTANT / CHURN`.
+
+`myc_coach_build()` menyusun **coaching transcript** (5-10 baris) yang
+ditulis untuk dibaca model: prioritas per kelas + strategi perbaikan
+(`myc_taxonomy_strategy`) + instruksi anti-churn. Sumber: diagnostics
+terstruktur (gcc/lint/negative/contract) + witness (hard finding) + delta
+ledger (churn). Output teks + JSON (`"coaching":{items,report}`) +
+`--json-summary` (`"coaching":[{class,line}]`). NON-blocking observasi.
+
+Dedup + urutan stabil (prioritas kelas, lalu line); deterministik.
+`myc_coach_build` dipanggil di `myc_run` (jalur miss DAN cache-hit, di
+samping `myc_quorum_analysis`); tipe (`myc_taxonomy_class`,
+`myc_coaching_item`) di `myc.h`; `taxonomy.c` masuk PIPELINE
+(build.sh/build.bat/_audit018.sh/stress_threads) + self-dogfooding list.
+
+Regresi di `_ci_linux.sh` (5g) + `_regress_run.bat`: bad_realloc → 2 item
+`missing_guard` + strategi; ok_hello tanpa coaching; verdict tidak berubah.

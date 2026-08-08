@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c; do
+         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -305,6 +305,38 @@ if ./myc check test/fixtures/harvest_contracts.c --no-cache 2>&1 | grep -qF "ver
     note "B4 harvest non-blocking (verdict tetap OK)"
 else
     fail "B4 harvest mengubah verdict (harus non-blocking)"
+fi
+
+# --- 5g. B3 LLM Error Taxonomy + coaching transcript (DS-07) ---
+if ./myc check tests/bad_realloc.c --no-cache 2>&1 | grep -qF "coaching (B3): 2 item taksonomi"; then
+    note "B3 coaching: finding diklasifikasi kognitif"
+else
+    fail "B3 coaching: taksonomi tidak muncul"
+fi
+if ./myc check tests/bad_realloc.c --no-cache 2>&1 | grep -qF "[missing_guard]"; then
+    note "B3 coaching: kelas missing_guard terdeteksi"
+else
+    fail "B3 coaching: kelas kognitif hilang"
+fi
+if ./myc check tests/bad_realloc.c --no-cache 2>&1 | grep -qF "strategi: Tambahkan guard"; then
+    note "B3 coaching: strategi per kelas ada"
+else
+    fail "B3 coaching: strategi hilang"
+fi
+if ./myc check tests/bad_realloc.c --no-cache 2>&1 | grep -qF "verdict:   COMPILE_ERROR"; then
+    note "B3 coaching non-blocking (verdict tetap COMPILE_ERROR)"
+else
+    fail "B3 coaching mengubah verdict"
+fi
+if ./myc check tests/bad_realloc.c --no-cache --json-summary 2>&1 | grep -qF '"coaching":[{"class":"missing_guard"'; then
+    note "B3 coaching di --json-summary"
+else
+    fail "B3 coaching hilang di --json-summary"
+fi
+if ! ./myc check tests/ok_hello.c --no-cache 2>&1 | grep -qF "coaching (B3)"; then
+    note "B3 tanpa finding = tanpa coaching"
+else
+    fail "B3 coaching muncul pada source bersih"
 fi
 
 # --- 6. dogfood tool ---

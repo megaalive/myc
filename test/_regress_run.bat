@@ -13,7 +13,7 @@ if errorlevel 1 (
   del test\_tmp_prove_preflight.o 2>nul
 )
 echo --- Fase 5 reentrancy (MYC-AUDIT-008): myc_run paralel bebas race/stale
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\stress_threads.exe test\stress_threads.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c >nul 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\stress_threads.exe test\stress_threads.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c taxonomy.c >nul 2>&1
 if exist test\stress_threads.exe (
   test\stress_threads.exe | findstr "no race" >nul && echo [OK] stress_threads deterministik, no race || echo [WARN] stress_threads race/stale - stress test; lihat issue
 ) else (
@@ -85,7 +85,7 @@ myc.exe check tests\ok_hello.c --cwd "" > %OUT% 2>&1
 findstr /C:"invalid_cwd" %OUT% >nul && echo [OK] --cwd kosong ditolak (invalid_cwd) || echo [WARN] --cwd kosong tidak ditolak
 del %OUT%
 echo --- self-dogfooding: semua source myc harus OK
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c) do (
   echo === %%f
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%
@@ -223,6 +223,18 @@ findstr /C:"perlu //@ syntax (bukan C murni)" %OUT% >nul && echo [OK] B4 prose n
 findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] B4 non-blocking (verdict OK) || echo [WARN] B4 mengubah verdict
 myc.exe check test\fixtures\harvest_contracts.c --no-cache --json-summary > %OUT% 2>&1
 findstr /C:"\"harvest\":{\"candidates\":6,\"validated\":5,\"unbound\":0}" %OUT% >nul && echo [OK] B4 harvest di json-summary || echo [WARN] B4 harvest hilang di json-summary
+del %OUT%
+rem --- Fase 5 B3 (DS-07): LLM Error Taxonomy + coaching transcript
+echo --- B3: finding diklasifikasi ke kelas kognitif + strategi (observasi non-blocking)
+myc.exe check tests\bad_realloc.c --no-cache > %OUT% 2>&1
+findstr /C:"coaching (B3): 2 item taksonomi" %OUT% >nul && echo [OK] B3 coaching 2 item || echo [WARN] B3 coaching item salah
+findstr /C:"[missing_guard]" %OUT% >nul && echo [OK] B3 kelas missing_guard terdeteksi || echo [WARN] B3 kelas kognitif hilang
+findstr /C:"strategi: Tambahkan guard" %OUT% >nul && echo [OK] B3 strategi per kelas ada || echo [WARN] B3 strategi hilang
+findstr /C:"verdict:   COMPILE_ERROR" %OUT% >nul && echo [OK] B3 non-blocking (verdict utuh) || echo [WARN] B3 mengubah verdict
+myc.exe check tests\bad_realloc.c --no-cache --json-summary > %OUT% 2>&1
+findstr /C:"\"coaching\":[{\"class\":\"missing_guard\"" %OUT% >nul && echo [OK] B3 coaching di json-summary || echo [WARN] B3 coaching hilang di json-summary
+myc.exe check tests\ok_hello.c --no-cache > %OUT% 2>&1
+findstr /C:"coaching (B3)" %OUT% >nul && echo [WARN] B3 coaching muncul pada source bersih || echo [OK] B3 tanpa finding = tanpa coaching
 del %OUT%
 rem --- fix review: ; membuang pending basi + komentar blok bukan klausa
 myc.exe check test\fixtures\contract_stale_pending.c > %OUT% 2>&1

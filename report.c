@@ -12,6 +12,7 @@
 #include "gate.h"
 #include "agent.h"
 #include "assume.h"
+#include "taxonomy.h"
 
 const char *myc_verdict_name(myc_verdict v)
 {
@@ -277,6 +278,13 @@ void myc_report_text(const myc_result *res)
                res->harvest_unbound);
         if (res->harvest_report)
             printf("%s", res->harvest_report);
+    }
+    /* Fase 5 B3 (DS-07): coaching transcript untuk model (observasi). */
+    if (res->coaching_count > 0) {
+        printf("coaching (B3): %d item taksonomi kognitif "
+               "(observasi, NON-blocking)\n", res->coaching_count);
+        if (res->coaching_report)
+            printf("%s", res->coaching_report);
     }
     /* Fase 4 A1: ledger asumsi portabilitas (observasi NON-blocking;
      * verdict tidak turun karenanya kecuali --require-assumptions-closed). */
@@ -756,6 +764,21 @@ char *myc_result_to_json(const myc_result *res)
                    res->harvest_candidates, res->harvest_validated,
                    res->harvest_unbound);
     json_sb_escape(&b, res->harvest_report);
+    json_sb_puts(&b, "},");
+    /* Fase 5 B3 (DS-07): coaching transcript (taksonomi kognitif). */
+    json_sb_printf(&b, "\"coaching\":{\"count\":%d,\"items\":[",
+                   res->coaching_count);
+    for (i = 0; i < res->coaching_count; i++) {
+        const myc_coaching_item *c = &res->coaching[i];
+        if (i)
+            json_sb_puts(&b, ",");
+        json_sb_printf(&b, "{\"class\":\"%s\",\"line\":%d,\"where\":",
+                       myc_taxonomy_name(c->cls), c->line);
+        json_sb_escape(&b, c->where);
+        json_sb_puts(&b, "}");
+    }
+    json_sb_puts(&b, "],\"report\":");
+    json_sb_escape(&b, res->coaching_report);
     json_sb_puts(&b, "},");
     json_sb_printf(&b, "\"ran_negative\":%s,", res->ran_negative ? "true" : "false");
     if (res->ran_negative) {
@@ -1269,6 +1292,16 @@ void myc_report_json_summary(const myc_result *res)
                        "\"unbound\":%d},",
                    res->harvest_candidates, res->harvest_validated,
                    res->harvest_unbound);
+    /* Fase 5 B3 (DS-07): coaching items ringkas. */
+    json_sb_printf(&b, "\"coaching\":[");
+    for (i = 0; i < res->coaching_count; i++) {
+        const myc_coaching_item *c = &res->coaching[i];
+        if (i)
+            json_sb_puts(&b, ",");
+        json_sb_printf(&b, "{\"class\":\"%s\",\"line\":%d}",
+                       myc_taxonomy_name(c->cls), c->line);
+    }
+    json_sb_puts(&b, "],");
     json_sb_printf(&b, "\"ran_runtime\":%s,", res->ran_runtime ? "true" : "false");
     json_sb_printf(&b, "\"ran_checked\":%s,", res->ran_checked ? "true" : "false");
     json_sb_printf(&b, "\"ran_prove\":%s,", res->ran_prove ? "true" : "false");

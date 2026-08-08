@@ -44,6 +44,7 @@
 #include "context.h"
 #include "budget.h"
 #include "assume.h"
+#include "taxonomy.h"
 
 /* ------------------------------------------------------------------ */
 /* Implementasi kontrak inti myc                                       */
@@ -970,6 +971,8 @@ void myc_run(const myc_request *req, myc_result *res)
                     /* #3: quorum juga dihitung di jalur file_path/STDIN
                      * (API/MCP), konsisten dengan jalur source in-memory. */
                     myc_quorum_analysis(&req2, res);
+                    /* Fase 5 B3 (DS-07): coaching transcript untuk model. */
+                    myc_coach_build(res);
                     enforce_require_complete(&req2, res);
                     /* Fase 4 A1/DS-01: asumsi terbuka = gap verifikasi
                      * bila --require-assumptions-closed (pola 9.10). */
@@ -992,6 +995,8 @@ void myc_run(const myc_request *req, myc_result *res)
                                        res->assumption_facts_ok
                                            ? &res->host_facts : NULL);
                     myc_quorum_analysis(&req2, res);
+                    /* Fase 5 B3 (DS-07): coaching transcript untuk model. */
+                    myc_coach_build(res);
                     enforce_require_complete(&req2, res);
                     /* SOL-30: pada cache-hit, hasil enforcement budget
                      * contract sudah di-replay utuh dari entry (verdict/
@@ -1016,6 +1021,8 @@ void myc_run(const myc_request *req, myc_result *res)
                 myc_assume_run(eff, res, eff->input.data, eff->input.len,
                                NULL);
             myc_quorum_analysis(eff, res);
+            /* Fase 5 B3 (DS-07): coaching transcript untuk model. */
+            myc_coach_build(res);
             enforce_require_complete(eff, res);
             if (eff->require_assumptions_closed)
                 myc_assume_enforce(eff, res);
@@ -1028,6 +1035,8 @@ void myc_run(const myc_request *req, myc_result *res)
                                res->assumption_facts_ok
                                    ? &res->host_facts : NULL);
             myc_quorum_analysis(eff, res);
+            /* Fase 5 B3 (DS-07): coaching transcript untuk model. */
+            myc_coach_build(res);
             enforce_require_complete(eff, res);
             /* SOL-30: cache-hit — enforcement budget sudah di-replay. */
             if (eff->require_assumptions_closed)
