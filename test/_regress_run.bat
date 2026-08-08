@@ -729,6 +729,18 @@ findstr /C:"cache:     hit" %OUT% >nul && echo [OK] cache hit divergence (replay
 myc.exe check tests\divergence_clean.c --divergence --no-cache > %OUT% 2>&1
 findstr /C:"cache:     hit" %OUT% >nul && echo [FAIL] --no-cache masih hit || echo [OK] --no-cache mematikan cache divergence
 del %OUT%
+echo --- Fase 8 Release Gate: no-source-leak (DoD privacy)
+where bash >nul 2>&1
+if errorlevel 1 (
+  echo [WARN] bash tidak tersedia - no-source-leak dilewati
+) else (
+  bash test/_no_source_leak.sh
+  if errorlevel 1 (
+    echo [FAIL] Fase 8 no-source-leak: source verbatim bocor ke output
+  ) else (
+    echo [OK] Fase 8 no-source-leak: source hanya hash, tanpa konten
+  )
+)
 echo --- MCP smoke (P9): mcp.exe harus menjawab JSON-RPC
 call test\_mcp_smoke.bat
 echo --- MCP SDK interop (opsional): hanya bila SDK MCP Python resmi terpasang

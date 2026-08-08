@@ -2315,3 +2315,26 @@ Menutup task Fase 2 yang tersisa (contract/domain delta):
 - Fixture contract_wide.c (baseline) + contract_narrow.c (patch): CI
   memverifikasi NARROWED terdeteksi + exit=1. Self-dogfood OK, -Werror
   OK, regresi CI Linux 6f + Windows.
+
+### (22) Fase 8 — Release Gate Definition-of-Done — test/_no_source_leak.sh + test/_anti_false_ok.sh
+
+Menutup checklist Fase 8 (Lampiran Sol A, 13 item Definition of Done):
+
+- **no-source-leak test** (BARU, test/_no_source_leak.sh): fixture
+  leak_probe.c memuat sentinel unik MYC_LEAK_SENTINEL_9137 yang TIDAK
+  boleh muncul verbatim di --agent / --json-summary / report teks.
+  Verifikasi: sentinel 0 kemunculan di 3 saluran + source_sha256
+  deterministik lintas run. PASS=4.
+- **anti-false-OK guard POSIX** (BARU, test/_anti_false_ok.sh): mirror
+  portabel _anti_false_ok.bat (MYC-AUDIT-031) untuk CI Linux/WSL —
+  fixture negatif (syntax/oob/realloc/checked/run-oob) WAJIB tetap
+  verdict negatif; regresi kelas false-OK tertangkap. PASS=7.
+- **Sudah terpenuhi sebelumnya (dicentang di plan)**: schema
+  terdokumentasi (result-schema.md), deterministic (benchmark
+  --no-cache), malformed input test (_schema_golden.sh), OOM test
+  (audit018 oom_alloc/oom_guards), Windows + Linux (CI dual), payload
+  cap (agent.c MYC_AGENT_PAYLOAD_CAP), backward compatibility (schema
+  beku), replay fixture (regression corpus), benchmark usefulness
+  (run_bench.sh), docs registry sync (_cap_sync.sh), self-dogfooding.
+- Regresi CI: _ci_linux.sh 8a+8b + _regress_run.bat (no-source-leak via
+  bash). Plan: Fase 8 13/13, total 70/81.

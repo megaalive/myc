@@ -691,5 +691,19 @@ else
     fail "audit018"
 fi
 
+# --- 8a. Fase 8 Release Gate: anti-false-OK guard (MYC-AUDIT-031, POSIX) ---
+if bash test/_anti_false_ok.sh; then
+    note "Fase 8 anti-false-OK: fixture negatif tetap negatif (tidak false-OK)"
+else
+    fail "Fase 8 anti-false-OK: ada fixture negatif yang jadi OK"
+fi
+
+# --- 8b. Fase 8 Release Gate: no-source-leak (DoD privacy) ---
+if bash test/_no_source_leak.sh; then
+    note "Fase 8 no-source-leak: source tidak bocor ke payload/report (hanya hash)"
+else
+    fail "Fase 8 no-source-leak: source verbatim bocor ke output"
+fi
+
 echo "=== _ci_linux.sh: PASS=$PASS FAIL=$FAIL ==="
 exit $FAIL
