@@ -1245,13 +1245,18 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
         }
     }
 
-    /* Tutup sisi read pipe sehingga drain thread mendapat EOF. */
-    close_if_valid_fd(&out_pipe[0]);
-    close_if_valid_fd(&err_pipe[0]);
-
-    /* MYC-AUDIT-001: join kedua thread sebelum menyentuh buffer hasil. */
+    /* MYC-AUDIT-001: join kedua thread sebelum menyentuh buffer hasil.
+     * Child sudah exit -> sisi write pipe sudah tertutup -> drain thread
+     * mendapat EOF alami dan berhenti sendiri. JANGAN tutup sisi read
+     * sebelum join: menutup fd yang sedang dibaca thread lain membuat
+     * read() gagal EBADF lebih awal dan byte terakhir di pipe buffer
+     * hilang (race; T1 stderr_total=991232=1MiB-8192 di runner sibuk). */
     if (to_created) { pthread_join(to, NULL); to_created = 0; }
     if (te_created) { pthread_join(te, NULL); te_created = 0; }
+
+    /* Tutup sisi read pipe SETELAH drain thread selesai. */
+    close_if_valid_fd(&out_pipe[0]);
+    close_if_valid_fd(&err_pipe[0]);
 
     if (timed_out) {
         res->timed_out = 1;
