@@ -669,6 +669,36 @@ else
     note "Fase 2 contract-delta: NARROWED exit=1 (preservation gate)"
 fi
 
+# --- 6g. Fase 5 Relational Contracts (klasifikasi klausa kontrak) ---
+if ./myc check test/fixtures/relational_contracts.c --no-cache 2>&1 | grep -qF "5 relational (>=2 variabel), 1 unbound"; then
+    note "Fase 5 relational: 5 relational + 1 unbound terdeteksi (fixture)"
+else
+    fail "Fase 5 relational: klasifikasi fixture salah"
+fi
+if ./myc check test/fixtures/relational_contracts.c --no-cache 2>&1 | grep -qF "[UNBOUND: identifier di luar param/return]"; then
+    note "Fase 5 relational: identifier tak terikat (mystery) ditandai UNBOUND"
+else
+    fail "Fase 5 relational: UNBOUND tidak terdeteksi"
+fi
+if ./myc check test/fixtures/relational_contracts.c --json-summary --no-cache 2>&1 | grep -qF '"relational":{"analyzed":6,"relations":5,"unbound":1}'; then
+    note "Fase 5 relational JSON summary: analyzed=6 relations=5 unbound=1"
+else
+    fail "Fase 5 relational JSON summary: angka salah"
+fi
+# round-trip: klasifikasi deterministik lintas run + contract-delta CLEAN
+rt1=$(./myc check test/fixtures/relational_contracts.c --no-cache 2>&1 | grep "relational (Fase 5):" | sha256sum | cut -d' ' -f1)
+rt2=$(./myc check test/fixtures/relational_contracts.c --no-cache 2>&1 | grep "relational (Fase 5):" | sha256sum | cut -d' ' -f1)
+if [ -n "$rt1" ] && [ "$rt1" = "$rt2" ]; then
+    note "Fase 5 relational round-trip: klasifikasi deterministik lintas run"
+else
+    fail "Fase 5 relational round-trip: run tidak deterministik"
+fi
+if ./myc contract-delta test/fixtures/relational_contracts.c test/fixtures/relational_contracts.c 2>&1 | grep -qF "CLEAN"; then
+    note "Fase 5 relational round-trip: contract-delta sama file = CLEAN"
+else
+    fail "Fase 5 relational round-trip: contract-delta bukan CLEAN"
+fi
+
 # --- 7a. Fase 0 Golden Schema + Malformed-Input (myc.result.v1) ---
 if bash test/_schema_golden.sh; then
     note "Fase 0 golden schema: 13 cek PASS (schema + malformed input)"

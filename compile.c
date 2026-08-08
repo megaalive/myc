@@ -895,6 +895,11 @@ void myc_pipeline(const myc_request *req, myc_result *res)
      * komentar biasa (bukan //@). NON-blocking observasi murni. */
     myc_contract_harvest(src, srclen, res);
 
+    /* --- Fase 5 (Relational contracts): klasifikasi klausa kontrak
+     * relasional (>=2 variabel) vs unary + binding check. NON-blocking
+     * observasi murni (analisis teks deterministik). */
+    myc_contract_relational(src, srclen, res);
+
     /* --- Lint memory-safety (P5; default aktif, mati via --no-lint) ---
      * MYC-AUDIT-014: heuristik teks TIDAK boleh hard verdict. Hasil lint
      * = observasi + confidence (OBSERVATION/SUSPICIOUS), NON-blocking.

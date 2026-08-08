@@ -67,7 +67,7 @@ scan includes (whitelist, non-blocking) → lint heuristik ber-confidence
 | `run.c` | Gate runtime clang ASan/UBSan, canary semantik, metamorfik, cross-toolchain divergence (A2/DS-02) |
 | `driver.c` | Generator harness kasus tepi dari kontrak (budget kombinatorial) |
 | `prove.c` / `filc.c` | Backend Frama-C Eva (via WSL) dan Fil-C |
-| `contract.c` | Contract-lite `//@ requires/ensures` + validasi purity |
+| `contract.c` | Contract-lite `//@ requires/ensures` + validasi purity + klasifikasi relasional (Fase 5) |
 | `negative.c` | Negative-space: mining "pola yang hilang" |
 | `lint.c` | Heuristik memory-safety ber-confidence (non-blocking) + `why`/`fix` |
  | `gate.c` | Status gate bertipe, evidence, claim compiler, debt, receipt |

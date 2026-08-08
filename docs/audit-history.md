@@ -2338,3 +2338,30 @@ Menutup checklist Fase 8 (Lampiran Sol A, 13 item Definition of Done):
   (run_bench.sh), docs registry sync (_cap_sync.sh), self-dogfooding.
 - Regresi CI: _ci_linux.sh 8a+8b + _regress_run.bat (no-source-leak via
   bash). Plan: Fase 8 13/13, total 70/81.
+
+### (23) Fase 5 — Relational Contracts — `myc_contract_relational` (contract.c/.h)
+
+Menutup task Fase 5 "Relational contracts" (exit criteria: round-trip
+fixture diuji otomatis):
+
+- **Klasifikasi klausa kontrak** (non-blocking observasi): tiap klausa
+  //@ requires/ensures yang sudah di-scan diklasifikasi UNARY (1 variabel
+  vs konstanta, mis. `n >= 0`) vs RELATIONAL (>= 2 variabel, mis.
+  `a <= b`, `r == a + b`, `a >= 0 && b >= 0`), dengan deteksi operator
+  order (< <= > >=), equality (== !=), aritmetika (+ - * / %), logika
+  (&& || !).
+- **Binding check**: identifier di luar parameter fungsi (diekstrak dari
+  signature via rel_extract_params, cache per fungsi) dan di luar alias
+  return (r/ret/result/res/\result) ditandai UNBOUND -- observasi yang
+  menangkap typo / global tak terdeklarasi dalam kontrak. Member access
+  (p->size / p -> size / p.size), cast type, literal, pemanggilan fungsi
+  TIDAK dihitung variabel (anti false-positive).
+- **Output**: res->rel_* (analyzed/relations/unary/unbound + per-klausa
+  + report arena) di teks, JSON penuh, JSON summary (`relational`
+  additive di myc.result.v1, tercatat di docs/result-schema.md).
+  Replay cache menyimpan 4 counts (rel_a/n/u/b) identik dengan pola
+  harvest (report/clauses tidak di-cache).
+- **Round-trip fixture** `test/fixtures/relational_contracts.c` (6 klausa:
+  1 unary, 5 relational, 1 unbound `mystery`): klasifikasi deterministik
+  lintas run + `contract-delta file file` = CLEAN, diuji di CI Linux 6g
+  (5 cek) dan Windows. Self-dogfood OK, -Werror OK.

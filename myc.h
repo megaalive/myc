@@ -308,6 +308,7 @@ typedef struct {
 #define MYC_MAX_DEBT       32
 #define MYC_MAX_FILC_CASES 8        /* rincian per-panic Fil-C (7.7) */
 #define MYC_MAX_CONTRACT_CLAUSES 64 /* rincian per-klausa kontrak (7.4) */
+#define MYC_MAX_REL_CLAUSES 64       /* rincian klausa relasional (Fase 5) */
 #define MYC_MAX_DRIVER_CASES   32  /* budget kombinatorial per fungsi (7.5) */
 #define MYC_MAX_DRIVER_RECORDS 256 /* total case records tersimpan (hasil) */
 
@@ -419,6 +420,28 @@ typedef struct {
     int   line, col;        /* lokasi klausa di source */
     int   kind;             /* 0 = requires, 1 = ensures */
 } myc_contract_clause;
+
+/* Satu klausa kontrak terklasifikasi relasional (Fase 5, Relational
+ * contracts). Analisis TEKS deterministik -- observasi NON-blocking,
+ * verdict tidak pernah turun karenanya. `relational` = klausa yang
+ * mengikat >= 2 variabel DISTINCT (order `a <= b`, kesetaraan
+ * aritmetika `r == a + b`, rentang `a < b && b < c`) vs `unary`
+ * (satu variabel vs konstanta, mis. `n >= 0`). `unbound` = ada
+ * identifier di luar parameter fungsi DAN di luar alias return
+ * (r/ret/result/res/\result) -- bisa typo atau global (observasi). */
+typedef struct {
+    char *expr;          /* arena: ekspresi kontrak */
+    char *func;          /* arena: fungsi terikat ("" bila tak terikat) */
+    int   kind;          /* 0 = requires, 1 = ensures */
+    int   line, col;     /* lokasi klausa */
+    int   nvars;         /* jumlah identifier DISTINCT (bukan konstanta/keyword/call) */
+    int   relational;    /* 1 = >= 2 variabel */
+    int   unbound;       /* 1 = ada identifier di luar params + alias return */
+    int   has_order;     /* < <= > >= */
+    int   has_equality;  /* == != */
+    int   has_arith;     /* + - * / % */
+    int   has_logic;     /* && || ! */
+} myc_rel_clause;
 
 /* Satu kasus uji driver ter-record (roadmap 7.5 "case record").
  * Merekam INPUT yang benar-benar diuji — parameter values + allocation
@@ -857,6 +880,19 @@ typedef struct {
      * tetap di contract_requires/ensures). */
     myc_contract_clause contract_clauses[MYC_MAX_CONTRACT_CLAUSES];
     int         contract_clause_count;
+
+    /* --- Fase 5 (Relational contracts): klasifikasi klausa kontrak
+     * relasional (>=2 variabel) vs unary, operator (order/equality/
+     * aritmetika/logika), dan binding check (identifier di luar
+     * parameter fungsi + alias return = unbound). NON-blocking
+     * observasi murni (analisis teks deterministik). */
+    int         rel_analyzed;    /* klausa valid yang dianalisis */
+    int         rel_relations;   /* klausa relasional (>=2 variabel) */
+    int         rel_unary;       /* klausa unary (1 variabel) */
+    int         rel_unbound;     /* klausa dgn identifier tak terikat */
+    char       *rel_report;      /* arena */
+    myc_rel_clause rel_clauses[MYC_MAX_REL_CLAUSES];
+    int         rel_clause_count;
 
     /* --- Fase 5, B4 (Comments-as-Contracts, DS-08) ---
      * Panen kandidat kontrak dari komentar BIASA (bukan //@):

@@ -529,6 +529,14 @@ myc.exe contract-delta test\fixtures\contract_wide.c test\fixtures\contract_narr
 findstr /C:"NARROWED" %OUT% >nul && echo [OK] contract-delta: NARROWED (domain menyempit) || echo [FAIL] contract-delta: NARROWED tidak terdeteksi
 myc.exe contract-delta test\fixtures\contract_wide.c test\fixtures\contract_wide.c > %OUT% 2>&1
 findstr /C:"CLEAN" %OUT% >nul && echo [OK] contract-delta: CLEAN (kontrak sama) || echo [FAIL] contract-delta: CLEAN tidak terdeteksi
+echo --- Fase 5: Relational contracts (klasifikasi klausa kontrak)
+set OUT=%TEMP%\myc_rel_out.txt
+myc.exe check test\fixtures\relational_contracts.c --no-cache > %OUT% 2>&1
+findstr /C:"5 relational (>=2 variabel), 1 unbound" %OUT% >nul && echo [OK] relational: 5 relational + 1 unbound terdeteksi || echo [FAIL] relational: klasifikasi salah
+findstr /C:"UNBOUND: identifier di luar param/return" %OUT% >nul && echo [OK] relational: identifier tak terikat ditandai UNBOUND || echo [FAIL] relational: UNBOUND tidak terdeteksi
+myc.exe contract-delta test\fixtures\relational_contracts.c test\fixtures\relational_contracts.c > %OUT% 2>&1
+findstr /C:"CLEAN" %OUT% >nul && echo [OK] relational round-trip: contract-delta sama file = CLEAN || echo [FAIL] relational round-trip: bukan CLEAN
+del %OUT%
 del %OUT%
 echo --- Fase 0: Golden Schema + Malformed-Input (myc.result.v1)
 where bash >nul 2>&1

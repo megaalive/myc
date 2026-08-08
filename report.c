@@ -270,6 +270,17 @@ void myc_report_text(const myc_result *res)
                    myc_clause_status_name(cl->status));
         }
     }
+    /* Fase 5 (Relational contracts): klasifikasi klausa kontrak
+     * relasional (observasi, NON-blocking). */
+    if (res->rel_analyzed > 0) {
+        printf("relational (Fase 5): %d klausa dianalisis, %d unary, "
+               "%d relational (>=2 variabel), %d unbound "
+               "(observasi, NON-blocking)\n",
+               res->rel_analyzed, res->rel_unary, res->rel_relations,
+               res->rel_unbound);
+        if (res->rel_report)
+            printf("%s", res->rel_report);
+    }
     /* Fase 5 B4 (DS-08): kandidat kontrak dari komentar biasa (observasi). */
     if (res->harvest_candidates > 0) {
         printf("harvest (B4): %d kandidat komentar-biasa, %d validated, "
@@ -858,6 +869,36 @@ char *myc_result_to_json(const myc_result *res)
                        myc_clause_status_name(cl->status), cl->line, cl->col);
     }
     json_sb_puts(&b, "],");
+    /* Fase 5 (Relational contracts): klasifikasi klausa kontrak
+     * relasional (>=2 variabel) vs unary + binding check (observasi). */
+    json_sb_printf(&b, "\"relational\":{\"analyzed\":%d,\"unary\":%d,"
+                       "\"relations\":%d,\"unbound\":%d,\"clauses\":[",
+                   res->rel_analyzed, res->rel_unary, res->rel_relations,
+                   res->rel_unbound);
+    for (i = 0; i < res->rel_clause_count; i++) {
+        const myc_rel_clause *rc = &res->rel_clauses[i];
+        if (i)
+            json_sb_puts(&b, ",");
+        json_sb_printf(&b, "{\"kind\":\"%s\",\"function\":",
+                       rc->kind == 0 ? "requires" : "ensures");
+        json_sb_escape(&b, rc->func);
+        json_sb_printf(&b, ",\"expr\":");
+        json_sb_escape(&b, rc->expr);
+        json_sb_printf(&b, ",\"vars\":%d,\"relational\":%s,"
+                           "\"unbound\":%s,\"order\":%s,"
+                           "\"equality\":%s,\"arithmetic\":%s,"
+                           "\"logic\":%s,\"line\":%d,\"col\":%d}",
+                       rc->nvars, rc->relational ? "true" : "false",
+                       rc->unbound ? "true" : "false",
+                       rc->has_order ? "true" : "false",
+                       rc->has_equality ? "true" : "false",
+                       rc->has_arith ? "true" : "false",
+                       rc->has_logic ? "true" : "false",
+                       rc->line, rc->col);
+    }
+    json_sb_puts(&b, "],\"report\":");
+    json_sb_escape(&b, res->rel_report);
+    json_sb_puts(&b, "},");
     /* Fase 5 B4 (DS-08): harvest kandidat kontrak dari komentar biasa. */
     json_sb_printf(&b, "\"harvest\":{\"candidates\":%d,\"validated\":%d,"
                        "\"unbound\":%d,\"report\":",
@@ -1513,6 +1554,10 @@ void myc_report_json_summary(const myc_result *res)
                        "\"unbound\":%d},",
                    res->harvest_candidates, res->harvest_validated,
                    res->harvest_unbound);
+    /* Fase 5 (Relational contracts): klasifikasi relasional (observasi). */
+    json_sb_printf(&b, "\"relational\":{\"analyzed\":%d,\"relations\":%d,"
+                       "\"unbound\":%d},",
+                   res->rel_analyzed, res->rel_relations, res->rel_unbound);
     /* Fase 5 B3 (DS-07): coaching items ringkas. */
     json_sb_printf(&b, "\"coaching\":[");
     for (i = 0; i < res->coaching_count; i++) {

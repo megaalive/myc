@@ -103,6 +103,11 @@ typedef struct {
     int   contract_requires, contract_ensures;
     /* Fase 5 B4 (DS-08): hasil harvest komentar-biasa (observasi). */
     int   harvest_candidates, harvest_validated, harvest_unbound;
+    /* Fase 5 (Relational contracts): klasifikasi klausa kontrak
+     * relasional (observasi; report arena + per-klausa TIDAK di-cache
+     * -- sama seperti harvest_report -- sehingga replay hanya punya
+     * counts, `clauses`/`report` kosong di output penuh). */
+    int   rel_analyzed, rel_relations, rel_unary, rel_unbound;
     /* Fase 5 A3 (--exhaustive): hasil enumerasi penuh domain. */
     int   ex_ran, ex_funcs, ex_cases, ex_skip, ex_laund;
     long  ex_points;

@@ -1448,3 +1448,414 @@ int myc_contract_harvest(const char *source, size_t len, myc_result *res)
     return 1;
 }
 
+/* ---------------------------------------------------------------- */
+/* Fase 5: Relational contracts -- klasifikasi klausa kontrak       */
+/* ---------------------------------------------------------------- */
+
+/* Keyword/konstanta/tipe C yang BUKAN variabel kontrak. */
+static int rel_is_constant(const char *w)
+{
+    static const char *const c[] = {
+        "NULL", "true", "false", "sizeof",
+        "if", "else", "while", "for", "return", "switch", "case",
+        "do", "goto", "break", "continue",
+        "int", "char", "void", "long", "short", "unsigned", "signed",
+        "float", "double", "const", "volatile", "static", "extern",
+        "struct", "union", "enum", "typedef", "register", "inline",
+        "size_t", "ssize_t", "bool", "_Bool",
+        "int8_t", "uint8_t", "int16_t", "uint16_t", "int32_t", "uint32_t",
+        "int64_t", "uint64_t", "intptr_t", "uintptr_t", "intmax_t",
+        "uintmax_t", "ptrdiff_t", "wchar_t", "char16_t", "char32_t",
+        "int_fast8_t", "uint_fast8_t", "int_least8_t", "uint_least8_t",
+        NULL
+    };
+    int i;
+    for (i = 0; c[i]; i++)
+        if (strcmp(w, c[i]) == 0)
+            return 1;
+    return 0;
+}
+
+/* Alias return yang dianggap terikat (bukan unbound). */
+static int rel_is_return_alias(const char *w)
+{
+    static const char *const a[] = { "r", "ret", "result", "res", NULL };
+    int i;
+    for (i = 0; a[i]; i++)
+        if (strcmp(w, a[i]) == 0)
+            return 1;
+    return 0;
+}
+
+/* Tambah variabel (dedupe); jangan overflow. */
+static void rel_add_var(char vars[][64], int *n, int max, const char *w)
+{
+    int i;
+    for (i = 0; i < *n; i++)
+        if (strcmp(vars[i], w) == 0)
+            return;
+    if (*n < max) {
+        snprintf(vars[*n], 64, "%s", w);
+        (*n)++;
+    }
+}
+
+/* Tokenisasi ekspresi kontrak: kumpulkan identifier DISTINCT (bukan
+ * konstanta/keyword/literal/pemanggilan fungsi/anggota struct),
+ * deteksi operator order/equality/arith/logic. */
+static int rel_extract_vars(const char *e,
+                            char vars[][64], int maxvars,
+                            int *has_order, int *has_equality,
+                            int *has_arith, int *has_logic)
+{
+    size_t i = 0, len = strlen(e);
+    int n = 0;
+    *has_order = *has_equality = *has_arith = *has_logic = 0;
+    while (i < len) {
+        char c = e[i];
+        if (c == '"' || c == '\'') {
+            i = skip_literal(e, len, i);
+            continue;
+        }
+        if (c == '/' && i + 1 < len && e[i + 1] == '/') {
+            while (i < len && e[i] != '\n') i++;
+            continue;
+        }
+        if (c == '/' && i + 1 < len && e[i + 1] == '*') {
+            i += 2;
+            while (i + 1 < len && !(e[i] == '*' && e[i + 1] == '/')) i++;
+            i += 2;
+            continue;
+        }
+        /* ACSL escape: \result -> alias return; \old/\at/\true/\false/
+         * \nothing = konstanta/kata kunci (skip). */
+        if (c == '\\') {
+            char w[64];
+            size_t wl = 0;
+            i++;
+            while (i < len && wl + 1 < sizeof(w) &&
+                   is_ident_char((unsigned char)e[i]))
+                w[wl++] = e[i++];
+            w[wl] = '\0';
+            if (strcmp(w, "result") == 0)
+                rel_add_var(vars, &n, maxvars, "result");
+            continue;
+        }
+        /* akses member p->size / p -> size / p.size: nama member BUKAN
+         * variabel kontrak (pola `- >` terpisah juga ditangani; bila
+         * tidak ada identifier setelahnya, `-` dianggap aritmetika). */
+        if (c == '-') {
+            size_t s2 = i + 1;
+            while (s2 < len && (e[s2] == ' ' || e[s2] == '\t')) s2++;
+            if (s2 < len && e[s2] == '>') {
+                size_t m2 = s2 + 1;
+                while (m2 < len && (e[m2] == ' ' || e[m2] == '\t')) m2++;
+                if (m2 < len && is_ident_start((unsigned char)e[m2])) {
+                    i = m2 + 1;
+                    while (i < len && is_ident_char((unsigned char)e[i])) i++;
+                    continue;
+                }
+            }
+            /* fall through ke aritmetika di bawah */
+        } else if (c == '.') {
+            size_t m2 = i + 1;
+            while (m2 < len && (e[m2] == ' ' || e[m2] == '\t')) m2++;
+            if (m2 < len && is_ident_start((unsigned char)e[m2])) {
+                i = m2 + 1;
+                while (i < len && is_ident_char((unsigned char)e[i])) i++;
+                continue;
+            }
+            i++;
+            continue;
+        }
+        if (c == '<' || c == '>') {
+            *has_order = 1;
+            i++;
+            if (i < len && e[i] == '=') i++;
+            continue;
+        }
+        if (c == '=' || c == '!') {
+            if (i + 1 < len && e[i + 1] == '=') {
+                *has_equality = 1;
+                i += 2;
+                continue;
+            }
+            if (c == '!')
+                *has_logic = 1;
+            i++;
+            continue;
+        }
+        if (c == '+' || c == '-' || c == '*' || c == '/' || c == '%') {
+            if (c == '+' && i + 1 < len && e[i + 1] == '+') { i += 2; continue; }
+            if (c == '-' && i + 1 < len && e[i + 1] == '-') { i += 2; continue; }
+            *has_arith = 1;
+            i++;
+            continue;
+        }
+        if (c == '&' || c == '|') {
+            if (i + 1 < len && e[i + 1] == c) {
+                *has_logic = 1;
+                i += 2;
+                continue;
+            }
+            i++;
+            continue;
+        }
+        if (is_ident_start((unsigned char)c)) {
+            size_t j = i;
+            char   w[64];
+            size_t wl = 0;
+            size_t k;
+            while (j < len && wl + 1 < sizeof(w) &&
+                   is_ident_char((unsigned char)e[j]))
+                w[wl++] = e[j++];
+            w[wl] = '\0';
+            k = skip_ws_comment(e, len, j);
+            if (k < len && e[k] == '(' && strcmp(w, "sizeof") != 0) {
+                i = j;      /* pemanggilan fungsi: nama = call, bukan var */
+                continue;
+            }
+            if (!rel_is_constant(w))
+                rel_add_var(vars, &n, maxvars, w);
+            i = j;
+            continue;
+        }
+        i++;
+    }
+    return n;
+}
+
+/* Cache parameter per fungsi (hindari scan ulang per klausa). */
+typedef struct {
+    char name[64];
+    int  nparams;
+    char params[24][64];
+    int  resolved;   /* 1 = sudah dicoba di-resolve (nparams 0 = gagal) */
+} rel_func_params;
+/* Cap fungsi ber-kontrak yang parameter-nya di-resolve: fungsi ke-17+
+ * melewati binding check (degradasi senyap ke "tak ada unbound" -- aman,
+ * tidak pernah menimbulkan unbound palsu). */
+#define MYC_REL_MAX_FUNCS 16
+
+/* Ekstrak nama parameter dari DEFINISI fungsi `<func>(...){` (prototype
+ * `;` diterima sebagai fallback). Return jumlah param. */
+static int rel_extract_params(const char *s, size_t len, const char *func,
+                              char out[][64], int max)
+{
+    size_t i = 0, flen = strlen(func);
+    int    fallback = 0;   /* 1 = punya prototype (param sama) */
+    char   fb[24][64];
+    int    nfb = 0;
+    while (i + flen <= len) {
+        if ((i == 0 || !is_ident_char((unsigned char)s[i - 1])) &&
+            strncmp(s + i, func, flen) == 0 &&
+            (i + flen >= len ||
+             !is_ident_char((unsigned char)s[i + flen]))) {
+            size_t j = i + flen;
+            j = skip_ws_comment(s, len, j);
+            if (j < len && s[j] == '(') {
+                size_t k = j + 1;
+                int    depth = 1;
+                int    n2 = 0;
+                while (k < len && depth > 0) {
+                    char cc = s[k];
+                    if (cc == '"' || cc == '\'') {
+                        k = skip_literal(s, len, k);
+                        continue;
+                    }
+                    if (cc == '/' && k + 1 < len && s[k + 1] == '/') {
+                        while (k < len && s[k] != '\n') k++;
+                        continue;
+                    }
+                    if (cc == '/' && k + 1 < len && s[k + 1] == '*') {
+                        k += 2;
+                        while (k + 1 < len &&
+                               !(s[k] == '*' && s[k + 1] == '/')) k++;
+                        k += 2;
+                        continue;
+                    }
+                    if (cc == '(') depth++;
+                    else if (cc == ')') {
+                        depth--;
+                        if (depth == 0) { k++; break; }
+                    } else if (cc == '{') {
+                        depth = 0;   /* struct body: berhenti */
+                        break;
+                    } else if (cc == ',' || cc == ' ' || cc == '\t' ||
+                               cc == '\n' || cc == '\r' || cc == '*' ||
+                               cc == '[' || cc == ']') {
+                        k++;
+                        continue;
+                    } else if (is_ident_start((unsigned char)cc)) {
+                        /* identifier di depth 1 = calon nama param */
+                        size_t wl = 0;
+                        char   w[64];
+                        while (k < len && wl + 1 < sizeof(w) &&
+                               is_ident_char((unsigned char)s[k]))
+                            w[wl++] = s[k++];
+                        w[wl] = '\0';
+                        if (depth == 1 && wl > 0 &&
+                            !rel_is_constant(w) && n2 < max) {
+                            snprintf(out[n2], 64, "%s", w);
+                            n2++;
+                        }
+                        continue;
+                    }
+                    k++;
+                }
+                {
+                    size_t m = skip_ws_comment(s, len, k);
+                    if (m < len && s[m] == '{') {
+                        return n2;   /* definisi ditemukan */
+                    }
+                    if (m < len && s[m] == ';' && !fallback) {
+                        fallback = 1;
+                        nfb = 0;
+                        while (nfb < n2 && nfb < 24) {
+                            /* 64-byte ke 64-byte: aman tanpa warning
+                             * -Wformat-truncation (false positive gcc). */
+                            memcpy(fb[nfb], out[nfb], 64);
+                            nfb++;
+                        }
+                    }
+                }
+            }
+        }
+        i++;
+    }
+    if (fallback && nfb > 0) {
+        int q;
+        for (q = 0; q < nfb && q < max; q++)
+            memcpy(out[q], fb[q], 64);   /* 64-byte ke 64-byte */
+        return nfb;
+    }
+    return 0;
+}
+
+/* Klasifikasi relasional klausa yang sudah di-scan ke res->contract_clauses
+ * (panggil SETELAH myc_contract_scan). NON-blocking observasi murni. */
+int myc_contract_relational(const char *source, size_t len, myc_result *res)
+{
+    int i;
+    rel_func_params funcs[MYC_REL_MAX_FUNCS];
+    int nfuncs = 0;
+    buf rep;
+    char linebuf[768];   /* >= 511 (expr) + 63 (func) + format */
+
+    res->rel_analyzed = 0;
+    res->rel_relations = 0;
+    res->rel_unary = 0;
+    res->rel_unbound = 0;
+    res->rel_report = NULL;
+    res->rel_clause_count = 0;
+
+    if (res->contract_clause_count == 0)
+        return 1;
+
+    memset(funcs, 0, sizeof(funcs));
+    memset(&rep, 0, sizeof(rep));
+    buf_puts(&rep, "relational (Fase 5): klasifikasi klausa kontrak "
+                   "(observasi, NON-blocking)\n");
+
+    for (i = 0; i < res->contract_clause_count; i++) {
+        const myc_contract_clause *cl = &res->contract_clauses[i];
+        myc_rel_clause *rc;
+        /* Cap 8 variabel/klausa: klausa >8 var -> nvars undercount + unbound
+         * hanya memeriksa 8 pertama (false negative ARAH AMAN: tidak pernah
+         * menghasilkan unbound palsu). */
+        char vars[8][64];
+        int  nvars, has_order = 0, has_eq = 0, has_arith = 0, has_logic = 0;
+        int  k, v, q, unbound = 0;
+        const char *fname = cl->func ? cl->func : "";
+
+        if (!cl->expr || cl->expr[0] == '\0')
+            continue;
+        if (res->rel_clause_count >= MYC_MAX_REL_CLAUSES)
+            break;
+
+        nvars = rel_extract_vars(cl->expr, vars, 8,
+                                 &has_order, &has_eq, &has_arith,
+                                 &has_logic);
+
+        /* binding check: identifier harus ada di param fungsi atau alias
+         * return; selain itu = unbound (typo / global tak terdeklarasi). */
+        if (fname[0]) {
+            int fi = -1;
+            for (k = 0; k < nfuncs; k++)
+                if (strcmp(funcs[k].name, fname) == 0) { fi = k; break; }
+            if (fi < 0 && nfuncs < MYC_REL_MAX_FUNCS) {
+                fi = nfuncs;
+                snprintf(funcs[fi].name, 64, "%s", fname);
+                funcs[fi].nparams = rel_extract_params(source, len, fname,
+                                                       funcs[fi].params, 24);
+                funcs[fi].resolved = 1;
+                nfuncs++;
+            }
+            if (fi >= 0 && funcs[fi].resolved && funcs[fi].nparams > 0) {
+                for (v = 0; v < nvars && !unbound; v++) {
+                    int found = 0;
+                    if (rel_is_return_alias(vars[v]))
+                        continue;
+                    for (q = 0; q < funcs[fi].nparams; q++)
+                        if (strcmp(funcs[fi].params[q], vars[v]) == 0) {
+                            found = 1;
+                            break;
+                        }
+                    if (!found)
+                        unbound = 1;
+                }
+            }
+        }
+
+        rc = &res->rel_clauses[res->rel_clause_count];
+        memset(rc, 0, sizeof(*rc));
+        rc->expr = cl->expr;
+        rc->func = cl->func;
+        rc->kind = cl->kind;
+        rc->line = cl->line;
+        rc->col = cl->col;
+        rc->nvars = nvars;
+        rc->relational = (nvars >= 2);
+        rc->unbound = unbound;
+        rc->has_order = has_order;
+        rc->has_equality = has_eq;
+        rc->has_arith = has_arith;
+        rc->has_logic = has_logic;
+
+        res->rel_analyzed++;
+        if (rc->relational)
+            res->rel_relations++;
+        else if (nvars == 1)
+            res->rel_unary++;
+        if (unbound)
+            res->rel_unbound++;
+
+        snprintf(linebuf, sizeof(linebuf),
+                 "  [%s:%d] %-8s `%s` -- %s%s (vars=%d)%s\n",
+                 fname[0] ? fname : "(unbound)", rc->line,
+                 rc->kind == 0 ? "requires" : "ensures",
+                 cl->expr,
+                 rc->relational ? "RELATIONAL" : (nvars == 0
+                     ? "CONSTANT" : "UNARY"),
+                 (has_order || has_eq || has_arith || has_logic) ? " " : "",
+                 nvars,
+                 unbound ? " [UNBOUND: identifier di luar param/return]" : "");
+        buf_puts(&rep, linebuf);
+        res->rel_clause_count++;
+    }
+
+    snprintf(linebuf, sizeof(linebuf),
+             "  ringkasan: %d klausa dianalisis, %d unary, %d relational "
+             "(>=2 variabel), %d unbound\n",
+             res->rel_analyzed, res->rel_unary, res->rel_relations,
+             res->rel_unbound);
+    buf_puts(&rep, linebuf);
+    buf_puts(&rep, "  (relational = observasi; periksa klausa unbound: "
+                   "typo atau global tak terdeklarasi)\n");
+    if (rep.data) {
+        res->rel_report = myc_result_arena_dup(res, rep.data, 0);
+        free(rep.data);
+    }
+    return 1;
+}
+

@@ -50,6 +50,7 @@ Output `myc check <file> [flags] --json-summary` adalah satu objek JSON:
 | `quorum_status` | string/null | hasil quorum lintas backend |
 | `coaching` | list | saran satu-aksi (B3) bila ada |
 | `harvest` | list | hasil harvest kontrak (B4) bila ada |
+| `relational` | obj | klasifikasi klausa kontrak relasional (Fase 5): `analyzed`/`unary`/`relations`/`unbound` — observasi NON-blocking, verdict tidak pernah turun karenanya |
 | `lint_observations` | list | observasi lint ber-confidence NON-blocking |
 | `lint_embedded_hits` | list | hit pola lint ter-embed |
 | `assumptions` | list | ledger asumsi (A1) |
@@ -104,6 +105,7 @@ Output `myc check <file> [flags] --agent`:
 | Tanggal | Versi | Perubahan |
 |---|---|---|
 | 2026-08-08 | `myc.result.v1` / `myc.agent.v2` | **Beku** (Fase -1, SOL-24). Dokumentasi awal skema stabil. |
+| 2026-08-08 | `myc.result.v1` | Field `relational` ditambah (additive, Fase 5 Relational contracts) — objek observasi NON-blocking; tidak mengubah makna field lama. |
 
 ## Aturan perubahan (untuk pengembang)
 

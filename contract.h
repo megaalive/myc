@@ -53,6 +53,20 @@ int myc_contract_list(const char *source, size_t len,
                       char ***reqs, int *nreqs,
                       char ***ensures, int *nensures);
 
+/*
+ * Fase 5 (Relational contracts): klasifikasi klausa //@ requires/ensures
+ * yang sudah di-scan ke res->contract_clauses (panggil SETELAH
+ * myc_contract_scan). Per klausa: ekstrak identifier DISTINCT,
+ * klasifikasi unary (1 variabel) vs RELATIONAL (>=2 variabel, mis.
+ * `a <= b`, `r == a + b`, `a < b && b < c`), deteksi operator
+ * (order/equality/arith/logic), dan BINDING CHECK -- identifier di luar
+ * parameter fungsi (diekstrak dari signature) dan di luar alias return
+ * (r/ret/result/res/\result) ditandai `unbound` (typo / global).
+ * Hasil di res->rel_* (arena); NON-blocking observasi murni, verdict
+ * tidak pernah turun karenanya. Selalu mengembalikan 1.
+ */
+int myc_contract_relational(const char *source, size_t len, myc_result *res);
+
 /* ---- Contract/domain delta (Fase 2) ----
  * Bandingkan kontrak //@ requires/ensures dua versi source (before =
  * baseline, after = patch). Mendeteksi:

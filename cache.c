@@ -263,6 +263,11 @@ static int cache_read_all(myc_cache_entry *out, int cap)
             v = json_get(e, "hv_c"); if (v && v->type == JSON_NUM) ce->harvest_candidates = (int)v->num;
             v = json_get(e, "hv_v"); if (v && v->type == JSON_NUM) ce->harvest_validated = (int)v->num;
             v = json_get(e, "hv_u"); if (v && v->type == JSON_NUM) ce->harvest_unbound = (int)v->num;
+            /* Fase 5: relational contracts (observasi). */
+            v = json_get(e, "rel_a"); if (v && v->type == JSON_NUM) ce->rel_analyzed = (int)v->num;
+            v = json_get(e, "rel_n"); if (v && v->type == JSON_NUM) ce->rel_relations = (int)v->num;
+            v = json_get(e, "rel_u"); if (v && v->type == JSON_NUM) ce->rel_unary = (int)v->num;
+            v = json_get(e, "rel_b"); if (v && v->type == JSON_NUM) ce->rel_unbound = (int)v->num;
             v = json_get(e, "ex_r"); if (v && v->type == JSON_NUM) ce->ex_ran = (int)v->num;
             v = json_get(e, "ex_f"); if (v && v->type == JSON_NUM) ce->ex_funcs = (int)v->num;
             v = json_get(e, "ex_c"); if (v && v->type == JSON_NUM) ce->ex_cases = (int)v->num;
@@ -575,6 +580,11 @@ static void cache_write_all(const myc_cache_entry *entries, int count)
         json_obj_set(e, "hv_c", json_new_num((int64_t)ce->harvest_candidates));
         json_obj_set(e, "hv_v", json_new_num((int64_t)ce->harvest_validated));
         json_obj_set(e, "hv_u", json_new_num((int64_t)ce->harvest_unbound));
+        /* Fase 5: relational contracts (observasi). */
+        json_obj_set(e, "rel_a", json_new_num((int64_t)ce->rel_analyzed));
+        json_obj_set(e, "rel_n", json_new_num((int64_t)ce->rel_relations));
+        json_obj_set(e, "rel_u", json_new_num((int64_t)ce->rel_unary));
+        json_obj_set(e, "rel_b", json_new_num((int64_t)ce->rel_unbound));
         json_obj_set(e, "ex_r", json_new_num((int64_t)ce->ex_ran));
         json_obj_set(e, "ex_f", json_new_num((int64_t)ce->ex_funcs));
         json_obj_set(e, "ex_c", json_new_num((int64_t)ce->ex_cases));
@@ -1037,6 +1047,11 @@ static void cache_replay_into(const myc_cache_entry *e, myc_result *res)
     res->harvest_candidates = e->harvest_candidates;
     res->harvest_validated = e->harvest_validated;
     res->harvest_unbound = e->harvest_unbound;
+    /* Fase 5: relational contracts (observasi, replay identik). */
+    res->rel_analyzed = e->rel_analyzed;
+    res->rel_relations = e->rel_relations;
+    res->rel_unary = e->rel_unary;
+    res->rel_unbound = e->rel_unbound;
     res->ran_exhaustive = e->ex_ran;
     res->exhaustive_funcs = e->ex_funcs;
     res->exhaustive_cases = e->ex_cases;
@@ -1454,6 +1469,11 @@ void myc_cache_store(const myc_request *req, const myc_result *res,
     ne->harvest_candidates = res->harvest_candidates;
     ne->harvest_validated = res->harvest_validated;
     ne->harvest_unbound = res->harvest_unbound;
+    /* Fase 5: relational contracts (observasi, replay identik). */
+    ne->rel_analyzed = res->rel_analyzed;
+    ne->rel_relations = res->rel_relations;
+    ne->rel_unary = res->rel_unary;
+    ne->rel_unbound = res->rel_unbound;
     ne->ex_ran = res->ran_exhaustive;
     ne->ex_funcs = res->exhaustive_funcs;
     ne->ex_cases = res->exhaustive_cases;
