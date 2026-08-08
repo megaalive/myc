@@ -68,7 +68,7 @@ jobs:
         run: |
           set -e
           echo "--- Compile each .c with -Werror (gcc) ---"
-          for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c; do
+          for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c mcp.c; do
             echo "=== $f ==="
             gcc -O2 -std=c11 -Wall -Wextra -Werror -pedantic -Werror=implicit-function-declaration -c "$f" -o "/tmp/${f%.c}.o" 2>&1
           done
@@ -100,7 +100,7 @@ jobs:
         run: |
           set -e
           echo "--- Compile each .c with -Werror (gcc) ---"
-          for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c; do
+          for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c mcp.c; do
             echo "=== $f ==="
             gcc -O2 -std=c11 -Wall -Wextra -Werror -pedantic -Werror=implicit-function-declaration -c "$f" -o "/tmp/${f%.c}.o" 2>&1
           done
@@ -108,3 +108,33 @@ jobs:
 
       - name: Build + trust-core POSIX
         run: bash test/_ci_linux.sh
+
+      # Fase 5 gates smoke test (A3/A4/C2/D1/B5/C1/C3/C5/C4) -- regresi
+      # eksplisit per gate baru; pola identik dengan blok 5g-5p di
+      # test/_ci_linux.sh (yang juga dijalankan step di atas).
+      - name: Fase 5 gates smoke (exhaustive/compare/stack/fuzz/mutate/freestanding/scenario/matrix)
+        run: |
+          set -e
+          echo "--- A3 exhaustive ---"
+          ./myc check test/fixtures/ok_exhaustive.c --exhaustive --no-cache 2>&1 | grep -qF "P1 EXHAUSTIVE untuk domain dideklarasikan"
+          echo "--- A4 compare ---"
+          ./myc compare test/fixtures/ref_crc16.c test/fixtures/new_crc16_div.c 2>&1 | grep -qF "53 divergen"
+          ./myc compare test/fixtures/ref_crc16.c test/fixtures/new_crc16_same.c 2>&1 | grep -qF "behavior-preserving"
+          echo "--- C2 stack ---"
+          ./myc check tests/ok_hello.c --stack --no-cache 2>&1 | grep -qF "worst path : main = "
+          ./myc check test/fixtures/stack_recursive.c --stack --no-cache 2>&1 | grep -qF "recursion  : cycle di call graph"
+          echo "--- D1 fuzz ---"
+          ./myc check test/fixtures/ok_fuzz.c --fuzz --fuzz-iters 2000 --no-cache 2>&1 | grep -qF "fuzz (D1): 1 fungsi, 2000 kasus tereksekusi"
+          echo "--- B5 mutate-audit ---"
+          ./myc check test/fixtures/mutate_target.c --mutate-audit --mutate-max 6 --no-cache 2>&1 | grep -qF "3 tertangkap, 0 GAP"
+          echo "--- C1 freestanding ---"
+          ./myc check test/fixtures/blinky_bad.c --freestanding --no-cache 2>&1 | grep -qF "printf() dipanggil -- API hosted"
+          ./myc check test/fixtures/blinky_clean.c --freestanding --no-cache 2>&1 | grep -qF "0 panggilan API hosted"
+          echo "--- C3 bare-metal (MMIO/volatile traps) ---"
+          ./myc check test/fixtures/mmio_bad.c --freestanding --no-cache 2>&1 | grep -qF "MMIO deref alamat absolut tanpa volatile"
+          echo "--- C5 scenario packs ---"
+          ./myc check test/fixtures/scen_parser.c --scenario auto --no-cache 2>&1 | grep -qF "scenario (C5): library"
+          ./myc check tests/ok_hello.c --scenario firmware --no-cache 2>&1 | grep -qF "scenario (C5): firmware"
+          echo "--- C4 target matrix ---"
+          ./myc check tests/ok_hello.c --matrix --no-cache 2>&1 | grep -qF "matrix (C4):"
+          echo "--- Fase 5 gates: SEMUA PASS ---"
