@@ -295,6 +295,14 @@ findstr /C:"3 tertangkap, 0 GAP" %OUT% >nul && echo [OK] B5 mutan guard tertangk
 findstr /C:"verification coverage: 3/3" %OUT% >nul && echo [OK] B5 coverage dihitung || echo [WARN] B5 coverage hilang
 findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] B5 non-blocking || echo [WARN] B5 mengubah verdict
 del %OUT%
+rem --- Fase 5 C1: Freestanding Mode (--freestanding)
+echo --- C1: hosted API trap di mode firmware (observasi non-blocking)
+myc.exe check test\fixtures\blinky_bad.c --freestanding --no-cache > %OUT% 2>&1
+findstr /C:"printf() dipanggil -- API hosted" %OUT% >nul && echo [OK] C1 printf = trap API hosted || echo [WARN] C1 hosted API trap tidak terdeteksi
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] C1 trap non-blocking || echo [WARN] C1 mengubah verdict
+myc.exe check test\fixtures\blinky_clean.c --freestanding --no-cache > %OUT% 2>&1
+findstr /C:"0 panggilan API hosted" %OUT% >nul && echo [OK] C1 hygiene bersih || echo [WARN] C1 hygiene bersih tidak terdeteksi
+del %OUT%
 rem --- fix review: ; membuang pending basi + komentar blok bukan klausa
 myc.exe check test\fixtures\contract_stale_pending.c > %OUT% 2>&1
 findstr /C:"requires=1" %OUT% >nul && echo [OK] klausa hantu dalam komentar blok tidak dihitung || echo [WARN] klausa hantu komentar ikut dihitung

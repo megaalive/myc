@@ -473,6 +473,23 @@ else
     fail "B5 mutate: mengubah verdict (harus observasi)"
 fi
 
+# --- 5m. C1 Freestanding Mode (--freestanding) ---
+if ./myc check test/fixtures/blinky_bad.c --freestanding --no-cache 2>&1 | grep -qF "printf() dipanggil -- API hosted"; then
+    note "C1 freestanding: printf = trap API hosted"
+else
+    fail "C1 freestanding: hosted API trap tidak terdeteksi"
+fi
+if ./myc check test/fixtures/blinky_bad.c --freestanding --no-cache 2>&1 | grep -qF "verdict:   OK"; then
+    note "C1 freestanding: trap NON-blocking (verdict OK)"
+else
+    fail "C1 freestanding: mengubah verdict (harus observasi)"
+fi
+if ./myc check test/fixtures/blinky_clean.c --freestanding --no-cache 2>&1 | grep -qF "0 panggilan API hosted"; then
+    note "C1 freestanding: firmware bersih -> hygiene bersih"
+else
+    fail "C1 freestanding: hygiene bersih tidak terdeteksi"
+fi
+
 # --- 6. dogfood tool ---
 for f in dogfood/dogfood_ring.c dogfood/dogfood_config.c dogfood/dogfood_tilemap.c; do
     assert_out "dogfood $(basename "$f") -> OK" "verdict:   OK" "$f"

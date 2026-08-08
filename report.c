@@ -518,6 +518,13 @@ void myc_report_text(const myc_result *res)
             printf("%s", res->mutate_report);
     }
 
+    if (res->ran_freestanding) {
+        printf("freestanding (C1):\n");
+        printf("  api_hits: %d\n", res->freestanding_api_hits);
+        if (res->freestanding_report)
+            printf("%s", res->freestanding_report);
+    }
+
     if (res->ran_metamorphic) {
         printf("metamorphic (9.7):\n");
         printf("  o0_exit: %d  o2_exit: %d\n",
@@ -1044,6 +1051,15 @@ char *myc_result_to_json(const myc_result *res)
         json_sb_escape(&b, res->mutate_report);
         json_sb_puts(&b, ",");
     }
+    json_sb_printf(&b, "\"ran_freestanding\":%s,",
+                   res->ran_freestanding ? "true" : "false");
+    if (res->ran_freestanding) {
+        json_sb_printf(&b, "\"freestanding_api_hits\":%d,",
+                       res->freestanding_api_hits);
+        json_sb_puts(&b, "\"freestanding_report\":");
+        json_sb_escape(&b, res->freestanding_report);
+        json_sb_puts(&b, ",");
+    }
     json_sb_printf(&b, "\"ran_divergence\":%s,",
                    res->ran_divergence ? "true" : "false");
     if (res->ran_divergence) {
@@ -1515,6 +1531,15 @@ void myc_report_json_summary(const myc_result *res)
         json_sb_printf(&b, "\"mutate_gap\":%d,", res->mutate_gap);
         json_sb_puts(&b, "\"mutate_report\":");
         json_sb_escape(&b, res->mutate_report);
+        json_sb_puts(&b, ",");
+    }
+    json_sb_printf(&b, "\"ran_freestanding\":%s,",
+                   res->ran_freestanding ? "true" : "false");
+    if (res->ran_freestanding) {
+        json_sb_printf(&b, "\"freestanding_api_hits\":%d,",
+                       res->freestanding_api_hits);
+        json_sb_puts(&b, "\"freestanding_report\":");
+        json_sb_escape(&b, res->freestanding_report);
         json_sb_puts(&b, ",");
     }
     json_sb_printf(&b, "\"ran_divergence\":%s,", res->ran_divergence ? "true" : "false");

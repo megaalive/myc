@@ -2024,3 +2024,26 @@ kelasnya (heap OOB -> `--run`, contract violation -> `--exhaustive`, dst).
 Fixture `mutate_target.c` (guard ganda; main memanggil rentang luas ->
 3 mutan tertangkap ASan, coverage 3/3). Regresi `_ci_linux.sh` (5l) +
 `_regress_run.bat`.
+
+### (9) C1 — Freestanding Mode (--freestanding) — `compile.c`
+
+Mode C-tanpa-OS (firmware). `--freestanding` mengubah ARTI temuan:
+
+- Compile memakai `-ffreestanding -fno-builtin` (masuk fingerprint + flag
+  matrix) — kompilasi gagal di mode ini tetap HARD (compile error).
+- **Hosted-API trap** (`scan_hosted_api` di `compile.c`): scan source
+  (luar komentar/string) untuk panggilan API libc hosted yang TIDAK
+  tersedia di bare metal: stdio console (printf/fprintf/puts/getchar/
+  scanf), file I/O (fopen/fclose/fread/fwrite/fseek/...), heap dinamis
+  (malloc/calloc/realloc/free/strdup/alloca), proses/exit (exit/abort/
+  atexit/system/getenv), konversi string (atoi/strtol/...), time
+  (time/clock/...). Tiap hit = diagnostic OBSERVATION NON-blocking
+  (printf = bug firmware, bukan warning desktop).
+- `freestanding_api_hits` + report "freestanding hygiene"; verdict tidak
+  pernah berubah karena trap (trust rules #1).
+
+Bonus perbaikan: `merge_args` di compile.c kini skip list NULL (bug
+segfault bila daftar flag opsional tak diaktifkan bersama `--freestanding`).
+`capabilities.json` + `docs/capabilities.md` ditambah gate `freestanding`.
+Fixture `blinky_bad.c` (printf/malloc/free -> trap), `blinky_clean.c`
+(hygiene bersih). Regresi `_ci_linux.sh` (5m) + `_regress_run.bat`.

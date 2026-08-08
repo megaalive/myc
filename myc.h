@@ -170,6 +170,10 @@ typedef enum {
                                 gap (kelas bug tak terlihat). NON-blocking
                                 observasi (mengukur verifier, bukan
                                 verdict program). */
+    MYC_GATE_FREESTANDING,    /* (Fase 5, C1) freestanding mode: compile
+                                -ffreestanding -fno-builtin + hosted-API
+                                trap (printf/malloc/fopen/exit dilarang di
+                                firmware). Observasi NON-blocking. */
     MYC_GATE_COUNT
 } myc_gate_id;
 
@@ -613,6 +617,11 @@ typedef struct {
     /* Fase 5, B5 (--mutate-audit): mutation-audited verification. */
     int         mutate_audit;
     int         mutate_max;         /* budget total mutan (default 8) */
+    /* Fase 5, C1 (--freestanding): mode C tanpa OS (firmware). Compile
+     * dengan -ffreestanding -fno-builtin; hosted-API trap (printf,
+     * malloc, fopen, exit, ...) dilaporkan sebagai observasi NON-blocking
+     * (bukan warning senyap). */
+    int         freestanding;
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
@@ -1030,6 +1039,13 @@ typedef struct {
     int            mutate_caught;
     int            mutate_gap;
     char          *mutate_report;      /* arena */
+    /* --- Fase 5, C1 (--freestanding) ---
+     * ran_freestanding=1 bila compile memakai -ffreestanding;
+     * freestanding_api_hits = jumlah panggilan API hosted yang dilarang
+     * di mode ini; freestanding_report (arena). NON-blocking. */
+    int            ran_freestanding;
+    int            freestanding_api_hits;
+    char          *freestanding_report; /* arena */
 
     /* internal: gate mana yang dijalankan terakhir */
     int         ran_preprocess;

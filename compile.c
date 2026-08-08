@@ -190,17 +190,23 @@ static const char **merge_args(const char *const *lists[], size_t nlists,
     size_t total = 0;
     size_t li, ai, idx = 0;
     const char **out;
-    for (li = 0; li < nlists; li++)
+    for (li = 0; li < nlists; li++) {
+        if (!lists[li])
+            continue;               /* list opsional yang tak diaktifkan */
         for (ai = 0; lists[li][ai]; ai++)
             total++;
+    }
     out = (const char **)malloc(sizeof(char *) * (total + 1));
     if (!out)
         return NULL;
-    for (li = 0; li < nlists; li++)
+    for (li = 0; li < nlists; li++) {
+        if (!lists[li])
+            continue;
         for (ai = 0; lists[li][ai]; ai++) {
             const char *arg = lists[li][ai];
             out[idx++] = strcmp(arg, "NUL") == 0 ? myc_null_device() : arg;
         }
+    }
     out[idx] = NULL;
     *count = idx;
     return out;
@@ -431,6 +437,117 @@ static int ident_char(int c)
 {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
            (c >= '0' && c <= '9') || c == '_';
+}
+
+/* C1 (--freestanding): hosted-API trap. API libc HOSTED yang dilarang di
+ * firmware (stdio/stdio FILE, heap dinamis, proses/exit, string dinamik,
+ * time). Bukan denylist keamanan: di mode ini arti temuan BERUBAH menjadi
+ * finding observasi (printf = bug firmware), NON-blocking. */
+static const char *const HOSTED_API[] = {
+    "printf", "fprintf", "sprintf", "snprintf", "puts", "putchar",
+    "fputs", "fputc", "getchar", "gets", "getc", "scanf", "fscanf",
+    "sscanf", "fopen", "fclose", "fread", "fwrite", "fseek", "ftell",
+    "rewind", "fflush", "fgetc", "fgets", "fputc", "fputs", "feof",
+    "ferror", "fgetpos", "fsetpos", "perror", "tmpfile", "tmpnam",
+    "remove", "rename", "freopen", "setbuf", "setvbuf", "fdopen",
+    "getline", "malloc", "calloc", "realloc", "free", "strdup",
+    "strndup", "aligned_alloc", "posix_memalign", "alloca", "exit",
+    "abort", "atexit", "atof", "atoi", "atol", "strtol", "strtoul",
+    "rand", "srand", "qsort", "bsearch", "getenv", "system",
+    "time", "clock", "difftime", "mktime", "localtime", "gmtime",
+    "asctime", "strftime", "signal", "raise", "assert",
+    NULL
+};
+
+/* C1: scan source untuk panggilan API hosted (di luar komentar/string).
+ * Menambah diagnostic OBSERVATION per hit (maks 12) + counter. */
+static int scan_hosted_api(const char *src, size_t len, myc_result *res)
+{
+    int    hits = 0;
+    size_t i = 0;
+    (void)res;
+    while (i < len) {
+        char c = src[i];
+        if (c == '/' && i + 1 < len && src[i + 1] == '/') {
+            while (i < len && src[i] != '\n')
+                i++;
+            continue;
+        }
+        if (c == '/' && i + 1 < len && src[i + 1] == '*') {
+            size_t e = i + 2;
+            while (e + 1 < len && !(src[e] == '*' && src[e + 1] == '/'))
+                e++;
+            i = (e + 1 < len) ? e + 2 : e;
+            continue;
+        }
+        if (c == '"' || c == '\'') {
+            char q = c;
+            size_t j = i + 1;
+            while (j < len) {
+                if (src[j] == '\\' && j + 1 < len)
+                    j += 2;
+                else if (src[j] == q) {
+                    j++;
+                    break;
+                } else
+                    j++;
+            }
+            i = j;
+            continue;
+        }
+        if (ident_char((unsigned char)c)) {
+            size_t j = i;
+            char   name[64];
+            size_t n;
+            int    k;
+            while (j < len && ident_char((unsigned char)src[j]))
+                j++;
+            n = j - i;
+            if (n >= sizeof(name))
+                n = sizeof(name) - 1;
+            memcpy(name, src + i, n);
+            name[n] = '\0';
+            /* harus panggilan: diikuti '(' */
+            {
+                size_t cj = j;
+                while (cj < len && (src[cj] == ' ' || src[cj] == '\t'))
+                    cj++;
+                if (cj < len && src[cj] == '(') {
+                    for (k = 0; HOSTED_API[k]; k++) {
+                        if (strcmp(HOSTED_API[k], name) == 0) {
+                            char msg[160];
+                            hits++;
+                            if (hits <= 12 &&
+                                res->diag_count < MYC_MAX_DIAGNOSTICS) {
+                                snprintf(msg, sizeof(msg),
+                                    "freestanding: %s() dipanggil -- API "
+                                    "hosted TIDAK tersedia di target ini "
+                                    "(observasi)", name);
+                                {
+                                    char *slot = myc_result_arena_dup(res,
+                                                                      msg, 0);
+                                    if (slot) {
+                                        res->diags[res->diag_count].line = 0;
+                                        res->diags[res->diag_count].col = 0;
+                                        res->diags[res->diag_count].message =
+                                            slot;
+                                        res->diags[res->diag_count].confidence =
+                                            MYC_CONF_OBSERVATION;
+                                        res->diag_count++;
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            i = j;
+            continue;
+        }
+        i++;
+    }
+    return hits;
 }
 
 /* Skimmer coverage checked-build (MYC-AUDIT-026, roadmap 7.3): hitung
@@ -719,6 +836,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     myc_gate_set_status(res, MYC_GATE_STACK, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_FUZZ, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_MUTATE, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_FREESTANDING, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_EXHAUSTIVE, MYC_GATE_NOT_APPLICABLE, NULL);
 
     /* hash source */
@@ -746,7 +864,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         char  flags_str[256];
         myc_policy_hash(policy_hex);
         snprintf(flags_str, sizeof(flags_str),
-                      "c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s",
+                      "c11;Wall;Werror;pedantic;mem;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s",
                       req->strict ? "strict" : "default",
                       req->run ? "run" : "norun",
                       req->prove ? "prove" : "noprove",
@@ -756,7 +874,8 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                       req->metamorphic ? "meta" : "nometa",
                       req->negative ? "neg" : "noneg",
                       req->divergence ? "div" : "nodiv",
-                      req->require_complete ? "reqc" : "noreqc");
+                      req->require_complete ? "reqc" : "noreqc",
+                      req->freestanding ? "free" : "nofree");
         fingerprint_cache_update(gcc_path, req->cwd, policy_hex,
                                      flags_str, MYC_BUF_RUNTIME_REV);
         fingerprint_compute_incremental(res->source_sha256, hex);
@@ -882,16 +1001,25 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         myc_scan_calls(pre, prelen, res);
     }
 
-    /* --- Gate: kompilasi + tier dasar memori (perlu -O2 utk memori) --- */
+    /* --- Gate: kompilasi + tier dasar memori (perlu -O2 utk memori) ---
+     * C1 (--freestanding): tambah -ffreestanding -fno-builtin sehingga
+     * kompilasi mensimulasikan C tanpa OS (libc hosted tak diasumsikan).
+     * Bila gagal di mode ini = HARD (sama seperti compile biasa). */
     {
-        const char *const *lists[4];
+        static const char *const FREE_EXTRA[] = {
+            "-ffreestanding", "-fno-builtin", NULL
+        };
+        const char *const *lists[5];
         const char **args;
         size_t      nargs;
         lists[0] = MEMORY_GATE;
         lists[1] = SYNTAX_BASE;
         lists[2] = MEMORY_WARNINGS;
         lists[3] = req->strict ? STRICT_WARNINGS : NULL;
-        args = merge_args(lists, req->strict ? 4 : 3, &nargs);
+        lists[4] = req->freestanding ? FREE_EXTRA : NULL;
+        args = merge_args(lists,
+                          (req->strict ? 4 : 3) + (req->freestanding ? 1 : 0),
+                          &nargs);
         if (!args) {
             res->verdict = MC_ERROR;
             res->err = MYC_ERR_INTERNAL;
@@ -900,6 +1028,30 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         }
         run_gcc(req, gcc_path, args, src, srclen, max_out, &pr);
         free((void *)args);
+    }
+    if (req->freestanding) {
+        res->ran_freestanding = 1;
+        res->freestanding_api_hits = scan_hosted_api(src, srclen, res);
+        myc_gate_set_status(res, MYC_GATE_FREESTANDING,
+                            res->freestanding_api_hits > 0
+                                ? MYC_GATE_COMPLETED_OBSERVATIONS
+                                : MYC_GATE_COMPLETED_CLEAN,
+                            res->freestanding_api_hits > 0
+                                ? "hosted API terdeteksi (observasi)"
+                                : "freestanding hygiene bersih");
+        myc_result_add_evidence(res, MYC_GATE_FREESTANDING,
+                                res->freestanding_api_hits > 0
+                                    ? MYC_EVIDENCE_DIAGNOSTIC
+                                    : MYC_EVIDENCE_GATE_END,
+                                "freestanding: hygiene scan selesai");
+        {
+            char rep[512];
+            snprintf(rep, sizeof(rep),
+                     "freestanding (C1): %d panggilan API hosted (observasi "
+                     "NON-blocking; compile memakai -ffreestanding "
+                     "-fno-builtin)\n", res->freestanding_api_hits);
+            res->freestanding_report = myc_result_arena_dup(res, rep, 0);
+        }
     }
     if (pr.timed_out) {
         res->verdict = MC_TIMEOUT;
