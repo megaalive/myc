@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c; do
+         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -337,6 +337,33 @@ if ! ./myc check tests/ok_hello.c --no-cache 2>&1 | grep -qF "coaching (B3)"; th
     note "B3 tanpa finding = tanpa coaching"
 else
     fail "B3 coaching muncul pada source bersih"
+fi
+
+# --- 5h. D4 System-Prompt Contract Generator (myc prompt, DS-15) ---
+if ./myc prompt tests/ok_hello.c 2>&1 | grep -qF "# Aturan C untuk proyek ini (dari myc -- deterministik"; then
+    note "D4 prompt: header deterministik muncul"
+else
+    fail "D4 prompt: header hilang"
+fi
+if ./myc prompt tests/ok_hello.c 2>&1 | grep -qF "Target host (fakta gcc host): char="; then
+    note "D4 prompt: fakta target host ada"
+else
+    fail "D4 prompt: fakta target host hilang"
+fi
+if ./myc prompt tests/bad_system.c 2>&1 | grep -qF "Fungsi denylist dipanggil di file ini"; then
+    note "D4 prompt: panggilan denylist terdeteksi"
+else
+    fail "D4 prompt: denylist tidak terdeteksi"
+fi
+if ./myc prompt tests/negative_dev.c 2>&1 | grep -qF "Konvensi alokasi (dari negative-space): 4/5"; then
+    note "D4 prompt: konvensi alokasi dari negative-space"
+else
+    fail "D4 prompt: konvensi alokasi hilang"
+fi
+if ./myc prompt tests/ok_hello.c 2>&1 | grep -qF "Anti-churn"; then
+    note "D4 prompt: aturan anti-churn ada"
+else
+    fail "D4 prompt: anti-churn hilang"
 fi
 
 # --- 6. dogfood tool ---

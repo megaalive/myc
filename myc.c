@@ -45,6 +45,7 @@
 #include "budget.h"
 #include "assume.h"
 #include "taxonomy.h"
+#include "prompt.h"
 
 /* ------------------------------------------------------------------ */
 /* Implementasi kontrak inti myc                                       */
@@ -1104,6 +1105,9 @@ static void usage(void)
         "                        preservation obligations, verify command; SOL-22)\n"
         "  myc policy\n"
         "  myc probe\n"
+        "  myc prompt <file.c>\n"
+        "                        (D4/DS-15: system-prompt snippet deterministik\n"
+        "                        dari fakta target + kebijakan proyek)\n"
         "  myc version\n");
 }
 
@@ -1256,6 +1260,37 @@ static int cmd_policy(void)
     return 0;
 }
 
+/* D4 (DS-15): system-prompt snippet deterministik untuk harness LLM. */
+static int cmd_prompt(const char *path)
+{
+    myc_source_input in;
+    const char *buf;
+    size_t      len;
+    int         needs_free;
+    myc_error_code le;
+    char       *prompt;
+
+    memset(&in, 0, sizeof(in));
+    in.kind = MYC_SOURCE_FILE;
+    in.file_path = path;
+    le = myc_source_load(&in, &buf, &len, &needs_free);
+    if (le != MYC_ERR_NONE) {
+        fprintf(stderr, "myc: prompt: tidak dapat membaca %s (error=%s)\n",
+                path, myc_error_name(le));
+        return 1;
+    }
+    prompt = myc_prompt_build(buf, len);
+    if (needs_free)
+        free((void *)buf);
+    if (!prompt) {
+        fprintf(stderr, "myc: prompt: gagal membangun prompt (OOM)\n");
+        return 1;
+    }
+    printf("%s", prompt);
+    free(prompt);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     myc_request req;
@@ -1274,6 +1309,14 @@ int main(int argc, char **argv)
         return cmd_policy();
     if (strcmp(argv[1], "probe") == 0)
         return cmd_probe(argv[0]);
+    /* D4 (DS-15): myc prompt <file.c> -- system-prompt snippet. */
+    if (strcmp(argv[1], "prompt") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "myc: prompt membutuhkan argumen file.c\n");
+            return 2;
+        }
+        return cmd_prompt(argv[2]);
+    }
 
     if (strcmp(argv[1], "check") != 0 && strcmp(argv[1], "context") != 0) {
         usage();

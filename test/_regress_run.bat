@@ -85,7 +85,7 @@ myc.exe check tests\ok_hello.c --cwd "" > %OUT% 2>&1
 findstr /C:"invalid_cwd" %OUT% >nul && echo [OK] --cwd kosong ditolak (invalid_cwd) || echo [WARN] --cwd kosong tidak ditolak
 del %OUT%
 echo --- self-dogfooding: semua source myc harus OK
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c) do (
   echo === %%f
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%
@@ -235,6 +235,17 @@ myc.exe check tests\bad_realloc.c --no-cache --json-summary > %OUT% 2>&1
 findstr /C:"\"coaching\":[{\"class\":\"missing_guard\"" %OUT% >nul && echo [OK] B3 coaching di json-summary || echo [WARN] B3 coaching hilang di json-summary
 myc.exe check tests\ok_hello.c --no-cache > %OUT% 2>&1
 findstr /C:"coaching (B3)" %OUT% >nul && echo [WARN] B3 coaching muncul pada source bersih || echo [OK] B3 tanpa finding = tanpa coaching
+del %OUT%
+rem --- Fase 5 D4 (DS-15): System-Prompt Contract Generator (myc prompt)
+echo --- D4: myc prompt render snippet deterministik untuk harness LLM
+myc.exe prompt tests\ok_hello.c > %OUT% 2>&1
+findstr /C:"# Aturan C untuk proyek ini (dari myc -- deterministik" %OUT% >nul && echo [OK] D4 prompt header deterministik || echo [WARN] D4 prompt header hilang
+findstr /C:"Target host (fakta gcc host): char=" %OUT% >nul && echo [OK] D4 fakta target host ada || echo [WARN] D4 fakta target host hilang
+findstr /C:"Anti-churn" %OUT% >nul && echo [OK] D4 aturan anti-churn ada || echo [WARN] D4 anti-churn hilang
+myc.exe prompt tests\bad_system.c > %OUT% 2>&1
+findstr /C:"Fungsi denylist dipanggil di file ini" %OUT% >nul && echo [OK] D4 denylist terdeteksi || echo [WARN] D4 denylist tidak terdeteksi
+myc.exe prompt tests\negative_dev.c > %OUT% 2>&1
+findstr /C:"Konvensi alokasi (dari negative-space): 4/5" %OUT% >nul && echo [OK] D4 konvensi alokasi dari negative-space || echo [WARN] D4 konvensi alokasi hilang
 del %OUT%
 rem --- fix review: ; membuang pending basi + komentar blok bukan klausa
 myc.exe check test\fixtures\contract_stale_pending.c > %OUT% 2>&1

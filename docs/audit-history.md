@@ -1864,3 +1864,25 @@ samping `myc_quorum_analysis`); tipe (`myc_taxonomy_class`,
 
 Regresi di `_ci_linux.sh` (5g) + `_regress_run.bat`: bad_realloc → 2 item
 `missing_guard` + strategi; ok_hello tanpa coaching; verdict tidak berubah.
+
+### (3) D4 — System-Prompt Contract Generator (DS-15) — `prompt.c/.h`, `myc prompt`
+
+`myc prompt <file.c>` merender **system-prompt snippet deterministik** (bukan
+AI) untuk ditempel harness LLM SEBELUM model menulis kode (P4: pencegahan
+> koreksi). Isi:
+
+- fakta target host (`myc_assume_fetch_facts`: char signed/unsigned, lebar
+  int/ptr, endianness, CHAR_BIT, STDC_VERSION) — dengan sumber "fakta gcc
+  host"; bila gcc absen dikatakan TIDAK terdeteksi (jangan berasumsi);
+- panggilan fungsi denylist yang TERDETEKSI di file ini (scan token + re-use
+  `myc_policy_deny_function`) — "non-blocking warning di myc";
+- konvensi pemeriksaan alokasi via `myc_negative_space` (9.8): "N/M
+  callsite memeriksa hasil";
+- idiom `MYC_BUF`/`MYC_AT` bila dipakai;
+- aturan anti-churn + perintah verifikasi `myc check <file.c> --delta` +
+  aturan klaim (hanya dari gate matrix).
+
+Subcommand baru di `myc.c` (`cmd_prompt`), ingress via `myc_source_load`
+(cap + NUL policy). `prompt.c` masuk PIPELINE + self-dogfooding. Regresi
+`_ci_linux.sh` (5h) + `_regress_run.bat`: fakta host, denylist
+(bad_system), konvensi alokasi (negative_dev 4/5), anti-churn.
