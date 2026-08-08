@@ -26,6 +26,7 @@ Driver / Filc; `0` = n/a, `1` = clean, `2` = findings, `3` = inconclusive).
 | quorum              | `--quorum` | —                   | cross-backend agreement (clean / conflict / inconclusive) | optional; extra signal, never a blocker                                |
 | require-complete    | `--require-complete` | —        | verification gap = CI failure (`MYC-INCOMPLETE-*`) | makes verdict INCONCLUSIVE when debt exists                                 |
 | driver              | `--driver` | clang + ASan        | edge-case harness on contract-tagged functions     | optional; non-blocking if clang absent / no contracts                        |
+| exhaustive          | `--exhaustive` | clang + ASan   | full enumeration of a **declared finite domain** ⇒ **P1 EXHAUSTIVE** (proof *within* that domain) | only for functions with `//@ requires n >= LO && n <= HI`; domain firewall rejects widths > 1024/dim or products > 1e6; **never** claims beyond the declared domain; DS-03 state detects SCOPE_LAUNDERING when the domain is narrowed across runs |
 | prove               | `--prove`  | Frama-C (Eva)       | abstract interpretation ⇒ **L2 EVA**               | optional; non-blocking if Frama-C absent (typically Linux)                   |
 | filc                | `--filc`   | Fil-C               | memory-safe execution ⇒ **L5 FILC**                | optional; non-blocking if Fil-C absent (Linux/x86_64)                       |
 

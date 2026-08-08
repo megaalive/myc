@@ -156,6 +156,7 @@ const char *myc_gate_id_short(myc_gate_id id)
     case MYC_GATE_NEGATIVE:   return "negative";
     case MYC_GATE_LINT:       return "lint";
     case MYC_GATE_DIVERGENCE: return "divergence";
+    case MYC_GATE_EXHAUSTIVE: return "exhaustive";
     default:                  return "?";
     }
 }
@@ -393,7 +394,8 @@ static void myc_build_assurance_vector(myc_result *res)
         { MYC_GATE_RUNTIME,   MYC_GATE_METAMORPHIC,
           MYC_GATE_DIVERGENCE },                                       /* RUNTIME */
         { MYC_GATE_CHECKED,   MYC_GATE_COUNT,      MYC_GATE_COUNT },   /* CHECKED */
-        { MYC_GATE_PROVE,     MYC_GATE_COUNT,      MYC_GATE_COUNT },   /* PROOF   */
+        { MYC_GATE_PROVE,     MYC_GATE_EXHAUSTIVE,
+          MYC_GATE_COUNT },                                            /* PROOF   */
         { MYC_GATE_DRIVER,    MYC_GATE_COUNT,      MYC_GATE_COUNT },   /* DRIVER  */
         { MYC_GATE_FILC,      MYC_GATE_COUNT,      MYC_GATE_COUNT }    /* FILC    */
     };

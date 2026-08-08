@@ -307,6 +307,30 @@ else
     fail "B4 harvest mengubah verdict (harus non-blocking)"
 fi
 
+# --- 5g. A3 Small-Domain Exhaustive Proof (DS-03) ---
+rm -f .myc/exhaustive.json
+if ./myc check test/fixtures/ok_exhaustive.c --exhaustive --no-cache 2>&1 | grep -qF "P1 EXHAUSTIVE untuk domain dideklarasikan"; then
+    note "A3 exhaustive: P1 EXHAUSTIVE pada domain 0..64 (65 titik)"
+else
+    fail "A3 exhaustive: P1 EXHAUSTIVE tidak tercapai"
+fi
+if ./myc check test/fixtures/bad_exhaustive.c --exhaustive --no-cache 2>&1 | grep -qF "counterexample ditemukan"; then
+    note "A3 exhaustive: counterexample terdeteksi pada ensures salah"
+else
+    fail "A3 exhaustive: counterexample tidak terdeteksi"
+fi
+if ./myc check test/fixtures/exhaustive_wide.c --exhaustive --no-cache 2>&1 | grep -qF "terlalu lebar"; then
+    note "A3 DS-03 firewall: domain lebar ditolak (bukan exhaustive)"
+else
+    fail "A3 DS-03 firewall: domain lebar tidak ditolak"
+fi
+if ./myc check test/fixtures/exhaustive_narrow.c --exhaustive --no-cache 2>&1 | grep -qF "SCOPE_LAUNDERING"; then
+    note "A3 DS-03: SCOPE_LAUNDERING terdeteksi setelah domain dipersempit"
+else
+    fail "A3 DS-03: SCOPE_LAUNDERING tidak terdeteksi"
+fi
+rm -f .myc/exhaustive.json
+
 # --- 5g. B3 LLM Error Taxonomy + coaching transcript (DS-07) ---
 if ./myc check tests/bad_realloc.c --no-cache 2>&1 | grep -qF "coaching (B3): 2 item taksonomi"; then
     note "B3 coaching: finding diklasifikasi kognitif"

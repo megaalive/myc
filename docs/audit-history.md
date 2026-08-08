@@ -1886,3 +1886,34 @@ Subcommand baru di `myc.c` (`cmd_prompt`), ingress via `myc_source_load`
 (cap + NUL policy). `prompt.c` masuk PIPELINE + self-dogfooding. Regresi
 `_ci_linux.sh` (5h) + `_regress_run.bat`: fakta host, denylist
 (bad_system), konvensi alokasi (negative_dev 4/5), anti-churn.
+
+### (4) A3 — Small-Domain Exhaustive Proof (DS-03) — `--exhaustive` — `driver.c`
+
+`myc_exhaustive_gate()` (di `driver.c`, reuse parser kontrak + infra
+build/run dari driver) meng-enumerasi **seluruh domain deklarasi** fungsi
+ber-kontrak `//@ requires n >= LO && n <= HI` dan men-assert semua
+`//@ ensures` pada setiap titik — **P1 EXHAUSTIVE** (bukti riil untuk
+domain yang dideklarasikan, bukan sampel tepi).
+
+- Odometer kartesian per parameter integer (pointer bukan dimensi);
+  budget: `EXH_MAX_PER_PARAM 1024` / dimensi, `EXH_MAX_POINTS 1e6`
+  (produk). Dimensi tanpa rentang penuh / terlalu lebar / produk berlebih
+  → gate di-skip dengan **alasan akurat** (pesan menyebut variabel & batas).
+- Harness ASan/UBSan (`-fsanitize=address,undefined`, `-O0`) di-compile
+  clang + dijalankan per titik; stdout membawa marker `EXH run=N skip=M`;
+  runtime violasi / assert ensures → **DRIVER_VIOLATION** + counterexample.
+- Klaim dijaga ketat: output selalu menulis "bukan bukti di luar domain
+  dideklarasikan"; `exhaustive_domain_hash` = sha256 dari spec domain
+  (per fungsi), masuk receipt.
+- **DS-03 Domain Firewall**: state `.myc/exhaustive.json` mencatat spec
+  domain per fungsi antar run. Bila domain **dipersempit** (strict subset
+  dari run sebelumnya) → `SCOPE_LAUNDERING` dilaporkan (proof laundering)
+  dan `exhaustive_laundering=1` — bukti domain sempit tidak diam-diam
+  menggantikan bukti domain lebar. Verdict tetap berbasis gate.
+
+Cache (SOL-18): counter exhaustive (funcs/points/cases/skipped/laundering)
+ikut disimpan. `capabilities.json` + `docs/capabilities.md` ditambah gate
+`exhaustive` (dimensi P). Fixture: `ok_exhaustive.c` (65 titik P1),
+`bad_exhaustive.c` (counterexample), `exhaustive_wide.c` (domain 65536
+→ ditolak), `exhaustive_narrow.c` (SCOPE_LAUNDERING bila run setelah
+ok_exhaustive). Regresi `_ci_linux.sh` (5g) + `_regress_run.bat`.

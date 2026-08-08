@@ -263,6 +263,13 @@ static int cache_read_all(myc_cache_entry *out, int cap)
             v = json_get(e, "hv_c"); if (v && v->type == JSON_NUM) ce->harvest_candidates = (int)v->num;
             v = json_get(e, "hv_v"); if (v && v->type == JSON_NUM) ce->harvest_validated = (int)v->num;
             v = json_get(e, "hv_u"); if (v && v->type == JSON_NUM) ce->harvest_unbound = (int)v->num;
+            v = json_get(e, "ex_r"); if (v && v->type == JSON_NUM) ce->ex_ran = (int)v->num;
+            v = json_get(e, "ex_f"); if (v && v->type == JSON_NUM) ce->ex_funcs = (int)v->num;
+            v = json_get(e, "ex_c"); if (v && v->type == JSON_NUM) ce->ex_cases = (int)v->num;
+            v = json_get(e, "ex_s"); if (v && v->type == JSON_NUM) ce->ex_skip = (int)v->num;
+            v = json_get(e, "ex_p"); if (v && v->type == JSON_NUM) ce->ex_points = (long)v->num;
+            v = json_get(e, "ex_l"); if (v && v->type == JSON_NUM) ce->ex_laund = (int)v->num;
+            v = json_get(e, "ex_h"); if (v && v->type == JSON_STR) snprintf(ce->ex_dhash, sizeof(ce->ex_dhash), "%s", v->str);
             v = json_get(e, "san_marker"); if (v && v->type == JSON_STR) snprintf(ce->sanitizer_marker, sizeof(ce->sanitizer_marker), "%s", v->str);
             v = json_get(e, "prov_mode"); if (v && v->type == JSON_STR) snprintf(ce->prove_mode, sizeof(ce->prove_mode), "%s", v->str);
             v = json_get(e, "prov_ver"); if (v && v->type == JSON_STR) snprintf(ce->prove_version, sizeof(ce->prove_version), "%s", v->str);
@@ -568,6 +575,13 @@ static void cache_write_all(const myc_cache_entry *entries, int count)
         json_obj_set(e, "hv_c", json_new_num((int64_t)ce->harvest_candidates));
         json_obj_set(e, "hv_v", json_new_num((int64_t)ce->harvest_validated));
         json_obj_set(e, "hv_u", json_new_num((int64_t)ce->harvest_unbound));
+        json_obj_set(e, "ex_r", json_new_num((int64_t)ce->ex_ran));
+        json_obj_set(e, "ex_f", json_new_num((int64_t)ce->ex_funcs));
+        json_obj_set(e, "ex_c", json_new_num((int64_t)ce->ex_cases));
+        json_obj_set(e, "ex_s", json_new_num((int64_t)ce->ex_skip));
+        json_obj_set(e, "ex_p", json_new_num((int64_t)ce->ex_points));
+        json_obj_set(e, "ex_l", json_new_num((int64_t)ce->ex_laund));
+        json_obj_set(e, "ex_h", json_new_str(ce->ex_dhash));
         json_obj_set(e, "san_marker", json_new_str(ce->sanitizer_marker));
         json_obj_set(e, "prov_mode", json_new_str(ce->prove_mode));
         json_obj_set(e, "prov_ver", json_new_str(ce->prove_version));
@@ -1023,6 +1037,14 @@ static void cache_replay_into(const myc_cache_entry *e, myc_result *res)
     res->harvest_candidates = e->harvest_candidates;
     res->harvest_validated = e->harvest_validated;
     res->harvest_unbound = e->harvest_unbound;
+    res->ran_exhaustive = e->ex_ran;
+    res->exhaustive_funcs = e->ex_funcs;
+    res->exhaustive_cases = e->ex_cases;
+    res->exhaustive_skipped = e->ex_skip;
+    res->exhaustive_points = e->ex_points;
+    res->exhaustive_laundering = e->ex_laund;
+    memcpy(res->exhaustive_domain_hash, e->ex_dhash,
+           sizeof(res->exhaustive_domain_hash));
     /* SOL-30: hasil enforcement budget contract di-replay utuh (verdict/
      * debt/report sudah mencerminkan run asli; kontrak ada di cache key,
      * jadi re-enforce di jalur cache-hit TIDAK dilakukan). */
@@ -1432,6 +1454,14 @@ void myc_cache_store(const myc_request *req, const myc_result *res,
     ne->harvest_candidates = res->harvest_candidates;
     ne->harvest_validated = res->harvest_validated;
     ne->harvest_unbound = res->harvest_unbound;
+    ne->ex_ran = res->ran_exhaustive;
+    ne->ex_funcs = res->exhaustive_funcs;
+    ne->ex_cases = res->exhaustive_cases;
+    ne->ex_skip = res->exhaustive_skipped;
+    ne->ex_points = res->exhaustive_points;
+    ne->ex_laund = res->exhaustive_laundering;
+    memcpy(ne->ex_dhash, res->exhaustive_domain_hash,
+           sizeof(ne->ex_dhash));
 
     snprintf(ne->sanitizer_marker, sizeof(ne->sanitizer_marker), "%s",
              res->run_sanitizer_marker);

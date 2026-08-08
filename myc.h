@@ -134,6 +134,14 @@ typedef enum {
                                 klasifikasi semantic/diagnostic/sanitizer
                                 divergence (hanya bukti sanitizer / witness
                                 stabil = hard; sisanya observasi) */
+    MYC_GATE_EXHAUSTIVE,     /* (Fase 5, A3/DS-03) small-domain exhaustive
+                                proof: enumerasi PENUH domain fungsi
+                                ber-kontrak yang terbatas (requires dengan
+                                rentang integer lengkap, produk <= 1e6) =
+                                bukti riil untuk domain dideklarasikan
+                                (P1 EXHAUSTIVE). DS-03 domain firewall:
+                                penyempitan domain vs run sebelumnya =
+                                SCOPE_LAUNDERING (diagnostic). */
     MYC_GATE_COUNT
 } myc_gate_id;
 
@@ -555,10 +563,11 @@ typedef struct {
       * assumption_acks: --assumption-ack "id:status,..." (malloc'd,
       * di-free caller myc.c main) — tutup asumsi terdeteksi tanpa
       * menghilangkannya dari receipt. no_assumptions: --no-assumptions
-      * — matikan deteksi (default 0 = aktif, seperti --no-lint). */
-     int  require_assumptions_closed;
-     char *assumption_acks;
-     int  no_assumptions;
+      * — matikan deteksi (default 0 = aktif, seperti --no-lint). */    int         require_assumptions_closed;
+    char *assumption_acks;
+    int  no_assumptions;
+    /* Fase 5, A3 (--exhaustive): gate Small-Domain Exhaustive Proof. */
+    int         exhaustive;
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
@@ -895,6 +904,25 @@ typedef struct {
     int            assumption_ok;        /* 1 = tidak ada asumsi terbuka */
     int            assumption_ack_applied;
     char          *assumption_report;    /* arena */
+
+    /* --- Fase 5, A3 (Small-Domain Exhaustive Proof, --exhaustive) ---
+     * Hasil gate: ran_exhaustive=1 bila dijalankan; exhaustive_funcs =
+     * jumlah fungsi domain kecil; exhaustive_cases/skipped = titik domain
+     * tereksekusi/dilewati guard; exhaustive_points = total titik domain
+     * (produk kartesian); exhaustive_domain_hash = sha256 spec domain;
+     * exhaustive_laundering = 1 bila domain dipersempit vs run sebelumnya
+     * (DS-03 SCOPE_LAUNDERING); report/harness_sha/stdout/stderr. */
+    int            ran_exhaustive;
+    int            exhaustive_funcs;
+    int            exhaustive_cases;
+    int            exhaustive_skipped;
+    long           exhaustive_points;
+    int            exhaustive_laundering;
+    char           exhaustive_domain_hash[65];
+    char          *exhaustive_report;        /* arena */
+    char          *exhaustive_harness_sha256;/* malloc'd, freed result_free */
+    char          *exhaustive_stdout_text;   /* malloc'd, freed result_free */
+    char          *exhaustive_stderr_text;   /* malloc'd, freed result_free */
 
     /* internal: gate mana yang dijalankan terakhir */
     int         ran_preprocess;

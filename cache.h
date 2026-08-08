@@ -103,6 +103,10 @@ typedef struct {
     int   contract_requires, contract_ensures;
     /* Fase 5 B4 (DS-08): hasil harvest komentar-biasa (observasi). */
     int   harvest_candidates, harvest_validated, harvest_unbound;
+    /* Fase 5 A3 (--exhaustive): hasil enumerasi penuh domain. */
+    int   ex_ran, ex_funcs, ex_cases, ex_skip, ex_laund;
+    long  ex_points;
+    char  ex_dhash[65];
 
     /* SOL-30: hasil enforcement budget contract (replay identik). */
     int   budget_active;

@@ -223,6 +223,19 @@ findstr /C:"perlu //@ syntax (bukan C murni)" %OUT% >nul && echo [OK] B4 prose n
 findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] B4 non-blocking (verdict OK) || echo [WARN] B4 mengubah verdict
 myc.exe check test\fixtures\harvest_contracts.c --no-cache --json-summary > %OUT% 2>&1
 findstr /C:"\"harvest\":{\"candidates\":6,\"validated\":5,\"unbound\":0}" %OUT% >nul && echo [OK] B4 harvest di json-summary || echo [WARN] B4 harvest hilang di json-summary
+
+rem --- Fase 5 A3 (DS-03): Small-Domain Exhaustive Proof
+echo --- A3: exhaustive proof (enumerasi penuh domain deklarasi)
+if exist .myc\exhaustive.json del .myc\exhaustive.json
+myc.exe check test\fixtures\ok_exhaustive.c --exhaustive --no-cache > %OUT% 2>&1
+findstr /C:"P1 EXHAUSTIVE untuk domain dideklarasikan" %OUT% >nul && echo [OK] A3 P1 EXHAUSTIVE 0..64 || echo [WARN] A3 P1 EXHAUSTIVE tidak tercapai
+myc.exe check test\fixtures\bad_exhaustive.c --exhaustive --no-cache > %OUT% 2>&1
+findstr /C:"counterexample ditemukan" %OUT% >nul && echo [OK] A3 counterexample terdeteksi || echo [WARN] A3 counterexample tidak terdeteksi
+myc.exe check test\fixtures\exhaustive_wide.c --exhaustive --no-cache > %OUT% 2>&1
+findstr /C:"terlalu lebar" %OUT% >nul && echo [OK] A3 domain lebar ditolak || echo [WARN] A3 domain lebar tidak ditolak
+myc.exe check test\fixtures\exhaustive_narrow.c --exhaustive --no-cache > %OUT% 2>&1
+findstr /C:"SCOPE_LAUNDERING" %OUT% >nul && echo [OK] A3 SCOPE_LAUNDERING terdeteksi || echo [WARN] A3 SCOPE_LAUNDERING tidak terdeteksi
+if exist .myc\exhaustive.json del .myc\exhaustive.json
 del %OUT%
 rem --- Fase 5 B3 (DS-07): LLM Error Taxonomy + coaching transcript
 echo --- B3: finding diklasifikasi ke kelas kognitif + strategi (observasi non-blocking)

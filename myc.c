@@ -525,6 +525,12 @@ void myc_result_free(myc_result *res)
     free(res->driver_stderr_text);
     free(res->driver_harness_sha256);
     res->driver_harness_sha256 = NULL;
+    free(res->exhaustive_stdout_text);
+    free(res->exhaustive_stderr_text);
+    free(res->exhaustive_harness_sha256);
+    res->exhaustive_stdout_text = NULL;
+    res->exhaustive_stderr_text = NULL;
+    res->exhaustive_harness_sha256 = NULL;
     free(res->resolved_gcc);
     free(res->gcc_version);
     free(res->clang_version);
@@ -1090,7 +1096,7 @@ static void usage(void)
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
         "  myc check <file.c> [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache] [--no-assumptions] [--cwd DIR]\n"
-        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete]\n"
+        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--exhaustive] [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete]\n"
         "  myc check <file.c> --divergence   (Fase 4 A2: matriks toolchain {gcc,clang,tcc} x {-O0,-O2}, klasifikasi DS-02)\n"
         "  myc check <file.c> [--require-assumptions-closed] [--assumption-ack id:status,...]   (Fase 4 A1: ledger asumsi portabilitas)\n"
         "  myc check <file.c> [--timeout MS] [--output-cap BYTES]\n"
@@ -1400,6 +1406,9 @@ int main(int argc, char **argv)
                 req.metamorphic = 1; known = 1;
             } else if (strcmp(argv[i], "--divergence") == 0) {
                 req.divergence = 1; known = 1;
+            } else if (strcmp(argv[i], "--exhaustive") == 0) {
+                /* Fase 5 A3: small-domain exhaustive proof. */
+                req.exhaustive = 1; known = 1;
             } else if (strcmp(argv[i], "--negative") == 0) {
                 req.negative = 1; known = 1;
             } else if (strcmp(argv[i], "--require-complete") == 0) {

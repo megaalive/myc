@@ -444,6 +444,27 @@ void myc_report_text(const myc_result *res)
             printf("  driver_stderr:\n%s\n", res->driver_stderr_text);
     }
 
+    if (res->ran_exhaustive) {
+        printf("exhaustive (A3):\n");
+        printf("  funcs: %d  points: %ld  cases: %d  skipped: %d\n",
+               res->exhaustive_funcs, res->exhaustive_points,
+               res->exhaustive_cases, res->exhaustive_skipped);
+        if (res->exhaustive_domain_hash[0])
+            printf("  domain_hash: %s\n", res->exhaustive_domain_hash);
+        if (res->exhaustive_laundering)
+            printf("  SCOPE_LAUNDERING: domain kontrak dipersempit vs run "
+                   "sebelumnya (proof laundering)\n");
+        if (res->exhaustive_report)
+            printf("%s", res->exhaustive_report);
+        printf("  harness_sha256: %s\n",
+               res->exhaustive_harness_sha256
+                   ? res->exhaustive_harness_sha256 : "(n/a)");
+        if (res->exhaustive_stdout_text && res->exhaustive_stdout_text[0])
+            printf("  exhaustive_stdout:\n%s\n", res->exhaustive_stdout_text);
+        if (res->exhaustive_stderr_text && res->exhaustive_stderr_text[0])
+            printf("  exhaustive_stderr:\n%s\n", res->exhaustive_stderr_text);
+    }
+
     if (res->ran_metamorphic) {
         printf("metamorphic (9.7):\n");
         printf("  o0_exit: %d  o2_exit: %d\n",
@@ -890,6 +911,26 @@ char *myc_result_to_json(const myc_result *res)
         json_sb_printf(&b, "\"metamorphic_inconsistent\":%s,",
                        res->metamorphic_inconsistent ? "true" : "false");
     }
+    json_sb_printf(&b, "\"ran_exhaustive\":%s,",
+                   res->ran_exhaustive ? "true" : "false");
+    if (res->ran_exhaustive) {
+        json_sb_printf(&b, "\"exhaustive_funcs\":%d,", res->exhaustive_funcs);
+        json_sb_printf(&b, "\"exhaustive_cases\":%d,", res->exhaustive_cases);
+        json_sb_printf(&b, "\"exhaustive_skipped\":%d,",
+                       res->exhaustive_skipped);
+        json_sb_printf(&b, "\"exhaustive_points\":%ld,",
+                       res->exhaustive_points);
+        json_sb_printf(&b, "\"exhaustive_laundering\":%s,",
+                       res->exhaustive_laundering ? "true" : "false");
+        json_sb_printf(&b, "\"exhaustive_domain_hash\":\"%s\",",
+                       res->exhaustive_domain_hash);
+        json_sb_puts(&b, "\"exhaustive_report\":");
+        json_sb_escape(&b, res->exhaustive_report);
+        json_sb_puts(&b, ",");
+        json_sb_printf(&b, "\"exhaustive_harness_sha256\":");
+        json_sb_escape(&b, res->exhaustive_harness_sha256);
+        json_sb_puts(&b, ",");
+    }
     json_sb_printf(&b, "\"ran_divergence\":%s,",
                    res->ran_divergence ? "true" : "false");
     if (res->ran_divergence) {
@@ -1309,6 +1350,17 @@ void myc_report_json_summary(const myc_result *res)
     json_sb_printf(&b, "\"ran_driver\":%s,", res->ran_driver ? "true" : "false");
     json_sb_printf(&b, "\"ran_negative\":%s,", res->ran_negative ? "true" : "false");
     json_sb_printf(&b, "\"ran_metamorphic\":%s,", res->ran_metamorphic ? "true" : "false");
+    json_sb_printf(&b, "\"ran_exhaustive\":%s,", res->ran_exhaustive ? "true" : "false");
+    if (res->ran_exhaustive) {
+        json_sb_printf(&b, "\"exhaustive_funcs\":%d,", res->exhaustive_funcs);
+        json_sb_printf(&b, "\"exhaustive_cases\":%d,", res->exhaustive_cases);
+        json_sb_printf(&b, "\"exhaustive_points\":%ld,",
+                       res->exhaustive_points);
+        json_sb_printf(&b, "\"exhaustive_laundering\":%s,",
+                       res->exhaustive_laundering ? "true" : "false");
+        json_sb_printf(&b, "\"exhaustive_domain_hash\":\"%s\",",
+                       res->exhaustive_domain_hash);
+    }
     json_sb_printf(&b, "\"ran_divergence\":%s,", res->ran_divergence ? "true" : "false");
     if (res->ran_divergence) {
         json_sb_printf(&b, "\"divergence_ran\":%d,", res->divergence_ran);

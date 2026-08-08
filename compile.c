@@ -713,6 +713,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     myc_gate_set_status(res, MYC_GATE_NEGATIVE, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_LINT, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_DIVERGENCE, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_EXHAUSTIVE, MYC_GATE_NOT_APPLICABLE, NULL);
 
     /* hash source */
     sha256_hex(src, srclen, hex);
@@ -1322,6 +1323,64 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                 "driver tidak tersedia / 0 kasus");
             myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_SKIP,
                                     "driver unavailable (gap)");
+        }
+        free(gcc_path);
+        myc_reduce_verdict(res);
+        return;
+    }
+
+    /* --- Gate opsional: small-domain exhaustive proof (Fase 5, A3) ---
+     * Enumerasi PENUH domain fungsi ber-kontrak yang terbatas = bukti
+     * riil (P1 EXHAUSTIVE) untuk domain dideklarasikan. Non-blocking:
+     * clang absen / tanpa fungsi domain kecil -> di-skip (UNAVAILABLE /
+     * NOT_APPLICABLE). Violation = counterexample enumeratif. */
+    if (req->exhaustive) {
+        int ok = myc_exhaustive_gate(req, src, srclen, res);
+        if (res->verdict == MC_TIMEOUT ||
+            res->verdict == MC_DRIVER_VIOLATION) {
+            if (res->verdict == MC_DRIVER_VIOLATION) {
+                res->assurance = MYC_ASSURANCE_NONE;
+                myc_gate_set_status(res, MYC_GATE_EXHAUSTIVE,
+                                    MYC_GATE_COMPLETED_FINDINGS,
+                                    res->exhaustive_stderr_text
+                                        ? res->exhaustive_stderr_text
+                                        : "exhaustive counterexample");
+                myc_result_add_evidence(res, MYC_GATE_EXHAUSTIVE,
+                                        MYC_EVIDENCE_FINDING,
+                                        "exhaustive: counterexample");
+            } else {
+                myc_gate_set_status(res, MYC_GATE_EXHAUSTIVE,
+                                    MYC_GATE_INCONCLUSIVE,
+                                    "exhaustive timeout");
+                myc_result_add_evidence(res, MYC_GATE_EXHAUSTIVE,
+                                        MYC_EVIDENCE_ERROR,
+                                        "exhaustive timeout");
+            }
+            free(gcc_path);
+            myc_reduce_verdict(res);
+            return;
+        }
+        if (ok && res->ran_exhaustive && res->exhaustive_cases > 0) {
+            myc_gate_set_status(res, MYC_GATE_EXHAUSTIVE,
+                                MYC_GATE_COMPLETED_CLEAN,
+                                "P1 EXHAUSTIVE (domain dideklarasikan)");
+            myc_result_add_evidence(res, MYC_GATE_EXHAUSTIVE,
+                                    MYC_EVIDENCE_GATE_END,
+                                    "exhaustive: clean (enumerasi penuh)");
+        } else if (res->contract_requires == 0) {
+            myc_gate_set_status(res, MYC_GATE_EXHAUSTIVE,
+                                MYC_GATE_NOT_APPLICABLE,
+                                "tidak ada fungsi ber-kontrak");
+            myc_result_add_evidence(res, MYC_GATE_EXHAUSTIVE,
+                                    MYC_EVIDENCE_SKIP,
+                                    "exhaustive di-skip: tanpa kontrak");
+        } else {
+            myc_gate_set_status(res, MYC_GATE_EXHAUSTIVE,
+                                MYC_GATE_UNAVAILABLE,
+                                "exhaustive tidak tersedia / 0 titik");
+            myc_result_add_evidence(res, MYC_GATE_EXHAUSTIVE,
+                                    MYC_EVIDENCE_SKIP,
+                                    "exhaustive unavailable (gap)");
         }
         free(gcc_path);
         myc_reduce_verdict(res);

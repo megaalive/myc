@@ -38,4 +38,13 @@
 int myc_driver_gate(const myc_request *req, const char *source, size_t source_len,
                     myc_result *res);
 
+/* A3 (Small-Domain Exhaustive Proof, --exhaustive, DS-03): enumerasi PENUH
+ * domain fungsi ber-kontrak yang terbatas (requires dengan rentang integer
+ * lengkap, produk <= 1e6) = bukti riil untuk domain yang dideklarasikan.
+ * Reuse mesin driver (scan_contract_funcs, parse_bound, build/run ASan).
+ * Return 1 = clean dengan >= 1 titik tereksekusi (P1 EXHAUSTIVE untuk
+ * domain dinyatakan); violation -> verdict MC_DRIVER_VIOLATION. */
+int myc_exhaustive_gate(const myc_request *req, const char *source,
+                        size_t source_len, myc_result *res);
+
 #endif /* MYC_DRIVER_H */
