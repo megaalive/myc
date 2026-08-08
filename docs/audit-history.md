@@ -1800,3 +1800,43 @@ Semua 18 source files (termasuk ledger.c): `verdict: OK` (self-dogfooding).
 ---
 > Terakhir diperbarui: 2026-08-06 (Fase 2: ledger + transaction selesai).
 > di atas tidak diubah/dihilangkan — dipindahkan verbatim dari AGENTS.md lama.
+
+---
+## Fase 5 — Eksekusi sisa rencana gptsol_deepseek-plan (B4 pertama), 2026-08-08
+
+Eksekusi bertahap 12 ide rencana `gptsol_deepseek-plan.md` yang belum
+terpasang (A3, A4, B3, B4, B5, C1..C5, D1, D2, D3, D4). Tiap ide di-commit
+terpisah; sinkronisasi `capabilities.json` + docs di tiap tahap.
+
+### (1) B4 — Comments-as-Contracts (DS-08) — `contract.c`
+
+`myc_contract_harvest()` memanen **kandidat kontrak dari komentar biasa**
+(bukan `//@`), memakai pola bahasa deterministik (bukan NLP):
+
+- `returns X` / `return X` → ensures `X`;
+- `X must not exceed Y` → requires `X <= Y`;
+- `X must be <=|<|>=|> Y` → requires `X op Y`;
+- `assumes X` / `requires X` (komentar biasa) → requires `X`;
+- `precondition:` / `pre:` → requires; `postcondition:` / `post:` → ensures;
+- komparasi langsung `X <= Y` dst. (hanya bila SELURUH baris = `X op Y`).
+
+Lifecycle DS-08: **candidate** (pola terdeteksi) → **validated** (ekspresi
+C murni via `contract_expr_purity` + `expr_has_operator` + terikat fungsi
+via `find_func_binding`) → **promoted** (user menulis `//@`) → **enforced**
+(gate). Yang tidak tervalidasi dilaporkan "perlu `//@` syntax".
+
+Guard anti false-positive:
+- `expr_has_operator` menolak teks bahasa alami (`number of words`);
+- `->` (akses member) bukan operator kontrak;
+- komparasi langsung divalidasi dengan rekonstruksi "X op Y" == seluruh
+  baris agar `n must be <= 64` tidak salah tangkap jadi `be <= 64`;
+- NON-blocking: verdict tidak pernah turun karenanya.
+
+Field hasil: `harvest_candidates` / `harvest_validated` / `harvest_unbound`
+/ `harvest_report` (arena). Output teks + JSON + `--json-summary`;
+`cache.c` (SOL-18) menyimpan 3 counter agar cache-hit tetap jujur.
+
+Fixture: `test/fixtures/harvest_contracts.c` (6 kandidat: 5 validated,
+1 prose non-C ditolak). Regresi di `_ci_linux.sh` (5f) + `_regress_run.bat`.
+
+Semua source: `verdict: OK` (self-dogfooding); build Windows + POSIX bersih.

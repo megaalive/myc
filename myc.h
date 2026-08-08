@@ -714,6 +714,20 @@ typedef struct {
     myc_contract_clause contract_clauses[MYC_MAX_CONTRACT_CLAUSES];
     int         contract_clause_count;
 
+    /* --- Fase 5, B4 (Comments-as-Contracts, DS-08) ---
+     * Panen kandidat kontrak dari komentar BIASA (bukan //@):
+     *   candidate  = pola bahasa terdeteksi (deterministik, bukan NLP);
+     *   validated  = ekspresi C murni (contract_expr_purity) + terikat
+     *                fungsi berikutnya (find_func_binding);
+     *   unbound    = ekspresi murni tapi tak terikat ke fungsi;
+     *   harvest_report (arena) = rincian per kandidat (line, func,
+     *                ekspresi, status). NON-blocking: observasi murni,
+     *                verdict tidak pernah turun karenanya. */
+    int         harvest_candidates;   /* pola terdeteksi */
+    int         harvest_validated;    /* pure + terikat fungsi */
+    int         harvest_unbound;      /* pure tapi tak terikat */
+    char       *harvest_report;       /* arena */
+
     /* --- hasil checked build (D1.2, P8, --checked) --- */
     int         ran_checked;            /* 1 bila gate checked-build dijalankan */
     int         checked_uses_buf;       /* 1 bila source memakai makro MYC_BUF */

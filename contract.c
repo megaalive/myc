@@ -871,3 +871,423 @@ char *myc_contract_inject(const char *source, size_t len, size_t *out_len)
         *out_len = out.len;
     return out.data ? out.data : NULL;
 }
+
+/* ---------------------------------------------------------------- */
+/* B4: Comments-as-Contracts (DS-08) -- panen kandidat kontrak       */
+/* dari komentar biasa (bukan //@). NON-blocking, observasi murni.   */
+/* ---------------------------------------------------------------- */
+
+#define MYC_HARVEST_MAX_CAND 32    /* batas kandidat per source */
+#define MYC_HARVEST_EXPR_LEN 192    /* ekspresi kandidat */
+#define MYC_HARVEST_WORD_LEN 64     /* identifier/angka yang diekstrak */
+
+/* Satu kandidat ter-harvest (internal). */
+typedef struct {
+    int    line;            /* baris komentar (1-based) */
+    int    kind;            /* 0 = requires, 1 = ensures */
+    char   expr[MYC_HARVEST_EXPR_LEN];   /* ekspresi C kandidat */
+    char   func[64];        /* binding stabil ("" bila tak terikat) */
+    int    valid;           /* 1 = ekspresi C murni (tervalidasi) */
+    int    bound;           /* 1 = terikat fungsi berikutnya */
+} myc_harvest_cand;
+
+/* Salin s[0..len) ke buf sebagai huruf kecil (len diclamp ke cap-1). */
+static size_t lower_copy(const char *s, size_t len, char *buf, size_t cap)
+{
+    size_t n = len < cap - 1 ? len : cap - 1;
+    size_t i;
+    for (i = 0; i < n; i++) {
+        char c = s[i];
+        if (c >= 'A' && c <= 'Z')
+            c = (char)(c - 'A' + 'a');
+        buf[i] = c;
+    }
+    buf[n] = '\0';
+    return n;
+}
+
+/* Cari substring pertama needle di hay (keduanya lowercase). */
+static const char *find_sub_lc(const char *hay, const char *needle)
+{
+    const char *p = hay;
+    size_t nlen = strlen(needle);
+    while (*p) {
+        if (strncmp(p, needle, nlen) == 0)
+            return p;
+        p++;
+    }
+    return NULL;
+}
+
+/* Ambil kata (identifier/angka) yang berakhir tepat sebelum posisi `end`
+ * di s[0..end] (lewati spasi). Kosongkan bila bukan kata utuh. */
+static void word_before(const char *s, size_t end, char *out, size_t cap)
+{
+    size_t a, b;
+    if (cap == 0) {
+        if (cap) out[0] = '\0';
+        return;
+    }
+    b = end;
+    while (b > 0 && (s[b - 1] == ' ' || s[b - 1] == '\t'))
+        b--;
+    a = b;
+    while (a > 0 && is_ident_char((unsigned char)s[a - 1]))
+        a--;
+    if (a == b) {                       /* tidak ada kata */
+        out[0] = '\0';
+        return;
+    }
+    if (b - a >= cap)
+        a = b - (cap - 1);
+    memcpy(out, s + a, b - a);
+    out[b - a] = '\0';
+}
+
+/* Ambil kata (identifier/angka) yang dimulai tepat setelah posisi `from`
+ * (lewati spasi) di s. Kosongkan bila tidak ada. */
+static void word_after(const char *s, size_t len, size_t from,
+                       char *out, size_t cap)
+{
+    size_t i, a, b;
+    i = from;
+    while (i < len && (s[i] == ' ' || s[i] == '\t'))
+        i++;
+    a = i;
+    while (i < len && is_ident_char((unsigned char)s[i]))
+        i++;
+    b = i;
+    if (a == b || b - a >= cap) {
+        out[0] = '\0';
+        return;
+    }
+    memcpy(out, s + a, b - a);
+    out[b - a] = '\0';
+}
+
+/* Apakah ekspresi mengandung operator C (syarat "terlihat seperti C",
+ * bukan kata-kata bahasa alami seperti "number of X")? */
+static int expr_has_operator(const char *e)
+{
+    size_t i;
+    for (i = 0; e[i]; i++) {
+        /* '->' (akses member) bukan operator kontrak */
+        if (e[i] == '-' && e[i + 1] == '>') {
+            i++;
+            continue;
+        }
+        switch (e[i]) {
+        case '<': case '>': case '=': case '!':
+        case '&': case '|': case '+': case '-':
+        case '*': case '/': case '%': case '?':
+            return 1;
+        default:
+            break;
+        }
+    }
+    return 0;
+}
+
+/* Ekstrak satu kandidat dari sebaris komentar (teks asli s, panjang len,
+ * SEMUA LOWERCASE di lc). Pola deterministik B4. Mengisi out->expr /
+ * out->kind. Return 1 bila pola cocok. */
+static int harvest_extract(const char *s, size_t len, const char *lc,
+                           myc_harvest_cand *out)
+{
+    const char *hit;
+    char   x[MYC_HARVEST_WORD_LEN];
+    char   y[MYC_HARVEST_WORD_LEN];
+
+    /* --- komparasi langsung: SELURUH baris = "X op Y" ---
+     * Rekonstruksi "X op Y" dan bandingkan dengan baris (case-insensitive)
+     * agar pola "n must be <= 64" TIDAK salah tangkap jadi "be <= 64". */
+    {
+        char cmp[MYC_HARVEST_EXPR_LEN];
+        char recon[MYC_HARVEST_EXPR_LEN];
+        char rec_lc[MYC_HARVEST_EXPR_LEN];
+        size_t clen = lower_copy(s, len, cmp, sizeof(cmp));
+        const char *op = NULL;
+        const char *opstr = NULL;
+        static const char *const ops[] = {
+            "<=", ">=", "==", "!=", "<", ">"
+        };
+        size_t k;
+        size_t left, right, oplen;
+        (void)clen;
+        for (k = 0; k < 6; k++) {
+            const char *f = find_sub_lc(cmp, ops[k]);
+            if (f && (!op || f < op)) {
+                op = f;
+                opstr = ops[k];
+            }
+        }
+        if (!op)
+            goto not_direct;
+        /* op harus di awal atau didahului spasi/tab */
+        if (op != cmp && op[-1] != ' ' && op[-1] != '\t')
+            goto not_direct;
+        oplen = (op[1] == '=' || (op[0] == '!' && op[1] == '=')
+                 || op[0] == '=') ? 2 : 1;
+        left = (size_t)(op - cmp);
+        right = left + oplen;
+        {
+            char x2[MYC_HARVEST_WORD_LEN], y2[MYC_HARVEST_WORD_LEN];
+            word_before(s, left, x2, sizeof(x2));
+            word_after(s, len, right, y2, sizeof(y2));
+            if (!x2[0] || !y2[0])
+                goto not_direct;
+            snprintf(recon, sizeof(recon), "%s %s %s", x2, opstr, y2);
+            lower_copy(recon, strlen(recon), rec_lc, sizeof(rec_lc));
+            if (strcmp(rec_lc, cmp) == 0) {
+                snprintf(out->expr, sizeof(out->expr), "%s", recon);
+                out->kind = 0;
+                return 1;
+            }
+        }
+    }
+not_direct:
+
+    /* --- "X must not exceed Y" -> X <= Y --- */
+    hit = find_sub_lc(lc, "must not exceed");
+    if (hit) {
+        size_t xoff = (size_t)(hit - lc);
+        word_before(s, xoff, x, sizeof(x));
+        word_after(s, len, xoff + strlen("must not exceed"), y, sizeof(y));
+        if (x[0] && y[0]) {
+            snprintf(out->expr, sizeof(out->expr), "%s <= %s", x, y);
+            out->kind = 0;
+            return 1;
+        }
+    }
+
+    /* --- "X must be <op> Y" -> X <op> Y --- */
+    hit = find_sub_lc(lc, "must be");
+    if (hit) {
+        static const char *const ops[] = {
+            "<=", ">=", "<", ">", "==", "!="
+        };
+        size_t k;
+        size_t after = (size_t)(hit - lc) + strlen("must be");
+        /* lewati spasi setelah "must be" sebelum operator */
+        while (after < len && (lc[after] == ' ' || lc[after] == '\t'))
+            after++;
+        for (k = 0; k < 6; k++) {
+            size_t klen = strlen(ops[k]);
+            if (strncmp(lc + after, ops[k], klen) == 0 &&
+                (lc[after + klen] == ' ' || lc[after + klen] == '\t' ||
+                 lc[after + klen] == '\0')) {
+                size_t xoff = (size_t)(hit - lc);
+                word_before(s, xoff, x, sizeof(x));
+                word_after(s, len, after + klen, y, sizeof(y));
+                if (x[0] && y[0]) {
+                    snprintf(out->expr, sizeof(out->expr), "%s %s %s",
+                             x, ops[k], y);
+                    out->kind = 0;
+                    return 1;
+                }
+            }
+        }
+    }
+
+    /* --- keyword ensures dengan ekspresi sisa --- */
+    {
+        static const char *const ensures_kws[] = {
+            "postcondition:", "post:", "returns", "return", NULL
+        };
+        size_t ki;
+        for (ki = 0; ensures_kws[ki]; ki++) {
+            size_t klen = strlen(ensures_kws[ki]);
+            hit = find_sub_lc(lc, ensures_kws[ki]);
+            if (hit && (hit == lc || hit[-1] == ' ' || hit[-1] == '\t')) {
+                size_t j = (size_t)(hit - lc) + klen;
+                size_t a = j, b = len;
+                while (a < b && (s[a] == ' ' || s[a] == '\t'))
+                    a++;
+                while (b > a && (s[b - 1] == ' ' || s[b - 1] == '\t'))
+                    b--;
+                if (b - a > 0 && b - a < sizeof(out->expr)) {
+                    memcpy(out->expr, s + a, b - a);
+                    out->expr[b - a] = '\0';
+                    out->kind = 1;
+                    return 1;
+                }
+            }
+        }
+    }
+
+    /* --- keyword requires dengan ekspresi sisa --- */
+    {
+        static const char *const requires_kws[] = {
+            "precondition:", "pre:", "assumes", "requires", NULL
+        };
+        size_t ki;
+        for (ki = 0; requires_kws[ki]; ki++) {
+            size_t klen = strlen(requires_kws[ki]);
+            hit = find_sub_lc(lc, requires_kws[ki]);
+            if (hit && (hit == lc || hit[-1] == ' ' || hit[-1] == '\t')) {
+                size_t j = (size_t)(hit - lc) + klen;
+                size_t a = j, b = len;
+                while (a < b && (s[a] == ' ' || s[a] == '\t'))
+                    a++;
+                while (b > a && (s[b - 1] == ' ' || s[b - 1] == '\t'))
+                    b--;
+                if (b - a > 0 && b - a < sizeof(out->expr)) {
+                    memcpy(out->expr, s + a, b - a);
+                    out->expr[b - a] = '\0';
+                    out->kind = 0;
+                    return 1;
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
+/* Proses satu region komentar [start,end) (baris // atau blok slash-star).
+ * Binding semua kandidat dicari dari `bind_from` (ujung region komentar). */
+static void harvest_region(const char *source, size_t len,
+                           size_t start, size_t end, size_t bind_from,
+                           myc_harvest_cand *cands,
+                           int *ncand, size_t *line_no)
+{
+    size_t i = start;
+    size_t line = *line_no;
+    while (i < end) {
+        size_t le = i;
+        while (le < end && source[le] != '\n')
+            le++;
+        {
+            size_t a = i, b = le;
+            while (a < b && (source[a] == ' ' || source[a] == '\t'))
+                a++;
+            if (b - a > 2 && source[a] == '/' && source[a + 1] == '*') {
+                a += 2;                     /* buang pembuka komentar blok */
+                while (b > a && source[a] == '*')
+                    a++;                     /* gaya blok: leading '*', baru */
+                while (b > a && (source[b - 1] == ' ' || source[b - 1] == '\t'
+                                 || source[b - 1] == '*' ||
+                                 source[b - 1] == '/'))
+                    b--;                     /* buang penutup komentar blok */
+            }
+            if (b - a > 0) {
+                char lc[MYC_HARVEST_EXPR_LEN];
+                size_t tlen = b - a;
+                if (tlen >= sizeof(lc))
+                    tlen = sizeof(lc) - 1;
+                lower_copy(source + a, tlen, lc, sizeof(lc));
+                if (*ncand < MYC_HARVEST_MAX_CAND) {
+                    myc_harvest_cand *c = &cands[*ncand];
+                    memset(c, 0, sizeof(*c));
+                    c->line = (int)line;
+                    if (harvest_extract(source + a, tlen, lc, c)) {
+                        /* validasi: purity + operator + binding */
+                        if (contract_expr_purity(c->expr) == MYC_CLAUSE_OK &&
+                            expr_has_operator(c->expr)) {
+                            size_t brace;
+                            c->valid = 1;
+                            c->func[0] = '\0';
+                            if (find_func_binding(source, len, bind_from,
+                                                  c->func, sizeof(c->func),
+                                                  &brace))
+                                c->bound = 1;
+                        }
+                        (*ncand)++;
+                    }
+                }
+            }
+        }
+        if (le < end && source[le] == '\n')
+            line++;
+        i = le + (source[le] == '\n' ? 1 : 0);
+    }
+    *line_no = line;
+}
+
+int myc_contract_harvest(const char *source, size_t len, myc_result *res)
+{
+    myc_harvest_cand cands[MYC_HARVEST_MAX_CAND];
+    int  ncand = 0;
+    int  i;
+    size_t pos = 0;
+    size_t line = 1;
+
+    res->harvest_candidates = 0;
+    res->harvest_validated = 0;
+    res->harvest_unbound = 0;
+    res->harvest_report = NULL;
+
+    while (pos < len) {
+        char c = source[pos];
+        if (c == '\n') {
+            line++;
+            pos++;
+            continue;
+        }
+        if (c == '/' && pos + 1 < len && source[pos + 1] == '/') {
+            size_t le = pos;
+            while (le < len && source[le] != '\n')
+                le++;
+            harvest_region(source, len, pos, le, le, cands, &ncand,
+                           &line);
+            pos = le;
+            continue;
+        }
+        if (c == '/' && pos + 1 < len && source[pos + 1] == '*') {
+            size_t end = pos + 2;
+            size_t le;
+            while (end + 1 < len &&
+                   !(source[end] == '*' && source[end + 1] == '/'))
+                end++;
+            le = end + 2;
+            if (le > len)
+                le = len;
+            harvest_region(source, len, pos, le, le, cands, &ncand,
+                           &line);
+            pos = le;
+            continue;
+        }
+        pos++;
+    }
+
+    if (ncand == 0)
+        return 1;
+
+    /* agregasi + laporan */
+    for (i = 0; i < ncand; i++) {
+        const myc_harvest_cand *c = &cands[i];
+        res->harvest_candidates++;
+        if (c->valid && c->bound)
+            res->harvest_validated++;
+        else if (c->valid)
+            res->harvest_unbound++;
+    }
+    {
+        buf rep;
+        char linebuf[MYC_HARVEST_EXPR_LEN + 96];
+        memset(&rep, 0, sizeof(rep));
+        buf_puts(&rep, "harvest (B4): kandidat kontrak dari komentar biasa\n");
+        for (i = 0; i < ncand; i++) {
+            const myc_harvest_cand *c = &cands[i];
+            const char *status = "perlu //@ syntax (bukan C murni)";
+            if (c->valid && c->bound)
+                status = "validated (pure + terikat fungsi)";
+            else if (c->valid)
+                status = "validated (pure, TAK terikat fungsi)";
+            snprintf(linebuf, sizeof(linebuf),
+                     "  [line %d] %s %s: `%s` -- %s\n",
+                     c->line, c->kind == 0 ? "requires" : "ensures",
+                     c->func[0] ? c->func : "(unbound)", c->expr, status);
+            buf_puts(&rep, linebuf);
+        }
+        buf_puts(&rep,
+                 "  (harvest = observasi; tulis //@ requires/ensures agar "
+                 "dipromosikan ke kontrak nyata)\n");
+        if (rep.data) {
+            res->harvest_report = myc_result_arena_dup(res, rep.data, 0);
+            free(rep.data);
+        }
+    }
+    return 1;
+}
+

@@ -260,6 +260,9 @@ static int cache_read_all(myc_cache_entry *out, int cap)
             v = json_get(e, "err_bytes"); if (v && v->type == JSON_NUM) ce->total_stderr_bytes = (unsigned long long)v->num;
             v = json_get(e, "ct_req"); if (v && v->type == JSON_NUM) ce->contract_requires = (int)v->num;
             v = json_get(e, "ct_ens"); if (v && v->type == JSON_NUM) ce->contract_ensures = (int)v->num;
+            v = json_get(e, "hv_c"); if (v && v->type == JSON_NUM) ce->harvest_candidates = (int)v->num;
+            v = json_get(e, "hv_v"); if (v && v->type == JSON_NUM) ce->harvest_validated = (int)v->num;
+            v = json_get(e, "hv_u"); if (v && v->type == JSON_NUM) ce->harvest_unbound = (int)v->num;
             v = json_get(e, "san_marker"); if (v && v->type == JSON_STR) snprintf(ce->sanitizer_marker, sizeof(ce->sanitizer_marker), "%s", v->str);
             v = json_get(e, "prov_mode"); if (v && v->type == JSON_STR) snprintf(ce->prove_mode, sizeof(ce->prove_mode), "%s", v->str);
             v = json_get(e, "prov_ver"); if (v && v->type == JSON_STR) snprintf(ce->prove_version, sizeof(ce->prove_version), "%s", v->str);
@@ -562,6 +565,9 @@ static void cache_write_all(const myc_cache_entry *entries, int count)
         json_obj_set(e, "err_bytes", json_new_num((int64_t)ce->total_stderr_bytes));
         json_obj_set(e, "ct_req", json_new_num((int64_t)ce->contract_requires));
         json_obj_set(e, "ct_ens", json_new_num((int64_t)ce->contract_ensures));
+        json_obj_set(e, "hv_c", json_new_num((int64_t)ce->harvest_candidates));
+        json_obj_set(e, "hv_v", json_new_num((int64_t)ce->harvest_validated));
+        json_obj_set(e, "hv_u", json_new_num((int64_t)ce->harvest_unbound));
         json_obj_set(e, "san_marker", json_new_str(ce->sanitizer_marker));
         json_obj_set(e, "prov_mode", json_new_str(ce->prove_mode));
         json_obj_set(e, "prov_ver", json_new_str(ce->prove_version));
@@ -1014,6 +1020,9 @@ static void cache_replay_into(const myc_cache_entry *e, myc_result *res)
     res->total_stderr_bytes = e->total_stderr_bytes;
     res->contract_requires = e->contract_requires;
     res->contract_ensures = e->contract_ensures;
+    res->harvest_candidates = e->harvest_candidates;
+    res->harvest_validated = e->harvest_validated;
+    res->harvest_unbound = e->harvest_unbound;
     /* SOL-30: hasil enforcement budget contract di-replay utuh (verdict/
      * debt/report sudah mencerminkan run asli; kontrak ada di cache key,
      * jadi re-enforce di jalur cache-hit TIDAK dilakukan). */
@@ -1420,6 +1429,9 @@ void myc_cache_store(const myc_request *req, const myc_result *res,
     ne->total_stderr_bytes = res->total_stderr_bytes;
     ne->contract_requires = res->contract_requires;
     ne->contract_ensures = res->contract_ensures;
+    ne->harvest_candidates = res->harvest_candidates;
+    ne->harvest_validated = res->harvest_validated;
+    ne->harvest_unbound = res->harvest_unbound;
 
     snprintf(ne->sanitizer_marker, sizeof(ne->sanitizer_marker), "%s",
              res->run_sanitizer_marker);

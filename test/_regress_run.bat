@@ -214,6 +214,16 @@ myc.exe check test\fixtures\bad_contract_pre.c --run > %OUT% 2>&1
 findstr /C:"verdict:   RUNTIME_VIOLATION" %OUT% >nul && echo [OK] requires pure tetap di-inject - bad_contract_pre || echo [WARN] inject requires pure rusak
 myc.exe check test\fixtures\contract_clauses.c --json > %OUT% 2>&1
 findstr /C:"contract_clauses" %OUT% >nul && echo [OK] JSON memuat contract_clauses || echo [WARN] JSON contract_clauses hilang
+rem --- Fase 5 B4 (DS-08): Comments-as-Contracts - harvest komentar biasa
+echo --- B4: harvest komentar biasa -> kandidat kontrak (observasi non-blocking)
+myc.exe check test\fixtures\harvest_contracts.c --no-cache > %OUT% 2>&1
+findstr /C:"harvest (B4): 6 kandidat komentar-biasa, 5 validated" %OUT% >nul && echo [OK] B4 harvest 6 kandidat 5 validated || echo [WARN] B4 harvest kandidat/validated salah
+findstr /C:"requires clamp_len: `len <= cap` -- validated" %OUT% >nul && echo [OK] B4 pola 'must be <=' terdeteksi || echo [WARN] B4 pola 'must be <=' tidak terdeteksi
+findstr /C:"perlu //@ syntax (bukan C murni)" %OUT% >nul && echo [OK] B4 prose non-C ditolak || echo [WARN] B4 prose non-C tidak ditolak
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] B4 non-blocking (verdict OK) || echo [WARN] B4 mengubah verdict
+myc.exe check test\fixtures\harvest_contracts.c --no-cache --json-summary > %OUT% 2>&1
+findstr /C:"\"harvest\":{\"candidates\":6,\"validated\":5,\"unbound\":0}" %OUT% >nul && echo [OK] B4 harvest di json-summary || echo [WARN] B4 harvest hilang di json-summary
+del %OUT%
 rem --- fix review: ; membuang pending basi + komentar blok bukan klausa
 myc.exe check test\fixtures\contract_stale_pending.c > %OUT% 2>&1
 findstr /C:"requires=1" %OUT% >nul && echo [OK] klausa hantu dalam komentar blok tidak dihitung || echo [WARN] klausa hantu komentar ikut dihitung

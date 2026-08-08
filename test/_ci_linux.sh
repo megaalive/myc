@@ -280,6 +280,33 @@ else
 fi
 unset C1 C2 C3 C4
 
+# --- 5f. B4 Comments-as-Contracts (DS-08): harvest komentar biasa ---
+if ./myc check test/fixtures/harvest_contracts.c --no-cache 2>&1 | grep -qF "harvest (B4): 6 kandidat komentar-biasa, 5 validated"; then
+    note "B4 harvest: 6 kandidat, 5 validated"
+else
+    fail "B4 harvest: kandidat/validated salah"
+fi
+if ./myc check test/fixtures/harvest_contracts.c --no-cache 2>&1 | grep -qF "requires clamp_len: \`len <= cap\` -- validated"; then
+    note "B4 harvest: pola 'must be <=' ke kontrak requires"
+else
+    fail "B4 harvest: pola 'must be <=' tidak terdeteksi"
+fi
+if ./myc check test/fixtures/harvest_contracts.c --no-cache 2>&1 | grep -qF "perlu //@ syntax (bukan C murni)"; then
+    note "B4 harvest: prose non-C ditolak (perlu //@ syntax)"
+else
+    fail "B4 harvest: prose non-C tidak ditolak"
+fi
+if ./myc check test/fixtures/harvest_contracts.c --no-cache --json-summary 2>&1 | grep -qF '"harvest":{"candidates":6,"validated":5,"unbound":0}'; then
+    note "B4 harvest di --json-summary"
+else
+    fail "B4 harvest hilang di --json-summary"
+fi
+if ./myc check test/fixtures/harvest_contracts.c --no-cache 2>&1 | grep -qF "verdict:   OK"; then
+    note "B4 harvest non-blocking (verdict tetap OK)"
+else
+    fail "B4 harvest mengubah verdict (harus non-blocking)"
+fi
+
 # --- 6. dogfood tool ---
 for f in dogfood/dogfood_ring.c dogfood/dogfood_config.c dogfood/dogfood_tilemap.c; do
     assert_out "dogfood $(basename "$f") -> OK" "verdict:   OK" "$f"

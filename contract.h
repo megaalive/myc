@@ -53,4 +53,23 @@ int myc_contract_list(const char *source, size_t len,
                       char ***reqs, int *nreqs,
                       char ***ensures, int *nensures);
 
+/*
+ * B4 (Comments-as-Contracts, DS-08): panen kandidat kontrak dari KOMENTAR
+ * BIASA (bukan //@). Pola bahasa deterministik (bukan NLP):
+ *   - "returns X" / "return X"              -> ensures X
+ *   - "X must not exceed Y"                  -> X <= Y
+ *   - "X must be <=|<|>=|> Y"                -> X op Y
+ *   - "assumes X" / "requires X"            -> X (requires)
+ *   - "precondition: X" / "pre: X"          -> X (requires)
+ *   - "postcondition: X" / "post: X"        -> X (ensures)
+ *   - komparasi langsung "X <= Y" dst.       -> X op Y
+ *
+ * Lifecycle DS-08: candidate (pola terdeteksi) -> validated (ekspresi C
+ * murni + terikat fungsi) -> promoted (user menulis //@) -> enforced
+ * (gate). Non-blocking: hasil HANYA observasi; verdict tidak pernah turun
+ * karenanya. Mengisi res->harvest_candidates / harvest_validated /
+ * harvest_unbound / harvest_report (arena). Selalu mengembalikan 1.
+ */
+int myc_contract_harvest(const char *source, size_t len, myc_result *res);
+
 #endif /* MYC_CONTRACT_H */

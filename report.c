@@ -269,6 +269,15 @@ void myc_report_text(const myc_result *res)
                    myc_clause_status_name(cl->status));
         }
     }
+    /* Fase 5 B4 (DS-08): kandidat kontrak dari komentar biasa (observasi). */
+    if (res->harvest_candidates > 0) {
+        printf("harvest (B4): %d kandidat komentar-biasa, %d validated, "
+               "%d unbound (observasi, NON-blocking)\n",
+               res->harvest_candidates, res->harvest_validated,
+               res->harvest_unbound);
+        if (res->harvest_report)
+            printf("%s", res->harvest_report);
+    }
     /* Fase 4 A1: ledger asumsi portabilitas (observasi NON-blocking;
      * verdict tidak turun karenanya kecuali --require-assumptions-closed). */
     if (res->assumption_count > 0) {
@@ -741,6 +750,13 @@ char *myc_result_to_json(const myc_result *res)
                        myc_clause_status_name(cl->status), cl->line, cl->col);
     }
     json_sb_puts(&b, "],");
+    /* Fase 5 B4 (DS-08): harvest kandidat kontrak dari komentar biasa. */
+    json_sb_printf(&b, "\"harvest\":{\"candidates\":%d,\"validated\":%d,"
+                       "\"unbound\":%d,\"report\":",
+                   res->harvest_candidates, res->harvest_validated,
+                   res->harvest_unbound);
+    json_sb_escape(&b, res->harvest_report);
+    json_sb_puts(&b, "},");
     json_sb_printf(&b, "\"ran_negative\":%s,", res->ran_negative ? "true" : "false");
     if (res->ran_negative) {
         json_sb_printf(&b, "\"negative_callsites\":%d,", res->negative_callsites);
@@ -1248,6 +1264,11 @@ void myc_report_json_summary(const myc_result *res)
     json_sb_printf(&b, "\"exit_code\":%d,", res->exit_code);
     json_sb_printf(&b, "\"duration_ms\":%llu,", (unsigned long long)res->duration_ms);
     json_sb_printf(&b, "\"lint_observations\":%d,", res->lint_observations);
+    /* Fase 5 B4 (DS-08): harvest komentar-biasa (observasi). */
+    json_sb_printf(&b, "\"harvest\":{\"candidates\":%d,\"validated\":%d,"
+                       "\"unbound\":%d},",
+                   res->harvest_candidates, res->harvest_validated,
+                   res->harvest_unbound);
     json_sb_printf(&b, "\"ran_runtime\":%s,", res->ran_runtime ? "true" : "false");
     json_sb_printf(&b, "\"ran_checked\":%s,", res->ran_checked ? "true" : "false");
     json_sb_printf(&b, "\"ran_prove\":%s,", res->ran_prove ? "true" : "false");

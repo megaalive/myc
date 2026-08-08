@@ -101,6 +101,8 @@ typedef struct {
     int   driver_bounded;
     unsigned long long total_stdout_bytes, total_stderr_bytes;
     int   contract_requires, contract_ensures;
+    /* Fase 5 B4 (DS-08): hasil harvest komentar-biasa (observasi). */
+    int   harvest_candidates, harvest_validated, harvest_unbound;
 
     /* SOL-30: hasil enforcement budget contract (replay identik). */
     int   budget_active;

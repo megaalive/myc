@@ -762,6 +762,10 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     /* --- Scan kontrak //@ requires/ensures (D1.5; info, non-blocking) --- */
     myc_contract_scan(src, srclen, res);
 
+    /* --- B4 (Comments-as-Contracts, DS-08): panen kandidat kontrak dari
+     * komentar biasa (bukan //@). NON-blocking observasi murni. */
+    myc_contract_harvest(src, srclen, res);
+
     /* --- Lint memory-safety (P5; default aktif, mati via --no-lint) ---
      * MYC-AUDIT-014: heuristik teks TIDAK boleh hard verdict. Hasil lint
      * = observasi + confidence (OBSERVATION/SUSPICIOUS), NON-blocking.
