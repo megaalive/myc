@@ -279,6 +279,15 @@ myc.exe check test\fixtures\stack_recursive.c --stack --no-cache > %OUT% 2>&1
 findstr /C:"recursion  : cycle di call graph" %OUT% >nul && echo [OK] C2 rekursi terdeteksi || echo [WARN] C2 rekursi tidak terdeteksi
 findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] C2 non-blocking || echo [WARN] C2 mengubah verdict
 del %OUT%
+rem --- Fase 5 D1 (DS-13): Fuzz Gate fuzz-lite (--fuzz)
+echo --- D1: PRNG deterministik + loop terikat, kontrak membatasi input
+myc.exe check test\fixtures\ok_fuzz.c --fuzz --fuzz-iters 2000 --no-cache > %OUT% 2>&1
+findstr /C:"fuzz (D1): 1 fungsi, 2000 kasus tereksekusi" %OUT% >nul && echo [OK] D1 loop terikat tereksekusi || echo [WARN] D1 kasus fuzz tidak tereksekusi
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] D1 source aman -> bersih || echo [WARN] D1 source aman tidak bersih
+myc.exe check test\fixtures\bad_fuzz.c --fuzz --fuzz-iters 2000 --no-cache > %OUT% 2>&1
+findstr /C:"crash di peek_tbl" %OUT% >nul && echo [OK] D1 OOB terdeteksi || echo [WARN] D1 crash tidak terdeteksi
+findstr /C:"DRIVER_VIOLATION" %OUT% >nul && echo [OK] D1 crash = bukti || echo [WARN] D1 crash tidak menaikkan verdict
+del %OUT%
 rem --- fix review: ; membuang pending basi + komentar blok bukan klausa
 myc.exe check test\fixtures\contract_stale_pending.c > %OUT% 2>&1
 findstr /C:"requires=1" %OUT% >nul && echo [OK] klausa hantu dalam komentar blok tidak dihitung || echo [WARN] klausa hantu komentar ikut dihitung

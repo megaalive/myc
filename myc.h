@@ -157,6 +157,12 @@ typedef enum {
                                 per root vs --stack-budget; deteksi
                                 rekursi (cycle) / alloca / VLA. Static
                                 worst-case != dynamic; NON-blocking. */
+    MYC_GATE_FUZZ,            /* (Fase 5, D1/DS-13) fuzz gate fuzz-lite:
+                                PRNG deterministik (seed tetap) + loop
+                                terikat pada fungsi ber-kontrak, input
+                                DIBATASI kontrak requires (keunggulan atas
+                                fuzzer buta), dijalankan clang ASan/UBSan.
+                                Crash = bukti (DRIVER_VIOLATION). */
     MYC_GATE_COUNT
 } myc_gate_id;
 
@@ -592,6 +598,11 @@ typedef struct {
      * target (bytes); default 4096 bila 0. */
     int         stack;
     int         stack_budget;
+    /* Fase 5, D1 (--fuzz): fuzz-lite gate. fuzz_iters = loop terikat per
+     * fungsi (default 20000); fuzz_seed = seed PRNG (default 0x5EED). */
+    int         fuzz;
+    int         fuzz_iters;
+    unsigned    fuzz_seed;
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
@@ -985,6 +996,21 @@ typedef struct {
     int            stack_unknown;
     char          *stack_worst_path;   /* arena */
     char          *stack_report;       /* arena */
+    /* --- Fase 5, D1 (--fuzz, DS-13) ---
+     * ran_fuzz=1 setelah gate; fuzz_funcs = fungsi yang di-fuzz;
+     * fuzz_iters = loop per fungsi; fuzz_cases = eksekusi penuh
+     * (guard requires lolos); fuzz_skipped = ditolak guard; fuzz_seed =
+     * seed PRNG (reproduksibel, masuk receipt); fuzz_report (arena).
+     * Crash sanitizer = DRIVER_VIOLATION (bukti, hard). */
+    int            ran_fuzz;
+    int            fuzz_funcs;
+    int            fuzz_iters;
+    long           fuzz_cases;
+    long           fuzz_skipped;
+    unsigned       fuzz_seed;
+    char          *fuzz_report;        /* arena */
+    char          *fuzz_stdout_text;   /* malloc'd, freed result_free */
+    char          *fuzz_stderr_text;   /* malloc'd, freed result_free */
 
     /* internal: gate mana yang dijalankan terakhir */
     int         ran_preprocess;

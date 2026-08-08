@@ -159,6 +159,7 @@ const char *myc_gate_id_short(myc_gate_id id)
     case MYC_GATE_EXHAUSTIVE: return "exhaustive";
     case MYC_GATE_COMPARE:    return "compare";
     case MYC_GATE_STACK:      return "stack";
+    case MYC_GATE_FUZZ:       return "fuzz";
     default:                  return "?";
     }
 }

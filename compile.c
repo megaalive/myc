@@ -716,6 +716,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     myc_gate_set_status(res, MYC_GATE_DIVERGENCE, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_COMPARE, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_STACK, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_FUZZ, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_EXHAUSTIVE, MYC_GATE_NOT_APPLICABLE, NULL);
 
     /* hash source */
@@ -1416,6 +1417,44 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                         MYC_EVIDENCE_GATE_END,
                                         "stack: dalam budget");
             }
+        }
+    }
+
+    /* --- Gate opsional: fuzz-lite (Fase 5, D1/DS-13) ---
+     * PRNG deterministik + loop terikat pada fungsi ber-kontrak, input
+     * dibatasi kontrak requires. Crash sanitizer = DRIVER_VIOLATION
+     * (bukti). */
+    if (req->fuzz) {
+        int ok = myc_fuzz_gate(req, src, srclen, res);
+        if (res->verdict == MC_TIMEOUT ||
+            res->verdict == MC_DRIVER_VIOLATION) {
+            if (res->verdict == MC_DRIVER_VIOLATION) {
+                res->assurance = MYC_ASSURANCE_NONE;
+                myc_gate_set_status(res, MYC_GATE_FUZZ,
+                                    MYC_GATE_COMPLETED_FINDINGS,
+                                    "fuzz crash (bukti)");
+                myc_result_add_evidence(res, MYC_GATE_FUZZ,
+                                        MYC_EVIDENCE_FINDING,
+                                        "fuzz: crash (hard)");
+            } else {
+                myc_gate_set_status(res, MYC_GATE_FUZZ,
+                                    MYC_GATE_INCONCLUSIVE,
+                                    "fuzz timeout");
+                myc_result_add_evidence(res, MYC_GATE_FUZZ,
+                                        MYC_EVIDENCE_ERROR,
+                                        "fuzz timeout");
+            }
+            free(gcc_path);
+            myc_reduce_verdict(res);
+            return;
+        }
+        if (ok && res->ran_fuzz && res->fuzz_cases > 0) {
+            myc_gate_set_status(res, MYC_GATE_FUZZ,
+                                MYC_GATE_COMPLETED_CLEAN,
+                                "fuzz bersih (loop terikat)");
+            myc_result_add_evidence(res, MYC_GATE_FUZZ,
+                                    MYC_EVIDENCE_GATE_END,
+                                    "fuzz: bersih");
         }
     }
 

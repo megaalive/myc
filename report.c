@@ -497,6 +497,19 @@ void myc_report_text(const myc_result *res)
             printf("%s", res->stack_report);
     }
 
+    if (res->ran_fuzz) {
+        printf("fuzz (D1):\n");
+        printf("  funcs: %d  cases: %ld  skipped: %ld  seed: %u\n",
+               res->fuzz_funcs, res->fuzz_cases, res->fuzz_skipped,
+               res->fuzz_seed);
+        if (res->fuzz_report)
+            printf("%s", res->fuzz_report);
+        if (res->fuzz_stdout_text && res->fuzz_stdout_text[0])
+            printf("  fuzz_stdout:\n%s\n", res->fuzz_stdout_text);
+        if (res->fuzz_stderr_text && res->fuzz_stderr_text[0])
+            printf("  fuzz_stderr:\n%s\n", res->fuzz_stderr_text);
+    }
+
     if (res->ran_metamorphic) {
         printf("metamorphic (9.7):\n");
         printf("  o0_exit: %d  o2_exit: %d\n",
@@ -1004,6 +1017,16 @@ char *myc_result_to_json(const myc_result *res)
         json_sb_escape(&b, res->stack_report);
         json_sb_puts(&b, ",");
     }
+    json_sb_printf(&b, "\"ran_fuzz\":%s,", res->ran_fuzz ? "true" : "false");
+    if (res->ran_fuzz) {
+        json_sb_printf(&b, "\"fuzz_funcs\":%d,", res->fuzz_funcs);
+        json_sb_printf(&b, "\"fuzz_cases\":%ld,", res->fuzz_cases);
+        json_sb_printf(&b, "\"fuzz_skipped\":%ld,", res->fuzz_skipped);
+        json_sb_printf(&b, "\"fuzz_seed\":%u,", res->fuzz_seed);
+        json_sb_puts(&b, "\"fuzz_report\":");
+        json_sb_escape(&b, res->fuzz_report);
+        json_sb_puts(&b, ",");
+    }
     json_sb_printf(&b, "\"ran_divergence\":%s,",
                    res->ran_divergence ? "true" : "false");
     if (res->ran_divergence) {
@@ -1456,6 +1479,16 @@ void myc_report_json_summary(const myc_result *res)
         json_sb_printf(&b, "\"stack_vla\":%s,", res->stack_vla ? "true" : "false");
         json_sb_printf(&b, "\"stack_report\":");
         json_sb_escape(&b, res->stack_report);
+        json_sb_puts(&b, ",");
+    }
+    json_sb_printf(&b, "\"ran_fuzz\":%s,", res->ran_fuzz ? "true" : "false");
+    if (res->ran_fuzz) {
+        json_sb_printf(&b, "\"fuzz_funcs\":%d,", res->fuzz_funcs);
+        json_sb_printf(&b, "\"fuzz_cases\":%ld,", res->fuzz_cases);
+        json_sb_printf(&b, "\"fuzz_skipped\":%ld,", res->fuzz_skipped);
+        json_sb_printf(&b, "\"fuzz_seed\":%u,", res->fuzz_seed);
+        json_sb_puts(&b, "\"fuzz_report\":");
+        json_sb_escape(&b, res->fuzz_report);
         json_sb_puts(&b, ",");
     }
     json_sb_printf(&b, "\"ran_divergence\":%s,", res->ran_divergence ? "true" : "false");

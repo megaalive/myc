@@ -434,6 +434,28 @@ else
     fail "C2 stack: mengubah verdict (harus observasi)"
 fi
 
+# --- 5k. D1 Fuzz Gate fuzz-lite (--fuzz, DS-13) ---
+if ./myc check test/fixtures/ok_fuzz.c --fuzz --fuzz-iters 2000 --no-cache 2>&1 | grep -qF "fuzz (D1): 1 fungsi, 2000 kasus tereksekusi"; then
+    note "D1 fuzz: loop terikat tereksekusi penuh (seed deterministik)"
+else
+    fail "D1 fuzz: kasus fuzz tidak tereksekusi"
+fi
+if ./myc check test/fixtures/ok_fuzz.c --fuzz --fuzz-iters 2000 --no-cache 2>&1 | grep -qF "verdict:   OK"; then
+    note "D1 fuzz: source aman -> bersih"
+else
+    fail "D1 fuzz: source aman tidak bersih"
+fi
+if ./myc check test/fixtures/bad_fuzz.c --fuzz --fuzz-iters 2000 --no-cache 2>&1 | grep -qF "crash di peek_tbl"; then
+    note "D1 fuzz: OOB terdeteksi (crash, seed reproduksibel)"
+else
+    fail "D1 fuzz: crash tidak terdeteksi"
+fi
+if ./myc check test/fixtures/bad_fuzz.c --fuzz --fuzz-iters 2000 --no-cache 2>&1 | grep -qF "DRIVER_VIOLATION"; then
+    note "D1 fuzz: crash = bukti (DRIVER_VIOLATION)"
+else
+    fail "D1 fuzz: crash tidak menaikkan verdict"
+fi
+
 # --- 6. dogfood tool ---
 for f in dogfood/dogfood_ring.c dogfood/dogfood_config.c dogfood/dogfood_tilemap.c; do
     assert_out "dogfood $(basename "$f") -> OK" "verdict:   OK" "$f"

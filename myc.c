@@ -532,6 +532,10 @@ void myc_result_free(myc_result *res)
     res->exhaustive_stdout_text = NULL;
     res->exhaustive_stderr_text = NULL;
     res->exhaustive_harness_sha256 = NULL;
+    free(res->fuzz_stdout_text);
+    free(res->fuzz_stderr_text);
+    res->fuzz_stdout_text = NULL;
+    res->fuzz_stderr_text = NULL;
     free(res->resolved_gcc);
     free(res->gcc_version);
     free(res->clang_version);
@@ -1097,7 +1101,7 @@ static void usage(void)
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
         "  myc check <file.c> [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache] [--no-assumptions] [--cwd DIR]\n"
-        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--exhaustive] [--stack [--stack-budget N]] [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete]\n"
+        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--exhaustive] [--stack [--stack-budget N]] [--fuzz [--fuzz-iters N] [--fuzz-seed S]] [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete]\n"
         "  myc check <file.c> --divergence   (Fase 4 A2: matriks toolchain {gcc,clang,tcc} x {-O0,-O2}, klasifikasi DS-02)\n"
         "  myc check <file.c> [--require-assumptions-closed] [--assumption-ack id:status,...]   (Fase 4 A1: ledger asumsi portabilitas)\n"
         "  myc check <file.c> [--timeout MS] [--output-cap BYTES]\n"
@@ -1492,6 +1496,28 @@ int main(int argc, char **argv)
                 }
                 req.stack = 1;
                 req.stack_budget = atoi(argv[++i]);
+                known = 1;
+            } else if (strcmp(argv[i], "--fuzz") == 0) {
+                /* Fase 5 D1: fuzz-lite gate (DS-13). */
+                req.fuzz = 1;
+                known = 1;
+            } else if (strcmp(argv[i], "--fuzz-iters") == 0) {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "myc: --fuzz-iters membutuhkan "
+                                    "argumen (loop per fungsi)\n");
+                    return 2;
+                }
+                req.fuzz = 1;
+                req.fuzz_iters = atoi(argv[++i]);
+                known = 1;
+            } else if (strcmp(argv[i], "--fuzz-seed") == 0) {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "myc: --fuzz-seed membutuhkan "
+                                    "argumen (seed reproduksibel)\n");
+                    return 2;
+                }
+                req.fuzz = 1;
+                req.fuzz_seed = (unsigned)strtoul(argv[++i], NULL, 0);
                 known = 1;
             } else if (strcmp(argv[i], "--negative") == 0) {
                 req.negative = 1; known = 1;

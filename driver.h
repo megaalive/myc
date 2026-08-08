@@ -59,4 +59,11 @@ int myc_compare_gate(const myc_request *req,
                      const char *const *func_filter, int nfunc_filter,
                      myc_result *res);
 
+/* D1 (Fuzz Gate fuzz-lite, --fuzz, DS-13): PRNG deterministik (seed
+ * tetap) + loop terikat pada fungsi ber-kontrak; input DIBATASI kontrak
+ * requires (keunggulan atas fuzzer buta). Clang ASan/UBSan; crash =
+ * DRIVER_VIOLATION (bukti). Return 1 = bersih dengan >= 1 kasus. */
+int myc_fuzz_gate(const myc_request *req, const char *source,
+                  size_t source_len, myc_result *res);
+
 #endif /* MYC_DRIVER_H */

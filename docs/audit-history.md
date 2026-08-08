@@ -1974,3 +1974,26 @@ stack overflow diam-diam, bukan bug logika.
 (dimensi R). Fixture `stack_recursive.c` (rekursi). Regresi
 `_ci_linux.sh` (5j) + `_regress_run.bat`: worst path, over-budget,
 rekursi, non-blocking.
+
+### (7) D1 — Fuzz Gate fuzz-lite (DS-13) — `--fuzz` — `driver.c`
+
+`myc_fuzz_gate()` (di `driver.c`, reuse mesin driver) menjawab "parser
+ini aman untuk input tak terduga?" tanpa dependensi libFuzzer:
+
+- Scan fungsi ber-kontrak; untuk tiap fungsi bangkitkan harness dengan
+  **PRNG xorshift32 deterministik (seed tetap, `--fuzz-seed`)** dan
+  **loop terikat (`--fuzz-iters`, default 20000)**.
+- Nilai parameter dihasilkan DALAM rentang kontrak `requires` — input
+  selalu *valid* menurut domain yang dideklarasikan (keunggulan atas
+  fuzzer buta yang membuang-buang input invalid). Guard ekspresi requires
+  tetap diterapkan; kasus ditolak dihitung `skipped`.
+- Build clang ASan/UBSan (-O1) + run terkendali (env sanitizer log_path
+  non-spoofable). Crash / report sanitizer -> **DRIVER_VIOLATION**
+  (bukti, hard) dengan pesan "crash di <func> (seed N) -- input
+  reproduksibel" (masuk B1 repro: seed cukup untuk replay).
+- Bersih dengan >= 1 kasus -> gate COMPLETED_CLEAN; 0 kasus (guard terlalu
+  ketat) -> NOT_APPLICABLE; clang hilang -> UNAVAILABLE (gap terlihat).
+
+`capabilities.json` + `docs/capabilities.md` ditambah gate `fuzz`
+(dimensi R). Fixture `ok_fuzz.c` (aman), `bad_fuzz.c` (OOB idx 16..31 ->
+crash). Regresi `_ci_linux.sh` (5k) + `_regress_run.bat`.
