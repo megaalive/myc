@@ -82,6 +82,9 @@ typedef struct {
 } myc_contract_delta;
 
 const char *myc_contract_delta_name(myc_contract_delta_kind k);
+/* Kembalikan 1 sukses (out terisi; caller membebaskan via
+ * myc_contract_delta_free), 0 = GAGAL (OOM) -- out tidak valid dan TIDAK
+ * boleh dianggap CLEAN (jangan diam-diam loloskan gate). */
 int myc_contract_delta_compare(const char *before, size_t before_len,
                                const char *after, size_t after_len,
                                myc_contract_delta *out);

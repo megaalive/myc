@@ -610,16 +610,23 @@ const char *myc_contract_delta_name(myc_contract_delta_kind k)
     return "UNKNOWN";
 }
 
-/* Cek apakah expr ada di list (string cocok persis setelah strip spasi) */
+/* Cek apakah expr ada di list. Normalisasi SIMETRIS di kedua sisi:
+ * strip spasi/tab/CR di ujung (menangani CRLF tanpa false delta). */
+static size_t delta_trim(const char *s)
+{
+    size_t n = strlen(s);
+    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '\t' || s[n - 1] == '\r'))
+        n--;
+    return n;
+}
+
 static int delta_has(const char *const *list, int n, const char *expr)
 {
     int i;
-    size_t el = strlen(expr);
+    size_t el = delta_trim(expr);
     for (i = 0; i < n; i++) {
         const char *a = list[i];
-        size_t al = strlen(a);
-        while (al > 0 && (a[al - 1] == ' ' || a[al - 1] == '\t'))
-            al--;
+        size_t al = delta_trim(a);
         if (al == el && strncmp(a, expr, el) == 0)
             return 1;
     }
@@ -650,6 +657,18 @@ static int delta_diff(char **new_list, int n_new,
         }
     }
     return 1;
+}
+
+/* Bebaskan list klausa sementara (reuse untuk semua path). */
+static void delta_free_lists(char **r0, int nr0, char **e0, int ne0,
+                             char **r1, int nr1, char **e1, int ne1)
+{
+    int i;
+    for (i = 0; i < nr0; i++) free(r0[i]);
+    for (i = 0; i < ne0; i++) free(e0[i]);
+    for (i = 0; i < nr1; i++) free(r1[i]);
+    for (i = 0; i < ne1; i++) free(e1[i]);
+    free(r0); free(e0); free(r1); free(e1);
 }
 
 int myc_contract_delta_compare(const char *before, size_t before_len,
@@ -688,28 +707,16 @@ int myc_contract_delta_compare(const char *before, size_t before_len,
     else
         out->kind = MYC_DELTA_CLEAN;
 
-    /* bersihkan list sementara */
-    {
-        int i;
-        for (i = 0; i < nr0; i++) free(r0[i]);
-        for (i = 0; i < ne0; i++) free(e0[i]);
-        for (i = 0; i < nr1; i++) free(r1[i]);
-        for (i = 0; i < ne1; i++) free(e1[i]);
-        free(r0); free(e0); free(r1); free(e1);
-    }
+    delta_free_lists(r0, nr0, e0, ne0, r1, nr1, e1, ne1);
     return 1;
 
 fail:
+    /* OOM saat menghitung delta: JANGAN diam-diam jadi CLEAN (gate bypass).
+     * Bebaskan semuanya dan kembalikan 0 = error nyata; caller harus
+     * menampilkan kegagalan, bukan menganggap kontrak sama. */
     myc_contract_delta_free(out);
-    {
-        int i;
-        for (i = 0; i < nr0; i++) free(r0[i]);
-        for (i = 0; i < ne0; i++) free(e0[i]);
-        for (i = 0; i < nr1; i++) free(r1[i]);
-        for (i = 0; i < ne1; i++) free(e1[i]);
-        free(r0); free(e0); free(r1); free(e1);
-    }
-    return 1;
+    delta_free_lists(r0, nr0, e0, ne0, r1, nr1, e1, ne1);
+    return 0;
 }
 
 void myc_contract_delta_free(myc_contract_delta *out)
@@ -735,6 +742,7 @@ int myc_contract_list(const char *source, size_t len,
     size_t i = 0;
     size_t line = 1;
     size_t col = 1;
+    int    in_block = 0;   /* komentar blok: klausa //@ di dalamnya DIABAIKAN */
 
     *reqs = NULL;
     *nreqs = 0;
@@ -747,6 +755,24 @@ int myc_contract_list(const char *source, size_t len,
             line++;
             col = 1;
             i++;
+            continue;
+        }
+        if (in_block) {
+            if (c == '*' && i + 1 < len && source[i + 1] == '/') {
+                in_block = 0;
+                i += 2;
+                col += 2;
+            } else {
+                i++;
+                col++;
+            }
+            continue;
+        }
+        /* Masuk komentar blok? */
+        if (c == '/' && i + 1 < len && source[i + 1] == '*') {
+            in_block = 1;
+            i += 2;
+            col += 2;
             continue;
         }
         if (c == '/' && i + 1 < len && source[i + 1] == '/') {

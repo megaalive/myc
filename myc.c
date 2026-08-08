@@ -1386,7 +1386,17 @@ static int cmd_contract_delta(const char *before_path, const char *after_path)
         return 2;
     }
 
-    myc_contract_delta_compare(buf_before, len_before, buf_after, len_after, &d);
+    if (!myc_contract_delta_compare(buf_before, len_before,
+                                    buf_after, len_after, &d)) {
+        fprintf(stderr,
+                "myc: contract-delta: gagal membandingkan (OOM) -- "
+                "hasil TIDAK valid, jangan dipercaya\n");
+        if (free_before)
+            free((void *)buf_before);
+        if (free_after)
+            free((void *)buf_after);
+        return 2;
+    }
     printf("contract-delta: %s (before=%s after=%s)\n",
            myc_contract_delta_name(d.kind),
            before_path, after_path);
