@@ -2158,3 +2158,18 @@ Perluasan A2 (divergence) ke MATRIKS TARGET: "char di ARM tidak sama
   pertama (`for(;scan[i];)`) -- field report per gate yang tak dijalankan
   NULL, sehingga field berikutnya tak diperiksa; diperbaiki dengan
   iterasi 4 elemen eksplisit.
+
+### (14) Fase 6 — Test-Quality Audit — `testaudit.c/.h`
+
+"Apakah corpus test benar-benar menutupi hazard class yang menjadi
+ tanggung jawab myc?". Subcommand `myc audit-tests`:
+
+- Memindai `test/`, `test/fixtures/`, `tests/` (kedalaman 1); tiap *.c
+  diklasifikasi bad/ok (nama + keyword isi) dan dihitung kontrak `//@`.
+- **Cakupan hazard class** (7): spatial, temporal, integer, runtime,
+  proof, boundary, capability -- keyword dicocokkan pada nama + isi.
+- **Cakupan backend** (10): run, driver, exhaustive, fuzz, mutate,
+  stack, prove, checked, filc, matrix.
+- Gap = hazard class / backend TANPA fixture, dilaporkan eksplisit
+  (NON-blocking observasi). Baseline: 7/7 hazard + 10/10 backend.
+- Regresi CI: `_ci_linux.sh` 6b + `_regress_run.bat`. Self-dogfood OK.

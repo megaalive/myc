@@ -84,6 +84,11 @@ if errorlevel 2 (
 myc.exe check tests\ok_hello.c --cwd "" > %OUT% 2>&1
 findstr /C:"invalid_cwd" %OUT% >nul && echo [OK] --cwd kosong ditolak (invalid_cwd) || echo [WARN] --cwd kosong tidak ditolak
 del %OUT%
+rem --- Fase 6 Self-Challenge: Test-Quality Audit (myc audit-tests)
+myc.exe audit-tests > %OUT% 2>&1
+findstr /C:"hazard class coverage: 7/7" %OUT% >nul && echo [OK] Fase 6 audit-tests hazard 7/7 || echo [WARN] Fase 6 audit-tests hazard gap
+findstr /C:"[OK] exhaustive" %OUT% >nul && echo [OK] Fase 6 audit-tests backend lengkap || echo [WARN] Fase 6 audit-tests backend gap
+del %OUT%
 rem --- Fase 6 Self-Challenge: Canary Swarm (myc canary)
 echo --- Fase 6 canary: semua backend terverifikasi hidup
 myc.exe canary run > %OUT% 2>&1
@@ -92,7 +97,7 @@ myc.exe canary list > %OUT% 2>&1
 findstr /C:"11 canary untuk 9 backend" %OUT% >nul && echo [OK] Fase 6 canary registry lengkap || echo [WARN] Fase 6 canary registry tidak lengkap
 del %OUT%
 echo --- self-dogfooding: semua source myc harus OK
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c) do (
   echo === %%f
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%

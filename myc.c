@@ -49,6 +49,7 @@
 #include "driver.h"
 #include "scenario.h"
 #include "canary.h"
+#include "testaudit.h"
 
 /* ------------------------------------------------------------------ */
 /* Implementasi kontrak inti myc                                       */
@@ -1404,6 +1405,11 @@ int main(int argc, char **argv)
             return 2;
         }
         return cmd_compare(argv[2], argv[3], argv + 4, argc - 4);
+    }
+
+    /* Fase 6 (Self-Challenge): myc audit-tests -- kualitas corpus test. */
+    if (strcmp(argv[1], "audit-tests") == 0) {
+        return myc_testaudit_report(stdout);
     }
 
     /* Fase 6 (Self-Challenge): myc canary list | run [backend]. */

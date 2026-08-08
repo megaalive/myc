@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c; do
+         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -581,6 +581,18 @@ if ./myc canary list 2>&1 | grep -qF "11 canary untuk 9 backend"; then
     note "Fase 6 canary: registry 11 canary / 9 backend"
 else
     fail "Fase 6 canary: registry canary tidak lengkap"
+fi
+
+# --- 6b. Fase 6 Self-Challenge: Test-Quality Audit (myc audit-tests) ---
+if ./myc audit-tests 2>&1 | grep -qF "hazard class coverage: 7/7"; then
+    note "Fase 6 audit-tests: 7/7 hazard class punya fixture"
+else
+    fail "Fase 6 audit-tests: hazard class ada gap"
+fi
+if ./myc audit-tests 2>&1 | grep -qF "[OK] exhaustive"; then
+    note "Fase 6 audit-tests: semua backend punya fixture"
+else
+    fail "Fase 6 audit-tests: backend tanpa fixture"
 fi
 
 # --- 6. dogfood tool ---
