@@ -1,11 +1,11 @@
 myc-assistance-baseline v1
-date: 20260808-203343
+date: 20260808-225853
 tasks: 20
 bad_detected: 20 / 20
 good_clean: 20 / 20
-binary_size: 543064
-default_latency_ms: 143
-suite_latency_ms: 43974
+binary_size: 564507
+default_latency_ms: 140
+suite_latency_ms: 42954
 agent_payload_bytes: 3336
 detection_rate_pct: 100
 good_pass_rate_pct: 100
