@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c; do
+         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -569,6 +569,18 @@ if ./myc check tests/ok_hello.c --matrix --no-cache --json-summary 2>&1 | grep -
     note "C4 matrix: hadir di JSON summary"
 else
     fail "C4 matrix: hilang dari JSON summary"
+fi
+
+# --- 6a. Fase 6 Self-Challenge: Canary Swarm (myc canary) ---
+if ./myc canary run 2>&1 | grep -qF "canary swarm: 11/11 PASS"; then
+    note "Fase 6 canary: 11/11 canary PASS (semua backend terverifikasi hidup)"
+else
+    fail "Fase 6 canary: ada canary GAGAL (backend tidak terpercaya)"
+fi
+if ./myc canary list 2>&1 | grep -qF "11 canary untuk 9 backend"; then
+    note "Fase 6 canary: registry 11 canary / 9 backend"
+else
+    fail "Fase 6 canary: registry canary tidak lengkap"
 fi
 
 # --- 6. dogfood tool ---

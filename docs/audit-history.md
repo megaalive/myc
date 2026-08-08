@@ -2135,3 +2135,26 @@ Perluasan A2 (divergence) ke MATRIKS TARGET: "char di ARM tidak sama
   Delta nyata (char/ptr berubah) tervalidasi secara logika; butuh
   cross-compiler asli di CI Linux utk e2e penuh. Regresi `_ci_linux.sh`
   5p + `_regress_run.bat`.
+
+### (13) Fase 6 — Canary Swarm (Self-Challenge) — `canary.c/.h`
+
+"Setiap klaim backend harus dibuktikan hidup". Modul baru `canary.c`:
+
+- **Tabel canary 11 entri / 9 backend** (self-contained, ingress MEMORY):
+  compile (bersih + syntax-error), analyzer (null-deref interprocedural
+  `poke(q=0)`), run (heap-buffer-overflow write `p[4]`), driver (OOB pada
+  tepi domain kontrak `requires n <= 4`), exhaustive (counterexample +
+  P1 EXHAUSTIVE), fuzz (div-by-zero crash dalam domain kontrak), mutate
+  (3 mutan tertangkap, 0 GAP), stack (cycle rekursi), lint (bersih tanpa
+  false-positive).
+- **`myc canary list | run [backend]`**: menjalankan canary via pipeline
+  nyata (`myc_run`), membandingkan verdict + text evidence (scan
+  `evidence[]` + report arena per gate: exhaustive/stack/fuzz/mutate).
+  Canary GAGAL = backend TIDAK terpercaya (klaim bersihnya diragukan)
+  -- menutup celah "backend rusak diam-diam memberi verdict OK palsu".
+- **Regresi CI**: `_ci_linux.sh` 6a (11/11 PASS + registry) dan
+  `_regress_run.bat` (Fase 6 canary). Self-dogfood OK.
+- Bug yang ditemukan saat develop: loop scan array ber-henti di NULL
+  pertama (`for(;scan[i];)`) -- field report per gate yang tak dijalankan
+  NULL, sehingga field berikutnya tak diperiksa; diperbaiki dengan
+  iterasi 4 elemen eksplisit.

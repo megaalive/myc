@@ -48,6 +48,7 @@
 #include "prompt.h"
 #include "driver.h"
 #include "scenario.h"
+#include "canary.h"
 
 /* ------------------------------------------------------------------ */
 /* Implementasi kontrak inti myc                                       */
@@ -1403,6 +1404,34 @@ int main(int argc, char **argv)
             return 2;
         }
         return cmd_compare(argv[2], argv[3], argv + 4, argc - 4);
+    }
+
+    /* Fase 6 (Self-Challenge): myc canary list | run [backend]. */
+    if (strcmp(argv[1], "canary") == 0) {
+        int nc = 0;
+        int nback = 0;
+        int i;
+        const myc_canary *t;
+        const char *want = NULL;
+        if (argc >= 3 && strcmp(argv[2], "list") == 0) {
+            myc_canary_backends(&nback);
+            t = myc_canary_table(&nc);
+            printf("canary swarm: %d canary untuk %d backend\n\n",
+                   nc, nback);
+            for (i = 0; i < nc; i++) {
+                if (i == 0 || strcmp(t[i].backend, t[i - 1].backend) != 0)
+                    printf("  [%s]\n", t[i].backend);
+                printf("      %-28s %s\n", t[i].name, t[i].desc);
+            }
+            return 0;
+        }
+        if (argc >= 3 && strcmp(argv[2], "run") == 0) {
+            if (argc >= 4)
+                want = argv[3];
+            return myc_canary_run(want, stdout);
+        }
+        fprintf(stderr, "myc: canary membutuhkan `list` atau `run [backend]`\n");
+        return 2;
     }
 
     /* C5 (DS-12): myc scenario list | info <name>. */
