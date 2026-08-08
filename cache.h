@@ -112,6 +112,10 @@ typedef struct {
      * daftar state/event/transisi/finding TIDAK di-cache -- sama seperti
      * harvest -- replay hanya punya counts). */
     int   sm_states, sm_events, sm_transitions, sm_findings;
+    /* Fase 5 (SOL-14): ABI certificate (observasi; snapshot teks TIDAK
+     * di-cache -- replay hanya punya counts + flag). */
+    int   abi_ran, abi_n_structs, abi_n_enums, abi_n_symbols;
+    int   abi_changed, abi_n_delta;
     /* Fase 5 A3 (--exhaustive): hasil enumerasi penuh domain. */
     int   ex_ran, ex_funcs, ex_cases, ex_skip, ex_laund;
     long  ex_points;

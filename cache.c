@@ -273,6 +273,13 @@ static int cache_read_all(myc_cache_entry *out, int cap)
             v = json_get(e, "sm_e"); if (v && v->type == JSON_NUM) ce->sm_events = (int)v->num;
             v = json_get(e, "sm_t"); if (v && v->type == JSON_NUM) ce->sm_transitions = (int)v->num;
             v = json_get(e, "sm_f"); if (v && v->type == JSON_NUM) ce->sm_findings = (int)v->num;
+            /* Fase 5 (SOL-14): ABI certificate (observasi). */
+            v = json_get(e, "abi_r"); if (v && v->type == JSON_NUM) ce->abi_ran = (int)v->num;
+            v = json_get(e, "abi_s"); if (v && v->type == JSON_NUM) ce->abi_n_structs = (int)v->num;
+            v = json_get(e, "abi_e"); if (v && v->type == JSON_NUM) ce->abi_n_enums = (int)v->num;
+            v = json_get(e, "abi_y"); if (v && v->type == JSON_NUM) ce->abi_n_symbols = (int)v->num;
+            v = json_get(e, "abi_c"); if (v && v->type == JSON_NUM) ce->abi_changed = (int)v->num;
+            v = json_get(e, "abi_d"); if (v && v->type == JSON_NUM) ce->abi_n_delta = (int)v->num;
             v = json_get(e, "ex_r"); if (v && v->type == JSON_NUM) ce->ex_ran = (int)v->num;
             v = json_get(e, "ex_f"); if (v && v->type == JSON_NUM) ce->ex_funcs = (int)v->num;
             v = json_get(e, "ex_c"); if (v && v->type == JSON_NUM) ce->ex_cases = (int)v->num;
@@ -595,6 +602,13 @@ static void cache_write_all(const myc_cache_entry *entries, int count)
         json_obj_set(e, "sm_e", json_new_num((int64_t)ce->sm_events));
         json_obj_set(e, "sm_t", json_new_num((int64_t)ce->sm_transitions));
         json_obj_set(e, "sm_f", json_new_num((int64_t)ce->sm_findings));
+        /* Fase 5 (SOL-14): ABI certificate (observasi). */
+        json_obj_set(e, "abi_r", json_new_num((int64_t)ce->abi_ran));
+        json_obj_set(e, "abi_s", json_new_num((int64_t)ce->abi_n_structs));
+        json_obj_set(e, "abi_e", json_new_num((int64_t)ce->abi_n_enums));
+        json_obj_set(e, "abi_y", json_new_num((int64_t)ce->abi_n_symbols));
+        json_obj_set(e, "abi_c", json_new_num((int64_t)ce->abi_changed));
+        json_obj_set(e, "abi_d", json_new_num((int64_t)ce->abi_n_delta));
         json_obj_set(e, "ex_r", json_new_num((int64_t)ce->ex_ran));
         json_obj_set(e, "ex_f", json_new_num((int64_t)ce->ex_funcs));
         json_obj_set(e, "ex_c", json_new_num((int64_t)ce->ex_cases));
@@ -1067,6 +1081,13 @@ static void cache_replay_into(const myc_cache_entry *e, myc_result *res)
     res->sm_events = e->sm_events;
     res->sm_transitions = e->sm_transitions;
     res->sm_findings = e->sm_findings;
+    /* Fase 5 (SOL-14): ABI certificate (observasi, replay identik). */
+    res->abi_ran = e->abi_ran;
+    res->abi_n_structs = e->abi_n_structs;
+    res->abi_n_enums = e->abi_n_enums;
+    res->abi_n_symbols = e->abi_n_symbols;
+    res->abi_changed = e->abi_changed;
+    res->abi_n_delta = e->abi_n_delta;
     res->ran_exhaustive = e->ex_ran;
     res->exhaustive_funcs = e->ex_funcs;
     res->exhaustive_cases = e->ex_cases;
@@ -1494,6 +1515,13 @@ void myc_cache_store(const myc_request *req, const myc_result *res,
     ne->sm_events = res->sm_events;
     ne->sm_transitions = res->sm_transitions;
     ne->sm_findings = res->sm_findings;
+    /* Fase 5 (SOL-14): ABI certificate (observasi, replay identik). */
+    ne->abi_ran = res->abi_ran;
+    ne->abi_n_structs = res->abi_n_structs;
+    ne->abi_n_enums = res->abi_n_enums;
+    ne->abi_n_symbols = res->abi_n_symbols;
+    ne->abi_changed = res->abi_changed;
+    ne->abi_n_delta = res->abi_n_delta;
     ne->ex_ran = res->ran_exhaustive;
     ne->ex_funcs = res->exhaustive_funcs;
     ne->ex_cases = res->exhaustive_cases;

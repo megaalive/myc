@@ -14,6 +14,7 @@
 #include "sha256.h"
 #include "gate.h"
 #include "report.h"
+#include "abi.h"
 
 /* --- Sabotage pattern keywords --- */
 typedef struct {
@@ -76,6 +77,7 @@ const char *myc_tx_result_name(myc_tx_result r)
     case MYC_TX_RESULT_REJECTED_FINDING:   return "rejected_finding_not_resolved";
     case MYC_TX_RESULT_REJECTED_SABOTAGE:  return "rejected_sabotage_detected";
     case MYC_TX_RESULT_REJECTED_PRESERVATION: return "rejected_preservation_violation";
+    case MYC_TX_RESULT_REJECTED_ABI: return "rejected_abi_changed";
     case MYC_TX_RESULT_REJECTED_LAUNDERING: return "rejected_scope_laundering";
     case MYC_TX_RESULT_REJECTED_TIMEOUT:   return "rejected_timeout";
     case MYC_TX_RESULT_INVALID_PATCH:      return "invalid_patch";
@@ -183,6 +185,25 @@ myc_tx_result myc_transaction_verify(myc_transaction *tx,
         return MYC_TX_RESULT_REJECTED_PRESERVATION;
     }
 
+    /* Check 5 (Fase 5, SOL-14): ABI surface tidak berubah tanpa diminta.
+     * Bila tx membawa snapshot ABI sebelum patch, hasil patch WAJIB punya
+     * snapshot ABI (ran_abi=1) — kalau tidak, ini verification GAP yang
+     * harus terlihat (trust rule 4), bukan lulus senyap: reject sebagai
+     * preservation violation. Dengan snapshot ada, delta baris ABI
+     * (HEADER sha diabaikan) = hard transaction failure (exit criteria
+     * "ABI regression ditolak dalam transaction"). */
+    if (tx->abi_before) {
+        if (!new_result->abi_ran || !new_result->abi_snapshot) {
+            tx->result = MYC_TX_RESULT_REJECTED_PRESERVATION;
+            return MYC_TX_RESULT_REJECTED_PRESERVATION;
+        }
+        if (myc_abi_texts_changed(tx->abi_before, new_result->abi_snapshot,
+                                  NULL, 0)) {
+            tx->result = MYC_TX_RESULT_REJECTED_ABI;
+            return MYC_TX_RESULT_REJECTED_ABI;
+        }
+    }
+
     tx->result = MYC_TX_RESULT_ACCEPTED;
     return MYC_TX_RESULT_ACCEPTED;
 }
@@ -235,6 +256,8 @@ char *myc_transaction_json(const myc_transaction *tx)
                  json_new_str(tx->edit_region ? tx->edit_region : ""));
     json_obj_set(root, "finding_resolved",
                  json_new_bool(tx->finding_resolved));
+    json_obj_set(root, "abi_guard",
+                 json_new_bool(tx->abi_before != NULL));
     json_obj_set(root, "verdict_before",
                  json_new_str(tx->verdict_before ? tx->verdict_before : ""));
     json_obj_set(root, "verdict_after",
@@ -294,6 +317,17 @@ void myc_transaction_init(myc_transaction *tx,
     tx->result = MYC_TX_RESULT_ACCEPTED;
 }
 
+void myc_transaction_set_abi_before(myc_transaction *tx,
+                                    const char *snapshot_text)
+{
+    if (!tx)
+        return;
+    free(tx->abi_before);
+    tx->abi_before = NULL;
+    if (snapshot_text)
+        tx->abi_before = myc_strdup(snapshot_text);
+}
+
 void myc_transaction_free(myc_transaction *tx)
 {
     size_t i;
@@ -305,6 +339,7 @@ void myc_transaction_free(myc_transaction *tx)
     free(tx->finding_id);
     free(tx->edit_region);
     free(tx->preserve_region);
+    free(tx->abi_before);
     free(tx->verdict_before);
     free(tx->verdict_after);
     free(tx->assurance_before);

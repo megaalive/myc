@@ -139,6 +139,14 @@
       "docs_anchor": "fuzz"
     },
     {
+      "id": "abi",
+      "flag": "--abi",
+      "dimension": null,
+      "backend": "gcc+helper",
+      "hard": false,
+      "docs_anchor": "abi"
+    },
+    {
       "id": "mutate",
       "flag": "--mutate-audit",
       "dimension": null,
@@ -215,6 +223,7 @@
     "--scenario",
     "--scenario-file",
     "--matrix",
+    "--abi",
     "--metamorphic",
     "--divergence",
     "--negative",

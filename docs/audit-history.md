@@ -2396,3 +2396,35 @@ witness state machine minimal tersedia):
   yang hilang sengaja TIDAK dilaporkan (anti-noise O(state x event));
   invariant per state (//@ sm invariant) = future work. Observasi,
   bukan sertifikat kelengkapan machine.
+
+### (25) Fase 5 — ABI/FFI Surface Certificate — `abi.c`/`abi.h` (SOL-14)
+
+Menutup task Fase 5 "ABI certificate" (exit criteria: ABI regression
+**ditolak dalam transaction**):
+
+- **Snapshot ABI deterministik** (`myc abi snapshot <file> [--cc X]`):
+  scanner TEKS (bukan AST, comment-mask penuh) mengekstrak exported
+  symbols (fungsi global non-static + signature ternormalisasi),
+  struct body + member (sizeof/_Alignof/offsetof via helper program
+  compiler-generated `-std=c11`), enum values (nilai dihitung compiler),
+  target triple (`<cc> -dumpmachine`), header digest (sha256 source).
+  Format "# myc abi v1" per baris TARGET/HEADER/SYMBOL/STRUCT/MEMBER/ENUM;
+  CRLF dinormalisasi; dua run identik (md5 sama). NON-blocking observasi:
+  compiler tak ada / helper gagal = abi_ran=0 + laporan, verdict tetap.
+- **ABI delta** (`myc abi diff <a.txt> <b.txt>` / `myc abi <f1.c> <f2.c>`):
+  bandingkan baris snapshot (HEADER sha diabaikan); exit code 1 bila
+  berubah. Fixture stable vs drift: 7 baris delta tepat (struct size,
+  member baru, enum value, symbol dihapus/baru; Pixel/Player/Access/add
+  TIDAK muncul di delta).
+- **Ditolak dalam transaction** (exit criteria): `myc_transaction` baru
+  punya `abi_before` (via myc_transaction_set_abi_before);
+  myc_transaction_verify Check 5 membandingkan snapshot hasil patch
+  (myc_abi_texts_changed) -> MYC_TX_RESULT_REJECTED_ABI (hard failure).
+  Unit test test/abi_tx_reject.c: drift ditolak, sama diterima.
+- **Pipeline**: flag `--abi` (check), output teks + JSON full + JSON
+  summary (field `abi` additive di myc.result.v1, tercatat di
+  docs/result-schema.md), replay cache 6 counts (abi_r/s/e/y/c/d).
+- Validasi: CI Linux 6i (determinisme + delta + JSON + transaction),
+  Windows blok abi; self-dogfood `abi.c` verdict OK; -Werror bersih;
+  build.sh/build.bat/_audit018.sh/ci.yml/_ci_linux.sh/_regress_run.bat
+  + abi.c. Plan 73/81.

@@ -52,6 +52,7 @@ Output `myc check <file> [flags] --json-summary` adalah satu objek JSON:
 | `harvest` | list | hasil harvest kontrak (B4) bila ada |
 | `relational` | obj | klasifikasi klausa kontrak relasional (Fase 5): `analyzed`/`unary`/`relations`/`unbound` — observasi NON-blocking, verdict tidak pernah turun karenanya |
 | `state_machine` | obj | ghost state machine (Fase 5, SOL-13): `states`/`events`/`transitions`/`findings` — observasi NON-blocking dari `//@ sm` |
+| `abi` | obj | ABI/FFI Surface Certificate (Fase 5, SOL-14): `ran`/`structs`/`enums`/`symbols`/`changed`/`delta`/`target`/`header_sha`/`snapshot`/`delta_text` — observasi NON-blocking (hanya saat `--abi`); `snapshot` = teks "# myc abi v1", `delta` = jumlah baris ABI berubah vs referensi (HEADER sha diabaikan) |
 | `lint_observations` | list | observasi lint ber-confidence NON-blocking |
 | `lint_embedded_hits` | list | hit pola lint ter-embed |
 | `assumptions` | list | ledger asumsi (A1) |
@@ -108,6 +109,7 @@ Output `myc check <file> [flags] --agent`:
 | 2026-08-08 | `myc.result.v1` / `myc.agent.v2` | **Beku** (Fase -1, SOL-24). Dokumentasi awal skema stabil. |
 | 2026-08-08 | `myc.result.v1` | Field `relational` ditambah (additive, Fase 5 Relational contracts) — objek observasi NON-blocking; tidak mengubah makna field lama. |
 | 2026-08-08 | `myc.result.v1` | Field `state_machine` ditambah (additive, Fase 5 SOL-13 State-Machine Ghosting) — objek observasi NON-blocking; tidak mengubah makna field lama. |
+| 2026-08-08 | `myc.result.v1` | Field `abi` ditambah (additive, Fase 5 SOL-14 ABI Certificate) — objek observasi NON-blocking; tidak mengubah makna field lama. |
 
 ## Aturan perubahan (untuk pengembang)
 

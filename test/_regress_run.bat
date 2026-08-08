@@ -118,7 +118,7 @@ myc.exe canary list > %OUT% 2>&1
 findstr /C:"11 canary untuk 9 backend" %OUT% >nul && echo [OK] Fase 6 canary registry lengkap || echo [WARN] Fase 6 canary registry tidak lengkap
 del %OUT%
 echo --- self-dogfooding: semua source myc harus OK
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c) do (
   echo === %%f
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%
@@ -548,7 +548,30 @@ findstr /C:"[unreachable]" %OUT% >nul && echo [OK] sm: unreachable terdeteksi ||
 myc.exe sm test\fixtures\sm_protocol.c > %OUT% 2>&1
 findstr /C:"ghost state machine" %OUT% >nul && echo [OK] sm: subcommand myc sm berjalan || echo [FAIL] sm: myc sm gagal
 del %OUT%
+echo --- Fase 5 (SOL-14): ABI/FFI Surface Certificate (--abi)
+set OUT=%TEMP%\myc_abi_out.txt
+myc.exe abi snapshot test\fixtures\abi_stable.c > %OUT% 2>&1
+myc.exe abi snapshot test\fixtures\abi_stable.c > %TEMP%\myc_abi_s2.txt 2>&1
+fc /b %OUT% %TEMP%\myc_abi_s2.txt >nul 2>&1
+if errorlevel 1 (echo [FAIL] abi: snapshot tidak deterministik) else (echo [OK] abi: snapshot deterministik)
+myc.exe abi snapshot test\fixtures\abi_drift.c > %TEMP%\myc_abi_b.txt 2>&1
+myc.exe abi diff %OUT% %TEMP%\myc_abi_b.txt > %TEMP%\myc_abi_d.txt 2>&1
+findstr /C:"7 perubahan" %TEMP%\myc_abi_d.txt >nul && echo [OK] abi: delta 7 baris (size/enum/symbol) terdeteksi || echo [FAIL] abi: delta bukan 7 baris
+findstr /C:"MEMBER Point z off=8" %TEMP%\myc_abi_d.txt >nul && echo [OK] abi: offset member baru terdeteksi || echo [FAIL] abi: offset member baru tidak terdeteksi
+myc.exe check test\fixtures\abi_stable.c --abi --no-cache --json-summary > %OUT% 2>&1
+findstr /C:"\"abi\":{\"ran\":true,\"structs\":3" %OUT% >nul && echo [OK] abi: check --abi masuk JSON summary || echo [FAIL] abi: JSON summary abi hilang
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\abi_tx_reject.exe test\abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c > %TEMP%\myc_abi_build.txt 2>&1
+if exist test\abi_tx_reject.exe (
+  test\abi_tx_reject.exe >nul 2>&1 && echo [OK] abi: ABI drift ditolak dalam transaction - exit criteria SOL-14 || echo [FAIL] abi: transaction tidak menolak ABI drift
+  del test\abi_tx_reject.exe
+) else (
+  echo [FAIL] abi: abi_tx_reject gagal dibangun
+)
 del %OUT%
+del %TEMP%\myc_abi_s2.txt
+del %TEMP%\myc_abi_b.txt
+del %TEMP%\myc_abi_d.txt
+del %TEMP%\myc_abi_build.txt
 echo --- Fase 0: Golden Schema + Malformed-Input (myc.result.v1)
 where bash >nul 2>&1
 if errorlevel 1 (

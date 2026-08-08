@@ -34,6 +34,7 @@
 #include "negative.h"
 #include "policy.h"
 #include "state.h"
+#include "abi.h"
 #include "proc.h"
 #include "prove.h"
 #include "report.h"
@@ -905,6 +906,15 @@ void myc_pipeline(const myc_request *req, myc_result *res)
      * unreachable / no-recovery / undeclared / unused + witness BFS.
      * NON-blocking observasi murni. */
     myc_sm_scan(src, srclen, res);
+
+    /* --- Fase 5, SOL-14 (--abi): ABI/FFI Surface Certificate ---
+     * Snapshot exported symbols + struct size/align/offset + enum +
+     * target triple + header digest via helper program compiler-generated
+     * (sizeof/offsetof/_Alignof). NON-blocking observasi; delta tak
+     * diminta = hard transaction failure (ditegakkan transaction.c).
+     * Hanya jalan saat --abi (helper butuh compile+run, mahal). */
+    if (req->abi)
+        myc_abi_snapshot(src, srclen, NULL, res);
 
     /* --- Lint memory-safety (P5; default aktif, mati via --no-lint) ---
      * MYC-AUDIT-014: heuristik teks TIDAK boleh hard verdict. Hasil lint

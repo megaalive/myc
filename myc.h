@@ -706,6 +706,11 @@ typedef struct {
      * malloc, fopen, exit, ...) dilaporkan sebagai observasi NON-blocking
      * (bukan warning senyap). */
     int         freestanding;
+    /* Fase 5, SOL-14 (--abi): ABI/FFI Surface Certificate. Snapshot
+     * exported symbols + struct size/align/offset + enum + target triple
+     * + header digest via helper program compiler-generated. NON-blocking
+     * observasi; delta tak diminta = hard transaction failure. */
+    int         abi;
     /* Fase 5, C5 (--scenario <name>): scenario pack (profil JSON) yang
      * mengaktifkan resep gate per domain sekaligus. "auto" = D3: tebak
      * dari struktur source. scenario_file = path profil user (opsional;
@@ -957,6 +962,26 @@ typedef struct {
     myc_sm_event   sm_event_list[MYC_SM_MAX_EVENTS];
     myc_sm_trans   sm_trans_list[MYC_SM_MAX_TRANS];
     myc_sm_finding sm_finding_list[MYC_SM_MAX_FINDINGS];
+
+    /* --- Fase 5, SOL-14 (--abi): ABI/FFI Surface Certificate ---
+     * abi_ran=1 setelah myc_abi_snapshot (observasi NON-blocking, butuh
+     * compiler gcc untuk helper sizeof/offsetof/_Alignof).
+     * abi_n_structs/enums/symbols = deklarasi yang di-scan;
+     * abi_snapshot (arena) = teks deterministik "# myc abi v1"
+     * (baris TARGET/HEADER/SYMBOL/STRUCT/MEMBER/ENUM);
+     * abi_changed/n_delta/abi_delta (arena) = hasil banding vs referensi
+     * (baris HEADER diabaikan). abi_target = target triple; abi_header_sha
+     * = sha256 source. ABI delta tak diminta = hard transaction failure. */
+    int            abi_ran;
+    int            abi_n_structs;
+    int            abi_n_enums;
+    int            abi_n_symbols;
+    int            abi_changed;
+    int            abi_n_delta;
+    char          *abi_snapshot;               /* arena */
+    char          *abi_delta;                  /* arena */
+    char          *abi_target;                 /* arena */
+    char          *abi_header_sha;             /* arena */
 
     /* --- Fase 5, B4 (Comments-as-Contracts, DS-08) ---
      * Panen kandidat kontrak dari komentar BIASA (bukan //@):

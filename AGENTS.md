@@ -69,6 +69,7 @@ scan includes (whitelist, non-blocking) → lint heuristik ber-confidence
 | `prove.c` / `filc.c` | Backend Frama-C Eva (via WSL) dan Fil-C |
 | `contract.c` | Contract-lite `//@ requires/ensures` + validasi purity + klasifikasi relasional (Fase 5) |
 | `state.c` | State-Machine Ghosting: ghost machine dari `//@ sm state/event/trans`, deteksi sink/unreachable/no-recovery/undeclared/unused + witness urutan event BFS (Fase 5, SOL-13) |
+| `abi.c` | ABI/FFI Surface Certificate: snapshot exported symbols + struct size/align/offset (helper program sizeof/offsetof) + enum + target triple + header digest; ABI delta tak diminta = hard transaction failure (Fase 5, SOL-14, `--abi`, `myc abi`) |
 | `negative.c` | Negative-space: mining "pola yang hilang" |
 | `lint.c` | Heuristik memory-safety ber-confidence (non-blocking) + `why`/`fix` |
  | `gate.c` | Status gate bertipe, evidence, claim compiler, debt, receipt |

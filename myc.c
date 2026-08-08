@@ -36,6 +36,7 @@
 #include "proc.h"
 #include "report.h"
 #include "witness.h"
+#include "abi.h"
 #include "ledger.h"
 #include "cache.h"
 #include "transaction.h"
@@ -1108,7 +1109,7 @@ static void usage(void)
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
         "  myc check <file.c> [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache] [--no-assumptions] [--cwd DIR]\n"
-        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--exhaustive] [--stack [--stack-budget N]] [--fuzz [--fuzz-iters N] [--fuzz-seed S]] [--mutate-audit [--mutate-max N]] [--freestanding] [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete] [--scenario NAME [--scenario-file PATH]] [--matrix]\n"
+        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--exhaustive] [--stack [--stack-budget N]] [--fuzz [--fuzz-iters N] [--fuzz-seed S]] [--mutate-audit [--mutate-max N]] [--freestanding] [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete] [--scenario NAME [--scenario-file PATH]] [--matrix] [--abi]\n"
         "  myc check <file.c> --divergence   (Fase 4 A2: matriks toolchain {gcc,clang,tcc} x {-O0,-O2}, klasifikasi DS-02)\n"
         "  myc check <file.c> [--require-assumptions-closed] [--assumption-ack id:status,...]   (Fase 4 A1: ledger asumsi portabilitas)\n"
         "  myc check <file.c> [--timeout MS] [--output-cap BYTES]\n"
@@ -1454,6 +1455,114 @@ static int cmd_sm(const char *path)
     return 0;
 }
 
+/* --- Fase 5 (SOL-14): ABI/FFI Surface Certificate --- */
+static int cmd_abi_load(const char *path, const char **buf, size_t *len,
+                        int *needs_free)
+{
+    myc_source_input in;
+    myc_error_code le;
+
+    memset(&in, 0, sizeof(in));
+    in.kind = MYC_SOURCE_FILE;
+    in.file_path = path;
+    *needs_free = 0;
+    le = myc_source_load(&in, buf, len, needs_free);
+    if (le != MYC_ERR_NONE) {
+        fprintf(stderr, "myc: abi: tidak dapat membaca %s (error=%s)\n",
+                path, myc_error_name(le));
+        return -1;
+    }
+    return 0;
+}
+
+static int cmd_abi_snapshot(const char *path, const char *cc)
+{
+    const char *buf = NULL;
+    size_t      len = 0;
+    int         nf = 0;
+    myc_result  res;
+
+    if (cmd_abi_load(path, &buf, &len, &nf) != 0)
+        return 2;
+    myc_result_init(&res);
+    myc_abi_snapshot(buf, len, cc, &res);
+    if (res.abi_snapshot)
+        printf("%s", res.abi_snapshot);
+    else
+        printf("abi: tanpa snapshot (observasi non-blocking)\n");
+    myc_result_free(&res);
+    if (nf)
+        free((void *)buf);
+    return 0;
+}
+
+static int cmd_abi_diff(const char *old_path, const char *new_path)
+{
+    const char *oa = NULL, *na = NULL;
+    size_t      ol = 0, nl = 0;
+    int         of = 0, nf = 0;
+    myc_result  res;
+    int         changed;
+
+    if (cmd_abi_load(old_path, &oa, &ol, &of) != 0)
+        return 2;
+    if (cmd_abi_load(new_path, &na, &nl, &nf) != 0) {
+        if (of)
+            free((void *)oa);
+        return 2;
+    }
+    myc_result_init(&res);
+    myc_abi_delta(oa, na, &res);
+    printf("abi delta: %d perubahan%s (baris HEADER sha diabaikan)\n",
+           res.abi_n_delta,
+           res.abi_changed ? " -- ABI BERUBAH" : " -- sama");
+    if (res.abi_delta)
+        printf("%s", res.abi_delta);
+    changed = res.abi_changed;
+    myc_result_free(&res);
+    if (of)
+        free((void *)oa);
+    if (nf)
+        free((void *)na);
+    return changed ? 1 : 0;
+}
+
+static int cmd_abi_pair(const char *a_path, const char *b_path)
+{
+    const char *a = NULL, *b = NULL;
+    size_t      al = 0, bl = 0;
+    int         af = 0, bf = 0;
+    myc_result  ra, rb, rd;
+    int         changed;
+
+    if (cmd_abi_load(a_path, &a, &al, &af) != 0)
+        return 2;
+    if (cmd_abi_load(b_path, &b, &bl, &bf) != 0) {
+        if (af)
+            free((void *)a);
+        return 2;
+    }
+    myc_result_init(&ra);
+    myc_result_init(&rb);
+    myc_result_init(&rd);
+    myc_abi_snapshot(a, al, NULL, &ra);
+    myc_abi_snapshot(b, bl, NULL, &rb);
+    myc_abi_delta(ra.abi_snapshot, rb.abi_snapshot, &rd);
+    printf("abi: %s vs %s -- %d perubahan%s\n", a_path, b_path,
+           rd.abi_n_delta, rd.abi_changed ? " (ABI BERUBAH)" : " (sama)");
+    if (rd.abi_delta)
+        printf("%s", rd.abi_delta);
+    changed = rd.abi_changed;
+    myc_result_free(&ra);
+    myc_result_free(&rb);
+    myc_result_free(&rd);
+    if (af)
+        free((void *)a);
+    if (bf)
+        free((void *)b);
+    return changed ? 1 : 0;
+}
+
 static int cmd_prompt(const char *path)
 {
     myc_source_input in;
@@ -1537,6 +1646,24 @@ int main(int argc, char **argv)
             return 2;
         }
         return cmd_sm(argv[2]);
+    }
+
+    /* Fase 5 (SOL-14): myc abi snapshot|diff|<f1.c> <f2.c> — ABI/FFI
+     * Surface Certificate (observasi NON-blocking). */
+    if (strcmp(argv[1], "abi") == 0) {
+        if (argc >= 4 && strcmp(argv[2], "snapshot") == 0) {
+            const char *cc = NULL;
+            if (argc >= 6 && strcmp(argv[4], "--cc") == 0)
+                cc = argv[5];
+            return cmd_abi_snapshot(argv[3], cc);
+        }
+        if (argc >= 5 && strcmp(argv[2], "diff") == 0)
+            return cmd_abi_diff(argv[3], argv[4]);
+        if (argc >= 4)
+            return cmd_abi_pair(argv[2], argv[3]);
+        fprintf(stderr, "myc: abi membutuhkan: snapshot <file> [--cc X] | "
+                        "diff <old.txt> <new.txt> | <file1.c> <file2.c>\n");
+        return 2;
     }
 
     /* Fase 6 (Self-Challenge): myc regression list | run. */
@@ -1713,6 +1840,9 @@ int main(int argc, char **argv)
                 req.stack = 1;
                 req.stack_budget = atoi(argv[++i]);
                 known = 1;
+            } else if (strcmp(argv[i], "--abi") == 0) {
+                /* Fase 5 (SOL-14): ABI/FFI Surface Certificate. */
+                req.abi = 1; known = 1;
             } else if (strcmp(argv[i], "--fuzz") == 0) {
                 /* Fase 5 D1: fuzz-lite gate (DS-13). */
                 req.fuzz = 1;

@@ -290,6 +290,18 @@ void myc_report_text(const myc_result *res)
         if (res->sm_report)
             printf("%s", res->sm_report);
     }
+    /* Fase 5 (SOL-14): ABI/FFI Surface Certificate (observasi). */
+    if (res->abi_ran) {
+        printf("abi certificate (SOL-14): %d struct, %d enum, %d symbol",
+               res->abi_n_structs, res->abi_n_enums, res->abi_n_symbols);
+        if (res->abi_target)
+            printf(" [target=%s]", res->abi_target);
+        if (res->abi_changed)
+            printf(" -- ABI BERUBAH (%d delta)", res->abi_n_delta);
+        printf(" (observasi, NON-blocking)\n");
+        if (res->abi_changed && res->abi_delta)
+            printf("%s", res->abi_delta);
+    }
     /* Fase 5 B4 (DS-08): kandidat kontrak dari komentar biasa (observasi). */
     if (res->harvest_candidates > 0) {
         printf("harvest (B4): %d kandidat komentar-biasa, %d validated, "
@@ -927,6 +939,21 @@ char *myc_result_to_json(const myc_result *res)
     }
     json_sb_puts(&b, "],\"report\":");
     json_sb_escape(&b, res->sm_report);
+    json_sb_puts(&b, "},");
+    /* Fase 5 (SOL-14): ABI certificate (observasi NON-blocking). */
+    json_sb_printf(&b, "\"abi\":{\"ran\":%s,\"structs\":%d,\"enums\":%d,"
+                       "\"symbols\":%d,\"changed\":%s,\"delta\":%d,"
+                       "\"target\":",
+                   res->abi_ran ? "true" : "false", res->abi_n_structs,
+                   res->abi_n_enums, res->abi_n_symbols,
+                   res->abi_changed ? "true" : "false", res->abi_n_delta);
+    json_sb_escape(&b, res->abi_target ? res->abi_target : "");
+    json_sb_puts(&b, ",\"header_sha\":");
+    json_sb_escape(&b, res->abi_header_sha ? res->abi_header_sha : "");
+    json_sb_puts(&b, ",\"snapshot\":");
+    json_sb_escape(&b, res->abi_snapshot ? res->abi_snapshot : "");
+    json_sb_puts(&b, ",\"delta_text\":");
+    json_sb_escape(&b, res->abi_delta ? res->abi_delta : "");
     json_sb_puts(&b, "},");
     /* Fase 5 B4 (DS-08): harvest kandidat kontrak dari komentar biasa. */
     json_sb_printf(&b, "\"harvest\":{\"candidates\":%d,\"validated\":%d,"
@@ -1592,6 +1619,12 @@ void myc_report_json_summary(const myc_result *res)
                        "\"transitions\":%d,\"findings\":%d},",
                    res->sm_states, res->sm_events, res->sm_transitions,
                    res->sm_findings);
+    /* Fase 5 (SOL-14): ABI certificate (observasi). */
+    json_sb_printf(&b, "\"abi\":{\"ran\":%s,\"structs\":%d,\"enums\":%d,"
+                       "\"symbols\":%d,\"changed\":%s,\"delta\":%d},",
+                   res->abi_ran ? "true" : "false", res->abi_n_structs,
+                   res->abi_n_enums, res->abi_n_symbols,
+                   res->abi_changed ? "true" : "false", res->abi_n_delta);
     /* Fase 5 B3 (DS-07): coaching items ringkas. */
     json_sb_printf(&b, "\"coaching\":[");
     for (i = 0; i < res->coaching_count; i++) {

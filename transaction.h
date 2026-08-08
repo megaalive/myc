@@ -35,6 +35,7 @@ typedef enum {
     MYC_TX_RESULT_REJECTED_FINDING, /* patch tidak menghilangkan finding */
     MYC_TX_RESULT_REJECTED_SABOTAGE, /* patch sabotase evidence/scope */
     MYC_TX_RESULT_REJECTED_PRESERVATION, /* preservation obligation terlanggar */
+    MYC_TX_RESULT_REJECTED_ABI, /* ABI surface berubah tanpa diminta (SOL-14) */
     MYC_TX_RESULT_REJECTED_LAUNDERING, /* scope-laundering terdeteksi */
     MYC_TX_RESULT_REJECTED_TIMEOUT, /* verify timeout */
     MYC_TX_RESULT_INVALID_PATCH    /* patch tidak bisa di-parse/compile */
@@ -78,6 +79,8 @@ typedef struct {
     char *edit_region;
     myc_sabotage_report sabotage;
     char *preserve_region;
+    char *abi_before;       /* snapshot ABI sebelum patch (SOL-14); NULL =
+                             * tanpa guard ABI */
     char *verdict_before;
     char *verdict_after;
     char *assurance_before;
@@ -99,6 +102,13 @@ void myc_transaction_init(myc_transaction *tx,
 
 /* Bebaskan transaksi. */
 void myc_transaction_free(myc_transaction *tx);
+
+/* Pasang snapshot ABI sebelum patch (SOL-14). Bila terpasang dan hasil
+ * patch punya ABI snapshot, perubahan ABI tak diminta = hard transaction
+ * failure (MYC_TX_RESULT_REJECTED_ABI). snapshot_text = teks "# myc abi
+ * v1" (bisa NULL untuk melepas guard). */
+void myc_transaction_set_abi_before(myc_transaction *tx,
+                                    const char *snapshot_text);
 
 /* Scan source diff untuk sabotage patterns.
  * old_src/new_src: source asli dan sudah di-patch.

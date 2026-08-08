@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c state.c; do
+         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c state.c abi.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -725,6 +725,44 @@ if ./myc sm test/fixtures/sm_protocol.c 2>&1 | grep -qF "ghost state machine"; t
 else
     fail "Fase 5 sm: myc sm gagal"
 fi
+
+# --- 6i. Fase 5 (SOL-14): ABI/FFI Surface Certificate (--abi) ---
+# Snapshot deterministik: dua run identik.
+if ./myc abi snapshot test/fixtures/abi_stable.c > /tmp/abi_s1.txt 2>&1 && \
+   ./myc abi snapshot test/fixtures/abi_stable.c > /tmp/abi_s2.txt 2>&1; then
+    if cmp -s /tmp/abi_s1.txt /tmp/abi_s2.txt; then
+        note "Fase 5 abi: snapshot deterministik (dua run identik)"
+    else
+        fail "Fase 5 abi: snapshot tidak deterministik"
+    fi
+else
+    fail "Fase 5 abi: myc abi snapshot gagal"
+fi
+# Delta stable vs drift: 7 baris (layout/enum/symbol berubah).
+./myc abi snapshot test/fixtures/abi_drift.c > /tmp/abi_b.txt 2>&1
+if ./myc abi diff /tmp/abi_s1.txt /tmp/abi_b.txt 2>&1 | grep -qF "7 perubahan"; then
+    note "Fase 5 abi: delta 7 baris (size/enum/symbol) terdeteksi"
+else
+    fail "Fase 5 abi: delta bukan 7 baris"
+fi
+if ./myc abi diff /tmp/abi_s1.txt /tmp/abi_b.txt 2>&1 | grep -qF "MEMBER Point z off=8"; then
+    note "Fase 5 abi: offset member baru terdeteksi"
+else
+    fail "Fase 5 abi: offset member baru tidak terdeteksi"
+fi
+if ./myc check test/fixtures/abi_stable.c --abi --no-cache --json-summary 2>&1 | grep -qF '"abi":{"ran":true,"structs":3'; then
+    note "Fase 5 abi: check --abi masuk JSON summary"
+else
+    fail "Fase 5 abi: check --abi tidak masuk JSON summary"
+fi
+# Exit criteria SOL-14: ABI drift ditolak dalam transaction.
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/abi_tx_reject test/abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c > /dev/null 2>&1
+if ./test/abi_tx_reject > /dev/null 2>&1; then
+    note "Fase 5 abi: ABI drift ditolak dalam transaction (exit criteria)"
+else
+    fail "Fase 5 abi: transaction tidak menolak ABI drift"
+fi
+rm -f test/abi_tx_reject
 
 # --- 7a. Fase 0 Golden Schema + Malformed-Input (myc.result.v1) ---
 if bash test/_schema_golden.sh; then
