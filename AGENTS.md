@@ -86,6 +86,7 @@ scan includes (whitelist, non-blocking) → lint heuristik ber-confidence
  | `report.c` / `json.c` | Laporan teks/JSON, capsule, parser JSON ketat |
  | `policy.c` | Profil header/fungsi (non-blocking) |
  | `scanner.c` | Scanner leksikal source |
+| `test/_schema_golden.sh` | Golden schema + malformed-input tests (Fase 0): myc.result.v1 field wajib + enum verdict + corpus korup |
 | `bench/` | Baseline benchmark 20 task (Fase -1, SOL-24): detection + false-positive + binary/latency/payload; report deterministik di bench/reports/ |
 | `docs/result-schema.md` | Truth freeze myc.result.v1 + myc.agent.v2 (Fase -1, SOL-24) |
 | `witness.c` | Witness pipeline: repro, minimizer, slice |

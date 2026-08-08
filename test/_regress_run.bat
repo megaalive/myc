@@ -524,6 +524,18 @@ findstr /C:"require_complete: enforced" %OUT% >nul && echo [OK] laporan enforced
 myc.exe check test\fixtures\ok_filc.c --filc > %OUT% 2>&1
 findstr /C:"MYC-INCOMPLETE-GATE-UNAVAILABLE" %OUT% >nul && echo [OK] backend tak tersedia jadi gap (bukan kesunyian) || echo [INFO] filc tersedia (tanpa gap)
 del %OUT%
+echo --- Fase 0: Golden Schema + Malformed-Input (myc.result.v1)
+where bash >nul 2>&1
+if errorlevel 1 (
+  echo [WARN] bash tidak tersedia - golden schema dilewati; jalankan test/_schema_golden.sh di POSIX
+) else (
+  bash test/_schema_golden.sh
+  if errorlevel 1 (
+    echo [FAIL] golden schema: ada cek gagal
+  ) else (
+    echo [OK] golden schema: 13 cek PASS (schema + malformed input)
+  )
+)
 echo --- Fase -1: Baseline Benchmark (20 task, SOL-24)
 where bash >nul 2>&1
 if errorlevel 1 (

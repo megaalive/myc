@@ -2281,3 +2281,20 @@ Menyelesaikan 3 task Fase -1 yang tersisa (SOL-24):
   tanpa bump versi, verdict enum hanya bertambah di akhir, determinisme
   modulo `duration_ms`/`receipt_sha256`. Regresi CI: `_ci_linux.sh` 7b +
   `_regress_run.bat`. Plan checkbox Fase -1 3/3 -> [x].
+
+### (20) Fase 0 — Golden Schema + Malformed-Input Tests — `test/_schema_golden.sh`
+
+Menutup task Fase 0 yang tersisa (golden schema + malformed-input):
+
+- **Golden schema myc.result.v1**: jalankan `--json-summary` pada 4 kelas
+  verdict (OK / RUNTIME_VIOLATION / COMPILE_ERROR / DRIVER_VIOLATION),
+  validasi JSON parse + 33 field wajib + tipe (`receipt_sha256` string,
+  `duration_ms` int) + verdict hanya dari enum beku (6 nilai).
+- **Malformed input**: 6 corpus korup (empty, garbage, unclosed comment/
+  string, deep nesting, recursive) -> JSON TETAP valid, tidak crash;
+  flag tak dikenal / file tak ada -> exit != 0.
+- **Golden schema myc.agent.v2**: `--agent` -> schema tepat, verdict
+  ordinal 0..5, `next_check` (satu aksi utama) + receipt/source hash ada.
+- Portabel (myc/myc.exe; python3 opsional dengan fallback grep
+  struktural). Regresi CI: `_ci_linux.sh` 7a + `_regress_run.bat`.
+  PASS=13 FAIL=0 di Windows dan WSL.

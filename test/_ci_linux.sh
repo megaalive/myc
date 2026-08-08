@@ -652,6 +652,13 @@ else
 fi
 rm -f test/json_abuse
 
+# --- 7a. Fase 0 Golden Schema + Malformed-Input (myc.result.v1) ---
+if bash test/_schema_golden.sh; then
+    note "Fase 0 golden schema: 13 cek PASS (schema + malformed input)"
+else
+    fail "Fase 0 golden schema: ada cek GAGAL"
+fi
+
 # --- 7b. Fase -1 Baseline Benchmark (20 task, SOL-24) ---
 if bash bench/run_bench.sh > /tmp/bench_ci.log 2>&1; then
     note "Fase -1 benchmark: 20 task PASS (baseline tersimpan di bench/reports/)"
