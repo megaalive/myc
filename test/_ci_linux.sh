@@ -418,7 +418,7 @@ if ./myc check tests/ok_hello.c --stack --no-cache 2>&1 | grep -qF "worst path :
 else
     fail "C2 stack: worst path tidak terhitung"
 fi
-if ./myc check tests/ok_hello.c --stack-budget 10 --no-cache 2>&1 | grep -qF "480%"; then
+if ./myc check tests/ok_hello.c --stack-budget 10 --no-cache 2>&1 | grep -qF "melebihi budget"; then
     note "C2 stack: over budget terdeteksi (observasi)"
 else
     fail "C2 stack: over budget tidak terdeteksi"

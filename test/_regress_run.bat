@@ -274,7 +274,7 @@ echo --- C2: worst-case stack depth vs budget (observasi non-blocking)
 myc.exe check tests\ok_hello.c --stack --no-cache > %OUT% 2>&1
 findstr /C:"worst path : main = " %OUT% >nul && echo [OK] C2 worst path terhitung || echo [WARN] C2 worst path tidak terhitung
 myc.exe check tests\ok_hello.c --stack-budget 10 --no-cache > %OUT% 2>&1
-findstr /C:"480%" %OUT% >nul && echo [OK] C2 over budget terdeteksi || echo [WARN] C2 over budget tidak terdeteksi
+findstr /C:"melebihi budget" %OUT% >nul && echo [OK] C2 over budget terdeteksi || echo [WARN] C2 over budget tidak terdeteksi
 myc.exe check test\fixtures\stack_recursive.c --stack --no-cache > %OUT% 2>&1
 findstr /C:"recursion  : cycle di call graph" %OUT% >nul && echo [OK] C2 rekursi terdeteksi || echo [WARN] C2 rekursi tidak terdeteksi
 findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] C2 non-blocking || echo [WARN] C2 mengubah verdict

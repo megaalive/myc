@@ -2033,9 +2033,16 @@ static char *gen_exhaustive_harness(const char *src, size_t srclen,
                 drv_buf_puts(&b, fn->pname[p]);
             }
             drv_buf_puts(&b, ");\n");
-            /* ensures pure di-assert per titik domain (inti bukti A3) */
+            /* ensures pure diperiksa per titik domain (inti bukti A3).
+             * Kegagalan dilaporkan via marker PORTABEL EXH_ASSERT_FAIL,
+             * bukan assert() libc: format pesan + exit ABI assert berbeda
+             * per platform (glibc SIGABRT vs MSVCRT fail-fast), sehingga
+             * deteksi berbasis marker sanitizer tidak konsisten lintas OS. */
             for (q = 0; q < nens; q++) {
-                drv_buf_printf(&b, "            assert(%s);\n", ensures[q]);
+                drv_buf_printf(&b,
+                    "            if (!(%s)) { fprintf(stderr, "
+                    "\"EXH_ASSERT_FAIL: %s\\n\"); return 4; }\n",
+                    ensures[q], ensures[q]);
             }
             drv_buf_puts(&b, "        } else {\n            exh_skip++;\n");
             drv_buf_printf(&b,
@@ -2576,11 +2583,15 @@ int myc_exhaustive_gate(const myc_request *req, const char *source,
         int   report_evidence = (asan_rpt != NULL) || (ubsan_rpt != NULL);
         int   omarker = drv_marker_found(res->exhaustive_stdout_text,
                                          res->exhaustive_stderr_text);
+        int   ex_assert_fail = res->exhaustive_stderr_text &&
+                               strstr(res->exhaustive_stderr_text,
+                                      "EXH_ASSERT_FAIL") != NULL;
         free(asan_rpt);
         free(ubsan_rpt);
         myc_remove_sanitizer_reports(tmp_dir, "myc_exh_asan_rpt");
         myc_remove_sanitizer_reports(tmp_dir, "myc_exh_ubsan_rpt");
-        if (report_evidence || (omarker && res->exit_code != 0)) {
+        if (report_evidence || ex_assert_fail ||
+            (omarker && res->exit_code != 0)) {
             add_diag_drv(res, "exhaustive: counterexample ditemukan pada "
                               "domain dideklarasikan");
             res->verdict = MC_DRIVER_VIOLATION;
