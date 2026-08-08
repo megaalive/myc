@@ -537,6 +537,17 @@ findstr /C:"UNBOUND: identifier di luar param/return" %OUT% >nul && echo [OK] re
 myc.exe contract-delta test\fixtures\relational_contracts.c test\fixtures\relational_contracts.c > %OUT% 2>&1
 findstr /C:"CLEAN" %OUT% >nul && echo [OK] relational round-trip: contract-delta sama file = CLEAN || echo [FAIL] relational round-trip: bukan CLEAN
 del %OUT%
+echo --- Fase 5 (SOL-13): State-Machine Ghosting (//@ sm)
+set OUT=%TEMP%\myc_sm_out.txt
+myc.exe check test\fixtures\sm_protocol.c --no-cache > %OUT% 2>&1
+findstr /C:"3 state, 4 event, 4 transisi, 0 finding" %OUT% >nul && echo [OK] sm: mesin sehat 0 finding || echo [FAIL] sm: mesin sehat bukan 0 finding
+myc.exe check test\fixtures\sm_broken.c --no-cache > %OUT% 2>&1
+findstr /C:"5 finding" %OUT% >nul && echo [OK] sm: mesin rusak 5 finding || echo [FAIL] sm: mesin rusak bukan 5 finding
+findstr /C:"witness: IDLE --START--> BUSY --START--> STUCK" %OUT% >nul && echo [OK] sm: witness sequence sink benar || echo [FAIL] sm: witness sequence salah
+findstr /C:"[unreachable]" %OUT% >nul && echo [OK] sm: unreachable terdeteksi || echo [FAIL] sm: unreachable tidak terdeteksi
+myc.exe sm test\fixtures\sm_protocol.c > %OUT% 2>&1
+findstr /C:"ghost state machine" %OUT% >nul && echo [OK] sm: subcommand myc sm berjalan || echo [FAIL] sm: myc sm gagal
+del %OUT%
 del %OUT%
 echo --- Fase 0: Golden Schema + Malformed-Input (myc.result.v1)
 where bash >nul 2>&1

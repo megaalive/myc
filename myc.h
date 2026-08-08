@@ -443,6 +443,55 @@ typedef struct {
     int   has_logic;     /* && || ! */
 } myc_rel_clause;
 
+/* --- Fase 5 (SOL-13): State-Machine Ghosting ---
+ * Ghost state machine dari deklarasi //@ sm (state/event/trans).
+ * NON-blocking observasi: analisis teks deterministik, verdict tidak
+ * pernah turun karenanya. String (name/from/event/to/text/witness)
+ * disimpan di arena milik hasil. */
+#define MYC_SM_MAX_STATES   32
+#define MYC_SM_MAX_EVENTS   32
+#define MYC_SM_MAX_TRANS    64
+#define MYC_SM_MAX_FINDINGS 32
+
+typedef enum {
+    MYC_SM_SINK = 0,         /* state tanpa transisi keluar, bukan final */
+    MYC_SM_UNREACHABLE,      /* tak ada transisi masuk, bukan initial */
+    MYC_SM_NO_RECOVERY,      /* tak ada jalur kembali ke initial */
+    MYC_SM_UNDECLARED_STATE, /* transisi merujuk state tak terdeklarasi */
+    MYC_SM_UNDECLARED_EVENT, /* transisi merujuk event tak terdeklarasi */
+    MYC_SM_UNUSED_STATE,     /* state dideklarasikan tapi tak dipakai */
+    MYC_SM_UNUSED_EVENT,     /* event dideklarasikan tapi tak dipakai */
+    MYC_SM_NO_INITIAL,       /* tidak ada state initial (pakai state pertama) */
+    MYC_SM_NO_FINAL,         /* tidak ada state final */
+    MYC_SM_DUP_DECL          /* deklarasi nama ganda */
+} myc_sm_finding_kind;
+
+typedef struct {
+    char *name;       /* arena */
+    int   line;
+    int   is_initial;
+    int   is_final;
+} myc_sm_state;
+
+typedef struct {
+    char *name;       /* arena */
+    int   line;
+} myc_sm_event;
+
+typedef struct {
+    char *from;       /* arena */
+    char *event;      /* arena */
+    char *to;         /* arena */
+    int   line;
+} myc_sm_trans;
+
+typedef struct {
+    myc_sm_finding_kind kind;
+    char *text;       /* arena: penjelasan */
+    char *witness;    /* arena: urutan event terpendek ("" bila tak ada) */
+    int   line;
+} myc_sm_finding;
+
 /* Satu kasus uji driver ter-record (roadmap 7.5 "case record").
  * Merekam INPUT yang benar-benar diuji — parameter values + allocation
  * sizes — plus status eksekusi (guard requires lolos / dilewati).
@@ -894,6 +943,21 @@ typedef struct {
     myc_rel_clause rel_clauses[MYC_MAX_REL_CLAUSES];
     int         rel_clause_count;
 
+    /* --- Fase 5 (SOL-13): ghost state machine (observasi NON-blocking) ---
+     * sm_states/events/transitions = deklarasi valid; sm_findings =
+     * jumlah temuan ghost machine (sink/unreachable/no-recovery/...);
+     * sm_report = laporan teks (arena). Daftar state/event/transisi/
+     * finding tersimpan di sm_*_list (string arena). */
+    int            sm_states;
+    int            sm_events;
+    int            sm_transitions;
+    int            sm_findings;
+    char          *sm_report;                 /* arena */
+    myc_sm_state   sm_state_list[MYC_SM_MAX_STATES];
+    myc_sm_event   sm_event_list[MYC_SM_MAX_EVENTS];
+    myc_sm_trans   sm_trans_list[MYC_SM_MAX_TRANS];
+    myc_sm_finding sm_finding_list[MYC_SM_MAX_FINDINGS];
+
     /* --- Fase 5, B4 (Comments-as-Contracts, DS-08) ---
      * Panen kandidat kontrak dari komentar BIASA (bukan //@):
      *   candidate  = pola bahasa terdeteksi (deterministik, bukan NLP);
@@ -1341,6 +1405,10 @@ const char *myc_dim_status_name(myc_dim_status s);
 /* Status klausa kontrak (MYC-AUDIT-025): "ok"/"empty"/"too_long"
  * /"impure"/"call" (statis). */
 const char *myc_clause_status_name(myc_clause_status s);
+/* Nama finding ghost state machine (Fase 5, SOL-13): "sink"/"unreachable"
+ * /"no_recovery"/"undeclared_state"/"undeclared_event"/"unused_state"
+ * /"unused_event"/"no_initial"/"no_final"/"dup_decl" (statis). */
+const char *myc_sm_finding_name(myc_sm_finding_kind k);
 
 /* Nama confidence diagnostic (MYC-AUDIT-014): "observation"/"suspicious"
  * /"likely"/"confirmed" (statis). */

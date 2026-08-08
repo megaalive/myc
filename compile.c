@@ -33,6 +33,7 @@
 #include "lint.h"
 #include "negative.h"
 #include "policy.h"
+#include "state.h"
 #include "proc.h"
 #include "prove.h"
 #include "report.h"
@@ -899,6 +900,11 @@ void myc_pipeline(const myc_request *req, myc_result *res)
      * relasional (>=2 variabel) vs unary + binding check. NON-blocking
      * observasi murni (analisis teks deterministik). */
     myc_contract_relational(src, srclen, res);
+
+    /* --- Fase 5 (SOL-13): ghost state machine dari //@ sm -- sink /
+     * unreachable / no-recovery / undeclared / unused + witness BFS.
+     * NON-blocking observasi murni. */
+    myc_sm_scan(src, srclen, res);
 
     /* --- Lint memory-safety (P5; default aktif, mati via --no-lint) ---
      * MYC-AUDIT-014: heuristik teks TIDAK boleh hard verdict. Hasil lint

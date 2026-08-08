@@ -108,6 +108,10 @@ typedef struct {
      * -- sama seperti harvest_report -- sehingga replay hanya punya
      * counts, `clauses`/`report` kosong di output penuh). */
     int   rel_analyzed, rel_relations, rel_unary, rel_unbound;
+    /* Fase 5 (SOL-13): ghost state machine (observasi; report +
+     * daftar state/event/transisi/finding TIDAK di-cache -- sama seperti
+     * harvest -- replay hanya punya counts). */
+    int   sm_states, sm_events, sm_transitions, sm_findings;
     /* Fase 5 A3 (--exhaustive): hasil enumerasi penuh domain. */
     int   ex_ran, ex_funcs, ex_cases, ex_skip, ex_laund;
     long  ex_points;

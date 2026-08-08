@@ -281,6 +281,15 @@ void myc_report_text(const myc_result *res)
         if (res->rel_report)
             printf("%s", res->rel_report);
     }
+    /* Fase 5 (SOL-13): ghost state machine dari //@ sm (observasi). */
+    if (res->sm_states > 0 || res->sm_findings > 0) {
+        printf("state machine (SOL-13): %d state, %d event, %d transisi, "
+               "%d finding (observasi, NON-blocking)\n",
+               res->sm_states, res->sm_events, res->sm_transitions,
+               res->sm_findings);
+        if (res->sm_report)
+            printf("%s", res->sm_report);
+    }
     /* Fase 5 B4 (DS-08): kandidat kontrak dari komentar biasa (observasi). */
     if (res->harvest_candidates > 0) {
         printf("harvest (B4): %d kandidat komentar-biasa, %d validated, "
@@ -898,6 +907,26 @@ char *myc_result_to_json(const myc_result *res)
     }
     json_sb_puts(&b, "],\"report\":");
     json_sb_escape(&b, res->rel_report);
+    json_sb_puts(&b, "},");
+    /* Fase 5 (SOL-13): ghost state machine (observasi NON-blocking). */
+    json_sb_printf(&b, "\"state_machine\":{\"states\":%d,\"events\":%d,"
+                       "\"transitions\":%d,\"findings\":%d,"
+                       "\"finding_list\":[",
+                   res->sm_states, res->sm_events, res->sm_transitions,
+                   res->sm_findings);
+    for (i = 0; i < res->sm_findings && i < MYC_SM_MAX_FINDINGS; i++) {
+        const myc_sm_finding *f = &res->sm_finding_list[i];
+        if (i)
+            json_sb_puts(&b, ",");
+        json_sb_printf(&b, "{\"kind\":\"%s\",\"text\":",
+                       myc_sm_finding_name(f->kind));
+        json_sb_escape(&b, f->text);
+        json_sb_printf(&b, ",\"witness\":");
+        json_sb_escape(&b, f->witness);
+        json_sb_printf(&b, ",\"line\":%d}", f->line);
+    }
+    json_sb_puts(&b, "],\"report\":");
+    json_sb_escape(&b, res->sm_report);
     json_sb_puts(&b, "},");
     /* Fase 5 B4 (DS-08): harvest kandidat kontrak dari komentar biasa. */
     json_sb_printf(&b, "\"harvest\":{\"candidates\":%d,\"validated\":%d,"
@@ -1558,6 +1587,11 @@ void myc_report_json_summary(const myc_result *res)
     json_sb_printf(&b, "\"relational\":{\"analyzed\":%d,\"relations\":%d,"
                        "\"unbound\":%d},",
                    res->rel_analyzed, res->rel_relations, res->rel_unbound);
+    /* Fase 5 (SOL-13): ghost state machine (observasi). */
+    json_sb_printf(&b, "\"state_machine\":{\"states\":%d,\"events\":%d,"
+                       "\"transitions\":%d,\"findings\":%d},",
+                   res->sm_states, res->sm_events, res->sm_transitions,
+                   res->sm_findings);
     /* Fase 5 B3 (DS-07): coaching items ringkas. */
     json_sb_printf(&b, "\"coaching\":[");
     for (i = 0; i < res->coaching_count; i++) {

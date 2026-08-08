@@ -2365,3 +2365,34 @@ fixture diuji otomatis):
   1 unary, 5 relational, 1 unbound `mystery`): klasifikasi deterministik
   lintas run + `contract-delta file file` = CLEAN, diuji di CI Linux 6g
   (5 cek) dan Windows. Self-dogfood OK, -Werror OK.
+
+### (24) Fase 5 — State-Machine Ghosting — `state.c`/`state.h` (SOL-13)
+
+Menutup task Fase 5 "State-machine ghosting" (exit criteria: sequence
+witness state machine minimal tersedia):
+
+- **Ghost machine dari //@ sm** (scanner teks deterministik):
+  `//@ sm state IDLE initial;`, `//@ sm state ERROR final;`,
+  `//@ sm event START;`, `//@ sm trans IDLE --START--> BUSY;` (juga
+  `-E->` dan spasi di sekitar arrow). NON-blocking observasi.
+- **Analisis** (state.c, myc_sm_scan): SINK (tanpa transisi keluar,
+  bukan final), UNREACHABLE (tak ada transisi masuk, bukan initial),
+  NO_RECOVERY (tak ada jalur kembali ke initial = perangkap satu arah),
+  UNDECLARED_STATE/EVENT (typo spec; transisi dibuang dari graf),
+  UNUSED_STATE/EVENT, NO_INITIAL (state pertama jadi initial implisit),
+  NO_FINAL, DUP_DECL.
+- **Sequence witness**: BFS terpendek dari initial ke state bermasalah,
+  format `IDLE --START--> BUSY --START--> STUCK` (urutan event jauh
+  lebih mudah dipahami LLM daripada stack trace).
+- **Output**: teks + JSON penuh (state_machine.finding_list: kind/text/
+  witness/line) + JSON summary (additive myc.result.v1, tercatat di
+  result-schema.md); replay cache sm_s/e/t/f; subcommand `myc sm <file>`.
+- **Fixture**: sm_protocol.c (sehat: 0 finding) + sm_broken.c (5 finding:
+  undeclared_event, no_final, no_recovery, sink dgn witness, unreachable)
+  di CI Linux 6h (5 cek) + Windows. Self-dogfood 24 source (state.c OK),
+  -Werror OK (state.c + myc.c). Plan 72/81.
+- **Scope jujur**: "illegal transition" = referensi tak terdeklarasi +
+  struktur graf (sink/unreachable/no-recovery). Matriks (state,event)
+  yang hilang sengaja TIDAK dilaporkan (anti-noise O(state x event));
+  invariant per state (//@ sm invariant) = future work. Observasi,
+  bukan sertifikat kelengkapan machine.

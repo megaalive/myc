@@ -48,6 +48,7 @@
 #include "prompt.h"
 #include "driver.h"
 #include "contract.h"
+#include "state.h"
 #include "scenario.h"
 #include "canary.h"
 #include "testaudit.h"
@@ -1419,6 +1420,40 @@ static int cmd_contract_delta(const char *before_path, const char *after_path)
     return i;
 }
 
+/* Fase 5 (SOL-13): myc sm <file> — ghost state machine dari deklarasi
+ * //@ sm state/event/trans. Observasi NON-blocking: cetak machine + temuan
+ * (sink/unreachable/no-recovery/undeclared/unused) + witness urutan event. */
+static int cmd_sm(const char *path)
+{
+    myc_source_input in;
+    const char *buf;
+    size_t      len;
+    int         needs_free = 0;
+    myc_error_code le;
+    myc_result res;
+
+    memset(&in, 0, sizeof(in));
+    in.kind = MYC_SOURCE_FILE;
+    in.file_path = path;
+    le = myc_source_load(&in, &buf, &len, &needs_free);
+    if (le != MYC_ERR_NONE) {
+        fprintf(stderr, "myc: sm: tidak dapat membaca %s (error=%s)\n",
+                path, myc_error_name(le));
+        return 2;
+    }
+    myc_result_init(&res);
+    myc_sm_scan(buf, len, &res);
+    if (res.sm_report)
+        printf("%s", res.sm_report);
+    else
+        printf("state machine (SOL-13): tidak ada deklarasi //@ sm di "
+               "%s\n", path);
+    myc_result_free(&res);
+    if (needs_free)
+        free((void *)buf);
+    return 0;
+}
+
 static int cmd_prompt(const char *path)
 {
     myc_source_input in;
@@ -1493,6 +1528,15 @@ int main(int argc, char **argv)
             return 2;
         }
         return cmd_contract_delta(argv[2], argv[3]);
+    }
+
+    /* Fase 5 (SOL-13): myc sm <file> — ghost state machine dari //@ sm. */
+    if (strcmp(argv[1], "sm") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "myc: sm membutuhkan file\n");
+            return 2;
+        }
+        return cmd_sm(argv[2]);
     }
 
     /* Fase 6 (Self-Challenge): myc regression list | run. */

@@ -68,6 +68,7 @@ scan includes (whitelist, non-blocking) → lint heuristik ber-confidence
 | `driver.c` | Generator harness kasus tepi dari kontrak (budget kombinatorial) |
 | `prove.c` / `filc.c` | Backend Frama-C Eva (via WSL) dan Fil-C |
 | `contract.c` | Contract-lite `//@ requires/ensures` + validasi purity + klasifikasi relasional (Fase 5) |
+| `state.c` | State-Machine Ghosting: ghost machine dari `//@ sm state/event/trans`, deteksi sink/unreachable/no-recovery/undeclared/unused + witness urutan event BFS (Fase 5, SOL-13) |
 | `negative.c` | Negative-space: mining "pola yang hilang" |
 | `lint.c` | Heuristik memory-safety ber-confidence (non-blocking) + `why`/`fix` |
  | `gate.c` | Status gate bertipe, evidence, claim compiler, debt, receipt |

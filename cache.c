@@ -268,6 +268,11 @@ static int cache_read_all(myc_cache_entry *out, int cap)
             v = json_get(e, "rel_n"); if (v && v->type == JSON_NUM) ce->rel_relations = (int)v->num;
             v = json_get(e, "rel_u"); if (v && v->type == JSON_NUM) ce->rel_unary = (int)v->num;
             v = json_get(e, "rel_b"); if (v && v->type == JSON_NUM) ce->rel_unbound = (int)v->num;
+            /* Fase 5 (SOL-13): ghost state machine (observasi). */
+            v = json_get(e, "sm_s"); if (v && v->type == JSON_NUM) ce->sm_states = (int)v->num;
+            v = json_get(e, "sm_e"); if (v && v->type == JSON_NUM) ce->sm_events = (int)v->num;
+            v = json_get(e, "sm_t"); if (v && v->type == JSON_NUM) ce->sm_transitions = (int)v->num;
+            v = json_get(e, "sm_f"); if (v && v->type == JSON_NUM) ce->sm_findings = (int)v->num;
             v = json_get(e, "ex_r"); if (v && v->type == JSON_NUM) ce->ex_ran = (int)v->num;
             v = json_get(e, "ex_f"); if (v && v->type == JSON_NUM) ce->ex_funcs = (int)v->num;
             v = json_get(e, "ex_c"); if (v && v->type == JSON_NUM) ce->ex_cases = (int)v->num;
@@ -585,6 +590,11 @@ static void cache_write_all(const myc_cache_entry *entries, int count)
         json_obj_set(e, "rel_n", json_new_num((int64_t)ce->rel_relations));
         json_obj_set(e, "rel_u", json_new_num((int64_t)ce->rel_unary));
         json_obj_set(e, "rel_b", json_new_num((int64_t)ce->rel_unbound));
+        /* Fase 5 (SOL-13): ghost state machine (observasi). */
+        json_obj_set(e, "sm_s", json_new_num((int64_t)ce->sm_states));
+        json_obj_set(e, "sm_e", json_new_num((int64_t)ce->sm_events));
+        json_obj_set(e, "sm_t", json_new_num((int64_t)ce->sm_transitions));
+        json_obj_set(e, "sm_f", json_new_num((int64_t)ce->sm_findings));
         json_obj_set(e, "ex_r", json_new_num((int64_t)ce->ex_ran));
         json_obj_set(e, "ex_f", json_new_num((int64_t)ce->ex_funcs));
         json_obj_set(e, "ex_c", json_new_num((int64_t)ce->ex_cases));
@@ -1052,6 +1062,11 @@ static void cache_replay_into(const myc_cache_entry *e, myc_result *res)
     res->rel_relations = e->rel_relations;
     res->rel_unary = e->rel_unary;
     res->rel_unbound = e->rel_unbound;
+    /* Fase 5 (SOL-13): ghost state machine (observasi, replay identik). */
+    res->sm_states = e->sm_states;
+    res->sm_events = e->sm_events;
+    res->sm_transitions = e->sm_transitions;
+    res->sm_findings = e->sm_findings;
     res->ran_exhaustive = e->ex_ran;
     res->exhaustive_funcs = e->ex_funcs;
     res->exhaustive_cases = e->ex_cases;
@@ -1474,6 +1489,11 @@ void myc_cache_store(const myc_request *req, const myc_result *res,
     ne->rel_relations = res->rel_relations;
     ne->rel_unary = res->rel_unary;
     ne->rel_unbound = res->rel_unbound;
+    /* Fase 5 (SOL-13): ghost state machine (observasi, replay identik). */
+    ne->sm_states = res->sm_states;
+    ne->sm_events = res->sm_events;
+    ne->sm_transitions = res->sm_transitions;
+    ne->sm_findings = res->sm_findings;
     ne->ex_ran = res->ran_exhaustive;
     ne->ex_funcs = res->exhaustive_funcs;
     ne->ex_cases = res->exhaustive_cases;
