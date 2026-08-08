@@ -85,7 +85,7 @@ myc.exe check tests\ok_hello.c --cwd "" > %OUT% 2>&1
 findstr /C:"invalid_cwd" %OUT% >nul && echo [OK] --cwd kosong ditolak (invalid_cwd) || echo [WARN] --cwd kosong tidak ditolak
 del %OUT%
 echo --- self-dogfooding: semua source myc harus OK
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c) do (
   echo === %%f
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%
@@ -325,6 +325,14 @@ myc.exe check test\fixtures\mmio_bad.c --scenario auto --no-cache > %OUT% 2>&1
 findstr /C:"scenario (C5): firmware" %OUT% >nul && echo [OK] C5 auto -> firmware || echo [WARN] C5 auto bukan firmware
 myc.exe check tests\ok_hello.c --scenario bogus --no-cache > %OUT% 2>&1
 findstr /C:"scenario tak dikenal" %OUT% >nul && echo [OK] C5 nama tak dikenal fail-fast || echo [WARN] C5 nama tak dikenal tidak ditolak
+del %OUT%
+rem --- Fase 5 C4: Target Matrix bare metal (--matrix)
+echo --- C4: portability matrix (cross-compiler opsional, non-blocking)
+myc.exe check tests\ok_hello.c --matrix --no-cache > %OUT% 2>&1
+findstr /C:"matrix (C4):" %OUT% >nul && echo [OK] C4 gate berjalan || echo [WARN] C4 gate tidak berjalan
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] C4 non-blocking || echo [WARN] C4 mengubah verdict
+myc.exe check tests\ok_hello.c --matrix --no-cache --json-summary > %OUT% 2>&1
+findstr /C:"matrix" %OUT% >nul && echo [OK] C4 ada di JSON || echo [WARN] C4 hilang dari JSON
 del %OUT%
 rem --- fix review: ; membuang pending basi + komentar blok bukan klausa
 myc.exe check test\fixtures\contract_stale_pending.c > %OUT% 2>&1

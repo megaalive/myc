@@ -41,6 +41,7 @@
 #include "sha256.h"
 #include "stack.h"
 #include "mutate.h"
+#include "matrix.h"
 
 /* ------------------------------------------------------------------ */
 /* Tabel flags gcc terpusat (P4.3).                                    */
@@ -837,6 +838,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     myc_gate_set_status(res, MYC_GATE_FUZZ, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_MUTATE, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_FREESTANDING, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_MATRIX, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_EXHAUSTIVE, MYC_GATE_NOT_APPLICABLE, NULL);
 
     /* hash source */
@@ -1618,6 +1620,27 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             myc_result_add_evidence(res, MYC_GATE_FUZZ,
                                     MYC_EVIDENCE_GATE_END,
                                     "fuzz: bersih");
+        }
+    }
+
+    /* --- Gate opsional: target matrix bare metal (Fase 5, C4) ---
+     * Cross-compile dengan arm-none-eabi-gcc / riscv*-elf bila tersedia,
+     * dump macro target, bandingkan dgn host: portability matrix
+     * (asumsi yang berubah antar target). NON-blocking penuh: status
+     * sudah di-set di myc_matrix_gate (observasi); cross-compiler absen
+     * = sel di-skip + catatan host-only. */
+    if (req->matrix) {
+        myc_matrix_gate(req, src, srclen, res);
+        if (res->err == MYC_ERR_INTERNAL) {
+            myc_gate_set_status(res, MYC_GATE_MATRIX,
+                                MYC_GATE_INFRA_FAILED,
+                                "matrix infra failed");
+            myc_result_add_evidence(res, MYC_GATE_MATRIX,
+                                    MYC_EVIDENCE_ERROR,
+                                    "matrix: infra failed");
+            free(gcc_path);
+            myc_reduce_verdict(res);
+            return;
         }
     }
 

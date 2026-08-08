@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c; do
+         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -552,6 +552,23 @@ if ./myc check tests/ok_hello.c --scenario bogus --no-cache 2>&1 | grep -qF "sce
     note "C5 scenario: nama tak dikenal = fail-fast"
 else
     fail "C5 scenario: nama tak dikenal tidak ditolak"
+fi
+
+# --- 5p. C4 Target Matrix bare metal (--matrix) ---
+if ./myc check tests/ok_hello.c --matrix --no-cache 2>&1 | grep -qF "matrix (C4):"; then
+    note "C4 matrix: gate berjalan (host-only tanpa cross-compiler)"
+else
+    fail "C4 matrix: gate tidak berjalan"
+fi
+if ./myc check tests/ok_hello.c --matrix --no-cache 2>&1 | grep -qF "verdict:   OK"; then
+    note "C4 matrix: NON-blocking (verdict tetap OK)"
+else
+    fail "C4 matrix: mengubah verdict (harus observasi)"
+fi
+if ./myc check tests/ok_hello.c --matrix --no-cache --json-summary 2>&1 | grep -qF "\"matrix\":{"; then
+    note "C4 matrix: hadir di JSON summary"
+else
+    fail "C4 matrix: hilang dari JSON summary"
 fi
 
 # --- 6. dogfood tool ---

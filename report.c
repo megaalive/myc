@@ -326,6 +326,12 @@ void myc_report_text(const myc_result *res)
         printf("scenario (C5): %s%s\n  %s\n", res->scenario_name,
                res->scenario_auto ? " (auto/D3)" : "",
                res->scenario_report ? res->scenario_report : "");
+    /* C4: target matrix bare metal (portability matrix). */
+    if (res->ran_matrix)
+        printf("matrix (C4): %d target, %d delta asumsi vs host "
+               "(portability, NON-blocking)\n  %s\n",
+               res->matrix_available, res->matrix_deltas,
+               res->matrix_report ? res->matrix_report : "");
 
     /* Scope Certificate (Fase 4, 9.11): daftar persis apa yang diperiksa.
      * Hanya memuat metrik yang BENAR-BENAR diukur; kolom yang tidak diukur
@@ -885,6 +891,14 @@ char *myc_result_to_json(const myc_result *res)
         json_sb_escape(&b, res->scenario_name);
         json_sb_printf(&b, ",\"report\":");
         json_sb_escape(&b, res->scenario_report);
+        json_sb_puts(&b, "},");
+    }
+    if (res->ran_matrix) {
+        json_sb_printf(&b, "\"matrix\":{\"targets\":%d,\"available\":%d,"
+                           "\"deltas\":%d,\"report\":",
+                       res->matrix_targets, res->matrix_available,
+                       res->matrix_deltas);
+        json_sb_escape(&b, res->matrix_report);
         json_sb_puts(&b, "},");
     }
     json_sb_printf(&b, "\"truncated\":%s,", res->truncated ? "true" : "false");
@@ -1483,6 +1497,12 @@ void myc_report_json_summary(const myc_result *res)
                        res->scenario_auto ? "true" : "false");
         json_sb_escape(&b, res->scenario_name);
         json_sb_puts(&b, "},");
+    }
+    if (res->ran_matrix) {
+        json_sb_printf(&b, "\"matrix\":{\"targets\":%d,\"available\":%d,"
+                           "\"deltas\":%d},",
+                       res->matrix_targets, res->matrix_available,
+                       res->matrix_deltas);
     }
     /* Fase 5 B4 (DS-08): harvest komentar-biasa (observasi). */
     json_sb_printf(&b, "\"harvest\":{\"candidates\":%d,\"validated\":%d,"

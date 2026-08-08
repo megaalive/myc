@@ -162,6 +162,7 @@ const char *myc_gate_id_short(myc_gate_id id)
     case MYC_GATE_FUZZ:       return "fuzz";
     case MYC_GATE_MUTATE:     return "mutate";
     case MYC_GATE_FREESTANDING: return "freestanding";
+    case MYC_GATE_MATRIX:       return "matrix";
     default:                  return "?";
     }
 }

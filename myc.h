@@ -174,6 +174,14 @@ typedef enum {
                                 -ffreestanding -fno-builtin + hosted-API
                                 trap (printf/malloc/fopen/exit dilarang di
                                 firmware). Observasi NON-blocking. */
+    MYC_GATE_MATRIX,          /* (Fase 5, C4) target matrix bare metal:
+                                cross-compile (arm-none-eabi-gcc, riscv*-elf)
+                                + macro dump per target, bandingkan dgn host:
+                                signedness char, lebar pointer, endianness,
+                                set warning -> portability matrix (asumsi
+                                yang BERUBAH antar target). Observasi
+                                NON-blocking; cross-compiler absen = sel
+                                di-skip (host-only). */
     MYC_GATE_COUNT
 } myc_gate_id;
 
@@ -628,6 +636,11 @@ typedef struct {
      * default scenarios.json di cwd). Malloc'd, di-free caller main. */
     char       *scenario;
     char       *scenario_file;
+    /* Fase 5, C4 (--matrix): target matrix bare metal -- cross-compile
+     * source dengan cross-compiler (arm-none-eabi-gcc, riscv*-elf) bila
+     * tersedia, dump macro target, bandingkan dgn host -> portability
+     * matrix (asumsi yang berubah antar target). NON-blocking. */
+    int         matrix;
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
@@ -750,6 +763,25 @@ typedef struct {
     char *pre_state;        /* deskripsi keadaan awal, NULL bila tidak diketahui */
     char *operation;        /* deskripsi operasi pelanggaran, NULL bila tidak diketahui */
 } myc_witness;
+
+/* Satu sel matriks target (Fase 5, C4): satu cross-compiler + fakta
+ * target + hasil compile. String target/cc disalin by-value (fixed array)
+ * agar aman disalin ke cache replay. `deltas` = jumlah fakta yang
+ * berubah vs host (char signedness / ptr bits / endianness). */
+#define MYC_MATRIX_MAX_CELLS 4
+
+typedef struct {
+    char  target[64];        /* "arm-none-eabi" (nama compiler) */
+    char  cc[260];           /* path absolut compiler */
+    int   available;         /* cross-compiler ditemukan */
+    int   facts_ok;          /* macro dump -dM -E terbaca */
+    int   built;             /* compile -c sukses */
+    int   warnings;          /* jumlah warning compile */
+    int   char_unsigned;     /* __CHAR_UNSIGNED__ di target */
+    int   ptr_bits;          /* 8 * sizeof(void*) di target */
+    int   little_endian;     /* endianness target */
+    int   deltas;            /* fakta yang berubah vs host */
+} myc_matrix_cell;
 
 typedef struct {
     myc_verdict verdict;
@@ -1065,6 +1097,20 @@ typedef struct {
     int            scenario_auto;
     char          *scenario_name;       /* arena */
     char          *scenario_report;     /* arena */
+    /* --- Fase 5, C4 (--matrix, target matrix bare metal) ---
+     * ran_matrix=1 setelah gate; matrix_targets = target dievaluasi
+     * (termasuk yang tak terpasang); matrix_available = cross-compiler
+     * ditemukan; matrix_built = compile -c sukses; matrix_deltas =
+     * fakta (char/ptr/endianness) yang berubah vs host; matrix_report
+     * (arena) = portability matrix. NON-blocking observasi. */
+    int            ran_matrix;
+    int            matrix_targets;
+    int            matrix_available;
+    int            matrix_built;
+    int            matrix_deltas;
+    myc_matrix_cell matrix_cells[MYC_MATRIX_MAX_CELLS];
+    int            matrix_ncells;
+    char          *matrix_report;       /* arena */
 
     /* internal: gate mana yang dijalankan terakhir */
     int         ran_preprocess;

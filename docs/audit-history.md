@@ -2106,3 +2106,32 @@ modul baru `scenario.c`:
   `json_parse` return 1=sukses (bukan 0), dan `json_sb_escape` di
   report.c menambah quotes sendiri (jangan tulis `"` pembuka).
   Fixture `scen_parser.c`; regresi `_ci_linux.sh` 5o + `_regress_run.bat`.
+
+### (12) C4 — Toolchain Matrix bare metal (--matrix) — `matrix.c/.h`
+
+Perluasan A2 (divergence) ke MATRIKS TARGET: "char di ARM tidak sama
+ dengan char di x86". Modul baru `matrix.c`:
+
+- Untuk tiap cross-compiler yang TERPASANG (`arm-none-eabi-gcc`,
+  `riscv64/32-unknown-elf-gcc`):
+  (a) **macro dump target** via `-dM -E` (reuse engine A1
+      `myc_assume_fetch_facts`): `__CHAR_UNSIGNED__`, `__SIZEOF_POINTER__`,
+      endianness;
+  (b) **cross-compile** `-c -O2 -std=c11` (temp dir, argv eksplisit)
+      -> built + set warning;
+  (c) **delta vs host** -> portability matrix: setiap fakta yang berubah
+      dicatat "TARUHAN BERUBAH: char signed di host, UNSIGNED di ARM
+      (idiom `c < 0` mati)" dst.
+- **NON-blocking penuh** (kejujuran P5): cross-compiler absen = sel
+  di-skip + catatan "target lain TIDAK diuji (host-only)" — menutup
+  celah "lintasan yang tidak pernah diuji" dengan pengakuan, bukan
+  kesunyian. Verdict TIDAK pernah turun karena matrix (status
+  COMPLETED_OBSERVATIONS).
+- Report teks "matrix (C4): N target, M delta", JSON
+  `matrix.targets/available/deltas/report` + summary. Flag `--matrix`;
+  gate id MYC_GATE_MATRIX. Validasi di Windows: jalur host-only
+  (deterministik) + jalur target-aktif via stub `arm-none-eabi-gcc.exe`
+  (sel lengkap: facts+compile; delta 0 yang benar utk fakta identik).
+  Delta nyata (char/ptr berubah) tervalidasi secara logika; butuh
+  cross-compiler asli di CI Linux utk e2e penuh. Regresi `_ci_linux.sh`
+  5p + `_regress_run.bat`.
