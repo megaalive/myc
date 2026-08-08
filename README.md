@@ -277,3 +277,18 @@ The older scalar L1–L5 labels are **legacy and experimental**: they describe
 the strongest backend that happened to run, not a formal guarantee. Treat the
 real evidence — the gate matrix, the per-finding `receipt_sha256`, and the
 source hash — as the source of truth, not the label.
+
+## Baseline benchmark
+
+`bash bench/run_bench.sh` menjalankan **20 task baseline** (Fase -1,
+SOL-24) terhadap fixture terverifikasi: 10 hazard-class detection
+(spatial/temporal/integer/checked/memory/driver/contract/lint/negative)
+ditambah gate Fase 5-6 (fuzz-lite, exhaustive, witness, divergence,
+stack-recursion, perturb, thread-probe). Task observasi NON-blocking
+menggunakan `obs_pattern` (observasi harus muncul, verdict tetap OK).
+
+- Melaporkan detection rate, false-positive rate, binary size, default
+  latency, full-suite latency, dan agent payload size.
+- Report deterministik disimpan ke `bench/reports/baseline-latest.txt`
+  (+ timestamp). Selalu memakai `--no-cache` agar deterministik.
+- Skema hasil terbekukan: lihat [`docs/result-schema.md`](docs/result-schema.md).

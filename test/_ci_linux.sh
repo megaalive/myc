@@ -652,6 +652,14 @@ else
 fi
 rm -f test/json_abuse
 
+# --- 7b. Fase -1 Baseline Benchmark (20 task, SOL-24) ---
+if bash bench/run_bench.sh > /tmp/bench_ci.log 2>&1; then
+    note "Fase -1 benchmark: 20 task PASS (baseline tersimpan di bench/reports/)"
+else
+    grep -E '\[FAIL\]|BENCHMARK' /tmp/bench_ci.log | head -8
+    fail "Fase -1 benchmark: ada task GAGAL (detection/precision baseline)"
+fi
+
 # --- 8. audit018 (deadlock/OOM/concurrency/fork/descendants) ---
 if bash test/_audit018.sh; then
     note "audit018 SELESAI OK"

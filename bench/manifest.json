@@ -2,7 +2,7 @@
   "benchmark": "myc-assistance-baseline",
   "version": "v1",
   "schema_version": "1.0",
-  "doc": "Baseline LLM-assistance benchmark (SOL-24, Fase -1). Uses existing verified test fixtures. run_bench.sh drives myc check and asserts expected verdicts. A bad file that passes clean = missed bug (false negative); a good file that fails = false positive. Reports detection/precision + runtime metrics.",
+  "doc": "Baseline LLM-assistance benchmark (SOL-24, Fase -1). 20 task: 10 hazard-class detection + observasi NON-blocking (lint/negative/stack/perturb/thread-probe). run_bench.sh drives myc check and asserts expected verdicts. A bad file that passes clean = missed bug (false negative); a good file that fails = false positive. obs_pattern: pola yang HARUS ada di output bad file untuk task observasi non-blocking. Reports detection/precision + runtime metrics.",
   "tasks": [
     {
       "id": "t01-stack-oob",
@@ -68,13 +68,14 @@
       "expect_good": "OK"
     },
     {
-      "id": "t08-contract-pre",
+      "id": "t08-contract-clauses",
       "category": "contract",
-      "bad": "test/fixtures/bad_contract_pre.c",
+      "bad": "test/fixtures/contract_clauses.c",
       "good": "test/fixtures/ok_contract.c",
       "flags": ["--run"],
-      "expect_bad": "INCONCLUSIVE",
-      "expect_good": "OK"
+      "expect_bad": "OK",
+      "expect_good": "OK",
+      "obs_pattern": "contract clauses"
     },
     {
       "id": "t09-intptr-cast",
@@ -95,6 +96,100 @@
       "expect_bad": "OK",
       "expect_good": "OK",
       "expect_bad_has_observations": true
+    },
+    {
+      "id": "t11-fuzz-lite",
+      "category": "fuzz",
+      "bad": "test/fixtures/bad_fuzz.c",
+      "good": "test/fixtures/ok_fuzz.c",
+      "flags": ["--fuzz", "--fuzz-iters", "300"],
+      "expect_bad": "DRIVER_VIOLATION",
+      "expect_good": "OK"
+    },
+    {
+      "id": "t12-exhaustive",
+      "category": "proof",
+      "bad": "test/fixtures/bad_exhaustive.c",
+      "good": "test/fixtures/ok_exhaustive.c",
+      "flags": ["--exhaustive"],
+      "expect_bad": "DRIVER_VIOLATION",
+      "expect_good": "OK"
+    },
+    {
+      "id": "t13-witness-oob",
+      "category": "temporal",
+      "bad": "test/fixtures/witness_oob.c",
+      "good": "test/fixtures/witness_clean.c",
+      "flags": ["--run"],
+      "expect_bad": "RUNTIME_VIOLATION",
+      "expect_good": "OK"
+    },
+    {
+      "id": "t14-freestanding",
+      "category": "baremetal",
+      "bad": "test/fixtures/blinky_bad.c",
+      "good": "test/fixtures/blinky_clean.c",
+      "flags": ["--freestanding"],
+      "expect_bad": "OK",
+      "expect_good": "OK",
+      "obs_pattern": "freestanding"
+    },
+    {
+      "id": "t15-checked-type",
+      "category": "checked",
+      "bad": "tests/bad_checked_type.c",
+      "good": "tests/ok_checked.c",
+      "flags": ["--checked"],
+      "expect_bad": "COMPILE_ERROR",
+      "expect_good": "OK"
+    },
+    {
+      "id": "t16-syntax",
+      "category": "boundary",
+      "bad": "tests/bad_syntax.c",
+      "good": "tests/ok_hello.c",
+      "flags": [],
+      "expect_bad": "COMPILE_ERROR",
+      "expect_good": "OK"
+    },
+    {
+      "id": "t17-oob-static",
+      "category": "spatial",
+      "bad": "tests/bad_oob.c",
+      "good": "tests/ok_bounds.c",
+      "flags": [],
+      "expect_bad": "COMPILE_ERROR",
+      "expect_good": "OK"
+    },
+    {
+      "id": "t18-stack-recursion",
+      "category": "stack",
+      "bad": "test/fixtures/stack_recursive.c",
+      "good": "tests/ok_hello.c",
+      "flags": ["--stack"],
+      "expect_bad": "OK",
+      "expect_good": "OK",
+      "obs_pattern": "recursion"
+    },
+    {
+      "id": "t19-perturb-env",
+      "category": "environment",
+      "bad": "test/fixtures/pert_tz.c",
+      "good": "tests/ok_hello.c",
+      "flags": ["--run", "--perturb"],
+      "expect_bad": "OK",
+      "expect_good": "OK",
+      "obs_pattern": "ENV-SENSITIVE"
+    },
+    {
+      "id": "t20-thread-probe",
+      "category": "concurrency",
+      "bad": "test/fixtures/con_inv.c",
+      "good": "tests/ok_hello.c",
+      "flags": ["--thread-probe"],
+      "expect_bad": "OK",
+      "expect_good": "OK",
+      "obs_pattern": "LOCK-ORDER INVERSION"
     }
   ]
 }

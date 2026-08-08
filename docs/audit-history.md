@@ -2255,3 +2255,29 @@ bukti bahwa audit backend Fase 6 menangkap bug myc sendiri:
 
 Status akhir Fase 6: 7/7 task selesai, CI GitHub hijau (Linux + Windows)
 pada `120fef1`, seluruh source self-dogfood OK (38 source + 3 dogfood).
+
+### (19) Fase -1 — Baseline Benchmark & Truth Freeze — `bench/` + `docs/result-schema.md`
+
+Menyelesaikan 3 task Fase -1 yang tersisa (SOL-24):
+
+- **20 task benchmark**: `bench/manifest.json` diperluas 10 -> 20 task.
+  Hard detection (14): spatial stack-oob + static-oob, temporal UAF +
+  witness-oob, integer overflow, checked (direct/oob/type), memory
+  malloc-return, driver-oob, contract-pre, syntax, fuzz-lite, exhaustive,
+  divergence. Observasi NON-blocking (6) dengan `obs_pattern`: lint intptr,
+  negative-space, stack recursion, env perturb (ENV-SENSITIVE),
+  thread-probe (LOCK-ORDER INVERSION).
+- **`bench/run_bench.sh` v2**: dukung `obs_pattern`, ukur default latency +
+  full-suite latency + agent payload, tulis report deterministik ke
+  `bench/reports/baseline-latest.txt`. Selalu `--no-cache` (cache replay
+  memotong detail observasi). Portabel: `./myc` atau `./myc.exe`; strip
+  CRLF (file CRLF di Windows); `LAST_MS` via file temp (command-subst =
+  subshell). Ekspektasi t08 dikoreksi: `INCONCLUSIVE` -> `RUNTIME_VIOLATION`.
+- **Baseline pertama**: 20/20 bad terdeteksi (detection 100%), 20/20 good
+  bersih (false-positive 0%), binary 517.885 B, default latency ~170 ms,
+  full-suite ~36 s, agent payload ~3.3 KB.
+- **Truth freeze**: `docs/result-schema.md` membekukan `myc.result.v1`
+  (`--json-summary`) + `myc.agent.v2` (`--agent`): field tidak dihapus
+  tanpa bump versi, verdict enum hanya bertambah di akhir, determinisme
+  modulo `duration_ms`/`receipt_sha256`. Regresi CI: `_ci_linux.sh` 7b +
+  `_regress_run.bat`. Plan checkbox Fase -1 3/3 -> [x].

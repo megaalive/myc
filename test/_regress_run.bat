@@ -524,6 +524,19 @@ findstr /C:"require_complete: enforced" %OUT% >nul && echo [OK] laporan enforced
 myc.exe check test\fixtures\ok_filc.c --filc > %OUT% 2>&1
 findstr /C:"MYC-INCOMPLETE-GATE-UNAVAILABLE" %OUT% >nul && echo [OK] backend tak tersedia jadi gap (bukan kesunyian) || echo [INFO] filc tersedia (tanpa gap)
 del %OUT%
+echo --- Fase -1: Baseline Benchmark (20 task, SOL-24)
+where bash >nul 2>&1
+if errorlevel 1 (
+  echo [WARN] bash tidak tersedia - benchmark dilewati; jalankan bench/run_bench.sh di POSIX
+) else (
+  bash bench/run_bench.sh > %TEMP%\bench_regress.log 2>&1
+  if errorlevel 1 (
+    echo [FAIL] benchmark: lihat log %TEMP%\bench_regress.log - ada task gagal
+    type %TEMP%\bench_regress.log | findstr /C:"[FAIL]" /C:"BENCHMARK"
+  ) else (
+    echo [OK] benchmark: 20 task PASS (baseline di bench\reports\)
+  )
+)
 echo --- MYC-AUDIT-018: test portabel concurrency/deadlock/flood/OOM (via bash)
 if defined GITHUB_ACTIONS (
   echo [SKIP] audit018 portabel dilewati di CI - stress/audit soak test, non-blocking

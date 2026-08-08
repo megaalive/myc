@@ -2,50 +2,288 @@
   "schema_version": "1.0",
   "doc": "Single source of truth for myc capabilities (gates, CLI flags, MCP tools, schemas). CI (_cap_sync.sh) verifies this file stays consistent with myc.c, mcp.c, README.md, and docs/*.md. See docs/audit-history.md -> SOL-23. Edit here first; a mismatch makes CI fail.",
   "gates": [
-    { "id": "preprocess",        "flag": null,              "dimension": "C", "backend": "gcc",        "hard": false, "docs_anchor": "preprocess" },
-    { "id": "lint",              "flag": null,              "dimension": "C", "backend": null,          "hard": false, "docs_anchor": "lint" },
-    { "id": "include-marker-call","flag": null,             "dimension": "C", "backend": null,          "hard": false, "docs_anchor": "include/marker/call" },
-    { "id": "compile",           "flag": null,              "dimension": "C", "backend": "gcc",        "hard": true,   "docs_anchor": "compile" },
-    { "id": "analyzer",          "flag": "--analyze",       "dimension": "S", "backend": "gcc",        "hard": false,  "docs_anchor": "-fanalyzer" },
-    { "id": "checked",           "flag": "--checked",       "dimension": "B", "backend": "gcc",        "hard": false,  "docs_anchor": "checked-build" },
-    { "id": "runtime",           "flag": "--run",           "dimension": "R", "backend": "clang+asan",  "hard": false,  "docs_anchor": "runtime" },
-    { "id": "metamorphic",       "flag": "--metamorphic",   "dimension": "R", "backend": "clang",      "hard": false,  "docs_anchor": "metamorphic" },
-    { "id": "divergence",         "flag": "--divergence",     "dimension": "R", "backend": "gcc+clang+tcc", "hard": false,  "docs_anchor": "divergence" },
-    { "id": "negative",          "flag": "--negative",      "dimension": "C", "backend": null,          "hard": false,  "docs_anchor": "negative-space" },
-    { "id": "quorum",            "flag": "--quorum",        "dimension": null, "backend": null,         "hard": false,  "docs_anchor": "quorum" },
-    { "id": "require-complete",  "flag": "--require-complete", "dimension": null, "backend": null,      "hard": false,  "docs_anchor": "require-complete" },
-    { "id": "driver",            "flag": "--driver",        "dimension": "D", "backend": "gcc+clang",   "hard": false,  "docs_anchor": "driver" },
-    { "id": "exhaustive",        "flag": "--exhaustive",    "dimension": "P", "backend": "clang+asan",  "hard": false,  "docs_anchor": "exhaustive" },
-    { "id": "compare",            "flag": "compare",         "dimension": "P", "backend": "clang+asan",  "hard": false,  "docs_anchor": "compare" },
-    { "id": "stack",              "flag": "--stack",         "dimension": "R", "backend": "gcc",         "hard": false,  "docs_anchor": "stack" },
-    { "id": "fuzz",               "flag": "--fuzz",          "dimension": "R", "backend": "clang+asan",  "hard": false,  "docs_anchor": "fuzz" },
-    { "id": "mutate",             "flag": "--mutate-audit",  "dimension": null, "backend": "pipeline",    "hard": false,  "docs_anchor": "mutate" },
-    { "id": "freestanding",       "flag": "--freestanding",  "dimension": "C", "backend": "gcc",         "hard": false,  "docs_anchor": "freestanding" },
-    { "id": "baremetal",          "flag": "--freestanding",  "dimension": "C", "backend": "lint",         "hard": false,  "docs_anchor": "baremetal" },
-    { "id": "scenario",           "flag": "--scenario",      "dimension": "C", "backend": "json",         "hard": false,  "docs_anchor": "scenario" },
-    { "id": "matrix",             "flag": "--matrix",        "dimension": "C", "backend": "cross-gcc",    "hard": false,  "docs_anchor": "matrix" },
-    { "id": "prove",             "flag": "--prove",         "dimension": "P", "backend": "frama-c",     "hard": false,  "docs_anchor": "prove" },
-    { "id": "filc",              "flag": "--filc",          "dimension": "F", "backend": "fil-c",       "hard": false,  "docs_anchor": "filc" }
+    {
+      "id": "preprocess",
+      "flag": null,
+      "dimension": "C",
+      "backend": "gcc",
+      "hard": false,
+      "docs_anchor": "preprocess"
+    },
+    {
+      "id": "lint",
+      "flag": null,
+      "dimension": "C",
+      "backend": null,
+      "hard": false,
+      "docs_anchor": "lint"
+    },
+    {
+      "id": "include-marker-call",
+      "flag": null,
+      "dimension": "C",
+      "backend": null,
+      "hard": false,
+      "docs_anchor": "include/marker/call"
+    },
+    {
+      "id": "compile",
+      "flag": null,
+      "dimension": "C",
+      "backend": "gcc",
+      "hard": true,
+      "docs_anchor": "compile"
+    },
+    {
+      "id": "analyzer",
+      "flag": "--analyze",
+      "dimension": "S",
+      "backend": "gcc",
+      "hard": false,
+      "docs_anchor": "-fanalyzer"
+    },
+    {
+      "id": "checked",
+      "flag": "--checked",
+      "dimension": "B",
+      "backend": "gcc",
+      "hard": false,
+      "docs_anchor": "checked-build"
+    },
+    {
+      "id": "runtime",
+      "flag": "--run",
+      "dimension": "R",
+      "backend": "clang+asan",
+      "hard": false,
+      "docs_anchor": "runtime"
+    },
+    {
+      "id": "metamorphic",
+      "flag": "--metamorphic",
+      "dimension": "R",
+      "backend": "clang",
+      "hard": false,
+      "docs_anchor": "metamorphic"
+    },
+    {
+      "id": "divergence",
+      "flag": "--divergence",
+      "dimension": "R",
+      "backend": "gcc+clang+tcc",
+      "hard": false,
+      "docs_anchor": "divergence"
+    },
+    {
+      "id": "negative",
+      "flag": "--negative",
+      "dimension": "C",
+      "backend": null,
+      "hard": false,
+      "docs_anchor": "negative-space"
+    },
+    {
+      "id": "quorum",
+      "flag": "--quorum",
+      "dimension": null,
+      "backend": null,
+      "hard": false,
+      "docs_anchor": "quorum"
+    },
+    {
+      "id": "require-complete",
+      "flag": "--require-complete",
+      "dimension": null,
+      "backend": null,
+      "hard": false,
+      "docs_anchor": "require-complete"
+    },
+    {
+      "id": "driver",
+      "flag": "--driver",
+      "dimension": "D",
+      "backend": "gcc+clang",
+      "hard": false,
+      "docs_anchor": "driver"
+    },
+    {
+      "id": "exhaustive",
+      "flag": "--exhaustive",
+      "dimension": "P",
+      "backend": "clang+asan",
+      "hard": false,
+      "docs_anchor": "exhaustive"
+    },
+    {
+      "id": "compare",
+      "flag": "compare",
+      "dimension": "P",
+      "backend": "clang+asan",
+      "hard": false,
+      "docs_anchor": "compare"
+    },
+    {
+      "id": "stack",
+      "flag": "--stack",
+      "dimension": "R",
+      "backend": "gcc",
+      "hard": false,
+      "docs_anchor": "stack"
+    },
+    {
+      "id": "fuzz",
+      "flag": "--fuzz",
+      "dimension": "R",
+      "backend": "clang+asan",
+      "hard": false,
+      "docs_anchor": "fuzz"
+    },
+    {
+      "id": "mutate",
+      "flag": "--mutate-audit",
+      "dimension": null,
+      "backend": "pipeline",
+      "hard": false,
+      "docs_anchor": "mutate"
+    },
+    {
+      "id": "freestanding",
+      "flag": "--freestanding",
+      "dimension": "C",
+      "backend": "gcc",
+      "hard": false,
+      "docs_anchor": "freestanding"
+    },
+    {
+      "id": "baremetal",
+      "flag": "--freestanding",
+      "dimension": "C",
+      "backend": "lint",
+      "hard": false,
+      "docs_anchor": "baremetal"
+    },
+    {
+      "id": "scenario",
+      "flag": "--scenario",
+      "dimension": "C",
+      "backend": "json",
+      "hard": false,
+      "docs_anchor": "scenario"
+    },
+    {
+      "id": "matrix",
+      "flag": "--matrix",
+      "dimension": "C",
+      "backend": "cross-gcc",
+      "hard": false,
+      "docs_anchor": "matrix"
+    },
+    {
+      "id": "prove",
+      "flag": "--prove",
+      "dimension": "P",
+      "backend": "frama-c",
+      "hard": false,
+      "docs_anchor": "prove"
+    },
+    {
+      "id": "filc",
+      "flag": "--filc",
+      "dimension": "F",
+      "backend": "fil-c",
+      "hard": false,
+      "docs_anchor": "filc"
+    }
   ],
   "cli_flags": [
-    "--analyze", "--checked", "--run", "--run-stdin", "--prove", "--filc",
-    "--driver", "--exhaustive", "--stack", "--stack-budget", "--fuzz", "--fuzz-iters", "--fuzz-seed", "--mutate-audit", "--mutate-max", "--freestanding", "--scenario", "--scenario-file", "--matrix", "--metamorphic", "--divergence", "--negative", "--quorum", "--require-complete",
-    "compare (subcommand)", "scenario (subcommand)", "canary (subcommand)",
-    "audit-tests (subcommand)", "regression (subcommand)",
-    "--json", "--json-summary", "--agent", "--strict", "--level", "--no-lint", "--cwd",
-    "--timeout", "--output-cap", "--write-repro", "--no-cache",
-    "--tx-verify", "--finding-id", "--edit-region", "--budget",
-    "--budget-contract", "--no-assumptions", "--require-assumptions-closed",
-    "--assumption-ack", "--perturb", "--thread-probe"
+    "--analyze",
+    "--checked",
+    "--run",
+    "--run-stdin",
+    "--prove",
+    "--filc",
+    "--driver",
+    "--exhaustive",
+    "--stack",
+    "--stack-budget",
+    "--fuzz",
+    "--fuzz-iters",
+    "--fuzz-seed",
+    "--mutate-audit",
+    "--mutate-max",
+    "--freestanding",
+    "--scenario",
+    "--scenario-file",
+    "--matrix",
+    "--metamorphic",
+    "--divergence",
+    "--negative",
+    "--quorum",
+    "--require-complete",
+    "compare (subcommand)",
+    "scenario (subcommand)",
+    "canary (subcommand)",
+    "audit-tests (subcommand)",
+    "regression (subcommand)",
+    "--json",
+    "--json-summary",
+    "--agent",
+    "--strict",
+    "--level",
+    "--no-lint",
+    "--cwd",
+    "--timeout",
+    "--output-cap",
+    "--write-repro",
+    "--no-cache",
+    "--tx-verify",
+    "--finding-id",
+    "--edit-region",
+    "--budget",
+    "--budget-contract",
+    "--no-assumptions",
+    "--require-assumptions-closed",
+    "--assumption-ack",
+    "--perturb",
+    "--thread-probe"
   ],
   "mcp_tools": [
-    "check", "repair", "version", "policy", "contracts", "lint", "agent_check"
+    "check",
+    "repair",
+    "version",
+    "policy",
+    "contracts",
+    "lint",
+    "agent_check"
   ],
   "schemas": [
-    "myc.result.v1", "myc.repair.v1", "myc.agent.v2"
+    "myc.result.v1",
+    "myc.repair.v1",
+    "myc.agent.v2"
   ],
   "dimensions": {
-    "C": "Compile", "S": "Static", "R": "Runtime", "B": "Checked",
-    "P": "Proof", "D": "Driver", "F": "Filc"
-  }
+    "C": "Compile",
+    "S": "Static",
+    "R": "Runtime",
+    "B": "Checked",
+    "P": "Proof",
+    "D": "Driver",
+    "F": "Filc"
+  },
+  "extras": [
+    {
+      "name": "benchmark",
+      "script": "bench/run_bench.sh",
+      "fase": "-1 (SOL-24)",
+      "desc": "Baseline 20 task: detection rate + false-positive rate + binary/latency/payload metrics; report di bench/reports/",
+      "ci": "_ci_linux.sh 7b + _regress_run.bat"
+    },
+    {
+      "name": "result-schema",
+      "doc": "docs/result-schema.md",
+      "fase": "-1 (SOL-24)",
+      "desc": "myc.result.v1 / myc.agent.v2 dibekukan; kompatibilitas terdokumentasi",
+      "ci": "-"
+    }
+  ]
 }

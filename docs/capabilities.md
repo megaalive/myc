@@ -74,3 +74,25 @@ Driver / Filc; `0` = n/a, `1` = clean, `2` = findings, `3` = inconclusive).
 - Not a sandbox: it analyzes and (optionally) runs the code; it does not
   confine the program beyond the sanitizer/OS job-object limits used for
   timeouts.
+
+## Baseline benchmark (Fase -1, SOL-24)
+
+`bash bench/run_bench.sh` — 20 task baseline terhadap fixture terverifikasi:
+
+- **Hard detection (14)**: spatial (stack-oob, static-oob), temporal
+  (use-after-free, witness-oob), integer overflow, checked (direct, oob,
+  type), memory (malloc return), driver (oob), contract (pre), syntax,
+  fuzz-lite, exhaustive, divergence.
+- **Observasi NON-blocking (6)**: lint (intptr), negative-space, stack
+  recursion, env perturb (ENV-SENSITIVE), thread-probe (LOCK-ORDER
+  INVERSION) — verdict tetap OK, observasi harus muncul (`obs_pattern`).
+- **Metrik**: detection rate, false-positive rate, binary size, default
+  latency, full-suite latency, agent payload. Report deterministik di
+  `bench/reports/baseline-latest.txt`.
+
+## Result schema beku (Fase -1, SOL-24)
+
+`myc.result.v1` (`--json-summary`) dan `myc.agent.v2` (`--agent`)
+**dibekukan**: field tidak dihapus/diubah makna tanpa bump versi; verdict
+enum hanya bertambah di akhir; determinisme dijamin modulo `duration_ms` /
+`receipt_sha256`. Detail field + aturan perubahan: `docs/result-schema.md`.

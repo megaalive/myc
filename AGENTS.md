@@ -86,6 +86,8 @@ scan includes (whitelist, non-blocking) → lint heuristik ber-confidence
  | `report.c` / `json.c` | Laporan teks/JSON, capsule, parser JSON ketat |
  | `policy.c` | Profil header/fungsi (non-blocking) |
  | `scanner.c` | Scanner leksikal source |
+| `bench/` | Baseline benchmark 20 task (Fase -1, SOL-24): detection + false-positive + binary/latency/payload; report deterministik di bench/reports/ |
+| `docs/result-schema.md` | Truth freeze myc.result.v1 + myc.agent.v2 (Fase -1, SOL-24) |
 | `witness.c` | Witness pipeline: repro, minimizer, slice |
 | `agent.c` | Agent Evidence Protocol (myc.agent.v2) |
 | `canary.c` | Canary Swarm (Fase 6): tiap backend yang bisa klaim memory-safety dibuktikan hidup via canary positif/negatif; `myc canary list | run [backend]`; canary gagal = backend UNRELIABLE |
