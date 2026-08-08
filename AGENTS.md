@@ -86,8 +86,12 @@ scan includes (whitelist, non-blocking) → lint heuristik ber-confidence
  | `report.c` / `json.c` | Laporan teks/JSON, capsule, parser JSON ketat |
  | `policy.c` | Profil header/fungsi (non-blocking) |
  | `scanner.c` | Scanner leksikal source |
- | `witness.c` | Witness pipeline: repro, minimizer, slice |
- | `agent.c` | Agent Evidence Protocol (myc.agent.v2) |
+| `witness.c` | Witness pipeline: repro, minimizer, slice |
+| `agent.c` | Agent Evidence Protocol (myc.agent.v2) |
+| `stack.c` | Stack Budget Analyzer: `gcc -fstack-usage` + call graph worst-path, rekursi/VLA/alloca (Fase 5, C2/DS-10, `--stack`) |
+| `mutate.c` | Mutation-Audited Verification: verifier mengaudit diri via mutan pola error LLM, coverage gap (Fase 5, B5/DS-09, `--mutate-audit`) |
+| `scenario.c` | Scenario Packs: profil JSON resep gate per domain + auto budget (Fase 5, C5/D3/DS-12, `--scenario`, `myc scenario list/info`) |
+| `matrix.c` | Target Matrix bare metal: cross-compile + macro dump per target, portability matrix (Fase 5, C4, `--matrix`) |
 
 ## Dogfooding (wajib dipertahankan)
 

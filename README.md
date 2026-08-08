@@ -43,12 +43,18 @@ is a warning or a non-blocking observation.
 ```
 myc check <file.c> [--json] [--analyze] [--strict] [--no-lint] [--cwd DIR]
 myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver]
-myc check <file.c> [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete]
+myc check <file.c> [--exhaustive] [--stack [--stack-budget N]] [--fuzz [--fuzz-iters N] [--fuzz-seed S]]
+myc check <file.c> [--mutate-audit [--mutate-max N]] [--freestanding] [--matrix]
+myc check <file.c> [--scenario NAME [--scenario-file PATH]] [--metamorphic] [--divergence]
+myc check <file.c> [--negative] [--quorum] [--require-complete]
 myc check <file.c> [--json-summary] [--timeout MS] [--output-cap BYTES] [--no-cache]
 myc check -            [--json] [--analyze] [--strict] [--no-lint]   (source from stdin)
+myc compare <ref.c> <new.c> [func...]     (differential oracle pair, A4/DS-04)
+myc scenario list | info <name>           (scenario packs, C5/DS-12)
 myc context <file.c> [--finding-id ID] [--budget 4K|8K|16K] [gate flags...]
 myc policy
 myc probe
+myc prompt <file.c>  (deterministic system-prompt snippet, D4/DS-15)
 myc version
 mcp.exe               (MCP server; see docs/mcp-tools.md)
 ```
@@ -66,6 +72,41 @@ Flags:
 - `--filc` — run under Fil-C (optional backend, Linux/x86_64).
 - `--driver` — generate and run a driver that exercises contract-tagged
   functions at edge cases (optional backend).
+- `--exhaustive` — small-domain exhaustive proof (A3/DS-03): functions with
+  `//@ requires` bounded integer domains are enumerated **in full**
+  (product ≤ 1e6) ⇒ **P1 EXHAUSTIVE** for the declared domain; a narrowed
+  domain vs a previous run is flagged as `SCOPE_LAUNDERING`.
+- `--stack [--stack-budget N]` — stack budget analyzer (C2/DS-10):
+  `gcc -fstack-usage` + call-graph worst path vs budget (default 4096 B);
+  recursion / alloca / VLA detected. Observation, non-blocking.
+- `--fuzz [--fuzz-iters N] [--fuzz-seed S]` — fuzz-lite gate (D1/DS-13):
+  deterministic PRNG + bounded loop on contract functions; inputs are
+  constrained by `requires` (edge over blind fuzzers); a sanitizer crash is
+  a **hard DRIVER_VIOLATION** with a reproducible seed.
+- `--mutate-audit [--mutate-max N]` — mutation-audited verification
+  (B5/DS-09): the verifier audits itself by mutating the code with LLM-error
+  patterns; a mutant that stays clean is a **coverage gap**.
+- `--freestanding` — C-without-OS mode (C1): compile with
+  `-ffreestanding -fno-builtin`; hosted libc APIs (`printf`, `malloc`,
+  `fopen`, `exit`, …) become **trap observations**. Also activates the
+  bare-metal lint family (C3/DS-11): MMIO deref without `volatile`,
+  polling loop without `volatile`, packed struct with multi-byte fields,
+  `uint8_t*` → multi-byte cast, ISR without `volatile`/`_Atomic`.
+- `--scenario NAME [--scenario-file PATH]` — scenario packs (C5/DS-12): one
+  command activates a per-domain gate recipe from a JSON profile
+  (`cli-daily`, `library`, `parser`, `firmware`, `auto`); `--scenario auto`
+  (D3) infers the smallest sufficient recipe from source structure and
+  reports **why**. Environment contract (DS-12: `stack_budget`, `no_heap`,
+  `no_recursion`) is recorded in the report.
+- `--matrix` — bare-metal target matrix (C4): cross-compiles with
+  `arm-none-eabi-gcc` / `riscv*-unknown-elf-gcc` when installed, dumps
+  target macros, and prints the **portability matrix** — which bets
+  (`char` signedness, pointer width, endianness) change between host and
+  target. Honest host-only note when no cross-compiler is installed.
+- `myc compare <ref.c> <new.c> [func...]` — differential oracle pair
+  (A4/DS-04): runs a shared input battery on both versions and compares
+  return + errno + output digest + exit ⇒ `behavior-preserving` or
+  `unexpected_change`.
 - `--divergence` — build and run the source with a toolchain matrix
   ({gcc, clang, [tcc]} × {-O0, -O2}); compare exit code, sanitizer
   findings, sha256 of stdout trace, and build warning set. Classification

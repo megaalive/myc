@@ -267,7 +267,7 @@ findstr /C:"behavior-preserving (P1 DIFF) -- refactor aman" %OUT% >nul && echo [
 findstr /C:"64 identik, 0 divergen" %OUT% >nul && echo [OK] A4 64 kasus identik || echo [WARN] A4 jumlah identik salah
 myc.exe compare test\fixtures\ref_crc16.c test\fixtures\new_crc16_div.c > %OUT% 2>&1
 findstr /C:"unexpected_change (DS-04)" %OUT% >nul && echo [OK] A4 polinomial beda -> unexpected_change || echo [WARN] A4 divergence tidak terdeteksi
-findstr /C:"divergen 53 kasus" %OUT% >nul && echo [OK] A4 jumlah divergen akurat || echo [WARN] A4 jumlah divergen salah
+findstr /C:"53 divergen" %OUT% >nul && echo [OK] A4 jumlah divergen akurat || echo [WARN] A4 jumlah divergen salah
 del %OUT%
 rem --- Fase 5 C2 (DS-10): Stack Budget Analyzer (--stack)
 echo --- C2: worst-case stack depth vs budget (observasi non-blocking)
@@ -337,7 +337,7 @@ del %OUT%
 rem --- fix review: ; membuang pending basi + komentar blok bukan klausa
 myc.exe check test\fixtures\contract_stale_pending.c > %OUT% 2>&1
 findstr /C:"requires=1" %OUT% >nul && echo [OK] klausa hantu dalam komentar blok tidak dihitung || echo [WARN] klausa hantu komentar ikut dihitung
-findstr /C:"ghost" %OUT% >nul && echo [WARN] teks ghost bocor ke laporan || echo [OK] teks ghost tidak muncul
+findstr /C:"(unbound)" %OUT% >nul && echo [OK] ghost hanya kandidat unbound (B4 harvest, bukan kontrak aktif) || echo [WARN] ghost bocor sebagai kontrak aktif
 myc.exe check test\fixtures\contract_stale_pending.c --run > %OUT% 2>&1
 findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] pending basi tidak ter-inject ke fungsi salah (fix ;) || echo [WARN] false inject pending basi ke dummy
 del %OUT%

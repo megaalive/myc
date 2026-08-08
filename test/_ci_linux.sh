@@ -401,7 +401,7 @@ if ./myc compare test/fixtures/ref_crc16.c test/fixtures/new_crc16_div.c 2>&1 | 
 else
     fail "A4 compare: divergence tidak terdeteksi"
 fi
-if ./myc compare test/fixtures/ref_crc16.c test/fixtures/new_crc16_div.c 2>&1 | grep -qF "divergen 53 kasus"; then
+if ./myc compare test/fixtures/ref_crc16.c test/fixtures/new_crc16_div.c 2>&1 | grep -qF "53 divergen"; then
     note "A4 compare: jumlah kasus divergen akurat"
 else
     fail "A4 compare: jumlah divergen salah"
