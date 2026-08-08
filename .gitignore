@@ -21,3 +21,4 @@ next-plan.md
 # runtime artifacts
 .myc/
 .myc-witness/
+.myc_mtx_*/
