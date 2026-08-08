@@ -406,7 +406,7 @@ static void tool_lint(json_value *id, json_value *args)
      * (heuristik teks), bukan verdict. Lint NON-blocking: tidak pernah
      * menolak kode; hard evidence dari gate semantik. */
     {
-        int lv = myc_lint_source(source, strlen(source), &res);
+        int lv = myc_lint_source(source, strlen(source), 0, &res);
         if (!json_sb_init(&b)) {
             send_error(id, -32603, "Internal error");
             myc_result_free(&res);

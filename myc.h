@@ -920,6 +920,9 @@ typedef struct {
      * Non-blocking: lint TIDAK pernah menurunkan verdict; hard evidence
      * hanya dari gate semantik (gcc AST/dataflow, sanitizer, dll). */
     int         lint_observations;
+    /* C3 (DS-11): jumlah observasi bare-metal (MMIO/volatile/alignment/
+     * ISR) saat mode freestanding. NON-blocking, subset dari lint_observations. */
+    int         lint_embedded_hits;
 
     /* --- 9.10 Silence Is a Finding (--require-complete) --- */
     /* Apakah require-complete diminta (untuk laporan). Enforcement

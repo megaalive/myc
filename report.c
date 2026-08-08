@@ -317,6 +317,10 @@ void myc_report_text(const myc_result *res)
         printf("lint (14): %d observasi (heuristik teks, NON-blocking; "
                "hard hanya dari bukti semantik)\n",
                res->lint_observations);
+    if (res->lint_embedded_hits > 0)
+        printf("bare-metal (C3/DS-11): %d observasi MMIO/volatile/alignment/"
+               "ISR (mode freestanding, NON-blocking)\n",
+               res->lint_embedded_hits);
 
     /* Scope Certificate (Fase 4, 9.11): daftar persis apa yang diperiksa.
      * Hanya memuat metrik yang BENAR-BENAR diukur; kolom yang tidak diukur
@@ -868,6 +872,7 @@ char *myc_result_to_json(const myc_result *res)
     }
     /* MYC-AUDIT-014: jumlah observasi lint heuristik (non-blocking). */
     json_sb_printf(&b, "\"lint_observations\":%d,", res->lint_observations);
+    json_sb_printf(&b, "\"lint_embedded_hits\":%d,", res->lint_embedded_hits);
     json_sb_printf(&b, "\"truncated\":%s,", res->truncated ? "true" : "false");
     json_sb_printf(&b, "\"sanitizer_detected\":%s,", res->run_sanitizer_detected ? "true" : "false");
     if (res->run_sanitizer_detected)
@@ -1457,6 +1462,7 @@ void myc_report_json_summary(const myc_result *res)
     json_sb_printf(&b, "\"exit_code\":%d,", res->exit_code);
     json_sb_printf(&b, "\"duration_ms\":%llu,", (unsigned long long)res->duration_ms);
     json_sb_printf(&b, "\"lint_observations\":%d,", res->lint_observations);
+    json_sb_printf(&b, "\"lint_embedded_hits\":%d,", res->lint_embedded_hits);
     /* Fase 5 B4 (DS-08): harvest komentar-biasa (observasi). */
     json_sb_printf(&b, "\"harvest\":{\"candidates\":%d,\"validated\":%d,"
                        "\"unbound\":%d},",

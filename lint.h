@@ -20,13 +20,22 @@
  *   - ukuran alokasi yang bisa overflow integer (malloc(a*b) tanpa sizeof)
  *   - akses langsung b[i] pada variabel MYC_BUF (checked gate = hard)
  *
+ * Bila `embedded` != 0 (mode freestanding, Fase 5 C3/DS-11), ditambah
+ * keluarga heuristik bare-metal (NON-blocking, confidence-scored):
+ *   - MMIO deref alamat absolut tanpa volatile (hang setelah optimisasi)
+ *   - polling loop `while (...);` tanpa volatile
+ *   - struct __attribute__((packed)) dengan field multi-byte (alignment ARM)
+ *   - cast uint8_t* -> tipe multi-byte (misaligned access)
+ *   - variabel bersama ISR tanpa volatile/atomic (data race)
+ *
  * MYC-AUDIT-014: TIDAK pernah hard verdict -- hasil HANYA observasi
  * (diagnostic ber-confidence) dan NON-blocking. Mengembalikan jumlah
  * observasi (0 = bersih). Hard violation ditangani gate SEMANTIK:
  * gcc -Wuse-after-free / -fanalyzer, sanitizer runtime, checked build,
  * Frama-C Eva, Fil-C. Lihat komentar header.
  */
-int myc_lint_source(const char *source, size_t len, myc_result *res);
+int myc_lint_source(const char *source, size_t len, int embedded,
+                    myc_result *res);
 
 /* WHY+FIX (Item 4): alasan dan saran perbaikan untuk observasi lint.
  * Mengembalikan string malloc'd atau NULL jika tidak dikenali. Caller free(). */

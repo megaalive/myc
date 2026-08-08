@@ -303,6 +303,16 @@ findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] C1 trap non-blocking || echo 
 myc.exe check test\fixtures\blinky_clean.c --freestanding --no-cache > %OUT% 2>&1
 findstr /C:"0 panggilan API hosted" %OUT% >nul && echo [OK] C1 hygiene bersih || echo [WARN] C1 hygiene bersih tidak terdeteksi
 del %OUT%
+rem --- Fase 5 C3: MMIO/volatile/alignment traps (DS-11)
+echo --- C3: bare-metal heuristik di mode freestanding (observasi non-blocking)
+myc.exe check test\fixtures\mmio_bad.c --freestanding --no-cache > %OUT% 2>&1
+findstr /C:"MMIO deref alamat absolut tanpa volatile" %OUT% >nul && echo [OK] C3 MMIO deref terdeteksi || echo [WARN] C3 MMIO deref tidak terdeteksi
+findstr /C:"polling loop tanpa volatile" %OUT% >nul && echo [OK] C3 polling loop terdeteksi || echo [WARN] C3 polling loop tidak terdeteksi
+findstr /C:"cast uint8_t* ke tipe multi-byte" %OUT% >nul && echo [OK] C3 alignment cast terdeteksi || echo [WARN] C3 alignment cast tidak terdeteksi
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] C3 observasi non-blocking || echo [WARN] C3 mengubah verdict
+myc.exe check test\fixtures\mmio_clean.c --freestanding --no-cache > %OUT% 2>&1
+findstr /C:"bare-metal (C3/DS-11)" %OUT% >nul && echo [WARN] C3 fixture bersih memunculkan observasi || echo [OK] C3 idiom benar bersih
+del %OUT%
 rem --- fix review: ; membuang pending basi + komentar blok bukan klausa
 myc.exe check test\fixtures\contract_stale_pending.c > %OUT% 2>&1
 findstr /C:"requires=1" %OUT% >nul && echo [OK] klausa hantu dalam komentar blok tidak dihitung || echo [WARN] klausa hantu komentar ikut dihitung

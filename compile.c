@@ -900,7 +900,8 @@ void myc_pipeline(const myc_request *req, myc_result *res)
      * (sama dengan negative-space 9.8). Hard evidence tetap dari gate
      * semantik: gcc -Wuse-after-free / -fanalyzer, sanitizer, dst. */
     if (req->run_lint) {
-        res->lint_observations = myc_lint_source(src, srclen, res);
+        res->lint_observations =
+            myc_lint_source(src, srclen, req->freestanding, res);
         if (res->lint_observations > 0) {
             myc_gate_set_status(res, MYC_GATE_LINT,
                                 MYC_GATE_COMPLETED_OBSERVATIONS,

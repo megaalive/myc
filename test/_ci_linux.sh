@@ -490,6 +490,38 @@ else
     fail "C1 freestanding: hygiene bersih tidak terdeteksi"
 fi
 
+# --- 5n. C3 MMIO/volatile/alignment traps (DS-11, mode freestanding) ---
+if ./myc check test/fixtures/mmio_bad.c --freestanding --no-cache 2>&1 | grep -qF "MMIO deref alamat absolut tanpa volatile"; then
+    note "C3 bare-metal: MMIO deref tanpa volatile terdeteksi"
+else
+    fail "C3 bare-metal: MMIO deref tidak terdeteksi"
+fi
+if ./myc check test/fixtures/mmio_bad.c --freestanding --no-cache 2>&1 | grep -qF "polling loop tanpa volatile"; then
+    note "C3 bare-metal: polling loop tanpa volatile terdeteksi"
+else
+    fail "C3 bare-metal: polling loop tidak terdeteksi"
+fi
+if ./myc check test/fixtures/mmio_bad.c --freestanding --no-cache 2>&1 | grep -qF "cast uint8_t* ke tipe multi-byte"; then
+    note "C3 bare-metal: alignment cast terdeteksi"
+else
+    fail "C3 bare-metal: alignment cast tidak terdeteksi"
+fi
+if ./myc check test/fixtures/mmio_bad.c --freestanding --no-cache 2>&1 | grep -qF "verdict:   OK"; then
+    note "C3 bare-metal: observasi NON-blocking (verdict tetap OK)"
+else
+    fail "C3 bare-metal: mengubah verdict (harus observasi)"
+fi
+if ./myc check test/fixtures/mmio_clean.c --freestanding --no-cache 2>&1 | grep -qF "bare-metal (C3/DS-11)"; then
+    fail "C3 bare-metal: fixture bersih memunculkan observasi (false positive)"
+else
+    note "C3 bare-metal: idiom benar (volatile/READ_REG/memcpy) bersih"
+fi
+if ./myc check test/fixtures/mmio_bad.c --no-cache 2>&1 | grep -qF "MMIO deref alamat absolut tanpa volatile"; then
+    fail "C3 bare-metal: rule aktif tanpa mode freestanding (harus tidak)"
+else
+    note "C3 bare-metal: rule hanya aktif di mode freestanding"
+fi
+
 # --- 6. dogfood tool ---
 for f in dogfood/dogfood_ring.c dogfood/dogfood_config.c dogfood/dogfood_tilemap.c; do
     assert_out "dogfood $(basename "$f") -> OK" "verdict:   OK" "$f"

@@ -51,6 +51,149 @@ static int is_ident_char(int c)
     return is_ident_start(c) || (c >= '0' && c <= '9');
 }
 
+/* C3 (DS-11): tambah diagnostic bare-metal; increment lint_embedded_hits
+ * bila benar-benar tersimpan (observasi NON-blocking, confidence-scored). */
+static int add_diag_bm(myc_result *res, int line, int col,
+                       myc_confidence conf, const char *msg)
+{
+    int added = add_diag(res, line, col, conf, msg);
+    if (added)
+        res->lint_embedded_hits++;
+    return added;
+}
+
+/* C3: apakah kata `w` muncul dalam region [a,b) dengan batas identifier
+ * benar (bukan substring). */
+static int region_contains_word(const char *s, size_t a, size_t b,
+                                const char *w)
+{
+    size_t wl = strlen(w);
+    size_t i;
+    for (i = a; i + wl <= b; i++) {
+        if (strncmp(s + i, w, wl) != 0)
+            continue;
+        if (i > a && is_ident_char((unsigned char)s[i - 1]))
+            continue;
+        if (i + wl < b && is_ident_char((unsigned char)s[i + wl]))
+            continue;
+        return 1;
+    }
+    return 0;
+}
+
+/* C3: region struct memuat field multi-byte (alignment ARM bermasalah
+ * pada struct packed). Tipe 1-byte (char/uint8_t) tidak dihitung. */
+static int packed_body_has_multibyte(const char *s, size_t a, size_t b)
+{
+    static const char *const w[] = {
+        "uint16_t", "int16_t", "uint32_t", "int32_t",
+        "uint64_t", "int64_t", "short", "long", "float",
+        "double", "int", "size_t", "wchar_t"
+    };
+    size_t n = sizeof(w) / sizeof(w[0]);
+    size_t t;
+    for (t = 0; t < n; t++)
+        if (region_contains_word(s, a, b, w[t]))
+            return 1;
+    return 0;
+}
+
+/* C3: apakah `t` adalah tipe integer multi-byte (cast pointer-nya berisiko
+ * misaligned bila berasal dari uint8_t*). */
+static int is_multibyte_type(const char *t)
+{
+    static const char *const types[] = {
+        "uint16_t", "int16_t", "uint32_t", "int32_t",
+        "uint64_t", "int64_t"
+    };
+    size_t n = sizeof(types) / sizeof(types[0]);
+    size_t i;
+    for (i = 0; i < n; i++)
+        if (strcmp(t, types[i]) == 0)
+            return 1;
+    return 0;
+}
+
+/* C3: apakah region [a,b) memuat pemanggilan fungsi `ident(` (mis.
+ * READ_REG(..) = accessor ber-volatile internal). Dipakai rule polling
+ * untuk tidak mem-flag idiom accessor yang aman. */
+static int region_has_call(const char *s, size_t a, size_t b)
+{
+    size_t i;
+    for (i = a; i + 1 < b; i++) {
+        if (is_ident_start((unsigned char)s[i])) {
+            size_t k = i;
+            while (k < b && is_ident_char((unsigned char)s[k]))
+                k++;
+            while (k < b && (s[k] == ' ' || s[k] == '\t'))
+                k++;
+            if (k < b && s[k] == '(')
+                return 1;
+            i = k;
+        }
+    }
+    return 0;
+}
+
+/* C3: apakah region [a,b) memuat cast pointer 1-byte `uint8_t *`
+ * (dengan batas identifier benar). */
+static int region_has_u8_ptr(const char *s, size_t a, size_t b)
+{
+    size_t i;
+    for (i = a; i + 7 <= b; i++) {
+        size_t k;
+        if (strncmp(s + i, "uint8_t", 7) != 0)
+            continue;
+        if (i > a && is_ident_char((unsigned char)s[i - 1]))
+            continue;
+        k = i + 7;
+        while (k < b && (s[k] == ' ' || s[k] == '\t'))
+            k++;
+        if (k < b && s[k] == '*')
+            return 1;
+    }
+    return 0;
+}
+
+/* C3: apakah `name` didefinisikan sebagai `#define name 0x....` dengan
+ * alamat absolut (>= 7 digit hex) di source? Dipakai rule MMIO untuk
+ * resolve idiom `*(uint32_t *)REG_ADDR` (REG_ADDR = macro). */
+static int is_macro_abs_addr(const char *s, size_t len, const char *name)
+{
+    size_t nl = strlen(name);
+    size_t i;
+    for (i = 0; i + nl <= len; i++) {
+        size_t j, k;
+        if (strncmp(s + i, "#define", 7) != 0)
+            continue;
+        j = i + 7;
+        while (j < len && (s[j] == ' ' || s[j] == '\t'))
+            j++;
+        if (j + nl > len || strncmp(s + j, name, nl) != 0)
+            continue;
+        if (j > 0 && is_ident_char((unsigned char)s[j - 1]))
+            continue;
+        if (j + nl < len && is_ident_char((unsigned char)s[j + nl]))
+            continue;
+        k = j + nl;
+        while (k < len && s[k] != '\n') {
+            if (s[k] == '0' && k + 1 < len &&
+                (s[k + 1] == 'x' || s[k + 1] == 'X')) {
+                size_t h = k + 2;
+                int    nd = 0;
+                while (h < len && isxdigit((unsigned char)s[h])) {
+                    nd++;
+                    h++;
+                }
+                if (nd >= 7)
+                    return 1;
+            }
+            k++;
+        }
+    }
+    return 0;
+}
+
 /* Char signifikan sebelum posisi `i` (lewati spasi/tab). Return -1 bila EOF */
 static int prev_sig(const char *s, size_t i)
 {
@@ -356,12 +499,17 @@ static size_t note_buf_decl(const char *s, size_t len, size_t i, size_t *linep,
     return i;
 }
 
-int myc_lint_source(const char *source, size_t len, myc_result *res)
+int myc_lint_source(const char *source, size_t len, int embedded,
+                    myc_result *res)
 {
     size_t i = 0;
     size_t line = 1;
     size_t col = 1;
     int    observations = 0;
+    /* C3 (DS-11): pelacakan bare-metal per pemanggilan */
+    int    volatile_seen = 0;   /* token volatile/_Atomic di source */
+    int    isr_count = 0;       /* fungsi mirip ISR terdeteksi */
+    int    isr_line = 0, isr_col = 0;
 
     buf_var_count = 0;                  /* reset per pemanggilan */
 
@@ -471,6 +619,64 @@ int myc_lint_source(const char *source, size_t len, myc_result *res)
             continue;
         }
 
+        /* --- C3 (DS-11): MMIO deref alamat absolut tanpa volatile ---
+         * Pola `*(uint32_t *)0x40000000`: optimizer boleh mengangkat baca
+         * keluar loop (register tidak pernah berubah -> hang). Non-blocking
+         * observasi (SUSPICIOUS). */
+        if (embedded && c == '*' && i + 1 < len && source[i + 1] == '(') {
+            size_t a, b, k;
+            int    has_vol = 0;
+            find_call_args(source, len, i + 1, &a, &b);
+            if (b < len) {
+                for (k = a; k + 8 <= b; k++) {
+                    if (strncmp(source + k, "volatile", 8) == 0) {
+                        has_vol = 1;
+                        break;
+                    }
+                }
+                k = b + 1;
+                while (k < len && (source[k] == ' ' || source[k] == '\t'))
+                    k++;
+                if (!has_vol) {
+                    int abs_addr = 0;
+                    if (k + 1 < len && source[k] == '0' &&
+                        (source[k + 1] == 'x' || source[k + 1] == 'X')) {
+                        size_t h = k + 2;
+                        int    nd = 0;
+                        while (h < len && isxdigit((unsigned char)source[h])) {
+                            nd++;
+                            h++;
+                        }
+                        abs_addr = nd >= 7;
+                    } else if (k < len &&
+                               is_ident_start((unsigned char)source[k])) {
+                        /* alamat via macro: resolve #define di source */
+                        size_t e = k;
+                        char   nm[64];
+                        size_t n = 0;
+                        while (e < len && n < 63 &&
+                               is_ident_char((unsigned char)source[e])) {
+                            nm[n++] = source[e];
+                            e++;
+                        }
+                        nm[n] = '\0';
+                        abs_addr = is_macro_abs_addr(source, len, nm);
+                    }
+                    if (abs_addr) {
+                        observations += add_diag_bm(
+                            res, (int)line, (int)col, MYC_CONF_SUSPICIOUS,
+                            "MMIO deref alamat absolut tanpa volatile -- "
+                            "optimizer dapat mengangkat baca keluar loop "
+                            "(hang); gunakan *(volatile uint32_t *)ADDR "
+                            "atau makro READ_REG (observasi)");
+                    }
+                }
+            }
+            i++;
+            col++;
+            continue;
+        }
+
         /* identifier */
         if (is_ident_start((unsigned char)c)) {
             size_t start = i;
@@ -484,6 +690,103 @@ int myc_lint_source(const char *source, size_t len, myc_result *res)
                 col++;
             }
             tok[tlen] = '\0';
+
+            /* --- C3 (DS-11): bare-metal heuristik (mode freestanding) --- */
+            if (embedded) {
+                if (strcmp(tok, "volatile") == 0 ||
+                    strcmp(tok, "_Atomic") == 0) {
+                    volatile_seen++;
+                } else if (strcmp(tok, "while") == 0) {
+                    /* polling loop body kosong tanpa volatile -> SUSPICIOUS */
+                    size_t j = i, a, b, k;
+                    int    has_vol = 0;
+                    while (j < len && (source[j] == ' ' || source[j] == '\t'))
+                        j++;
+                    if (j < len && source[j] == '(') {
+                        find_call_args(source, len, j, &a, &b);
+                        for (k = a; k + 8 <= b; k++) {
+                            if (strncmp(source + k, "volatile", 8) == 0) {
+                                has_vol = 1;
+                                break;
+                            }
+                        }
+                        k = b + 1;
+                        while (k < len && (source[k] == ' ' || source[k] == '\t' ||
+                                           source[k] == '\n' || source[k] == '\r'))
+                            k++;
+                        if (!has_vol && !region_has_call(source, a, b) &&
+                            k < len && source[k] == ';') {
+                            observations += add_diag_bm(
+                                res, (int)line, (int)tokcol,
+                                MYC_CONF_SUSPICIOUS,
+                                "polling loop tanpa volatile -- kondisi "
+                                "dibaca sekali setelah optimisasi (hang); "
+                                "gunakan flag volatile/atomic (observasi)");
+                        }
+                    }
+                } else if (strstr(tok, "packed") != NULL) {
+                    /* struct packed + field multi-byte -> OBSERVATION */
+                    size_t j = i, e;
+                    int    depth;
+                    while (j < len && source[j] != '{' && source[j] != ';' &&
+                           j < i + 400)
+                        j++;
+                    if (j < len && source[j] == '{') {
+                        depth = 0;
+                        e = j;
+                        while (e < len) {
+                            if (source[e] == '{')
+                                depth++;
+                            else if (source[e] == '}') {
+                                depth--;
+                                if (depth == 0)
+                                    break;
+                            }
+                            e++;
+                        }
+                        if (e < len &&
+                            packed_body_has_multibyte(source, j, e)) {
+                            observations += add_diag_bm(
+                                res, (int)line, (int)tokcol,
+                                MYC_CONF_OBSERVATION,
+                                "struct packed dengan field multi-byte -- "
+                                "akses unaligned/tear di ARM; pakai "
+                                "__unaligned atau akses per-byte (observasi)");
+                        }
+                    }
+                } else if (is_multibyte_type(tok)) {
+                    /* cast pointer multi-byte `(uint32_t *)...` yang
+                     * berdekatan (<= 200 char ke belakang) dengan cast
+                     * `uint8_t *` -> misaligned access -> OBSERVATION */
+                    size_t j = i, lo;
+                    int    is_ptr = 0, found = 0;
+                    while (j < len && (source[j] == ' ' || source[j] == '\t'))
+                        j++;
+                    if (j < len && source[j] == '*')
+                        is_ptr = 1;
+                    if (is_ptr) {
+                        lo = start > 200 ? start - 200 : 0;
+                        found = region_has_u8_ptr(source, lo, start);
+                    }
+                    if (found) {
+                        observations += add_diag_bm(
+                            res, (int)line, (int)tokcol,
+                            MYC_CONF_OBSERVATION,
+                            "cast uint8_t* ke tipe multi-byte -- alignment "
+                            "tidak dijamin (fault di ARM); gunakan memcpy "
+                            "per-byte (observasi)");
+                    }
+                } else if (strstr(tok, "_isr") || strstr(tok, "_irq") ||
+                           strstr(tok, "isr") || strstr(tok, "irq") ||
+                           strstr(tok, "interrupt")) {
+                    /* fungsi mirip ISR: catat utk rule E (cek di akhir) */
+                    if (isr_count == 0) {
+                        isr_line = (int)line;
+                        isr_col = (int)tokcol;
+                    }
+                    isr_count++;
+                }
+            }
 
             /* --- D1.2: deklarasi MYC_BUF -> catat nama variabel --- */
             if (strcmp(tok, "MYC_BUF") == 0) {
@@ -638,6 +941,17 @@ int myc_lint_source(const char *source, size_t len, myc_result *res)
         col++;
     }
 
+    /* --- C3 (DS-11): variabel bersama ISR tanpa volatile/atomic ---
+     * Heuristik: ada fungsi mirip ISR tapi TIDAK ADA token volatile/_Atomic
+     * di source -> state yang dibaca ISR + main loop adalah data race. */
+    if (embedded && isr_count > 0 && volatile_seen == 0) {
+        observations += add_diag_bm(res, isr_line, isr_col,
+                                    MYC_CONF_OBSERVATION,
+                                    "fungsi ISR tanpa volatile/atomic di "
+                                    "source -- variabel bersama ISR + main "
+                                    "loop adalah data race (observasi)");
+    }
+
     return observations;
 }
 
@@ -667,6 +981,30 @@ const char *myc_lint_why(const char *message)
         return "Akses indeks langsung ke variabel MYC_BUF melewati lapisan "
                "keamanan checked build (L4 SPATIAL). MYC_AT() wajib digunakan "
                "agar bounds check berlaku.";
+    if (strstr(message, "MMIO deref alamat absolut tanpa volatile"))
+        return "Register perangkat keras TIDAK berubah tanpa interaksi HW. "
+               "Tanpa volatile, optimizer boleh mengangkat baca keluar loop "
+               "(dibaca sekali) sehingga loop polling tidak pernah melihat "
+               "nilai baru -- hang yang 'benar' menurut kompilator.";
+    if (strstr(message, "polling loop tanpa volatile"))
+        return "Kondisi loop membawa baca memori yang tidak volatile; "
+               "setelah optimisasi kondisi dievaluasi sekali (atau di-cache) "
+               "dan loop tak pernah berakhir.";
+    if (strstr(message, "struct packed dengan field multi-byte"))
+        return "Struct packed memaksa field di alignment 1. Akses field "
+               "multi-byte menjadi unaligned: di ARM bisa fault, di semua "
+               "arsitektur bisa tear (baca setengah nilai) dan berbeda dari "
+               "perilaku x86.";
+    if (strstr(message, "cast uint8_t* ke tipe multi-byte"))
+        return "Cast pointer byte ke tipe multi-byte tidak menjamin "
+               "alignment; pada ARM unaligned access memicu fault atau "
+               "dilakukan emulasi lambat. Akses lebar/endianness juga tak "
+               "terkendali.";
+    if (strstr(message, "fungsi ISR tanpa volatile/atomic"))
+        return "Variabel yang ditulis ISR dan dibaca main loop (atau "
+               "sebaliknya) adalah data race: compiler bisa men-cache nilai "
+               "di register. volatile/atomic diperlukan agar baca-tulis "
+               "saling terlihat.";
     return "Pola memory-safety berisiko terdeteksi oleh heuristik teks; "
            "hard verification memerlukan gate semantik (gcc/sanitizer/checked).";
 }
@@ -694,6 +1032,27 @@ const char *myc_lint_fix(const char *message)
     if (strstr(message, "akses langsung [..] pada variabel MYC_BUF"))
         return "Ganti akses langsung b[i] dengan MYC_AT(b, i) agar checked "
                "build (L4 SPATIAL) dapat memverifikasi bounds.";
+    if (strstr(message, "MMIO deref alamat absolut tanpa volatile"))
+        return "Gunakan idiom register yang benar:\n"
+               "  #define REG(addr) (*(volatile uint32_t *)(addr))\n"
+               "  while (!(REG(SR) & 0x80)) {}\n"
+               "atau makro READ_REG/WRITE_REG (CMSIS).";
+    if (strstr(message, "polling loop tanpa volatile"))
+        return "Deklarasikan flag dengan volatile (atau stdatomic). Untuk "
+               "register HW, baca via makro volatile; tambahkan timeout "
+               "countdown agar loop tak pernah hang selamanya.";
+    if (strstr(message, "struct packed dengan field multi-byte"))
+        return "Akses field packed multi-byte per-byte (memcpy) atau gunakan "
+               "tipe __packed/aligned di kompiler target; jangan mengasumsikan "
+               "akses field langsung aman.";
+    if (strstr(message, "cast uint8_t* ke tipe multi-byte"))
+        return "Ganti cast dengan memcpy:\n"
+               "  uint32_t v; memcpy(&v, buf + i, sizeof v);\n"
+               "(atau sertakan __unaligned bila kompiler target mendukung).";
+    if (strstr(message, "fungsi ISR tanpa volatile/atomic"))
+        return "Deklarasikan variabel yang dibagi ISR/main dengan volatile "
+               "(atau _Atomic + fence), dan nonaktifkan interrupt saat "
+               "read-modify-write (kritis-section).";
     return "Tinjau pola dan sesuaikan dengan pola aman yang didokumentasikan "
            "di policy myc.";
 }

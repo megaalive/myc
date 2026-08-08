@@ -2047,3 +2047,34 @@ segfault bila daftar flag opsional tak diaktifkan bersama `--freestanding`).
 `capabilities.json` + `docs/capabilities.md` ditambah gate `freestanding`.
 Fixture `blinky_bad.c` (printf/malloc/free -> trap), `blinky_clean.c`
 (hygiene bersih). Regresi `_ci_linux.sh` (5m) + `_regress_run.bat`.
+
+### (10) C3 — MMIO/volatile/alignment traps (DS-11) — `lint.c`
+
+Keluarga heuristik bare-metal (mode `--freestanding`) yang menangkap kelas
+kesalahan "kode benar di x86, salah di target embedded" — register tanpa
+`volatile` = infinite loop yang 'benar' bagi optimizer. Perluas `lint.c`
+(param baru `embedded`; rule NON-blocking, confidence-scored, diaktifkan
+hanya di mode freestanding):
+
+1. **MMIO deref alamat absolut tanpa volatile** (SUSPICIOUS): pola
+   `*(uint32_t *)0x40001000` atau `*(uint32_t *)REG` di mana REG di-resolve
+   via `#define REG 0x....` (>= 7 digit hex = alamat periferal).
+2. **Polling loop tanpa volatile** (SUSPICIOUS): `while (kondisi);` body
+   kosong, kondisi tanpa kata `volatile` DAN tanpa pemanggilan fungsi
+   (accessor `READ_REG(...)` dianggap aman — volatile tersembunyi di
+   macro).
+3. **Struct `__attribute__((packed))` + field multi-byte** (OBSERVATION):
+   akses unaligned/tear di ARM.
+4. **Cast `uint8_t*` -> tipe multi-byte** (OBSERVATION): `(uint32_t *)`
+   yang berdekatan (<= 200 char) dengan cast `uint8_t *` = alignment tak
+   dijamin.
+5. **Variabel bersama ISR tanpa volatile/atomic** (OBSERVATION): ada
+   fungsi mirip ISR (`*_isr`/`*_irq`/`interrupt`) tapi tidak ada token
+   `volatile`/`_Atomic` di source = data race ISR+main.
+
+Diagnostic baru memakai `add_diag_bm` (increment `lint_embedded_hits`);
+report teks "bare-metal (C3/DS-11): N observasi", JSON
+`lint_embedded_hits`. Verdict TIDAK pernah turun (trust rules #1);
+fixture `mmio_bad.c` (5 pola) vs `mmio_clean.c` (idiom volatile/READ_REG/
+memcpy) membuktikan deteksi tanpa false-positive; regresi di
+`_ci_linux.sh` 5n + `_regress_run.bat`.

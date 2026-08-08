@@ -21,6 +21,7 @@
     { "id": "fuzz",               "flag": "--fuzz",          "dimension": "R", "backend": "clang+asan",  "hard": false,  "docs_anchor": "fuzz" },
     { "id": "mutate",             "flag": "--mutate-audit",  "dimension": null, "backend": "pipeline",    "hard": false,  "docs_anchor": "mutate" },
     { "id": "freestanding",       "flag": "--freestanding",  "dimension": "C", "backend": "gcc",         "hard": false,  "docs_anchor": "freestanding" },
+    { "id": "baremetal",          "flag": "--freestanding",  "dimension": "C", "backend": "lint",         "hard": false,  "docs_anchor": "baremetal" },
     { "id": "prove",             "flag": "--prove",         "dimension": "P", "backend": "frama-c",     "hard": false,  "docs_anchor": "prove" },
     { "id": "filc",              "flag": "--filc",          "dimension": "F", "backend": "fil-c",       "hard": false,  "docs_anchor": "filc" }
   ],
