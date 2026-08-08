@@ -465,6 +465,38 @@ void myc_report_text(const myc_result *res)
             printf("  exhaustive_stderr:\n%s\n", res->exhaustive_stderr_text);
     }
 
+    if (res->ran_compare) {
+        printf("compare (A4):\n");
+        printf("  funcs: %d  cases: %ld  identical: %ld  divergent: %ld\n",
+               res->compare_funcs, res->compare_cases,
+               res->compare_identical, res->compare_divergent);
+        printf("  preserved: %s  abi_same: %s  domain_same: %s\n",
+               res->compare_preserved ? "yes" : "no",
+               res->compare_abi_same ? "yes" : "no",
+               res->compare_domain_same ? "yes" : "no");
+        printf("  digest_ref: %s\n  digest_new: %s\n",
+               res->compare_ref_digest, res->compare_new_digest);
+        if (res->compare_report)
+            printf("%s", res->compare_report);
+        if (res->compare_delta)
+            printf("  kasus divergen:\n%s\n", res->compare_delta);
+    }
+
+    if (res->ran_stack) {
+        printf("stack (C2):\n");
+        printf("  worst_bytes: %ld  budget: %d  recursion: %s  alloca: %s"
+               "  vla: %s  unknown_calls: %d\n",
+               res->stack_worst_bytes, res->stack_budget,
+               res->stack_recursion ? "yes" : "no",
+               res->stack_alloca ? "yes" : "no",
+               res->stack_vla ? "yes" : "no",
+               res->stack_unknown);
+        if (res->stack_worst_path)
+            printf("  worst_path: %s\n", res->stack_worst_path);
+        if (res->stack_report)
+            printf("%s", res->stack_report);
+    }
+
     if (res->ran_metamorphic) {
         printf("metamorphic (9.7):\n");
         printf("  o0_exit: %d  o2_exit: %d\n",
@@ -931,6 +963,47 @@ char *myc_result_to_json(const myc_result *res)
         json_sb_escape(&b, res->exhaustive_harness_sha256);
         json_sb_puts(&b, ",");
     }
+    json_sb_printf(&b, "\"ran_compare\":%s,",
+                   res->ran_compare ? "true" : "false");
+    if (res->ran_compare) {
+        json_sb_printf(&b, "\"compare_funcs\":%d,", res->compare_funcs);
+        json_sb_printf(&b, "\"compare_cases\":%ld,", res->compare_cases);
+        json_sb_printf(&b, "\"compare_identical\":%ld,",
+                       res->compare_identical);
+        json_sb_printf(&b, "\"compare_divergent\":%ld,",
+                       res->compare_divergent);
+        json_sb_printf(&b, "\"compare_preserved\":%s,",
+                       res->compare_preserved ? "true" : "false");
+        json_sb_printf(&b, "\"compare_abi_same\":%s,",
+                       res->compare_abi_same ? "true" : "false");
+        json_sb_printf(&b, "\"compare_domain_same\":%s,",
+                       res->compare_domain_same ? "true" : "false");
+        json_sb_printf(&b, "\"compare_ref_digest\":\"%s\",",
+                       res->compare_ref_digest);
+        json_sb_printf(&b, "\"compare_new_digest\":\"%s\",",
+                       res->compare_new_digest);
+        json_sb_puts(&b, "\"compare_report\":");
+        json_sb_escape(&b, res->compare_report);
+        json_sb_puts(&b, ",");
+        json_sb_puts(&b, "\"compare_delta\":");
+        json_sb_escape(&b, res->compare_delta);
+        json_sb_puts(&b, ",");
+    }
+    json_sb_printf(&b, "\"ran_stack\":%s,", res->ran_stack ? "true" : "false");
+    if (res->ran_stack) {
+        json_sb_printf(&b, "\"stack_worst_bytes\":%ld,",
+                       res->stack_worst_bytes);
+        json_sb_printf(&b, "\"stack_budget\":%d,", res->stack_budget);
+        json_sb_printf(&b, "\"stack_recursion\":%s,",
+                       res->stack_recursion ? "true" : "false");
+        json_sb_printf(&b, "\"stack_alloca\":%s,",
+                       res->stack_alloca ? "true" : "false");
+        json_sb_printf(&b, "\"stack_vla\":%s,", res->stack_vla ? "true" : "false");
+        json_sb_printf(&b, "\"stack_unknown\":%d,", res->stack_unknown);
+        json_sb_puts(&b, "\"stack_report\":");
+        json_sb_escape(&b, res->stack_report);
+        json_sb_puts(&b, ",");
+    }
     json_sb_printf(&b, "\"ran_divergence\":%s,",
                    res->ran_divergence ? "true" : "false");
     if (res->ran_divergence) {
@@ -1360,6 +1433,30 @@ void myc_report_json_summary(const myc_result *res)
                        res->exhaustive_laundering ? "true" : "false");
         json_sb_printf(&b, "\"exhaustive_domain_hash\":\"%s\",",
                        res->exhaustive_domain_hash);
+    }
+    json_sb_printf(&b, "\"ran_compare\":%s,", res->ran_compare ? "true" : "false");
+    if (res->ran_compare) {
+        json_sb_printf(&b, "\"compare_funcs\":%d,", res->compare_funcs);
+        json_sb_printf(&b, "\"compare_identical\":%ld,",
+                       res->compare_identical);
+        json_sb_printf(&b, "\"compare_divergent\":%ld,",
+                       res->compare_divergent);
+        json_sb_printf(&b, "\"compare_preserved\":%s,",
+                       res->compare_preserved ? "true" : "false");
+    }
+    json_sb_printf(&b, "\"ran_stack\":%s,", res->ran_stack ? "true" : "false");
+    if (res->ran_stack) {
+        json_sb_printf(&b, "\"stack_worst_bytes\":%ld,",
+                       res->stack_worst_bytes);
+        json_sb_printf(&b, "\"stack_budget\":%d,", res->stack_budget);
+        json_sb_printf(&b, "\"stack_recursion\":%s,",
+                       res->stack_recursion ? "true" : "false");
+        json_sb_printf(&b, "\"stack_alloca\":%s,",
+                       res->stack_alloca ? "true" : "false");
+        json_sb_printf(&b, "\"stack_vla\":%s,", res->stack_vla ? "true" : "false");
+        json_sb_printf(&b, "\"stack_report\":");
+        json_sb_escape(&b, res->stack_report);
+        json_sb_puts(&b, ",");
     }
     json_sb_printf(&b, "\"ran_divergence\":%s,", res->ran_divergence ? "true" : "false");
     if (res->ran_divergence) {

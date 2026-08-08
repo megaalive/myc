@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c; do
+         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -410,6 +410,28 @@ if ./myc compare test/fixtures/ref_crc16.c test/fixtures/new_crc16_same.c 2>&1 |
     note "A4 compare: 64 kasus identik"
 else
     fail "A4 compare: jumlah identik salah"
+fi
+
+# --- 5j. C2 Stack Budget Analyzer (--stack, DS-10) ---
+if ./myc check tests/ok_hello.c --stack --no-cache 2>&1 | grep -qF "worst path : main = "; then
+    note "C2 stack: worst path dihitung dari -fstack-usage"
+else
+    fail "C2 stack: worst path tidak terhitung"
+fi
+if ./myc check tests/ok_hello.c --stack-budget 10 --no-cache 2>&1 | grep -qF "480%"; then
+    note "C2 stack: over budget terdeteksi (observasi)"
+else
+    fail "C2 stack: over budget tidak terdeteksi"
+fi
+if ./myc check test/fixtures/stack_recursive.c --stack --no-cache 2>&1 | grep -qF "recursion  : cycle di call graph"; then
+    note "C2 stack: rekursi terdeteksi"
+else
+    fail "C2 stack: rekursi tidak terdeteksi"
+fi
+if ./myc check test/fixtures/stack_recursive.c --stack --no-cache 2>&1 | grep -qF "verdict:   OK"; then
+    note "C2 stack: non-blocking (verdict tetap OK)"
+else
+    fail "C2 stack: mengubah verdict (harus observasi)"
 fi
 
 # --- 6. dogfood tool ---

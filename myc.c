@@ -1097,7 +1097,7 @@ static void usage(void)
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
         "  myc check <file.c> [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache] [--no-assumptions] [--cwd DIR]\n"
-        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--exhaustive] [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete]\n"
+        "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--exhaustive] [--stack [--stack-budget N]] [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete]\n"
         "  myc check <file.c> --divergence   (Fase 4 A2: matriks toolchain {gcc,clang,tcc} x {-O0,-O2}, klasifikasi DS-02)\n"
         "  myc check <file.c> [--require-assumptions-closed] [--assumption-ack id:status,...]   (Fase 4 A1: ledger asumsi portabilitas)\n"
         "  myc check <file.c> [--timeout MS] [--output-cap BYTES]\n"
@@ -1480,6 +1480,19 @@ int main(int argc, char **argv)
             } else if (strcmp(argv[i], "--exhaustive") == 0) {
                 /* Fase 5 A3: small-domain exhaustive proof. */
                 req.exhaustive = 1; known = 1;
+            } else if (strcmp(argv[i], "--stack") == 0) {
+                /* Fase 5 C2: stack budget analyzer (DS-10). */
+                req.stack = 1; known = 1;
+            } else if (strcmp(argv[i], "--stack-budget") == 0) {
+                /* Fase 5 C2: budget stack target (bytes). */
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "myc: --stack-budget membutuhkan "
+                                    "argumen (bytes, mis. 4096)\n");
+                    return 2;
+                }
+                req.stack = 1;
+                req.stack_budget = atoi(argv[++i]);
+                known = 1;
             } else if (strcmp(argv[i], "--negative") == 0) {
                 req.negative = 1; known = 1;
             } else if (strcmp(argv[i], "--require-complete") == 0) {

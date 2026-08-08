@@ -85,7 +85,7 @@ myc.exe check tests\ok_hello.c --cwd "" > %OUT% 2>&1
 findstr /C:"invalid_cwd" %OUT% >nul && echo [OK] --cwd kosong ditolak (invalid_cwd) || echo [WARN] --cwd kosong tidak ditolak
 del %OUT%
 echo --- self-dogfooding: semua source myc harus OK
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c) do (
   echo === %%f
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%
@@ -268,6 +268,16 @@ findstr /C:"64 identik, 0 divergen" %OUT% >nul && echo [OK] A4 64 kasus identik 
 myc.exe compare test\fixtures\ref_crc16.c test\fixtures\new_crc16_div.c > %OUT% 2>&1
 findstr /C:"unexpected_change (DS-04)" %OUT% >nul && echo [OK] A4 polinomial beda -> unexpected_change || echo [WARN] A4 divergence tidak terdeteksi
 findstr /C:"divergen 53 kasus" %OUT% >nul && echo [OK] A4 jumlah divergen akurat || echo [WARN] A4 jumlah divergen salah
+del %OUT%
+rem --- Fase 5 C2 (DS-10): Stack Budget Analyzer (--stack)
+echo --- C2: worst-case stack depth vs budget (observasi non-blocking)
+myc.exe check tests\ok_hello.c --stack --no-cache > %OUT% 2>&1
+findstr /C:"worst path : main = " %OUT% >nul && echo [OK] C2 worst path terhitung || echo [WARN] C2 worst path tidak terhitung
+myc.exe check tests\ok_hello.c --stack-budget 10 --no-cache > %OUT% 2>&1
+findstr /C:"480%" %OUT% >nul && echo [OK] C2 over budget terdeteksi || echo [WARN] C2 over budget tidak terdeteksi
+myc.exe check test\fixtures\stack_recursive.c --stack --no-cache > %OUT% 2>&1
+findstr /C:"recursion  : cycle di call graph" %OUT% >nul && echo [OK] C2 rekursi terdeteksi || echo [WARN] C2 rekursi tidak terdeteksi
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] C2 non-blocking || echo [WARN] C2 mengubah verdict
 del %OUT%
 rem --- fix review: ; membuang pending basi + komentar blok bukan klausa
 myc.exe check test\fixtures\contract_stale_pending.c > %OUT% 2>&1

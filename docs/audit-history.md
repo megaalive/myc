@@ -1947,3 +1947,30 @@ paling sering model: "apakah refactor-mu mempertahankan perilaku?"
 (dimensi P). Fixture: `ref_crc16.c` (baseline), `new_crc16_same.c`
 (refactor perilaku-sama -> P1 DIFF), `new_crc16_div.c` (polinomial beda
 -> 53/64 divergen). Regresi `_ci_linux.sh` (5i) + `_regress_run.bat`.
+
+### (6) C2 — Stack Budget Analyzer (DS-10) — `--stack` — `stack.c/.h`
+
+Gate `myc_stack_gate()` (modul baru `stack.c`) menjawab "berapa stack
+terburuk kode ini?" untuk target embedded: kematian embedded #1 biasanya
+stack overflow diam-diam, bukan bug logika.
+
+- Tulis source ke dir temp, jalankan `gcc -c -O2 -fstack-usage -Wvla`
+  (argv eksplisit, cwd temp sehingga `.su` deterministik).
+- Parse `.su` (format `file:LINE:COL:func<TAB>bytes<TAB>align`, defensif
+  terhadap variasi gcc) -> frame per fungsi.
+- Parse call graph dari source (definisi top-level + panggilan ident(...)
+  di body, mirip scanner driver), DFS worst-path dari root `main`
+  (fallback `_start` / fungsi tak-dipanggil) dengan cycle detection.
+- Deteksi **rekursi** (cycle = stack tak terbatas), **alloca** (substring),
+  **VLA** (warning gcc -Wvla), **unknown calls** (fungsi tanpa frame .su
+  = komponen eksternal/inline).
+- Bandingkan worst dengan `--stack-budget N` (default 4096 B). Report
+  selalu mencantumkan **"static worst-case != dynamic worst-case"**
+  (claim compiler; DS-10: static estimate vs interrupt/unbounded).
+- NON-blocking observasi (MYC_GATE_COMPLETED_OBSERVATIONS): verdict
+  tidak pernah berubah karena stack (trust rules #1).
+
+`capabilities.json` + `docs/capabilities.md` ditambah gate `stack`
+(dimensi R). Fixture `stack_recursive.c` (rekursi). Regresi
+`_ci_linux.sh` (5j) + `_regress_run.bat`: worst path, over-budget,
+rekursi, non-blocking.

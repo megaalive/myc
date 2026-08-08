@@ -39,6 +39,7 @@
 #include "run.h"
 #include "scanner.h"
 #include "sha256.h"
+#include "stack.h"
 
 /* ------------------------------------------------------------------ */
 /* Tabel flags gcc terpusat (P4.3).                                    */
@@ -713,6 +714,8 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     myc_gate_set_status(res, MYC_GATE_NEGATIVE, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_LINT, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_DIVERGENCE, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_COMPARE, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_STACK, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_EXHAUSTIVE, MYC_GATE_NOT_APPLICABLE, NULL);
 
     /* hash source */
@@ -1385,6 +1388,35 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         free(gcc_path);
         myc_reduce_verdict(res);
         return;
+    }
+
+    /* --- Gate opsional: stack budget analyzer (Fase 5, C2/DS-10) ---
+     * gcc -fstack-usage + call graph -> worst-case stack depth vs
+     * --stack-budget; deteksi rekursi/alloca/VLA. NON-blocking
+     * observasi (static worst-case != dynamic; claim compiler). */
+    if (req->stack) {
+        int ok = myc_stack_gate(req, src, srclen, res);
+        if (ok && res->ran_stack) {
+            if (res->stack_recursion ||
+                (res->stack_budget > 0 &&
+                 res->stack_worst_bytes > res->stack_budget)) {
+                myc_gate_set_status(res, MYC_GATE_STACK,
+                                    MYC_GATE_COMPLETED_OBSERVATIONS,
+                                    "stack over budget / rekursi "
+                                    "(observasi non-blocking)");
+                myc_result_add_evidence(res, MYC_GATE_STACK,
+                                        MYC_EVIDENCE_DIAGNOSTIC,
+                                        "stack: over budget / recursion "
+                                        "(observasi non-blocking)");
+            } else {
+                myc_gate_set_status(res, MYC_GATE_STACK,
+                                    MYC_GATE_COMPLETED_CLEAN,
+                                    "stack dalam budget");
+                myc_result_add_evidence(res, MYC_GATE_STACK,
+                                        MYC_EVIDENCE_GATE_END,
+                                        "stack: dalam budget");
+            }
+        }
     }
 
     myc_reduce_verdict(res);

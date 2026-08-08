@@ -151,6 +151,12 @@ typedef enum {
                                 divergen = unexpected_change (finding).
                                 DS-04 semantic delta escrow: ABI signature
                                 + domain hash ikut dibandingkan. */
+    MYC_GATE_STACK,          /* (Fase 5, C2/DS-10) stack budget analyzer:
+                                gcc -fstack-usage (frame/fungsi) + call
+                                graph dari source -> worst-case stack depth
+                                per root vs --stack-budget; deteksi
+                                rekursi (cycle) / alloca / VLA. Static
+                                worst-case != dynamic; NON-blocking. */
     MYC_GATE_COUNT
 } myc_gate_id;
 
@@ -577,13 +583,15 @@ typedef struct {
     int  no_assumptions;
     /* Fase 5, A3 (--exhaustive): gate Small-Domain Exhaustive Proof. */
     int         exhaustive;
-    /* Fase 5, A4: subcommand `myc compare ref.c new.c [func...]`.
-     * compare_files = kedua path (argv). compare_funcs = filter nama
-     * fungsi opsional (null-terminated? tidak: pakai count). */
+    /* Fase 5, A4: subcommand `myc compare ref.c new.c [func...]`. */
     char       *compare_ref_path;
     char       *compare_new_path;
     char      **compare_funcs;
     int         compare_nfuncs;
+    /* Fase 5, C2 (--stack): stack budget analyzer. stack_budget = budget
+     * target (bytes); default 4096 bila 0. */
+    int         stack;
+    int         stack_budget;
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
@@ -962,6 +970,21 @@ typedef struct {
     char          *compare_delta;            /* arena */
     char           compare_ref_digest[65];   /* sha256 stdout ref */
     char           compare_new_digest[65];   /* sha256 stdout new */
+    /* --- Fase 5, C2 (--stack, DS-10) ---
+     * ran_stack=1 setelah analisis; stack_worst_bytes = worst-case
+     * static depth dari root; stack_worst_path (arena); recursion =
+     * cycle di call graph (stack tak terbatas); alloca/VLA = komponen
+     * dinamis tak terhitung; unknown = panggilan ke fungsi tanpa frame
+     * .su; stack_report (arena). NON-blocking observasi. */
+    int            ran_stack;
+    long           stack_worst_bytes;
+    int            stack_budget;
+    int            stack_recursion;
+    int            stack_alloca;
+    int            stack_vla;
+    int            stack_unknown;
+    char          *stack_worst_path;   /* arena */
+    char          *stack_report;       /* arena */
 
     /* internal: gate mana yang dijalankan terakhir */
     int         ran_preprocess;
