@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c; do
+         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -454,6 +454,23 @@ if ./myc check test/fixtures/bad_fuzz.c --fuzz --fuzz-iters 2000 --no-cache 2>&1
     note "D1 fuzz: crash = bukti (DRIVER_VIOLATION)"
 else
     fail "D1 fuzz: crash tidak menaikkan verdict"
+fi
+
+# --- 5l. B5 Mutation-Audited Verification (--mutate-audit, DS-09) ---
+if ./myc check test/fixtures/mutate_target.c --mutate-audit --mutate-max 6 --no-cache 2>&1 | grep -qF "3 tertangkap, 0 GAP"; then
+    note "B5 mutate: mutan guard tertangkap ASan (coverage 3/3)"
+else
+    fail "B5 mutate: mutan tidak tertangkap"
+fi
+if ./myc check test/fixtures/mutate_target.c --mutate-audit --mutate-max 6 --no-cache 2>&1 | grep -qF "verification coverage: 3/3"; then
+    note "B5 mutate: verification coverage dihitung"
+else
+    fail "B5 mutate: coverage hilang"
+fi
+if ./myc check test/fixtures/mutate_target.c --mutate-audit --mutate-max 6 --no-cache 2>&1 | grep -qF "verdict:   OK"; then
+    note "B5 mutate: non-blocking (verdict tetap OK)"
+else
+    fail "B5 mutate: mengubah verdict (harus observasi)"
 fi
 
 # --- 6. dogfood tool ---

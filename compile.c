@@ -40,6 +40,7 @@
 #include "scanner.h"
 #include "sha256.h"
 #include "stack.h"
+#include "mutate.h"
 
 /* ------------------------------------------------------------------ */
 /* Tabel flags gcc terpusat (P4.3).                                    */
@@ -717,6 +718,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     myc_gate_set_status(res, MYC_GATE_COMPARE, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_STACK, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_FUZZ, MYC_GATE_NOT_APPLICABLE, NULL);
+    myc_gate_set_status(res, MYC_GATE_MUTATE, MYC_GATE_NOT_APPLICABLE, NULL);
     myc_gate_set_status(res, MYC_GATE_EXHAUSTIVE, MYC_GATE_NOT_APPLICABLE, NULL);
 
     /* hash source */
@@ -1418,6 +1420,14 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                         "stack: dalam budget");
             }
         }
+    }
+
+    /* --- Gate opsional: mutation audit (Fase 5, B5/DS-09) ---
+     * Verifier mengaudit diri: mutasi pola error LLM dijalankan ulang
+     * lewat pipeline; mutan lolos semua gate = coverage gap. NON-blocking
+     * observasi (verdict program tidak berubah). */
+    if (req->mutate_audit) {
+        myc_mutate_gate(req, src, srclen, res);
     }
 
     /* --- Gate opsional: fuzz-lite (Fase 5, D1/DS-13) ---

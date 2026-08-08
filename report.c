@@ -510,6 +510,14 @@ void myc_report_text(const myc_result *res)
             printf("  fuzz_stderr:\n%s\n", res->fuzz_stderr_text);
     }
 
+    if (res->ran_mutate) {
+        printf("mutate-audit (B5):\n");
+        printf("  total: %d  caught: %d  gap: %d\n",
+               res->mutate_total, res->mutate_caught, res->mutate_gap);
+        if (res->mutate_report)
+            printf("%s", res->mutate_report);
+    }
+
     if (res->ran_metamorphic) {
         printf("metamorphic (9.7):\n");
         printf("  o0_exit: %d  o2_exit: %d\n",
@@ -1027,6 +1035,15 @@ char *myc_result_to_json(const myc_result *res)
         json_sb_escape(&b, res->fuzz_report);
         json_sb_puts(&b, ",");
     }
+    json_sb_printf(&b, "\"ran_mutate\":%s,", res->ran_mutate ? "true" : "false");
+    if (res->ran_mutate) {
+        json_sb_printf(&b, "\"mutate_total\":%d,", res->mutate_total);
+        json_sb_printf(&b, "\"mutate_caught\":%d,", res->mutate_caught);
+        json_sb_printf(&b, "\"mutate_gap\":%d,", res->mutate_gap);
+        json_sb_puts(&b, "\"mutate_report\":");
+        json_sb_escape(&b, res->mutate_report);
+        json_sb_puts(&b, ",");
+    }
     json_sb_printf(&b, "\"ran_divergence\":%s,",
                    res->ran_divergence ? "true" : "false");
     if (res->ran_divergence) {
@@ -1489,6 +1506,15 @@ void myc_report_json_summary(const myc_result *res)
         json_sb_printf(&b, "\"fuzz_seed\":%u,", res->fuzz_seed);
         json_sb_puts(&b, "\"fuzz_report\":");
         json_sb_escape(&b, res->fuzz_report);
+        json_sb_puts(&b, ",");
+    }
+    json_sb_printf(&b, "\"ran_mutate\":%s,", res->ran_mutate ? "true" : "false");
+    if (res->ran_mutate) {
+        json_sb_printf(&b, "\"mutate_total\":%d,", res->mutate_total);
+        json_sb_printf(&b, "\"mutate_caught\":%d,", res->mutate_caught);
+        json_sb_printf(&b, "\"mutate_gap\":%d,", res->mutate_gap);
+        json_sb_puts(&b, "\"mutate_report\":");
+        json_sb_escape(&b, res->mutate_report);
         json_sb_puts(&b, ",");
     }
     json_sb_printf(&b, "\"ran_divergence\":%s,", res->ran_divergence ? "true" : "false");

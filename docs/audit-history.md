@@ -1997,3 +1997,30 @@ ini aman untuk input tak terduga?" tanpa dependensi libFuzzer:
 `capabilities.json` + `docs/capabilities.md` ditambah gate `fuzz`
 (dimensi R). Fixture `ok_fuzz.c` (aman), `bad_fuzz.c` (OOB idx 16..31 ->
 crash). Regresi `_ci_linux.sh` (5k) + `_regress_run.bat`.
+
+### (8) B5 — Mutation-Audited Verification (DS-09) — `--mutate-audit` — `mutate.c/.h`
+
+Verifier yang mengaudit dirinya sendiri (membalik arah panah: alat bukan
+hanya hakim, tapi murid yang menguji gurunya). `myc_mutate_gate()`
+(modul baru `mutate.c`):
+
+- Scan fungsi top-level (nama + body range); kumpulkan mutasi dari set
+  pola error LLM yang deterministik: off-by-one (`<=`->`<`, `>=`->`>`),
+  guard lemah (`&&`->`||`), komparasi dibalik (`<`->`>`, `==`->`!=`),
+  cek batas dilemahkan (`>= `->`> `). Satu mutasi per lokasi (dedup),
+  maks `--mutate-max N` (default 8) untuk membatasi biaya re-build.
+- Untuk tiap mutan: jalankan ulang pipeline (compile -Werror + run ASan)
+  via `myc_pipeline` (reuse penuh). Mutan verdict != OK = tertangkap
+  (gate yang menangkap dicatat dari evidence); verdict OK = **GAP**
+  (kelas bug tsb tak terlihat konfigurasi verifikasi) + saran.
+- Mutan ekuivalen (mutasi tak mengubah source) di-skip.
+- Output: tabel mutan + `verification coverage: N/M kelas mutan
+  terlihat`. **NON-blocking observasi** — GAP tidak pernah menurunkan
+  verdict program (mengukur kualitas verifikasi, bukan kode).
+
+Membangun DS-09 Canary Swarm: tiap backend bisa diuji dengan mutan
+kelasnya (heap OOB -> `--run`, contract violation -> `--exhaustive`, dst).
+`capabilities.json` + `docs/capabilities.md` ditambah gate `mutate`.
+Fixture `mutate_target.c` (guard ganda; main memanggil rentang luas ->
+3 mutan tertangkap ASan, coverage 3/3). Regresi `_ci_linux.sh` (5l) +
+`_regress_run.bat`.

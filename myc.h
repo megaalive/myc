@@ -163,6 +163,13 @@ typedef enum {
                                 DIBATASI kontrak requires (keunggulan atas
                                 fuzzer buta), dijalankan clang ASan/UBSan.
                                 Crash = bukti (DRIVER_VIOLATION). */
+    MYC_GATE_MUTATE,          /* (Fase 5, B5/DS-09) mutation-audited
+                                verification: mem-mutasi kode dengan pola
+                                error LLM lalu menjalankan ulang portfolio
+                                gate; mutan yang tetap clean = coverage
+                                gap (kelas bug tak terlihat). NON-blocking
+                                observasi (mengukur verifier, bukan
+                                verdict program). */
     MYC_GATE_COUNT
 } myc_gate_id;
 
@@ -603,6 +610,9 @@ typedef struct {
     int         fuzz;
     int         fuzz_iters;
     unsigned    fuzz_seed;
+    /* Fase 5, B5 (--mutate-audit): mutation-audited verification. */
+    int         mutate_audit;
+    int         mutate_max;         /* budget total mutan (default 8) */
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
@@ -1011,6 +1021,15 @@ typedef struct {
     char          *fuzz_report;        /* arena */
     char          *fuzz_stdout_text;   /* malloc'd, freed result_free */
     char          *fuzz_stderr_text;   /* malloc'd, freed result_free */
+    /* --- Fase 5, B5 (--mutate-audit, DS-09) ---
+     * ran_mutate=1 setelah audit; mutate_total = mutan dieksekusi;
+     * mutate_caught = tertangkap gate; mutate_gap = lolos semua gate
+     * (coverage gap); mutate_report (arena). NON-blocking observasi. */
+    int            ran_mutate;
+    int            mutate_total;
+    int            mutate_caught;
+    int            mutate_gap;
+    char          *mutate_report;      /* arena */
 
     /* internal: gate mana yang dijalankan terakhir */
     int         ran_preprocess;

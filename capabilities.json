@@ -19,12 +19,13 @@
     { "id": "compare",            "flag": "compare",         "dimension": "P", "backend": "clang+asan",  "hard": false,  "docs_anchor": "compare" },
     { "id": "stack",              "flag": "--stack",         "dimension": "R", "backend": "gcc",         "hard": false,  "docs_anchor": "stack" },
     { "id": "fuzz",               "flag": "--fuzz",          "dimension": "R", "backend": "clang+asan",  "hard": false,  "docs_anchor": "fuzz" },
+    { "id": "mutate",             "flag": "--mutate-audit",  "dimension": null, "backend": "pipeline",    "hard": false,  "docs_anchor": "mutate" },
     { "id": "prove",             "flag": "--prove",         "dimension": "P", "backend": "frama-c",     "hard": false,  "docs_anchor": "prove" },
     { "id": "filc",              "flag": "--filc",          "dimension": "F", "backend": "fil-c",       "hard": false,  "docs_anchor": "filc" }
   ],
   "cli_flags": [
     "--analyze", "--checked", "--run", "--run-stdin", "--prove", "--filc",
-    "--driver", "--exhaustive", "--stack", "--stack-budget", "--fuzz", "--fuzz-iters", "--fuzz-seed", "--metamorphic", "--divergence", "--negative", "--quorum", "--require-complete",
+    "--driver", "--exhaustive", "--stack", "--stack-budget", "--fuzz", "--fuzz-iters", "--fuzz-seed", "--mutate-audit", "--mutate-max", "--metamorphic", "--divergence", "--negative", "--quorum", "--require-complete",
     "compare (subcommand)",
     "--json", "--json-summary", "--agent", "--strict", "--level", "--no-lint", "--cwd",
     "--timeout", "--output-cap", "--write-repro", "--no-cache",

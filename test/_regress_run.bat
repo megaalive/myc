@@ -85,7 +85,7 @@ myc.exe check tests\ok_hello.c --cwd "" > %OUT% 2>&1
 findstr /C:"invalid_cwd" %OUT% >nul && echo [OK] --cwd kosong ditolak (invalid_cwd) || echo [WARN] --cwd kosong tidak ditolak
 del %OUT%
 echo --- self-dogfooding: semua source myc harus OK
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c) do (
   echo === %%f
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%
@@ -287,6 +287,13 @@ findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] D1 source aman -> bersih || e
 myc.exe check test\fixtures\bad_fuzz.c --fuzz --fuzz-iters 2000 --no-cache > %OUT% 2>&1
 findstr /C:"crash di peek_tbl" %OUT% >nul && echo [OK] D1 OOB terdeteksi || echo [WARN] D1 crash tidak terdeteksi
 findstr /C:"DRIVER_VIOLATION" %OUT% >nul && echo [OK] D1 crash = bukti || echo [WARN] D1 crash tidak menaikkan verdict
+del %OUT%
+rem --- Fase 5 B5 (DS-09): Mutation-Audited Verification (--mutate-audit)
+echo --- B5: mutan pola error LLM -> verifier mengaudit diri (observasi)
+myc.exe check test\fixtures\mutate_target.c --mutate-audit --mutate-max 6 --no-cache > %OUT% 2>&1
+findstr /C:"3 tertangkap, 0 GAP" %OUT% >nul && echo [OK] B5 mutan guard tertangkap || echo [WARN] B5 mutan tidak tertangkap
+findstr /C:"verification coverage: 3/3" %OUT% >nul && echo [OK] B5 coverage dihitung || echo [WARN] B5 coverage hilang
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] B5 non-blocking || echo [WARN] B5 mengubah verdict
 del %OUT%
 rem --- fix review: ; membuang pending basi + komentar blok bukan klausa
 myc.exe check test\fixtures\contract_stale_pending.c > %OUT% 2>&1
