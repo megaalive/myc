@@ -31,7 +31,7 @@ fi
 # 2. Check if CI is green for master
 echo ""
 echo ">> Checking CI status for master..."
-CI_JSON=$(cmd.exe /c "gh run list --workflow ci.yml -b master --limit 1 --json conclusion" 2>/dev/null || echo '[]')
+CI_JSON=$(gh run list --workflow ci.yml -b master --limit 1 --json conclusion 2>/dev/null || echo '[]')
 if echo "$CI_JSON" | grep -q '"success"'; then
     echo "[OK] CI is green for master"
 else
@@ -43,7 +43,7 @@ fi
 # 3. Check if release workflow is green for master
 echo ""
 echo ">> Checking release workflow status for master..."
-RELEASE_JSON=$(cmd.exe /c "gh run list --workflow release.yml -b master --limit 1 --json conclusion" 2>/dev/null || echo '[]')
+RELEASE_JSON=$(gh run list --workflow release.yml -b master --limit 1 --json conclusion 2>/dev/null || echo '[]')
 if echo "$RELEASE_JSON" | grep -q '"success"'; then
     echo "[OK] Release workflow passed for master"
 else
