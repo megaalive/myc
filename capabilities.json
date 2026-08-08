@@ -36,7 +36,7 @@
     "--timeout", "--output-cap", "--write-repro", "--no-cache",
     "--tx-verify", "--finding-id", "--edit-region", "--budget",
     "--budget-contract", "--no-assumptions", "--require-assumptions-closed",
-    "--assumption-ack", "--perturb"
+    "--assumption-ack", "--perturb", "--thread-probe"
   ],
   "mcp_tools": [
     "check", "repair", "version", "policy", "contracts", "lint", "agent_check"

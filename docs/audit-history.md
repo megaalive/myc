@@ -2187,3 +2187,22 @@ Perluasan A2 (divergence) ke MATRIKS TARGET: "char di ARM tidak sama
 - Fixture `pert_tz.c` (localtime/TZ-sensitive) diverifikasi terdeteksi
   ENV-SENSITIVE; ok_hello tetap DETERMINISTIK. Regresi CI 6c.
   Self-dogfood OK.
+
+### (16) Fase 6 — Concurrency Schedule / Lock-Order Probe — `concur.c/.h`
+
+`--thread-probe` (gate MYC_GATE_CONCUR):
+
+- **Lock-order statis**: parse source (strip komentar), lacak brace depth
+  per karakter untuk membagi region fungsi (menangani fungsi satu-baris),
+  kumpulkan urutan mutex yang di-lock per region (pthread_mutex_lock /
+  mtx_lock / EnterCriticalSection, multi-lock per baris), lalu deteksi
+  pasangan urutan TERBALIK antar fungsi = LOCK-ORDER INVERSION
+  (potensi deadlock). Heuristik teks ber-confidence, NON-blocking.
+- **TSan runtime** (best-effort): bila source memakai thread dan clang
+  mendukung -fsanitize=thread, build+run -> data race terdeteksi;
+  platform tanpa TSan (Windows) = catatan eksplisit, bukan kesunyian.
+- Fixture `con_inv.c` (f1 ma->mb vs f2 mb->ma) diverifikasi terdeteksi
+  INVERSION; verdict tetap OK (observasi). Regresi CI 6d. Self-dogfood
+  OK. Bug yang ditemukan saat develop: (a) region detection pakai net
+  brace per baris -> fungsi satu-baris tak terbuka; (b) hanya satu lock
+  per baris yang diambil; (c) nama fungsi diambil dari '(' terakhir.

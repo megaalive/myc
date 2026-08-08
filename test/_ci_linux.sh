@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c; do
+         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -605,6 +605,18 @@ if ./myc check test/fixtures/pert_tz.c --run --perturb --no-cache 2>&1 | grep -q
     note "Fase 6 perturb: program env-sensitive (TZ) terdeteksi"
 else
     fail "Fase 6 perturb: env-sensitive tidak terdeteksi"
+fi
+
+# --- 6d. Fase 6 Self-Challenge: Concurrency Probe (--thread-probe) ---
+if ./myc check test/fixtures/con_inv.c --thread-probe --no-cache 2>&1 | grep -qF "LOCK-ORDER INVERSION"; then
+    note "Fase 6 thread-probe: lock-order inversion terdeteksi"
+else
+    fail "Fase 6 thread-probe: inversion tidak terdeteksi"
+fi
+if ./myc check test/fixtures/con_inv.c --thread-probe --no-cache 2>&1 | grep -qF "verdict:   OK"; then
+    note "Fase 6 thread-probe: NON-blocking (verdict tetap OK)"
+else
+    fail "Fase 6 thread-probe: mengubah verdict (harus observasi)"
 fi
 
 # --- 6. dogfood tool ---

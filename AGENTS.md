@@ -90,7 +90,8 @@ scan includes (whitelist, non-blocking) → lint heuristik ber-confidence
 | `agent.c` | Agent Evidence Protocol (myc.agent.v2) |
 | `canary.c` | Canary Swarm (Fase 6): tiap backend yang bisa klaim memory-safety dibuktikan hidup via canary positif/negatif; `myc canary list | run [backend]`; canary gagal = backend UNRELIABLE |
 | `testaudit.c` | Test-Quality Audit (Fase 6): cakupan corpus test per hazard class + backend; `myc audit-tests`; gap eksplisit, NON-blocking |
-| `perturb.c` | Environment Perturbation (Fase 6): run ulang dgn env diubah (TZ/locale/PATH/HOME), bandingkan stdout+exit+sanitizer; ENV-SENSITIVE vs DETERMINISTIK, NON-blocking |\| run [backend]`; canary gagal = backend UNRELIABLE |
+| `perturb.c` | Environment Perturbation (Fase 6): run ulang dgn env diubah (TZ/locale/PATH/HOME), bandingkan stdout+exit+sanitizer; ENV-SENSITIVE vs DETERMINISTIK, NON-blocking |
+| `concur.c` | Concurrency Probe (Fase 6): lock-order statis (inversi urutan mutex = potensi deadlock) + TSan runtime best-effort (data race); NON-blocking observasi |\| run [backend]`; canary gagal = backend UNRELIABLE |
 | `stack.c` | Stack Budget Analyzer: `gcc -fstack-usage` + call graph worst-path, rekursi/VLA/alloca (Fase 5, C2/DS-10, `--stack`) |
 | `mutate.c` | Mutation-Audited Verification: verifier mengaudit diri via mutan pola error LLM, coverage gap (Fase 5, B5/DS-09, `--mutate-audit`) |
 | `scenario.c` | Scenario Packs: profil JSON resep gate per domain + auto budget (Fase 5, C5/D3/DS-12, `--scenario`, `myc scenario list/info`) |

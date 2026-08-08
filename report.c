@@ -381,6 +381,8 @@ void myc_report_text(const myc_result *res)
     }
     if (res->run_sanitizer_detected)
         printf("sanitizer: %s\n", res->run_sanitizer_marker);
+    if (res->concur_report)
+        printf("concur (Fase 6):\n%s\n", res->concur_report);
 
     if (res->ran_prove) {
         printf("prove:\n");

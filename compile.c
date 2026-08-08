@@ -42,6 +42,7 @@
 #include "stack.h"
 #include "mutate.h"
 #include "matrix.h"
+#include "concur.h"
 
 /* ------------------------------------------------------------------ */
 /* Tabel flags gcc terpusat (P4.3).                                    */
@@ -1552,6 +1553,11 @@ void myc_pipeline(const myc_request *req, myc_result *res)
      * gcc -fstack-usage + call graph -> worst-case stack depth vs
      * --stack-budget; deteksi rekursi/alloca/VLA. NON-blocking
      * observasi (static worst-case != dynamic; claim compiler). */
+    /* Fase 6 (--thread-probe): concurrency probe (lock-order + TSan).
+     * NON-blocking observasi, independen dari gate lain. */
+    if (req->thread_probe)
+        myc_concur_gate(req, res, src, srclen);
+
     if (req->stack) {
         int ok = myc_stack_gate(req, src, srclen, res);
         if (ok && res->ran_stack) {

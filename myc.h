@@ -182,6 +182,10 @@ typedef enum {
                                 yang BERUBAH antar target). Observasi
                                 NON-blocking; cross-compiler absen = sel
                                 di-skip (host-only). */
+    MYC_GATE_CONCUR,          /* (Fase 6) concurrency probe (--thread-probe):
+                                lock-order statis (inversi urutan mutex =
+                                potensi deadlock) + TSan runtime best-effort
+                                (data race). NON-blocking observasi. */
     MYC_GATE_COUNT
 } myc_gate_id;
 
@@ -646,6 +650,10 @@ typedef struct {
      * PATH, HOME/TERM), bandingkan stdout/exit/sanitizer vs baseline.
      * NON-blocking observasi: hasil berubah = env-sensitive. */
     int         perturb;
+    /* Fase 6 (Self-Challenge): --thread-probe -- concurrency probe:
+     * lock-order statis (inversi urutan mutex) + TSan runtime bila
+     * tersedia. NON-blocking observasi. */
+    int         thread_probe;
 } myc_request;
 
 /* --- Differential Backend Quorum (#3) --- */
@@ -1115,6 +1123,12 @@ typedef struct {
     int            perturb_ran;
     int            perturb_changed;
     char          *perturb_report;      /* arena */
+    /* --- Fase 6 (--thread-probe, concurrency probe) ---
+     * concur_ran=1 setelah probe; concur_race_detected=1 bila TSan
+     * menemukan data race; concur_report (arena). NON-blocking. */
+    int            concur_ran;
+    int            concur_race_detected;
+    char          *concur_report;       /* arena */
 
     int            ran_matrix;
     int            matrix_targets;

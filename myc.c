@@ -1635,6 +1635,11 @@ int main(int argc, char **argv)
                  * env (TZ/locale/PATH/HOME); NON-blocking observasi. */
                 req.perturb = 1;
                 known = 1;
+            } else if (strcmp(argv[i], "--thread-probe") == 0) {
+                /* Fase 6: concurrency probe -- lock-order statis + TSan
+                 * runtime; NON-blocking observasi. */
+                req.thread_probe = 1;
+                known = 1;
             } else if (strcmp(argv[i], "--negative") == 0) {
                 req.negative = 1; known = 1;
             } else if (strcmp(argv[i], "--require-complete") == 0) {
