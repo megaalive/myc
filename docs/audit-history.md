@@ -2224,3 +2224,34 @@ Perluasan A2 (divergence) ke MATRIKS TARGET: "char di ARM tidak sama
 - Fixture `fuzz_div0.c` (buggy) + `fuzz_div0_fixed.c` (fixed): CI
   memverifikasi seed tersimpan dan replay fixed -> RESOLVED.
   Self-dogfood OK.
+
+### (18) Fase 6 — Temuan Bug Nyata dari CI Linux (Self-Challenge bekerja)
+
+Tiga bug nyata ditemukan setelah CI Linux pertama kali gagal — justru
+bukti bahwa audit backend Fase 6 menangkap bug myc sendiri:
+
+- **`concur.c` — `strtok_r` POSIX (fix `ea24ebd`).** `strtok_r`
+  disembunyikan glibc di bawah `-std=c11` (butuh `_GNU_SOURCE`); MinGW
+  memilikinya sehingga lolos di Windows dan baru terlihat saat
+  `myc check concur.c` dijalankan di Linux. Diganti dengan split manual
+  (tidak butuh fungsi POSIX). Pelajaran: verifikasi `-std=c11` murni di
+  glibc untuk kode yang diklaim portabel, bukan hanya di MinGW.
+- **`myc.c` — leak `entry.timestamp` (fix `ea24ebd`).** LeakSanitizer di
+  `_audit018.sh` (audit_lampiran fp-long ASan) mendeteksi 64 B bocor per
+  pemanggilan `myc_run`: `entry.timestamp` dari `myc_ledger_timestamp`
+  (malloc 32 B) di-isi ke entri ledger namun tidak pernah di-free setelah
+  `myc_ledger_write`. Backend audit yang dibangun Fase 6-lah yang
+  menangkap leak di pipeline myc sendiri — self-challenge bekerja.
+- **`proc.c` — race pipe drain T1 (fix `120fef1`).** Di runner sibuk,
+  `stderr_total=991232 = 1 MiB - 8192` (persis satu buffer read hilang).
+  Akar masalah: jalur POSIX menutup `out_pipe[0]`/`err_pipe[0]`
+  SEBELUM `pthread_join` drain thread; drain thread yang sedang `read()`
+  mendapat `EBADF` dini dan berhenti, sehingga byte terakhir di pipe
+  buffer hilang (race — makin sering saat runner sibuk; stdout lolos
+  karena ditulis lebih dulu). Child sudah exit sehingga EOF alami sudah
+  tersedia — fix: join drain thread dulu, baru tutup read side.
+  Verifikasi: stres 6x di WSL, `_audit018.sh` 65 OK, `_ci_linux.sh`
+  PASS=107 FAIL=0, Windows proc_flood 3x 0 FAIL.
+
+Status akhir Fase 6: 7/7 task selesai, CI GitHub hijau (Linux + Windows)
+pada `120fef1`, seluruh source self-dogfood OK (38 source + 3 dogfood).
