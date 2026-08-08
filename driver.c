@@ -3882,6 +3882,8 @@ int myc_fuzz_gate(const myc_request *req, const char *source,
     }
 
 out:
+    if (dll_dst) free(dll_dst);
+    if (dll_src) free(dll_src);
     if (exe_path) {
         remove(exe_path);
         free(exe_path);
