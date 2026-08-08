@@ -524,6 +524,12 @@ findstr /C:"require_complete: enforced" %OUT% >nul && echo [OK] laporan enforced
 myc.exe check test\fixtures\ok_filc.c --filc > %OUT% 2>&1
 findstr /C:"MYC-INCOMPLETE-GATE-UNAVAILABLE" %OUT% >nul && echo [OK] backend tak tersedia jadi gap (bukan kesunyian) || echo [INFO] filc tersedia (tanpa gap)
 del %OUT%
+echo --- Fase 2: Contract/domain delta (myc contract-delta)
+myc.exe contract-delta test\fixtures\contract_wide.c test\fixtures\contract_narrow.c > %OUT% 2>&1
+findstr /C:"NARROWED" %OUT% >nul && echo [OK] contract-delta: NARROWED (domain menyempit) || echo [FAIL] contract-delta: NARROWED tidak terdeteksi
+myc.exe contract-delta test\fixtures\contract_wide.c test\fixtures\contract_wide.c > %OUT% 2>&1
+findstr /C:"CLEAN" %OUT% >nul && echo [OK] contract-delta: CLEAN (kontrak sama) || echo [FAIL] contract-delta: CLEAN tidak terdeteksi
+del %OUT%
 echo --- Fase 0: Golden Schema + Malformed-Input (myc.result.v1)
 where bash >nul 2>&1
 if errorlevel 1 (

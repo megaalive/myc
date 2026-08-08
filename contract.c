@@ -597,6 +597,137 @@ static int collect_expr(char ***out, int *n, const char *expr)
     return 1;
 }
 
+/* ---- Contract/domain delta (Fase 2) ---- */
+
+const char *myc_contract_delta_name(myc_contract_delta_kind k)
+{
+    switch (k) {
+    case MYC_DELTA_CLEAN:    return "CLEAN";
+    case MYC_DELTA_NARROWED: return "NARROWED";
+    case MYC_DELTA_WEAKENED: return "WEAKENED";
+    case MYC_DELTA_CHANGED:  return "CHANGED";
+    }
+    return "UNKNOWN";
+}
+
+/* Cek apakah expr ada di list (string cocok persis setelah strip spasi) */
+static int delta_has(const char *const *list, int n, const char *expr)
+{
+    int i;
+    size_t el = strlen(expr);
+    for (i = 0; i < n; i++) {
+        const char *a = list[i];
+        size_t al = strlen(a);
+        while (al > 0 && (a[al - 1] == ' ' || a[al - 1] == '\t'))
+            al--;
+        if (al == el && strncmp(a, expr, el) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static int delta_diff(char **new_list, int n_new,
+                      char **old_list, int n_old,
+                      char ***added_out, int *n_added_out,
+                      char ***removed_out, int *n_removed_out)
+{
+    int i;
+    *added_out = NULL;
+    *n_added_out = 0;
+    *removed_out = NULL;
+    *n_removed_out = 0;
+
+    for (i = 0; i < n_new; i++) {
+        if (!delta_has((const char *const *)old_list, n_old, new_list[i])) {
+            if (!collect_expr(added_out, n_added_out, new_list[i]))
+                return 0;
+        }
+    }
+    for (i = 0; i < n_old; i++) {
+        if (!delta_has((const char *const *)new_list, n_new, old_list[i])) {
+            if (!collect_expr(removed_out, n_removed_out, old_list[i]))
+                return 0;
+        }
+    }
+    return 1;
+}
+
+int myc_contract_delta_compare(const char *before, size_t before_len,
+                               const char *after, size_t after_len,
+                               myc_contract_delta *out)
+{
+    char **r0 = NULL, **e0 = NULL;
+    char **r1 = NULL, **e1 = NULL;
+    int nr0 = 0, ne0 = 0, nr1 = 0, ne1 = 0;
+    int ok;
+
+    memset(out, 0, sizeof(*out));
+
+    /* Ekstrak kontrak kedua versi (reuse myc_contract_list). */
+    myc_contract_list(before, before_len, &r0, &nr0, &e0, &ne0);
+    myc_contract_list(after, after_len, &r1, &nr1, &e1, &ne1);
+
+    ok = delta_diff(r1, nr1, r0, nr0,
+                    &out->added_requires, &out->n_added_requires,
+                    &out->removed_requires, &out->n_removed_requires);
+    if (!ok)
+        goto fail;
+    ok = delta_diff(e1, ne1, e0, ne0,
+                    &out->added_ensures, &out->n_added_ensures,
+                    &out->removed_ensures, &out->n_removed_ensures);
+    if (!ok)
+        goto fail;
+
+    /* Klasifikasi (DS-08 lifecycle: narrowing = laundering). */
+    if (out->n_added_requires > 0)
+        out->kind = MYC_DELTA_NARROWED;
+    else if (out->n_removed_ensures > 0)
+        out->kind = MYC_DELTA_WEAKENED;
+    else if (out->n_added_ensures > 0 || out->n_removed_requires > 0)
+        out->kind = MYC_DELTA_CHANGED;
+    else
+        out->kind = MYC_DELTA_CLEAN;
+
+    /* bersihkan list sementara */
+    {
+        int i;
+        for (i = 0; i < nr0; i++) free(r0[i]);
+        for (i = 0; i < ne0; i++) free(e0[i]);
+        for (i = 0; i < nr1; i++) free(r1[i]);
+        for (i = 0; i < ne1; i++) free(e1[i]);
+        free(r0); free(e0); free(r1); free(e1);
+    }
+    return 1;
+
+fail:
+    myc_contract_delta_free(out);
+    {
+        int i;
+        for (i = 0; i < nr0; i++) free(r0[i]);
+        for (i = 0; i < ne0; i++) free(e0[i]);
+        for (i = 0; i < nr1; i++) free(r1[i]);
+        for (i = 0; i < ne1; i++) free(e1[i]);
+        free(r0); free(e0); free(r1); free(e1);
+    }
+    return 1;
+}
+
+void myc_contract_delta_free(myc_contract_delta *out)
+{
+    int i;
+    if (!out)
+        return;
+    for (i = 0; i < out->n_added_requires; i++) free(out->added_requires[i]);
+    for (i = 0; i < out->n_removed_requires; i++) free(out->removed_requires[i]);
+    for (i = 0; i < out->n_added_ensures; i++) free(out->added_ensures[i]);
+    for (i = 0; i < out->n_removed_ensures; i++) free(out->removed_ensures[i]);
+    free(out->added_requires);
+    free(out->removed_requires);
+    free(out->added_ensures);
+    free(out->removed_ensures);
+    memset(out, 0, sizeof(*out));
+}
+
 int myc_contract_list(const char *source, size_t len,
                       char ***reqs, int *nreqs,
                       char ***ensures, int *nensures)

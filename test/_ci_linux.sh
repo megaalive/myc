@@ -652,6 +652,23 @@ else
 fi
 rm -f test/json_abuse
 
+# --- 6f. Fase 2 Contract/domain delta (myc contract-delta) ---
+if ./myc contract-delta test/fixtures/contract_wide.c test/fixtures/contract_narrow.c 2>&1 | grep -qF "NARROWED"; then
+    note "Fase 2 contract-delta: domain menyempit terdeteksi (NARROWED, laundering)"
+else
+    fail "Fase 2 contract-delta: NARROWED tidak terdeteksi"
+fi
+if ./myc contract-delta test/fixtures/contract_wide.c test/fixtures/contract_wide.c 2>&1 | grep -qF "CLEAN"; then
+    note "Fase 2 contract-delta: kontrak sama = CLEAN"
+else
+    fail "Fase 2 contract-delta: CLEAN tidak terdeteksi"
+fi
+if ./myc contract-delta test/fixtures/contract_wide.c test/fixtures/contract_narrow.c >/dev/null 2>&1; then
+    fail "Fase 2 contract-delta: NARROWED harus exit != 0 (preservation dilanggar)"
+else
+    note "Fase 2 contract-delta: NARROWED exit=1 (preservation gate)"
+fi
+
 # --- 7a. Fase 0 Golden Schema + Malformed-Input (myc.result.v1) ---
 if bash test/_schema_golden.sh; then
     note "Fase 0 golden schema: 13 cek PASS (schema + malformed input)"

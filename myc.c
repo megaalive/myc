@@ -47,6 +47,7 @@
 #include "taxonomy.h"
 #include "prompt.h"
 #include "driver.h"
+#include "contract.h"
 #include "scenario.h"
 #include "canary.h"
 #include "testaudit.h"
@@ -1129,6 +1130,11 @@ static void usage(void)
         "                        baterai input bersama dijalankan pada KEDUA\n"
         "                        versi; identik = behavior-preserving (P1 DIFF),\n"
         "                        divergen = unexpected_change)\n"
+        "  myc contract-delta <before.c> <after.c>\n"
+        "                        (Fase 2: delta kontrak //@ requires/ensures --\n"
+        "                        NARROWED = domain menyempit (laundering),\n"
+        "                        WEAKENED = kontrak melemah; exit 1 bila preservation\n"
+        "                        dilanggar)\n"
         "  myc scenario list\n"
         "  myc scenario info <name>\n"
         "                        (C5/DS-12: scenario packs -- resep verifikasi\n"
@@ -1343,6 +1349,66 @@ static int cmd_compare(const char *ref_path, const char *new_path,
     return rc;
 }
 
+/* Fase 2: Contract/domain delta — myc contract-delta <before.c> <after.c>
+ * Bandingkan kontrak //@ requires/ensures dua versi. Kelas hasil:
+ * CLEAN (kontrak sama), NARROWED (requires bertambah = domain menyempit,
+ * scope-laundering — wajib ditolak di repair transaction), WEAKENED
+ * (ensures berkurang = kontrak melemah), CHANGED (perubahan lain).
+ * Exit 1 untuk NARROWED/WEAKENED (preservation dilanggar), 0 selainnya. */
+static int cmd_contract_delta(const char *before_path, const char *after_path)
+{
+    myc_source_input in;
+    const char *buf_before, *buf_after;
+    size_t      len_before, len_after;
+    int         free_before = 0, free_after = 0;
+    myc_error_code le;
+    myc_contract_delta d;
+    int i;
+
+    memset(&in, 0, sizeof(in));
+    in.kind = MYC_SOURCE_FILE;
+    in.file_path = before_path;
+    le = myc_source_load(&in, &buf_before, &len_before, &free_before);
+    if (le != MYC_ERR_NONE) {
+        fprintf(stderr, "myc: contract-delta: tidak dapat membaca %s (error=%s)\n",
+                before_path, myc_error_name(le));
+        return 2;
+    }
+    memset(&in, 0, sizeof(in));
+    in.kind = MYC_SOURCE_FILE;
+    in.file_path = after_path;
+    le = myc_source_load(&in, &buf_after, &len_after, &free_after);
+    if (le != MYC_ERR_NONE) {
+        fprintf(stderr, "myc: contract-delta: tidak dapat membaca %s (error=%s)\n",
+                after_path, myc_error_name(le));
+        if (free_before)
+            free((void *)buf_before);
+        return 2;
+    }
+
+    myc_contract_delta_compare(buf_before, len_before, buf_after, len_after, &d);
+    printf("contract-delta: %s (before=%s after=%s)\n",
+           myc_contract_delta_name(d.kind),
+           before_path, after_path);
+    for (i = 0; i < d.n_added_requires; i++)
+        printf("  + requires %s  [domain menyempit]\n", d.added_requires[i]);
+    for (i = 0; i < d.n_removed_requires; i++)
+        printf("  - requires %s  [domain meluas]\n", d.removed_requires[i]);
+    for (i = 0; i < d.n_added_ensures; i++)
+        printf("  + ensures  %s  [jaminan bertambah]\n", d.added_ensures[i]);
+    for (i = 0; i < d.n_removed_ensures; i++)
+        printf("  - ensures  %s  [jaminan berkurang]\n", d.removed_ensures[i]);
+
+    /* NARROWED / WEAKENED = preservation dilanggar (laundering/melemah). */
+    i = (d.kind == MYC_DELTA_NARROWED || d.kind == MYC_DELTA_WEAKENED) ? 1 : 0;
+    myc_contract_delta_free(&d);
+    if (free_before)
+        free((void *)buf_before);
+    if (free_after)
+        free((void *)buf_after);
+    return i;
+}
+
 static int cmd_prompt(const char *path)
 {
     myc_source_input in;
@@ -1407,6 +1473,16 @@ int main(int argc, char **argv)
             return 2;
         }
         return cmd_compare(argv[2], argv[3], argv + 4, argc - 4);
+    }
+
+    /* Fase 2: myc contract-delta <before.c> <after.c> — delta kontrak/domain. */
+    if (strcmp(argv[1], "contract-delta") == 0) {
+        if (argc < 4) {
+            fprintf(stderr,
+                    "myc: contract-delta membutuhkan before.c dan after.c\n");
+            return 2;
+        }
+        return cmd_contract_delta(argv[2], argv[3]);
     }
 
     /* Fase 6 (Self-Challenge): myc regression list | run. */

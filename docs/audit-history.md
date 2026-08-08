@@ -2298,3 +2298,20 @@ Menutup task Fase 0 yang tersisa (golden schema + malformed-input):
 - Portabel (myc/myc.exe; python3 opsional dengan fallback grep
   struktural). Regresi CI: `_ci_linux.sh` 7a + `_regress_run.bat`.
   PASS=13 FAIL=0 di Windows dan WSL.
+
+### (21) Fase 2 — Contract/domain Delta — `myc contract-delta` (contract.c/.h)
+
+Menutup task Fase 2 yang tersisa (contract/domain delta):
+
+- Bandingkan kontrak //@ requires/ensures dua versi source (reuse
+  myc_contract_list). Klasifikasi 4 kelas: CLEAN (sama), NARROWED
+  (requires bertambah = domain panggilan MENYEMPIT = scope-laundering),
+  WEAKENED (ensures berkurang = kontrak melemah), CHANGED (perubahan
+  lain). Exit code: 1 untuk NARROWED/WEAKENED (preservation dilanggar).
+- CLI: `myc contract-delta <before.c> <after.c>` — detail per klausa
+  (+/- requires/ensures). Dapat dipakai sebagai gate di repair
+  transaction: patch yang "menghilangkan bug" dengan mempersempit domain
+  ditolak (DS-08 lifecycle: narrowing = laundering).
+- Fixture contract_wide.c (baseline) + contract_narrow.c (patch): CI
+  memverifikasi NARROWED terdeteksi + exit=1. Self-dogfood OK, -Werror
+  OK, regresi CI Linux 6f + Windows.

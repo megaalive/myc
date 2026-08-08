@@ -53,6 +53,40 @@ int myc_contract_list(const char *source, size_t len,
                       char ***reqs, int *nreqs,
                       char ***ensures, int *nensures);
 
+/* ---- Contract/domain delta (Fase 2) ----
+ * Bandingkan kontrak //@ requires/ensures dua versi source (before =
+ * baseline, after = patch). Mendeteksi:
+ *   - NARROWED : requires BERTAMBAH -> domain panggilan menyempit
+ *                (repair yang "menghilangkan" bug dengan mempersempit
+ *                domain = scope-laundering; Wajib ditolak di tx).
+ *   - WEAKENED : ensures BERKURANG / BERUBAH -> kontrak melemah
+ *                (menurunkan jaminan = melanggar preservation).
+ *   - CHANGED  : perubahan lain (ensures baru / requires hilang).
+ *   - CLEAN    : tidak ada perubahan kontrak.
+ * isi added/removed lists (malloc'd). caller memanggil
+ * myc_contract_delta_free. Selalu mengembalikan 1.
+ */
+typedef enum {
+    MYC_DELTA_CLEAN = 0,   /* kontrak tidak berubah */
+    MYC_DELTA_NARROWED,    /* requires bertambah: domain menyempit (laundering) */
+    MYC_DELTA_WEAKENED,    /* ensures berkurang: kontrak melemah */
+    MYC_DELTA_CHANGED      /* perubahan kontrak lain (ensures baru / requires hilang) */
+} myc_contract_delta_kind;
+
+typedef struct {
+    myc_contract_delta_kind kind;
+    char  **added_requires;   int n_added_requires;
+    char  **removed_requires; int n_removed_requires;
+    char  **added_ensures;    int n_added_ensures;
+    char  **removed_ensures;  int n_removed_ensures;
+} myc_contract_delta;
+
+const char *myc_contract_delta_name(myc_contract_delta_kind k);
+int myc_contract_delta_compare(const char *before, size_t before_len,
+                               const char *after, size_t after_len,
+                               myc_contract_delta *out);
+void myc_contract_delta_free(myc_contract_delta *out);
+
 /*
  * B4 (Comments-as-Contracts, DS-08): panen kandidat kontrak dari KOMENTAR
  * BIASA (bukan //@). Pola bahasa deterministik (bukan NLP):
