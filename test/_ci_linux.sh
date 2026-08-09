@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c state.c abi.c; do
+         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c state.c abi.c resource.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -756,13 +756,61 @@ else
     fail "Fase 5 abi: check --abi tidak masuk JSON summary"
 fi
 # Exit criteria SOL-14: ABI drift ditolak dalam transaction.
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/abi_tx_reject test/abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c > /dev/null 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/abi_tx_reject test/abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c > /dev/null 2>&1
 if ./test/abi_tx_reject > /dev/null 2>&1; then
     note "Fase 5 abi: ABI drift ditolak dalam transaction (exit criteria)"
 else
     fail "Fase 5 abi: transaction tidak menolak ABI drift"
 fi
 rm -f test/abi_tx_reject
+
+# --- 6j. Fase 5 (SOL-12): Resource Linearity Ledger (//@ resource) ---
+# Fixture bersih: 2 acquire-release seimbang (nested oblique diabaikan).
+if ./myc resource test/fixtures/resource_clean.c 2>&1 | grep -qF "2 acquire, 2 release"; then
+    note "Fase 5 resource: fixture bersih seimbang (acquire=2 release=2)"
+else
+    fail "Fase 5 resource: fixture bersih tidak seimbang"
+fi
+if ./myc resource test/fixtures/resource_clean.c 2>&1 | grep -qF "0 leak, 0 double, 0 unknown"; then
+    note "Fase 5 resource: fixture bersih = 0 temuan (clean)"
+else
+    fail "Fase 5 resource: fixture bersih memunculkan temuan"
+fi
+# Fixture leak: fopen tanpa fclose => 1 leak, witness acq..end.
+if ./myc resource test/fixtures/resource_leak.c 2>&1 | grep -qF "1 leak"; then
+    note "Fase 5 resource: leak terdeteksi (fopen tanpa fclose)"
+else
+    fail "Fase 5 resource: leak tidak terdeteksi"
+fi
+if ./myc resource test/fixtures/resource_leak.c 2>&1 | grep -qF "witness: acq@11..end@15"; then
+    note "Fase 5 resource: witness jalur acq..end benar"
+else
+    fail "Fase 5 resource: witness acq..end salah"
+fi
+# Fixture double-release: fclose dua kali => 1 double.
+if ./myc resource test/fixtures/resource_double.c 2>&1 | grep -qF "1 double"; then
+    note "Fase 5 resource: double-release terdeteksi"
+else
+    fail "Fase 5 resource: double-release tidak terdeteksi"
+fi
+# Fixture transfer: return var => 1 transfer, bukan leak.
+if ./myc resource test/fixtures/resource_transfer.c 2>&1 | grep -qF "transfer=1"; then
+    note "Fase 5 resource: resource ditransfer (return var) bukan leak"
+else
+    fail "Fase 5 resource: resource transfer tidak dikenali"
+fi
+# Resource non-blocking: verdict tetap OK kendati ada temuan ledger.
+if ./myc check test/fixtures/resource_leak.c --no-cache --json-summary 2>&1 | grep -qF '"verdict":"OK"'; then
+    note "Fase 5 resource: temuan ledger TIDAK menurunkan verdict (NON-blocking)"
+else
+    fail "Fase 5 resource: verdict berubah oleh observasi ledger"
+fi
+# Resource masuk JSON summary.
+if ./myc check test/fixtures/resource_leak.c --no-cache --json-summary 2>&1 | grep -qF '"resource":{"ran":true'; then
+    note "Fase 5 resource: resource masuk JSON summary"
+else
+    fail "Fase 5 resource: tidak masuk JSON summary"
+fi
 
 # --- 7a. Fase 0 Golden Schema + Malformed-Input (myc.result.v1) ---
 if bash test/_schema_golden.sh; then

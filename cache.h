@@ -116,6 +116,11 @@ typedef struct {
      * di-cache -- replay hanya punya counts + flag). */
     int   abi_ran, abi_n_structs, abi_n_enums, abi_n_symbols;
     int   abi_changed, abi_n_delta;
+    /* Fase 5 (SOL-12): Resource Linearity Ledger (observasi; report teks
+     * + finding detail TIDAK di-cache -- replay hanya punya counts). */
+    int   rsrc_ran, rsrc_pairs, rsrc_acquires, rsrc_releases;
+    int   rsrc_transferred, rsrc_leaks, rsrc_double_releases;
+    int   rsrc_release_unknown;
     /* Fase 5 A3 (--exhaustive): hasil enumerasi penuh domain. */
     int   ex_ran, ex_funcs, ex_cases, ex_skip, ex_laund;
     long  ex_points;

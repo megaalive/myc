@@ -278,8 +278,16 @@ static int cache_read_all(myc_cache_entry *out, int cap)
             v = json_get(e, "abi_s"); if (v && v->type == JSON_NUM) ce->abi_n_structs = (int)v->num;
             v = json_get(e, "abi_e"); if (v && v->type == JSON_NUM) ce->abi_n_enums = (int)v->num;
             v = json_get(e, "abi_y"); if (v && v->type == JSON_NUM) ce->abi_n_symbols = (int)v->num;
-            v = json_get(e, "abi_c"); if (v && v->type == JSON_NUM) ce->abi_changed = (int)v->num;
             v = json_get(e, "abi_d"); if (v && v->type == JSON_NUM) ce->abi_n_delta = (int)v->num;
+            /* Fase 5 (SOL-12): Resource Linearity Ledger (observasi). */
+            v = json_get(e, "rsrc_r"); if (v && v->type == JSON_NUM) ce->rsrc_ran = (int)v->num;
+            v = json_get(e, "rsrc_p"); if (v && v->type == JSON_NUM) ce->rsrc_pairs = (int)v->num;
+            v = json_get(e, "rsrc_a"); if (v && v->type == JSON_NUM) ce->rsrc_acquires = (int)v->num;
+            v = json_get(e, "rsrc_re"); if (v && v->type == JSON_NUM) ce->rsrc_releases = (int)v->num;
+            v = json_get(e, "rsrc_t"); if (v && v->type == JSON_NUM) ce->rsrc_transferred = (int)v->num;
+            v = json_get(e, "rsrc_l"); if (v && v->type == JSON_NUM) ce->rsrc_leaks = (int)v->num;
+            v = json_get(e, "rsrc_d"); if (v && v->type == JSON_NUM) ce->rsrc_double_releases = (int)v->num;
+            v = json_get(e, "rsrc_u"); if (v && v->type == JSON_NUM) ce->rsrc_release_unknown = (int)v->num;
             v = json_get(e, "ex_r"); if (v && v->type == JSON_NUM) ce->ex_ran = (int)v->num;
             v = json_get(e, "ex_f"); if (v && v->type == JSON_NUM) ce->ex_funcs = (int)v->num;
             v = json_get(e, "ex_c"); if (v && v->type == JSON_NUM) ce->ex_cases = (int)v->num;
@@ -609,6 +617,15 @@ static void cache_write_all(const myc_cache_entry *entries, int count)
         json_obj_set(e, "abi_y", json_new_num((int64_t)ce->abi_n_symbols));
         json_obj_set(e, "abi_c", json_new_num((int64_t)ce->abi_changed));
         json_obj_set(e, "abi_d", json_new_num((int64_t)ce->abi_n_delta));
+        /* Fase 5 (SOL-12): Resource Linearity Ledger (observasi). */
+        json_obj_set(e, "rsrc_r", json_new_num((int64_t)ce->rsrc_ran));
+        json_obj_set(e, "rsrc_p", json_new_num((int64_t)ce->rsrc_pairs));
+        json_obj_set(e, "rsrc_a", json_new_num((int64_t)ce->rsrc_acquires));
+        json_obj_set(e, "rsrc_re", json_new_num((int64_t)ce->rsrc_releases));
+        json_obj_set(e, "rsrc_t", json_new_num((int64_t)ce->rsrc_transferred));
+        json_obj_set(e, "rsrc_l", json_new_num((int64_t)ce->rsrc_leaks));
+        json_obj_set(e, "rsrc_d", json_new_num((int64_t)ce->rsrc_double_releases));
+        json_obj_set(e, "rsrc_u", json_new_num((int64_t)ce->rsrc_release_unknown));
         json_obj_set(e, "ex_r", json_new_num((int64_t)ce->ex_ran));
         json_obj_set(e, "ex_f", json_new_num((int64_t)ce->ex_funcs));
         json_obj_set(e, "ex_c", json_new_num((int64_t)ce->ex_cases));
@@ -1088,6 +1105,15 @@ static void cache_replay_into(const myc_cache_entry *e, myc_result *res)
     res->abi_n_symbols = e->abi_n_symbols;
     res->abi_changed = e->abi_changed;
     res->abi_n_delta = e->abi_n_delta;
+    /* Fase 5 (SOL-12): Resource Linearity Ledger (replay identik counts). */
+    res->rsrc_ran = e->rsrc_ran;
+    res->rsrc_pairs = e->rsrc_pairs;
+    res->rsrc_acquires = e->rsrc_acquires;
+    res->rsrc_releases = e->rsrc_releases;
+    res->rsrc_transferred = e->rsrc_transferred;
+    res->rsrc_leaks = e->rsrc_leaks;
+    res->rsrc_double_releases = e->rsrc_double_releases;
+    res->rsrc_release_unknown = e->rsrc_release_unknown;
     res->ran_exhaustive = e->ex_ran;
     res->exhaustive_funcs = e->ex_funcs;
     res->exhaustive_cases = e->ex_cases;
@@ -1522,6 +1548,15 @@ void myc_cache_store(const myc_request *req, const myc_result *res,
     ne->abi_n_symbols = res->abi_n_symbols;
     ne->abi_changed = res->abi_changed;
     ne->abi_n_delta = res->abi_n_delta;
+    /* Fase 5 (SOL-12): Resource Lineary Ledger (replay identik counts). */
+    ne->rsrc_ran = res->rsrc_ran;
+    ne->rsrc_pairs = res->rsrc_pairs;
+    ne->rsrc_acquires = res->rsrc_acquires;
+    ne->rsrc_releases = res->rsrc_releases;
+    ne->rsrc_transferred = res->rsrc_transferred;
+    ne->rsrc_leaks = res->rsrc_leaks;
+    ne->rsrc_double_releases = res->rsrc_double_releases;
+    ne->rsrc_release_unknown = res->rsrc_release_unknown;
     ne->ex_ran = res->ran_exhaustive;
     ne->ex_funcs = res->exhaustive_funcs;
     ne->ex_cases = res->exhaustive_cases;

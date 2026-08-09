@@ -492,6 +492,31 @@ typedef struct {
     int   line;
 } myc_sm_finding;
 
+/* --- Fase 5, SOL-12: Resource Linearity Ledger ---
+ * Temuan observasi tee untuk resource yang acquired tapi tidak pernah
+ * release, di-release dua kali, atau release pada variabel yang tidak
+ * di-trace acquire-nya. NON-blocking: verdict tidak pernah turun. */
+#define MYC_RSRC_MAX_PAIRS   16
+#define MYC_RSRC_MAX_FUNCS   64
+#define MYC_RSRC_MAX_VARS    48      /* resource per fungsi */
+#define MYC_RSRC_MAX_FINDINGS 32
+#define MYC_RSRC_NAME_LEN    64
+
+typedef enum {
+    MYC_RSRC_LEAKED = 0,     /* acq@L tidak release/transfer sampai akhir func */
+    MYC_RSRC_DOUBLE_RELEASE,  /* release dua kali tanpa re-acquire */
+    MYC_RSRC_RELEASE_UNKNOWN  /* release pada var yang tidak di-trace acquire */
+} myc_rsrc_finding_kind;
+
+typedef struct {
+    myc_rsrc_finding_kind kind;
+    char *text;       /* arena: penjelasan */
+    char *witness;    /* arena: jalur acq@L -> release/leak@baris */
+    int   line;
+} myc_rsrc_finding;
+
+const char *myc_rsrc_finding_name(myc_rsrc_finding_kind k);
+
 /* Satu kasus uji driver ter-record (roadmap 7.5 "case record").
  * Merekam INPUT yang benar-benar diuji — parameter values + allocation
  * sizes — plus status eksekusi (guard requires lolos / dilewati).
@@ -981,6 +1006,24 @@ typedef struct {
     char          *abi_snapshot;               /* arena */
     char          *abi_delta;                  /* arena */
     char          *abi_target;                 /* arena */
+
+    /* --- Fase 5, SOL-12: Resource Linearity Ledger ---
+     * rsrc_ran=1 setelah myc_resource_scan (observasi NON-blocking teks).
+     * rsrc_pairs/acquires/releases/transferred = hitungan snapshot;
+     * rsrc_lk/dbl/unk = jumlah temuan (leak / double-release /
+     * release-unknown). rsrc_report (arena) = laporan teks per fungsi
+     * dengan jalur `acq@L -> release@R | leaked@E | transferred@T`;
+     * temuan rinci di rsrc_finding_list (arena). Deterministik. */
+    int            rsrc_ran;
+    int            rsrc_pairs;
+    int            rsrc_acquires;
+    int            rsrc_releases;
+    int            rsrc_transferred;
+    int            rsrc_leaks;
+    int            rsrc_double_releases;
+    int            rsrc_release_unknown;
+    char          *rsrc_report;                /* arena */
+    myc_rsrc_finding rsrc_finding_list[MYC_RSRC_MAX_FINDINGS];
     char          *abi_header_sha;             /* arena */
 
     /* --- Fase 5, B4 (Comments-as-Contracts, DS-08) ---

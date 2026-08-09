@@ -70,6 +70,7 @@ scan includes (whitelist, non-blocking) → lint heuristik ber-confidence
 | `contract.c` | Contract-lite `//@ requires/ensures` + validasi purity + klasifikasi relasional (Fase 5) |
 | `state.c` | State-Machine Ghosting: ghost machine dari `//@ sm state/event/trans`, deteksi sink/unreachable/no-recovery/undeclared/unused + witness urutan event BFS (Fase 5, SOL-13) |
 | `abi.c` | ABI/FFI Surface Certificate: snapshot exported symbols + struct size/align/offset (helper program sizeof/offsetof) + enum + target triple + header digest; ABI delta tak diminta = hard transaction failure (Fase 5, SOL-14, `--abi`, `myc abi`) |
+| `resource.c` / `resource.h` | Resource Linearity Ledger: profil acquire->release (default POSIX/Win32 + kustom `//@ resource ACQ -> REL;`) ditelusuri per fungsi => leaked/double-release/transfer/unknown; observasi teks NON-blocking, verdict TIDAK pernah turun (Fase 5, SOL-12, `myc resource`) |
 | `negative.c` | Negative-space: mining "pola yang hilang" |
 | `lint.c` | Heuristik memory-safety ber-confidence (non-blocking) + `why`/`fix` |
  | `gate.c` | Status gate bertipe, evidence, claim compiler, debt, receipt |

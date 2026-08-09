@@ -35,6 +35,7 @@
 #include "policy.h"
 #include "state.h"
 #include "abi.h"
+#include "resource.h"
 #include "proc.h"
 #include "prove.h"
 #include "report.h"
@@ -906,6 +907,12 @@ void myc_pipeline(const myc_request *req, myc_result *res)
      * unreachable / no-recovery / undeclared / unused + witness BFS.
      * NON-blocking observasi murni. */
     myc_sm_scan(src, srclen, res);
+
+    /* --- Fase 5 (SOL-12): Resource Linearity Ledger ---
+     * Profil acquire/release (default + //@ resource)->leaked |
+     * double-released | transferred | unknown per fungsi. NON-blocking
+     * observasi teks deterministik; verdict TIDAK pernah turun. */
+    myc_resource_scan(src, srclen, res);
 
     /* --- Fase 5, SOL-14 (--abi): ABI/FFI Surface Certificate ---
      * Snapshot exported symbols + struct size/align/offset + enum +

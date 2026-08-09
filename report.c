@@ -302,6 +302,18 @@ void myc_report_text(const myc_result *res)
         if (res->abi_changed && res->abi_delta)
             printf("%s", res->abi_delta);
     }
+    /* Fase 5 (SOL-12): Resource Linearity Ledger (observasi). */
+    if (res->rsrc_pairs > 0 || res->rsrc_leaks > 0 ||
+        res->rsrc_double_releases > 0 || res->rsrc_release_unknown > 0) {
+        printf("resource ledger (SOL-12): %d pasang profil, %d acquire, "
+               "%d release, %d transfer, %d leak, %d double, %d unknown "
+               "(observasi, NON-blocking)\n",
+               res->rsrc_pairs, res->rsrc_acquires, res->rsrc_releases,
+               res->rsrc_transferred, res->rsrc_leaks,
+               res->rsrc_double_releases, res->rsrc_release_unknown);
+        if (res->rsrc_report)
+            printf("%s", res->rsrc_report);
+    }
     /* Fase 5 B4 (DS-08): kandidat kontrak dari komentar biasa (observasi). */
     if (res->harvest_candidates > 0) {
         printf("harvest (B4): %d kandidat komentar-biasa, %d validated, "
@@ -954,6 +966,31 @@ char *myc_result_to_json(const myc_result *res)
     json_sb_escape(&b, res->abi_snapshot ? res->abi_snapshot : "");
     json_sb_puts(&b, ",\"delta_text\":");
     json_sb_escape(&b, res->abi_delta ? res->abi_delta : "");
+    json_sb_puts(&b, "},");
+    /* Fase 5 (SOL-12): Resource Linearity Ledger (observasi NON-blocking). */
+    json_sb_printf(&b, "\"resource\":{\"ran\":%s,\"pairs\":%d,"
+                       "\"acquires\":%d,\"releases\":%d,\"transferred\":%d,"
+                       "\"leaks\":%d,\"double_releases\":%d,"
+                       "\"release_unknown\":%d,\"findings\":[",
+                   res->rsrc_ran ? "true" : "false", res->rsrc_pairs,
+                   res->rsrc_acquires, res->rsrc_releases,
+                   res->rsrc_transferred, res->rsrc_leaks,
+                   res->rsrc_double_releases, res->rsrc_release_unknown);
+    for (i = 0; i < MYC_RSRC_MAX_FINDINGS; i++) {
+        const myc_rsrc_finding *f = &res->rsrc_finding_list[i];
+        if (f->text == NULL && f->witness == NULL)
+            break;
+        if (i > 0)
+            json_sb_puts(&b, ",");
+        json_sb_printf(&b, "{\"kind\":\"%s\",\"line\":%d,\"text\":",
+                       myc_rsrc_finding_name(f->kind), f->line);
+        json_sb_escape(&b, f->text);
+        json_sb_printf(&b, ",\"witness\":");
+        json_sb_escape(&b, f->witness);
+        json_sb_puts(&b, "}");
+    }
+    json_sb_puts(&b, "],\"report\":");
+    json_sb_escape(&b, res->rsrc_report ? res->rsrc_report : "");
     json_sb_puts(&b, "},");
     /* Fase 5 B4 (DS-08): harvest kandidat kontrak dari komentar biasa. */
     json_sb_printf(&b, "\"harvest\":{\"candidates\":%d,\"validated\":%d,"
@@ -1625,6 +1662,15 @@ void myc_report_json_summary(const myc_result *res)
                    res->abi_ran ? "true" : "false", res->abi_n_structs,
                    res->abi_n_enums, res->abi_n_symbols,
                    res->abi_changed ? "true" : "false", res->abi_n_delta);
+    /* Fase 5 (SOL-12): Resource Linearity Ledger (observasi). */
+    json_sb_printf(&b, "\"resource\":{\"ran\":%s,\"pairs\":%d,"
+                       "\"acquires\":%d,\"releases\":%d,\"transferred\":%d,"
+                       "\"leaks\":%d,\"double_releases\":%d,"
+                       "\"release_unknown\":%d},",
+                   res->rsrc_ran ? "true" : "false", res->rsrc_pairs,
+                   res->rsrc_acquires, res->rsrc_releases,
+                   res->rsrc_transferred, res->rsrc_leaks,
+                   res->rsrc_double_releases, res->rsrc_release_unknown);
     /* Fase 5 B3 (DS-07): coaching items ringkas. */
     json_sb_printf(&b, "\"coaching\":[");
     for (i = 0; i < res->coaching_count; i++) {

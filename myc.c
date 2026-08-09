@@ -50,6 +50,7 @@
 #include "driver.h"
 #include "contract.h"
 #include "state.h"
+#include "resource.h"
 #include "scenario.h"
 #include "canary.h"
 #include "testaudit.h"
@@ -1455,6 +1456,41 @@ static int cmd_sm(const char *path)
     return 0;
 }
 
+/* Fase 5 (SOL-12): myc resource <file> — Resource Linearity Ledger.
+ * Profil acquire/release (default + //@ resource ACQ -> REL) ditelusuri
+ * per fungsi: leaked / double-release / transferred / unknown.
+ * Observasi NON-blocking teks deterministik; verdict tak pernah turun. */
+static int cmd_rsrc(const char *path)
+{
+    myc_source_input in;
+    const char *buf;
+    size_t      len;
+    int         needs_free = 0;
+    myc_error_code le;
+    myc_result res;
+
+    memset(&in, 0, sizeof(in));
+    in.kind = MYC_SOURCE_FILE;
+    in.file_path = path;
+    le = myc_source_load(&in, &buf, &len, &needs_free);
+    if (le != MYC_ERR_NONE) {
+        fprintf(stderr, "myc: resource: tidak dapat membaca %s (error=%s)\n",
+                path, myc_error_name(le));
+        return 2;
+    }
+    myc_result_init(&res);
+    myc_resource_scan(buf, len, &res);
+    if (res.rsrc_report)
+        printf("%s", res.rsrc_report);
+    else
+        printf("resource ledger (SOL-12): profil acquire/release di %s "
+               "tanpa temuan\n", path);
+    myc_result_free(&res);
+    if (needs_free)
+        free((void *)buf);
+    return 0;
+}
+
 /* --- Fase 5 (SOL-14): ABI/FFI Surface Certificate --- */
 static int cmd_abi_load(const char *path, const char **buf, size_t *len,
                         int *needs_free)
@@ -1646,6 +1682,15 @@ int main(int argc, char **argv)
             return 2;
         }
         return cmd_sm(argv[2]);
+    }
+
+    /* Fase 5 (SOL-12): myc resource <file> — Resource Linearity Ledger. */
+    if (strcmp(argv[1], "resource") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "myc: resource membutuhkan file\n");
+            return 2;
+        }
+        return cmd_rsrc(argv[2]);
     }
 
     /* Fase 5 (SOL-14): myc abi snapshot|diff|<f1.c> <f2.c> — ABI/FFI

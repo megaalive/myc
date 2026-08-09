@@ -2428,3 +2428,39 @@ Menutup task Fase 5 "ABI certificate" (exit criteria: ABI regression
   Windows blok abi; self-dogfood `abi.c` verdict OK; -Werror bersih;
   build.sh/build.bat/_audit018.sh/ci.yml/_ci_linux.sh/_regress_run.bat
   + abi.c. Plan 73/81.
+
+### (26) Fase 5 — Resource Linearity Ledger — `resource.c`/`resource.h` (SOL-12)
+
+Menutup task Fase 5 "Resource linearity ledger" (roadmap 7.13):
+
+- **Ledger per fungsi**: profil acquire→release (default POSIX/Win32:
+  fopen/fclose, open/close, popen/pclose, fdopen/fclose, mmap/munmap,
+  CreateFile(A/W)/CloseHandle; ditambah/timpa deklarasi kustom
+  `//@ resource ACQ -> REL;`) ditelusuri di body fungsi; nasib tiap
+  resource local: `acquired | released | leaked | double-released |
+  transferred | unknown`. Scanner TEKS deterministik (bukan AST), bounded,
+  jujur parsial — TIDAK interprosedural.
+- **Temuan NON-blocking** (verdict TIDAK pernah turun): `LEAKED`
+  (acq@L tanpa release/transfer sampai akhir body; witness
+  `acq@L..end@E`), `DOUBLE_RELEASE` (release kedua pada resource yang
+  sudah release), `RELEASE_UNKNOWN` (release pada var tanpa acquire — var
+  = parameter fungsi TIDAK dilaporkan: kepemilikan dari caller).
+  `return var` = `transferred` (bukan leak); resource yang dilewatkan
+  sebagai argumen semabarang ke fungsi lain BUKAN klaim leak.
+- **Subcommand `myc resource <file>`**: cetak report langsung (mirror
+  cmd_sm). Juga berjalan otomatis di `check` (setelah `myc_sm_scan`).
+- **Pipeline**: output teks + JSON full (`"resource":{ ran, pairs,
+  acquires, releases, transferred, leaks, double_releases,
+  release_unknown, findings[], report }`) + JSON summary (counts saja —
+  additive di myc.result.v1, tercatat di docs/result-schema.md); replay
+  cache 8 counts (rsrc_r/p/a/re/t/l/d/u), report & findings TIDAK
+  di-cache (sama seperti sm/harvest).
+- **Fixture + CI**: `test/fixtures/resource_clean.c` (seimbang 0 temuan),
+  `resource_leak.c` (1 leak + witness acq@11..end@15), `resource_double.c`
+  (1 double), `resource_transfer.c` (1 transfer, bukan leak). CI Linux 6k
+  + Windows blok resource: hasil fixtures + NON-blocking verdict (OK) +
+  JSON summary berisi resource.
+- Validasi: self-dogfood `resource.c` verdict OK; -Werror bersih (Linux
+  flags + MSYS2 build.bat); `resource.c` masuk build.sh/build.bat/
+  _audit018.sh/ci.yml/_ci_linux.sh/_regress_run.bat dogfood list.
+  Plan 74/81 (SOL-12 selesai; sisa Fase 5 tugas SOL-11 units/shape).
