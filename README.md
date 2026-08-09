@@ -51,6 +51,8 @@ myc check <file.c> [--json-summary] [--timeout MS] [--output-cap BYTES] [--no-ca
 myc check -            [--json] [--analyze] [--strict] [--no-lint]   (source from stdin)
 myc compare <ref.c> <new.c> [func...]     (differential oracle pair, A4/DS-04)
 myc scenario list | info <name>           (scenario packs, C5/DS-12)
+myc calibrate mark <rule> <outcome> [--match <fragmen>]  (trust ledger)
+myc calibrate list | show <rule> | reset [rule]
 myc canary list | run [backend]          (canary swarm, Fase 6)
 myc audit-tests                          (test-quality audit, Fase 6)
 --perturb                                (environment perturbation, Fase 6)
@@ -112,6 +114,11 @@ Flags:
   (A4/DS-04): runs a shared input battery on both versions and compares
   return + errno + output digest + exit ⇒ `behavior-preserving` or
   `unexpected_change`.
+- `--calibrate` — annotate check results with the local Trust Calibration
+  Ledger (Fase 7/SOL-21): a rule marked `LOW` stays an observation and
+  **never** raises the verdict (exit criteria: a calibrated-low rule does
+  not produce a hard finding). The ledger itself lives at
+  `.myc/calibration.json` and is managed with `myc calibrate` (offline).
 - `--divergence` — build and run the source with a toolchain matrix
   ({gcc, clang, [tcc]} × {-O0, -O2}); compare exit code, sanitizer
   findings, sha256 of stdout trace, and build warning set. Classification

@@ -2542,3 +2542,76 @@ perubahan `myc.result.v1` (profil = state eksternal, bukan hasil gate).
 
 **Batas jujur.** Aggregat kasar (count per gate/class), tanpa urutan
 temporal, tanpa per-finding detail, tanpa source hash.
+
+### (29) Fase 7 — Trust Calibration Ledger (SOL-21) — `calibrate.c`/`calibrate.h`
+
+DESAIN (Fase 7 #2, "Trust calibration ledger"). Implementasi menyusul;
+masuk sebagai MYC-AUDIT-033.
+
+**Masalah (plan 1478–1496).** Precision > recall hanya bisa dijaga bila
+proyek belajar dari *false positive* dan *false negative*. Kepercayaan
+terhadap myc harus **diukur** (dengan data lokal), bukan diasumsikan.
+Task #1 (`profile.c`) sengaja menunda fix-success/regression/churn/false
+positive feedback ke sini.
+
+**Scope (exit criteria Fase 7 #3).** *"Rule yang dikalibrasi rendah tidak
+menghasilkan hard finding."* Ledger mencatat sejarah kalibrasi per RULE
+(`lint.c`/`negative.c` — rule heuristik yang ber-`confidence`), NON-blocking
+penuh: feedback TIDAK pernah Ikut menurunkan/menaikkan verdict (trust rule
+1–3), distributor: purely observation; rule tidak pernah dihapus global tanpa
+bukti; hia "confidence rendah" menjadi label reporting + anotasi lokal,
+bukan verifikator.
+
+**Penyimpanan.** `.myc/calibration.json` (schema `"myc.calibration.v1"`),
+ditulis HANYA oleh subcommand `myc calibrate` (tidak pernah auto-record saat
+check — deterministik). Non-deterministic writes gagal = diabaikan (pola
+`.myc/assumptions.json`). File menyimpan per rule: `accepted`, `rejected`,
+`confirmed_later`, `missed`, `useful_fix`, `harmful_fix` + derivasi state.
+
+**Outcome (6 kategori, plan 1484–1490).**
+- `accepted` — finding/peringatan dikonfirmasi benar oleh user/harness;
+- `rejected` — false positive (rule salah prediksi);
+- `confirmed_later` — awalnya diragukan, ternyata bug;
+- `missed` — staggered bug NOT caught = false NEGATIVE (rule GAGAL);
+- `useful_fix` — saran fix membantu;
+- `harmful_fix` — saran fix merusak/menyesatkan.
+
+**API (calibrate.h).**
+- `int myc_calib_id_valid(const char *id)` — charset `[A-Za-z0-9._-]`,
+  length 1..63 (path-safe, mirror profile).
+- `int mycalib_mark(const char *rule, const char *outcome)` — load-or-init
+  ledger, increment counter. 0 ok, -1 invalid rule id, -2 unknown outcome.
+- `int mycalib_show(const char *rule, char *buf, size_t cap)` — laporan
+  teks + derived state (0 ok, -1 tak ada, -2 invalid).
+- `int mycalib_list(char *buf, size_t cap)` — semua rule + aggregate.
+- `int mycalib_reset(const char *rule)` — hapus satu rule; `NULL` = hapus
+  seluruh ledger (0 / -1 tak ada).
+
+**Derived rule state (exit criteria #3).** Logika deterministik dari
+counter (bukan time): score = 2*`accepted` + `confirmed_later` − 2*`rejected`
+− `harmful_fix`, lalu normalisasi: bila total feedback >= `MYC_CALIB_MIN=3`:
+   - score > 0  → state `OK` (rule terpercaya);
+   - score <= −2 → state `LOW` (banyak ditolak — rule ini CALIBRATED LOW);
+   - score < −4 → state `DISABLED` (empat diabaikan lokal);
+state `UNKNOWN` bila feedback < min. Setiap state TETAP observation
+dikulturkan; tidak ada path menuju verdict.
+
+**Wiring (myc.c).**
+- `myc calibrate mark <rule> <accepted|rejected|...>` / `myc calibrate
+  show <rule>` / `list` / `reset [rule]` di dispatch.
+- `--calibrate` flag check: setelah `myc_run`, loader membaca ledger; tiap
+  `res.diags[i]` yang rule (derived dari `message` / conf>) ber-labflag
+  LOW/DISABLED ditambah baris anotasi report (teks & JSON "--calibrated: LOW")
+  ijiknya observation tetap observasi; verdict tak disentuh.
+- Rule-id derivation untuk mapping diag→rule: hash `myc_lint_rule_id()`
+  sse (functions untuk enumerasi rule lint). Positive deltas: rule id =
+  `"lint:" + normalized first-token/message-id` dari `myc_lint_why`? —
+  Simplest honest: rule-id EXPLICIT dari user; mapping diag=new kontrak
+  `//@calibre <rule-id>` untuk fungsi-fungsi di event. Capai ini DOES NOT
+  menurunkan verdict (trust rule 1), burial tuntas.
+
+**Batas jujur.** Kalibrasi = observasi lokal; tidak ada umpan balik global
+lintas proyek; rule di-DOWNGRADE ≠ dihapus; `disabled` lokal hanya berarti
+report downgrade label, bukan skip gate. Gate hard (gcc/analyzer/sanitizer/
+EVA/Fil-C/L4) TIDAK pernah dibawa ke kalibrasi (`calibration` hanya untuk
+observasi heuristik — align trust rule 2).

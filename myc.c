@@ -53,6 +53,7 @@
 #include "resource.h"
 #include "units.h"
 #include "profile.h"
+#include "calibrate.h"
 #include "scenario.h"
 #include "canary.h"
 #include "testaudit.h"
@@ -1111,7 +1112,7 @@ static void usage(void)
     printf(
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
-        "  myc check <file.c> [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache] [--no-assumptions] [--cwd DIR] [--profile ID]\n"
+        "  myc check <file.c> [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache] [--no-assumptions] [--cwd DIR] [--profile ID] [--calibrate]\n"
         "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--exhaustive] [--stack [--stack-budget N]] [--fuzz [--fuzz-iters N] [--fuzz-seed S]] [--mutate-audit [--mutate-max N]] [--freestanding] [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete] [--scenario NAME [--scenario-file PATH]] [--matrix] [--abi]\n"
         "  myc check <file.c> --divergence   (Fase 4 A2: matriks toolchain {gcc,clang,tcc} x {-O0,-O2}, klasifikasi DS-02)\n"
         "  myc check <file.c> [--require-assumptions-closed] [--assumption-ack id:status,...]   (Fase 4 A1: ledger asumsi portabilitas)\n"
@@ -1150,9 +1151,20 @@ static void usage(void)
         "  myc profile reset <id>\n"
         "                        (Fase 7/SOL-20: opt-in Model/Harness Error\n"
         "                        Fingerprint -- agregat lokal tanpa source;\n"
-        "                        aktif juga via --profile <id> atau\n"
-        "                        env MYC_PROFILE_ID)\n"
-        "  myc version\n");
+"                        aktif juga via --profile <id> atau\n"
+         "                        env MYC_PROFILE_ID)\n"
+         "  myc calibrate mark <rule> <accepted|rejected|confirmed_later|missed|useful_fix|harmful_fix> [--match <fragmen>]\n"
+         "  myc calibrate show <rule>\n"
+         "  myc calibrate list\n"
+         "  myc calibrate reset [<rule>]\n"
+         "                        (Fase 7/SOL-21: opt-in Trust Calibration\n"
+         "                        Ledger -- feedback per rule, lokal, tanpa\n"
+         "                        source; rule dikalibrasi LOW tidak menghasilkan\n"
+         "                        hard finding)\n"
+         "  myc check <file.c> [--calibrate] ...\n"
+         "                        (meng-anotasi rule LOW/DISABLED: observasi\n"
+         "                        NON-blocking; juga via env MYC_CALIBRATE=1)\n"
+         "  myc version\n");
 }
 
 /* Parse bilangan bulat ketat (MYC-AUDIT-020): seluruh string harus angka
@@ -1679,6 +1691,7 @@ int main(int argc, char **argv)
     int         context_budget_tokens = 0;
     int         is_context = 0;
     const char *profile_id = NULL;   /* Fase 7 (SOL-20): --profile / env */
+    int         use_calibrate = 0;       /* Fase 7 (SOL-21): --calibrate */
 
     if (argc < 2) {
         usage();
@@ -1797,6 +1810,80 @@ int main(int argc, char **argv)
         }
         fprintf(stderr, "myc: profile membutuhkan `list`, `show <id>`, "
                         "atau `reset <id>`\n");
+        return 2;
+    }
+
+    /* Fase 7 (SOL-21): myc calibrate mark <rule> <outcome> [--match <fragmen>]
+     * | show <rule> | list | reset [rule] — Trust Calibration Ledger
+     * (opt-in, lokal, tanpa source). */
+    if (strcmp(argv[1], "calibrate") == 0) {
+        char buf[8192];
+        int  rc;
+        if (argc < 3) {
+            fprintf(stderr, "myc: calibrate membutuhkan `mark <rule> <outcome> [--match <fragmen>]`, "
+                            "`show <rule>`, `list`, atau `reset [rule]`\n");
+            return 2;
+        }
+        if (strcmp(argv[2], "mark") == 0) {
+            if (argc < 5) {
+                fprintf(stderr, "myc: calibrate mark membutuhkan <rule> <outcome> [--match <fragmen>]\n");
+                return 2;
+            }
+            const char *match = NULL;
+            if (argc >= 7 && strcmp(argv[5], "--match") == 0)
+                match = argv[6];
+            rc = myc_calib_mark(argv[3], argv[4], match);
+            if (rc == -2) {
+                fprintf(stderr, "myc: rule id invalid atau outcome tidak dikenal\n");
+                return 2;
+            }
+            printf("rule %s: %s (%lld)\n", argv[3], argv[4], 1LL);
+            return 0;
+        }
+        if (strcmp(argv[2], "show") == 0) {
+            if (argc < 4) {
+                fprintf(stderr, "myc: calibrate show membutuhkan <rule>\n");
+                return 2;
+            }
+            rc = myc_calib_show(argv[3], buf, sizeof(buf));
+            if (rc == -2) {
+                fprintf(stderr, "myc: rule id invalid\n");
+                return 2;
+            }
+            if (rc == -1) {
+                fprintf(stderr, "myc: rule tidak ada: %s\n", argv[3]);
+                return 1;
+            }
+            printf("%s", buf);
+            return 0;
+        }
+        if (strcmp(argv[2], "list") == 0) {
+            rc = myc_calib_list(buf, sizeof(buf));
+            printf("%s", buf);
+            return 0;
+        }
+        if (strcmp(argv[2], "reset") == 0) {
+            const char *rule = (argc >= 4) ? argv[3] : NULL;
+            rc = myc_calib_reset(rule);
+            if (rc == -2) {
+                fprintf(stderr, "myc: rule id invalid\n");
+                return 2;
+            }
+            if (rc == -1) {
+                if (rule)
+                    fprintf(stderr, "myc: rule tidak ada: %s\n", rule);
+                else
+                    fprintf(stderr, "myc: ledger kosong\n");
+                return 1;
+            }
+            if (rule)
+                printf("rule %s direset\n", rule);
+            else
+                printf("ledger direset\n");
+            return 0;
+        }
+        fprintf(stderr, "myc: calibrate membutuhkan `mark <rule> <outcome> [--match <fragmen>]`, "
+                        "`show <rule>`, `list`, atau `reset [rule]`\n");
         return 2;
     }
 
@@ -1919,6 +2006,13 @@ int main(int argc, char **argv)
         const char *pe = getenv("MYC_PROFILE_ID");
         if (pe && *pe && myc_profile_id_valid(pe))
             profile_id = pe;
+    }
+    /* Fase 7 (SOL-21): calibration opt-in via --calibrate atau env MYC_CALIBRATE. */
+    use_calibrate = 0;
+    {
+        const char *ce = getenv("MYC_CALIBRATE");
+        if (ce && *ce && (strcmp(ce, "1") == 0 || strcmp(ce, "true") == 0))
+            use_calibrate = 1;
     }
 
     /* Parse flags. Fase-2 (canonical ingress): unknown flag = error
@@ -2077,6 +2171,12 @@ int main(int argc, char **argv)
                 }
                 profile_id = argv[i + 1];
                 i++; known = 1;
+            } else if (strcmp(argv[i], "--calibrate") == 0) {
+                /* Fase 7 (SOL-21): Trust Calibration Ledger opt-in. Bila
+                 * active, check meng-anotasi diagnostic yang merupakan
+                 * rule yang dikalibrasi LOW/DISABLED (observasi, NON-blocking). */
+                use_calibrate = 1;
+                known = 1;
             } else if (strcmp(argv[i], "--matrix") == 0) {
                 /* Fase 5 C4: target matrix bare metal (cross-compiler). */
                 req.matrix = 1;
@@ -2330,6 +2430,22 @@ int main(int argc, char **argv)
          * NON-blocking; gagal tulis tanpa dampak pada hasil/exit. */
         if (profile_id)
             myc_profile_record(&res, profile_id);
+        /* Fase 7 (SOL-21): Trust Calibration Ledger. Bila --calibrate/
+         * env aktif, anotasi diagnostic yang merupakan rule dikalibrasi
+         * LOW/DISABLED -- observasi NON-blocking, verdict TIDAK berubah
+         * (trust rule 1-3). Cetak ke stderr sebagai evidence saja. */
+        if (use_calibrate) {
+            char cabuf[4096];
+            int n = myc_calib_apply(&res, cabuf, sizeof(cabuf));
+            if (n > 0) {
+                fprintf(stderr, "[myc] calibration: %d diagnostic dicalibrate"
+                        " (observation-only, verdict tidak berubah)\n%s",
+                        n, cabuf);
+            } else {
+                fprintf(stderr, "[myc] calibration: tidak ada rule LOW/DISABLED"
+                        " yang terpicu\n");
+            }
+        }
         /* --write-repro: tulis .myc-witness/ repro directory (Fase 1).
          * Harus sebelum free(src) karena membutuhkan source. */
         if (req.write_repro && res.witness) {

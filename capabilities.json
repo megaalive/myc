@@ -255,7 +255,9 @@
     "--assumption-ack",
     "--perturb",
     "--thread-probe",
-    "--profile"
+    "--profile",
+    "--calibrate",
+    "--match"
   ],
   "mcp_tools": [
     "check",

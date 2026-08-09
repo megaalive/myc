@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c state.c abi.c resource.c units.c; do
+          agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c state.c abi.c resource.c units.c profile.c calibrate.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -84,7 +84,7 @@ for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
         FAIL=1
     fi
 done
-[ "$FAIL" -eq 0 ] && note "self-dogfooding 24 source myc"
+[ "$FAIL" -eq 0 ] &&     note "self-dogfooding 26 source myc"
 
 # --- 1b. --json-summary mode (ringkas untuk agent) ---
 if ./myc check tests/ok_hello.c --json-summary 2>&1 | grep -qF '"verdict":"OK"'; then
@@ -756,7 +756,7 @@ else
     fail "Fase 5 abi: check --abi tidak masuk JSON summary"
 fi
 # Exit criteria SOL-14: ABI drift ditolak dalam transaction.
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/abi_tx_reject test/abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c profile.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c > /dev/null 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/abi_tx_reject test/abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c > /dev/null 2>&1
 if ./test/abi_tx_reject > /dev/null 2>&1; then
     note "Fase 5 abi: ABI drift ditolak dalam transaction (exit criteria)"
 else
@@ -909,6 +909,63 @@ if ./myc profile reset ci-harness 2>&1 | grep -qF "direset" && \
 else
     fail "Fase 7 profile: reset tidak bekerja"
 fi
+rm -rf .myc/profiles
+
+# --- 6m. Fase 7 (SOL-21): Trust Calibration Ledger (myc calibrate) ---
+# Opt-in per local ledger (.myc/calibration.json). Bukan hard gate; hanya anotasi
+# observasi diagnostic LOW/DISABLED (trust rule 1-3: verdict TIDAK berubah).
+rm -f .myc/calibration.json
+# Derived state: 3x accepted -> OK; 3x rejected -> DISABLED;
+# 1 accepted + 2 rejected -> LOW (score=-2, total>=3).
+./myc calibrate mark c_ok accepted --match "ok_marker" > /dev/null 2>&1
+./myc calibrate mark c_ok accepted --match "ok_marker" > /dev/null 2>&1
+./myc calibrate mark c_ok accepted --match "ok_marker" > /dev/null 2>&1
+./myc calibrate show c_ok 2>&1 | grep -qF "state     : OK" && note "Fase 7 calibrate: 3x accepted -> OK" || fail "Fase 7 calibrate: state OK gagal"
+./myc calibrate mark c_dis rejected --match "dis_marker" > /dev/null 2>&1
+./myc calibrate mark c_dis rejected --match "dis_marker" > /dev/null 2>&1
+./myc calibrate mark c_dis rejected --match "dis_marker" > /dev/null 2>&1
+./myc calibrate show c_dis 2>&1 | grep -qF "state     : DISABLED" && note "Fase 7 calibrate: 3x rejected -> DISABLED" || fail "Fase 7 calibrate: state DISABLED gagal"
+./myc calibrate mark c_low accepted --match "low_marker" > /dev/null 2>&1
+./myc calibrate mark c_low rejected --match "low_marker" > /dev/null 2>&1
+./myc calibrate mark c_low rejected --match "low_marker" > /dev/null 2>&1
+./myc calibrate show c_low 2>&1 | grep -qF "state     : LOW" && note "Fase 7 calibrate: 1a+2r -> LOW" || fail "Fase 7 calibrate: state LOW gagal"
+# list + reset.
+./myc calibrate list 2>&1 | grep -qF "c_ok" && note "Fase 7 calibrate: list menampilkan rule" || fail "Fase 7 calibrate: list tidak menampilkan rule"
+./myc calibrate reset c_ok > /dev/null 2>&1
+if ! ./myc calibrate show c_ok > /dev/null 2>&1; then
+    note "Fase 7 calibrate: reset menghapus rule (tidak ditemukan setelah reset)"
+else
+    fail "Fase 7 calibrate: reset tidak menghapus rule"
+fi
+# id invalid = fail-fast (exit != 0).
+if ./myc calibrate mark 'bad id' accepted > /dev/null 2>&1; then
+    fail "Fase 7 calibrate: id invalid tidak fail-fast"
+else
+    note "Fase 7 calibrate: id invalid ditolak (exit != 0)"
+fi
+# Exit criteria SOL-21: rule DISABLED tidak menghasilkan hard finding.
+# Fixture mmio_bad.c --freestanding: observasi C3 non-blocking; --calibrate
+# menanamkan "[calibrated: DISABLED]" pada match dan verdict tetap OK.
+./myc calibrate mark c_mmio rejected --match "MMIO deref alamat absolut tanpa volatile" > /dev/null 2>&1
+./myc calibrate mark c_mmio rejected --match "MMIO deref alamat absolut tanpa volatile" > /dev/null 2>&1
+./myc calibrate mark c_mmio rejected --match "MMIO deref alamat absolut tanpa volatile" > /dev/null 2>&1
+if ./myc check test/fixtures/mmio_bad.c --freestanding --calibrate --no-cache 2>&1 | grep -qF '[calibrated: DISABLED] rule=c_mmio'; then
+    note "Fase 7 calibrate: DISABLED rule dianotasi di report"
+else
+    fail "Fase 7 calibrate: anotasi DISABLED hilang"
+fi
+if ./myc check test/fixtures/mmio_bad.c --freestanding --calibrate --no-cache 2>&1 | grep -qF "verdict:   OK"; then
+    note "Fase 7 calibrate: DISABLED rule tidak menghasilkan hard finding (exit criteria)"
+else
+    fail "Fase 7 calibrate: DISABLED rule turunkan verdict"
+fi
+# NON-blocking: --calibrate tidak mengubah verdict source bersih.
+if ./myc check tests/ok_hello.c --calibrate --no-cache 2>&1 | grep -qF "verdict:   OK"; then
+    note "Fase 7 calibrate: --calibrate NON-blocking (ok_hello tetap OK)"
+else
+    fail "Fase 7 calibrate: --calibrate mengubah verdict"
+fi
+rm -f .myc/calibration.json
 rm -rf .myc/profiles
 
 # --- 7a. Fase 0 Golden Schema + Malformed-Input (myc.result.v1) ---
