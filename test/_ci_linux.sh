@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-          agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c state.c abi.c resource.c units.c profile.c calibrate.c; do
+          agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -756,7 +756,7 @@ else
     fail "Fase 5 abi: check --abi tidak masuk JSON summary"
 fi
 # Exit criteria SOL-14: ABI drift ditolak dalam transaction.
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/abi_tx_reject test/abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c > /dev/null 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/abi_tx_reject test/abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c > /dev/null 2>&1
 if ./test/abi_tx_reject > /dev/null 2>&1; then
     note "Fase 5 abi: ABI drift ditolak dalam transaction (exit criteria)"
 else
@@ -964,6 +964,73 @@ if ./myc check tests/ok_hello.c --calibrate --no-cache 2>&1 | grep -qF "verdict:
     note "Fase 7 calibrate: --calibrate NON-blocking (ok_hello tetap OK)"
 else
     fail "Fase 7 calibrate: --calibrate mengubah verdict"
+fi
+rm -f .myc/calibration.json
+rm -rf .myc/profiles
+
+# --- 6o. Fase 7 (#2029, DS-14): Expected-Information-Gain scheduler (myc eig) ---
+# Rekomendasi eksperimen terurut skor expected_value = P(new_evidence) x
+# severity x scope / (time x token); prior tabel deterministik yang
+# dikalibrasi dari ledger SOL-21 (rule `eig-<slug>`) + profil SOL-20.
+# NON-blocking: verdict tidak pernah berubah.
+rm -f .myc/calibration.json
+rm -rf .myc/profiles
+if ./myc eig test/fixtures/eig_clean.c 2>&1 | grep -qF "eig scheduler (Fase 7, DS-14)"; then
+    note "Fase 7 eig: laporan scheduler tercetak"
+else
+    fail "Fase 7 eig: laporan scheduler tidak tercetak"
+fi
+if ./myc eig test/fixtures/eig_clean.c 2>&1 | grep -qF "rekomendasi: 6"; then
+    note "Fase 7 eig: 6 rekomendasi dari 6 hazard untested"
+else
+    fail "Fase 7 eig: jumlah rekomendasi bukan 6"
+fi
+if ./myc eig test/fixtures/eig_clean.c 2>&1 | grep -qF "expected-value="; then
+    note "Fase 7 eig: expected-value tercetak per rekomendasi"
+else
+    fail "Fase 7 eig: expected-value tidak tercetak"
+fi
+# --unchanged: prior dibagi dua (informasi baru kecil kemungkinannya).
+if ./myc eig test/fixtures/eig_clean.c --unchanged 2>&1 | grep -qF "source_changed: 0"; then
+    note "Fase 7 eig: --unchanged dicerminkan (source_changed: 0)"
+else
+    fail "Fase 7 eig: --unchanged tidak dicerminkan"
+fi
+# --budget-ms 100: semua eksperimen (cost >= 1500ms) di luar budget.
+if ./myc eig test/fixtures/eig_clean.c --budget-ms 100 2>&1 | grep -qF "within_budget: 0/"; then
+    note "Fase 7 eig: budget 100ms -> semua rekomendasi di luar budget"
+else
+    fail "Fase 7 eig: budget 100ms tidak menghasilkan within_budget 0"
+fi
+# Kalibrasi ledger (SOL-21): 3x accepted rule `eig-runtime-memory-asan-ubsan`
+# (hazard "runtime memory (ASan/UBSan)", eligible untested) -> prior naik.
+./myc calibrate mark eig-runtime-memory-asan-ubsan accepted --match "eig_test" > /dev/null 2>&1
+./myc calibrate mark eig-runtime-memory-asan-ubsan accepted --match "eig_test" > /dev/null 2>&1
+./myc calibrate mark eig-runtime-memory-asan-ubsan accepted --match "eig_test" > /dev/null 2>&1
+if ./myc eig test/fixtures/eig_clean.c 2>&1 | grep -qF "calibrated_rules: 1"; then
+    note "Fase 7 eig: kalibrasi ledger SOL-21 terbaca (calibrated_rules: 1)"
+else
+    fail "Fase 7 eig: kalibrasi ledger SOL-21 tidak terbaca"
+fi
+./myc calibrate reset eig-runtime-memory-asan-ubsan > /dev/null 2>&1
+# Profil SOL-20 (opt-in): prior disesuaikan kelas gate historis harness.
+./myc check test/fixtures/eig_clean.c --no-cache --profile ci-eig > /dev/null 2>&1
+if ./myc eig test/fixtures/eig_clean.c --profile ci-eig 2>&1 | grep -qF "profile: ci-eig"; then
+    note "Fase 7 eig: profil SOL-20 dibaca (profile: ci-eig)"
+else
+    fail "Fase 7 eig: profil SOL-20 tidak dibaca"
+fi
+# --json deterministik (expected_value per rekomendasi).
+if ./myc eig test/fixtures/eig_clean.c --json 2>&1 | grep -qF '"expected_value"'; then
+    note "Fase 7 eig: output --json memuat expected_value"
+else
+    fail "Fase 7 eig: output --json tidak memuat expected_value"
+fi
+# NON-blocking: eig tidak pernah mengubah verdict check.
+if ./myc check test/fixtures/eig_clean.c --no-cache 2>&1 | grep -qF "verdict:   OK"; then
+    note "Fase 7 eig: NON-blocking (verdict tetap OK)"
+else
+    fail "Fase 7 eig: verdict berubah oleh eig"
 fi
 rm -f .myc/calibration.json
 rm -rf .myc/profiles

@@ -236,6 +236,32 @@ int myc_calib_mark(const char *rule, const char *outcome, const char *match)
     return 0;
 }
 
+int myc_calib_read_counts(const char *rule,
+                          long long counts[MYC_CALIB_OUTCOME_COUNT],
+                          int *found)
+{
+    myc_calib_entry entries[MYC_CALIB_MAX_ENTRIES];
+    int count = 0;
+    int idx;
+
+    if (!calib_id_ok(rule) || !counts)
+        return -2;
+    if (found)
+        *found = 0;
+    memset(counts, 0, MYC_CALIB_OUTCOME_COUNT * sizeof(long long));
+
+    if (!calib_load(entries, &count))
+        return 0;
+    idx = find_entry(entries, count, rule);
+    if (idx == -1)
+        return 0;
+    memcpy(counts, entries[idx].counts,
+           MYC_CALIB_OUTCOME_COUNT * sizeof(long long));
+    if (found)
+        *found = 1;
+    return 0;
+}
+
 static const char *state_name(myc_calib_state s)
 {
     if (s >= 0 && s < (int)(sizeof(STATE_NAMES)/sizeof(STATE_NAMES[0])))

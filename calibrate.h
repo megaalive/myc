@@ -73,6 +73,15 @@ int myc_calib_outcome_parse(const char *s, myc_calib_outcome *out);
  * Return: 0 ok, -1 invalid id, -2 unknown outcome. */
 int myc_calib_mark(const char *rule, const char *outcome, const char *match);
 
+/* Baca counter mentah rule dari ledger (dipakai scheduler EIG, Fase 7
+ * #2029/DS-14: prior P(new_evidence) dikalibrasi dari feedback). Bila
+ * rule ada, counts[] diisi 6 counter outcome (urutan myc_calib_outcome)
+ * dan *found = 1. NON-blocking: ledger tak ada/rusak = found 0, bukan
+ * error. Return: 0 ok, -2 id invalid. */
+int myc_calib_read_counts(const char *rule,
+                          long long counts[MYC_CALIB_OUTCOME_COUNT],
+                          int *found);
+
 /* Laporan teks rule ke buf. Return: 0 ok / -1 not found / -2 invalid id. */
 int myc_calib_show(const char *rule, char *buf, size_t cap);
 

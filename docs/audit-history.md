@@ -2615,3 +2615,72 @@ lintas proyek; rule di-DOWNGRADE ≠ dihapus; `disabled` lokal hanya berarti
 report downgrade label, bukan skip gate. Gate hard (gcc/analyzer/sanitizer/
 EVA/Fil-C/L4) TIDAK pernah dibawa ke kalibrasi (`calibration` hanya untuk
 observasi heuristik — align trust rule 2).
+
+### (30) Fase 7 — Expected-Information-Gain Scheduler (DS-14 / #2029) — `eig.c`/`eig.h`
+
+DESAIN (Fase 7 #3, "Expected-information-gain scheduler", plan DS-14 /
+2029). Implementasi menyusul; masuk sebagai MYC-AUDIT-034.
+
+**Masalah (plan 938–946).** "Adaptive Assurance harus memilih gate berdasarkan
+expected information gain" — jangan sekadar rule `parser → fuzz`. Scheduler
+memakai data lokal: kelas bug historis model/harness (SOL-20 `profile.c`),
+gate mana yang pernah menemukan bug serupa (SOL-21 `calibrate.c`), biaya
+median gate, perubahan source sejak run terakhir, frontier yang masih terbuka
+(`frontier.c`), target assurance pengguna (D3/SOL-30 `budget.c`).
+
+**Skor konseptual (plan 946–953):**
+
+```text
+expected_value = probability_of_new_evidence × severity × scope
+                 ------------------------------------------------
+                         time_cost × token_cost
+```
+
+V1 = tabel deterministik yang dikalibrasi dari ledger (persis anjuran plan:
+"Tidak perlu statistik kompleks pada awalnya").
+
+**Komponen.**
+- Prior `P(new_evidence)` per-mille tabel deterministik per eksperimen
+  (ALLOC_FAIL 600, BOUNDARY_INPUT 700, DRIVER_GEN 650, REALLOC_PATH 550,
+  POLLING_HARNESS 500, default 500, SHORT_IO/LEAK_CHECK 450, CROSS_TARGET
+  400, ASSERTION_HARNESS 350).
+- Kalibrasi ledger SOL-21: rule id deterministik `eig-<slug-hazard>`
+  (mis. `eig-runtime-memory-asan-ubsan`); net = `accepted` + `confirmed_later`
+  − `rejected` − `harmful_fix`; langkah 60 per-mille, clamp [100..950];
+  `missed` sengaja netral (ketiadaan bukti). Rule diakses via aksesor baru
+  `myc_calib_read_counts()` (tidak memformat teks).
+- Profil SOL-20 (opt-in `--profile <id>`): kelas `"<gate>/findings"` /
+  `"<gate>/observations"` dengan count > 0 → prior +80; profil punya checks
+  tapi gate tak pernah menemukan → −30; clamp sama.
+- `source_changed=0` (`--unchanged`) → prior dibagi dua (bukti sudah
+  dikumpulkan; informasi baru kecil kemungkinannya).
+- Budget waktu (`--budget-ms N`) → flag `within_budget` per rekomendasi
+  (v1 tidak memilih/menjalankan gate otomatis — lihat batas jujur).
+- `scope` per hazard (tabel: temporal/runtime/spatial 5, integer 4, capability
+  4, proof 3, boundary 2); `severity`/`cost` dari observasi aktual bila ada,
+  else tabel default (sama dgn nextbest.c/observation.c); `token_cost` tabel
+  deterministik (dimensi independen).
+- `expected_value` dihitung int64 skala 1e6: `P × severity × scope × 1e6 /
+  (cost × token)`. Urutan deterministik: EV desc, tie cost asc, type asc,
+  hazard asc.
+
+**API (eig.h).** `myc_eig_plan(fs, exps, in, eig)` / `myc_eig_json(eig)` /
+`myc_eig_free(eig)`; `myc_eig_input { profile_id, source_changed,
+budget_time_ms }`. Reentrant; string di-strdup (dibebaskan `myc_eig_free`).
+
+**Wiring (myc.c).** Subcommand `myc eig <file.c> [--profile <id>]
+[--budget-ms N] [--unchanged] [--json]`: jalankan check penuh (`myc_run`,
+no-cache — deterministik), bangun frontier + observasi, jalankan plan,
+cetak laporan teks / JSON. NON-blocking penuh: verdict tidak pernah berubah;
+ledger/profil gagal baca = prior tabel murni. `eig.c` masuk ke seluruh
+PIPELINE build (build.sh/build.bat/_audit018/ci.yml/_ci_linux.sh/
+_regress_run.bat) + tabel modul AGENTS.md + capabilities.md + fixture
+`test/fixtures/eig_clean.c` + blok assert CI Linux (6o) & Windows (6o).
+
+**Batas jujur (v1).** Lapisan PERENCANAAN rekomendasi — scheduler ini
+membuat daftar eksperimen terurut yang SEHARUSNYA dijalankan, tetapi belum
+memilih/menjalankan gate otomatis di dalam `myc check`. Pemakaian
+rekomendasi oleh assurance budget (D3/SOL-30: enforce gate sesuai budget
+waktu) dan pengukuran exit criteria benchmark (median waktu vs bug
+discovery) = follow-up. Kalibrasi/profil hanya menggeser prior rekomendasi
+(tabel), TIDAK pernah menyentuh gate hard (trust rule 2).

@@ -104,6 +104,7 @@ scan includes (whitelist, non-blocking) â†’ lint heuristik ber-confidence
 | `mutate.c` | Mutation-Audited Verification: verifier mengaudit diri via mutan pola error LLM, coverage gap (Fase 5, B5/DS-09, `--mutate-audit`) |
 | `scenario.c` | Scenario Packs: profil JSON resep gate per domain + auto budget (Fase 5, C5/D3/DS-12, `--scenario`, `myc scenario list/info`) |
 | `matrix.c` | Target Matrix bare metal: cross-compile + macro dump per target, portability matrix (Fase 5, C4, `--matrix`) |
+| `eig.c` / `eig.h` | Expected-Information-Gain Scheduler: rekomendasi eksperimen terurut skor `expected_value = P(new_evidence) x severity x scope / (time x token)`, prior tabel deterministik dikalibrasi dari ledger SOL-21 (`eig-<slug>`) + profil SOL-20; `myc eig <file> [--profile <id>] [--budget-ms N] [--unchanged] [--json]`; observasi NON-blocking (Fase 7, #2029/DS-14) |
 
 ## Dogfooding (wajib dipertahankan)
 

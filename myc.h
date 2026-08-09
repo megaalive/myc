@@ -1078,6 +1078,22 @@ char          *rsrc_report;                /* arena */
     char          *units_report;               /* arena */
     myc_units_finding units_finding_list[MYC_UNITS_MAX_FINDINGS];
 
+    /* --- Fase 7, #2029 (DS-14): Expected-Information-Gain scheduler ---
+     * eig_ran=1 setelah myc_eig_plan (observasi NON-blocking murni: skor
+     * rekomendasi expected_value = P(new_evidence) x severity x scope /
+     * (time_cost x token_cost); prior tabel deterministik yang dikalibrasi
+     * dari ledger SOL-21 (rule `eig-<slug>`) + profil SOL-20). v1 =
+     * lapisan PERENCANAAN rekomendasi via `myc eig <file>`; pemilihan gate
+     * otomatis di dalam check = follow-up. eig_report (arena) = laporan
+     * teks; counts ringkas utk replay masa depan. Deterministik. */
+    int            eig_ran;
+    int            eig_recommendations;
+    int            eig_calibrated_rules;
+    int            eig_within_budget;
+    int            eig_profile_used;
+    long long      eig_top_expected_value;
+    char          *eig_report;                 /* arena */
+
     /* --- Fase 5, B4 (Comments-as-Contracts, DS-08) ---
      * Panen kandidat kontrak dari komentar BIASA (bukan //@):
      *   candidate  = pola bahasa terdeteksi (deterministik, bukan NLP);

@@ -54,6 +54,7 @@
 #include "units.h"
 #include "profile.h"
 #include "calibrate.h"
+#include "eig.h"
 #include "scenario.h"
 #include "canary.h"
 #include "testaudit.h"
@@ -1164,6 +1165,13 @@ static void usage(void)
          "  myc check <file.c> [--calibrate] ...\n"
          "                        (meng-anotasi rule LOW/DISABLED: observasi\n"
          "                        NON-blocking; juga via env MYC_CALIBRATE=1)\n"
+         "  myc eig <file.c> [--profile <id>] [--budget-ms N] [--unchanged] [--json]\n"
+         "                        (Fase 7/#2029 DS-14: Expected-Information-Gain\n"
+         "                        scheduler -- rekomendasi eksperimen terurut\n"
+         "                        skor expected_value = P(new-evidence) x\n"
+         "                        severity x scope / (time x token); prior tabel\n"
+         "                        deterministik dikalibrasi dari ledger SOL-21 +\n"
+         "                        profil SOL-20; NON-blocking, verdict tetap)\n"
          "  myc version\n");
 }
 
@@ -1546,6 +1554,88 @@ static int cmd_units(const char *path)
     return 0;
 }
 
+/* Fase 7 (#2029, DS-14): myc eig <file> [--profile <id>] [--budget-ms N]
+ * [--unchanged] [--json] — Expected-Information-Gain scheduler.
+ * Jalankan check penuh (compile gate) -> frontier + observasi -> rekomendasi
+ * eksperimen terurut skor expected_value = P(new_evidence) x severity x
+ * scope / (time_cost x token_cost); prior tabel deterministik yang
+ * dikalibrasi dari ledger SOL-21 (rule `eig-<slug>`) + profil SOL-20
+ * (--profile). Observasi NON-blocking murni: verdict tidak pernah berubah. */
+static int cmd_eig(const char *path, const char *profile_id,
+                   int budget_ms, int source_changed, int as_json,
+                   const char *argv0)
+{
+    myc_request req;
+    myc_result  res;
+    myc_frontier_set fs;
+    myc_experiment_set exps;
+    myc_eig_set eig;
+    myc_eig_input in;
+    char *js = NULL;
+    char *exe_dir = NULL;
+    int rc = 0;
+
+    myc_request_init(&req);
+    req.input.kind = MYC_SOURCE_FILE;
+    req.input.file_path = path;
+    req.no_cache = 1;   /* deterministik: selalu jalankan pipeline penuh */
+    req.run_lint = 1;
+    exe_dir = myc_exe_dirname(argv0);
+    req.checked_header_dir = exe_dir;
+
+    myc_result_init(&res);
+    myc_run(&req, &res);
+    free(exe_dir);
+    if (res.verdict == MC_ERROR) {
+        fprintf(stderr, "myc: eig: gagal memeriksa %s (error=%s)\n",
+                path, myc_error_name(res.err));
+        rc = 2;
+        myc_result_free(&res);
+        return rc;
+    }
+
+    memset(&fs, 0, sizeof(fs));
+    memset(&exps, 0, sizeof(exps));
+    memset(&eig, 0, sizeof(eig));
+    myc_frontier_build(&res, &fs);
+    myc_observation_to_experiment(&res, &exps);
+    memset(&in, 0, sizeof(in));
+    in.profile_id = profile_id;
+    in.source_changed = source_changed;
+    in.budget_time_ms = budget_ms;
+    myc_eig_plan(&fs, &exps, &in, &eig);
+
+    /* Wire ringkasan ke myc_result (pola cmd_sm/cmd_units: report di arena
+     * hasil + counts; dipakai replay cache di masa depan). */
+    res.eig_ran = 1;
+    res.eig_recommendations = eig.count;
+    res.eig_calibrated_rules = eig.calibrated_rules;
+    res.eig_within_budget = eig.within_budget_count;
+    res.eig_profile_used = eig.profile_used;
+    res.eig_top_expected_value =
+        eig.count > 0 ? eig.items[0].expected_value : 0;
+    if (eig.report)
+        res.eig_report = myc_result_arena_dup(&res, eig.report, 0);
+
+    if (as_json) {
+        js = myc_eig_json(&eig);
+        if (js) {
+            printf("%s\n", js);
+            free(js);
+        }
+    } else if (res.eig_report) {
+        printf("%s", res.eig_report);
+    } else {
+        printf("eig scheduler (Fase 7, DS-14): tidak ada rekomendasi\n");
+    }
+
+    myc_eig_free(&eig);
+    myc_experiment_free(&exps);
+    myc_frontier_free(&fs);
+    myc_result_free(&res);
+    return rc;
+}
+
 /* --- Fase 5 (SOL-14): ABI/FFI Surface Certificate --- */
 static int cmd_abi_load(const char *path, const char **buf, size_t *len,
                         int *needs_free)
@@ -1757,6 +1847,51 @@ int main(int argc, char **argv)
             return 2;
         }
         return cmd_units(argv[2]);
+    }
+
+    /* Fase 7 (#2029/DS-14): myc eig <file> [--profile <id>] [--budget-ms N]
+     * [--unchanged] [--json] — Expected-Information-Gain scheduler. */
+    if (strcmp(argv[1], "eig") == 0) {
+        const char *eig_profile = NULL;
+        int eig_budget = 0;
+        int eig_changed = 1;
+        int eig_json = 0;
+        int ei;
+        if (argc < 3) {
+            fprintf(stderr, "myc: eig membutuhkan file\n");
+            return 2;
+        }
+        for (ei = 3; ei < argc; ei++) {
+            if (strcmp(argv[ei], "--profile") == 0 && ei + 1 < argc) {
+                eig_profile = argv[ei + 1];
+                if (!myc_profile_id_valid(eig_profile)) {
+                    fprintf(stderr,
+                            "myc: eig --profile id invalid (charset "
+                            "[A-Za-z0-9._-], panjang <= 63)\n");
+                    return 2;
+                }
+                ei++;
+            } else if (strcmp(argv[ei], "--budget-ms") == 0 &&
+                       ei + 1 < argc) {
+                if (!parse_int_arg(argv[ei + 1], &eig_budget) ||
+                    eig_budget < 0) {
+                    fprintf(stderr,
+                            "myc: eig --budget-ms harus bilangan >= 0\n");
+                    return 2;
+                }
+                ei++;
+            } else if (strcmp(argv[ei], "--unchanged") == 0) {
+                eig_changed = 0;
+            } else if (strcmp(argv[ei], "--json") == 0) {
+                eig_json = 1;
+            } else {
+                fprintf(stderr, "myc: eig: flag tidak dikenal: %s\n",
+                        argv[ei]);
+                return 2;
+            }
+        }
+        return cmd_eig(argv[2], eig_profile, eig_budget, eig_changed,
+                       eig_json, argv[0]);
     }
 
     /* Fase 7 (SOL-20): myc profile list|show <id>|reset <id> —
