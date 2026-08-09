@@ -288,6 +288,13 @@ static int cache_read_all(myc_cache_entry *out, int cap)
             v = json_get(e, "rsrc_l"); if (v && v->type == JSON_NUM) ce->rsrc_leaks = (int)v->num;
             v = json_get(e, "rsrc_d"); if (v && v->type == JSON_NUM) ce->rsrc_double_releases = (int)v->num;
             v = json_get(e, "rsrc_u"); if (v && v->type == JSON_NUM) ce->rsrc_release_unknown = (int)v->num;
+            /* Fase 5 (SOL-11): Units / Shape / Provenance (observasi). */
+            v = json_get(e, "unt_r"); if (v && v->type == JSON_NUM) ce->units_ran = (int)v->num;
+            v = json_get(e, "unt_a"); if (v && v->type == JSON_NUM) ce->units_annotations = (int)v->num;
+            v = json_get(e, "unt_u"); if (v && v->type == JSON_NUM) ce->units_unbound = (int)v->num;
+            v = json_get(e, "unt_m"); if (v && v->type == JSON_NUM) ce->units_mismatches = (int)v->num;
+            v = json_get(e, "unt_s"); if (v && v->type == JSON_NUM) ce->units_shape_dims = (int)v->num;
+            v = json_get(e, "unt_d"); if (v && v->type == JSON_NUM) ce->units_duplicates = (int)v->num;
             v = json_get(e, "ex_r"); if (v && v->type == JSON_NUM) ce->ex_ran = (int)v->num;
             v = json_get(e, "ex_f"); if (v && v->type == JSON_NUM) ce->ex_funcs = (int)v->num;
             v = json_get(e, "ex_c"); if (v && v->type == JSON_NUM) ce->ex_cases = (int)v->num;
@@ -625,6 +632,13 @@ static void cache_write_all(const myc_cache_entry *entries, int count)
         json_obj_set(e, "rsrc_t", json_new_num((int64_t)ce->rsrc_transferred));
         json_obj_set(e, "rsrc_l", json_new_num((int64_t)ce->rsrc_leaks));
         json_obj_set(e, "rsrc_d", json_new_num((int64_t)ce->rsrc_double_releases));
+        /* Fase 5 (SOL-11): Units / Shape / Provenance (observasi). */
+        json_obj_set(e, "unt_r", json_new_num((int64_t)ce->units_ran));
+        json_obj_set(e, "unt_a", json_new_num((int64_t)ce->units_annotations));
+        json_obj_set(e, "unt_u", json_new_num((int64_t)ce->units_unbound));
+        json_obj_set(e, "unt_m", json_new_num((int64_t)ce->units_mismatches));
+        json_obj_set(e, "unt_s", json_new_num((int64_t)ce->units_shape_dims));
+        json_obj_set(e, "unt_d", json_new_num((int64_t)ce->units_duplicates));
         json_obj_set(e, "rsrc_u", json_new_num((int64_t)ce->rsrc_release_unknown));
         json_obj_set(e, "ex_r", json_new_num((int64_t)ce->ex_ran));
         json_obj_set(e, "ex_f", json_new_num((int64_t)ce->ex_funcs));
@@ -1114,6 +1128,13 @@ static void cache_replay_into(const myc_cache_entry *e, myc_result *res)
     res->rsrc_leaks = e->rsrc_leaks;
     res->rsrc_double_releases = e->rsrc_double_releases;
     res->rsrc_release_unknown = e->rsrc_release_unknown;
+    /* Fase 5 (SOL-11): Units / Shape / Provenance (replay identik counts). */
+    res->units_ran = e->units_ran;
+    res->units_annotations = e->units_annotations;
+    res->units_unbound = e->units_unbound;
+    res->units_mismatches = e->units_mismatches;
+    res->units_shape_dims = e->units_shape_dims;
+    res->units_duplicates = e->units_duplicates;
     res->ran_exhaustive = e->ex_ran;
     res->exhaustive_funcs = e->ex_funcs;
     res->exhaustive_cases = e->ex_cases;
@@ -1557,6 +1578,13 @@ void myc_cache_store(const myc_request *req, const myc_result *res,
     ne->rsrc_leaks = res->rsrc_leaks;
     ne->rsrc_double_releases = res->rsrc_double_releases;
     ne->rsrc_release_unknown = res->rsrc_release_unknown;
+    /* Fase 5 (SOL-11): Units / Shape / Provenance (replay identik counts). */
+    ne->units_ran = res->units_ran;
+    ne->units_annotations = res->units_annotations;
+    ne->units_unbound = res->units_unbound;
+    ne->units_mismatches = res->units_mismatches;
+    ne->units_shape_dims = res->units_shape_dims;
+    ne->units_duplicates = res->units_duplicates;
     ne->ex_ran = res->ran_exhaustive;
     ne->ex_funcs = res->exhaustive_funcs;
     ne->ex_cases = res->exhaustive_cases;

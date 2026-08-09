@@ -121,6 +121,10 @@ typedef struct {
     int   rsrc_ran, rsrc_pairs, rsrc_acquires, rsrc_releases;
     int   rsrc_transferred, rsrc_leaks, rsrc_double_releases;
     int   rsrc_release_unknown;
+    /* Fase 5 (SOL-11): Units / Shape / Provenance (observasi; report teks
+     * + finding detail TIDAK di-cache -- replay hanya punya counts). */
+    int   units_ran, units_annotations, units_unbound;
+    int   units_mismatches, units_shape_dims, units_duplicates;
     /* Fase 5 A3 (--exhaustive): hasil enumerasi penuh domain. */
     int   ex_ran, ex_funcs, ex_cases, ex_skip, ex_laund;
     long  ex_points;

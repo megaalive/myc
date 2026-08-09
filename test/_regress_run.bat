@@ -118,7 +118,7 @@ myc.exe canary list > %OUT% 2>&1
 findstr /C:"11 canary untuk 9 backend" %OUT% >nul && echo [OK] Fase 6 canary registry lengkap || echo [WARN] Fase 6 canary registry tidak lengkap
 del %OUT%
 echo --- self-dogfooding: semua source myc harus OK
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c) do (
   echo === %%f
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%
@@ -135,7 +135,7 @@ findstr /C:"stderr_text" %OUT% >nul && echo [WARN] --json-summary seharusnya tan
 findstr /C:"fingerprint" %OUT% >nul && echo [WARN] --json-summary seharusnya tanpa fingerprint || echo [OK] --json-summary tanpa fingerprint
 del %OUT%
 echo --- run fixtures (--run) harus RUNTIME_VIOLATION utk bad_run*
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c) do (
   echo === %%f
   myc.exe check "%%f" --run > %OUT%
   findstr /B /C:"verdict:" /C:"assurance:" %OUT%
@@ -154,13 +154,13 @@ findstr /B /C:"verdict:" /C:"assurance:" %OUT%
 myc.exe check dogfood\dogfood_tilemap.c --run > %OUT%
 findstr /B /C:"verdict:" /C:"assurance:" %OUT%
 echo --- prove fixtures (--prove): ok_prove harus L2, bad_prove harus PROVE_VIOLATION
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c) do (
   echo === %%f
   myc.exe check "%%f" --prove > %OUT%
   findstr /B /C:"verdict:" /C:"assurance:" /C:"prove:" /C:"  alarms:" %OUT%
 )
 echo --- checked fixtures (--checked): ok_checked harus L4, bad_checked harus COMPILE_ERROR
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c) do (
   echo === %%f
   myc.exe check "%%f" --checked > %OUT%
   findstr /B /C:"verdict:" /C:"assurance:" /C:"checked:" /C:"  build_ok:" %OUT%
@@ -213,7 +213,7 @@ if exist test\_parity_prod.exe if exist test\_parity_ck.exe (
 del test\_parity_prod.exe test\_parity_ck.exe test\_parity_prod.txt test\_parity_ck.txt 2>nul
 del %OUT%
 echo --- filc fixtures (--filc): di-skip bila Fil-C tak tersedia (non-blocking)
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c) do (
   echo === %%f
   myc.exe check "%%f" --filc > %OUT%
   findstr /B /C:"verdict:" /C:"assurance:" /C:"filc:" /C:"  panics:" %OUT%
@@ -403,7 +403,7 @@ if not defined REC1 echo [WARN] receipt tidak terbaca
 if defined REC1 if "%REC1%"=="%REC2%" echo [OK] receipt deterministik lintas-run, CI-portabel
 if defined REC1 if not "%REC1%"=="%REC2%" echo [WARN] receipt tidak deterministik: %REC1% vs %REC2%
 echo --- driver fixtures (D2.2, --driver): ok_driver harus OK, bad_driver_oob harus DRIVER_VIOLATION
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c) do (
   echo === %%f
   myc.exe check "%%f" --driver > %OUT%
   findstr /B /C:"verdict:" /C:"assurance:" /C:"driver:" /C:"  funcs:" /C:"  cases:" %OUT%
@@ -560,7 +560,7 @@ findstr /C:"7 perubahan" %TEMP%\myc_abi_d.txt >nul && echo [OK] abi: delta 7 bar
 findstr /C:"MEMBER Point z off=8" %TEMP%\myc_abi_d.txt >nul && echo [OK] abi: offset member baru terdeteksi || echo [FAIL] abi: offset member baru tidak terdeteksi
 myc.exe check test\fixtures\abi_stable.c --abi --no-cache --json-summary > %OUT% 2>&1
 findstr /C:"\"abi\":{\"ran\":true,\"structs\":3" %OUT% >nul && echo [OK] abi: check --abi masuk JSON summary || echo [FAIL] abi: JSON summary abi hilang
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\abi_tx_reject.exe test\abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c > %TEMP%\myc_abi_build.txt 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\abi_tx_reject.exe test\abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c > %TEMP%\myc_abi_build.txt 2>&1
 if exist test\abi_tx_reject.exe (
   test\abi_tx_reject.exe >nul 2>&1 && echo [OK] abi: ABI drift ditolak dalam transaction - exit criteria SOL-14 || echo [FAIL] abi: transaction tidak menolak ABI drift
   del test\abi_tx_reject.exe
@@ -587,6 +587,20 @@ findstr /C:"transfer=1" %OUT% >nul && echo [OK] resource: resource ditransfer (r
 myc.exe check test\fixtures\resource_leak.c --no-cache --json-summary > %OUT% 2>&1
 findstr /C:"\"verdict\":\"OK\"" %OUT% >nul && echo [OK] resource: temuan TIDAK menurunkan verdict (NON-blocking) || echo [FAIL] resource: verdict berubah oleh observasi ledger
 findstr /C:"\"resource\":{\"ran\":true" %OUT% >nul && echo [OK] resource: resource masuk JSON summary || echo [FAIL] resource: tidak masuk JSON summary
+del %OUT%
+echo --- Fase 5 (SOL-11): Units / Shape / Provenance Contracts (//@ unit)
+set OUT=%TEMP%\myc_units_out.txt
+myc.exe units test\fixtures\units_clean.c > %OUT% 2>&1
+findstr /C:"0 unbound, 0 unit-mismatch, 0 shape-dim, 0 dup-conflict" %OUT% >nul && echo [OK] units: fixture bersih 0 temuan || echo [FAIL] units: fixture bersih memunculkan temuan
+myc.exe units test\fixtures\units_broken.c > %OUT% 2>&1
+findstr /C:"1 unbound" %OUT% >nul && echo [OK] units: unbound identifier terdeteksi || echo [FAIL] units: unbound tidak terdeteksi
+findstr /C:"1 unit-mismatch" %OUT% >nul && echo [OK] units: unit mismatch pada assignment || echo [FAIL] units: unit mismatch tidak terdeteksi
+findstr /C:"2 shape-dim" %OUT% >nul && echo [OK] units: shape-dim capacity vs length || echo [FAIL] units: shape_dim tidak terdeteksi
+findstr /C:"2 dup-conflict" %OUT% >nul && echo [OK] units: dup annotation ganda || echo [FAIL] units: dup tidak terdeteksi
+myc.exe check test\fixtures\units_broken.c --no-cache --json-summary > %OUT% 2>&1
+findstr /C:"\"verdict\":\"OK\"" %OUT% >nul && echo [OK] units: temuan TIDAK menurunkan verdict (NON-blocking) || echo [FAIL] units: verdict berubah oleh observasi units
+myc.exe check test\fixtures\units_clean.c --no-cache --json-summary > %OUT% 2>&1
+findstr /C:"\"units\":{\"ran\":true" %OUT% >nul && echo [OK] units: units masuk JSON summary || echo [FAIL] units: tidak masuk JSON summary
 del %OUT%
 echo --- Fase 0: Golden Schema + Malformed-Input (myc.result.v1)
 where bash >nul 2>&1

@@ -54,6 +54,7 @@ Output `myc check <file> [flags] --json-summary` adalah satu objek JSON:
 | `state_machine` | obj | ghost state machine (Fase 5, SOL-13): `states`/`events`/`transitions`/`findings` — observasi NON-blocking dari `//@ sm` |
 | `abi` | obj | ABI/FFI Surface Certificate (Fase 5, SOL-14): `ran`/`structs`/`enums`/`symbols`/`changed`/`delta`/`target`/`header_sha`/`snapshot`/`delta_text` — observasi NON-blocking (hanya saat `--abi`); `snapshot` = teks "# myc abi v1", `delta` = jumlah baris ABI berubah vs referensi (HEADER sha diabaikan) |
 | `resource` | obj | Resource Linearity Ledger (Fase 5, SOL-12): `ran`/`pairs`/`acquires`/`releases`/`transferred`/`leaks`/`double_releases`/`release_unknown`/`findings`/`report` — observasi NON-blocking dari profil acquire→release (default + `//@ resource`); `findings[]` = `{kind,line,text,witness}`, temuan: leaked / double_release / release_unknown; verdict TIDAK pernah turun karenanya |
+| `units` | obj | Units/Shape/Provenance Contracts (Fase 5, SOL-11): `ran`/`annotations`/`unbound`/`unit_mismatches`/`shape_dims`/`duplicates`/`findings`/`report` — observasi NON-blocking dari `//@ unit|shape|provenance|endian`; `findings[]` = `{kind,line,text,witness}`, temuan: unbound / unit_mismatch / shape_dim / dup_conflict; verdict TIDAK pernah turun karenanya |
 | `lint_observations` | list | observasi lint ber-confidence NON-blocking |
 | `lint_embedded_hits` | list | hit pola lint ter-embed |
 | `assumptions` | list | ledger asumsi (A1) |
@@ -112,6 +113,7 @@ Output `myc check <file> [flags] --agent`:
 | 2026-08-08 | `myc.result.v1` | Field `state_machine` ditambah (additive, Fase 5 SOL-13 State-Machine Ghosting) — objek observasi NON-blocking; tidak mengubah makna field lama. |
 | 2026-08-08 | `myc.result.v1` | Field `abi` ditambah (additive, Fase 5 SOL-14 ABI Certificate) — objek observasi NON-blocking; tidak mengubah makna field lama. |
 | 2026-08-09 | `myc.result.v1` | Field `resource` ditambah (additive, Fase 5 SOL-12 Resource Linearity Ledger) — objek observasi NON-blocking (`pairs/acquires/releases/transferred/leaks/double_releases/release_unknown/findings/report`); tidak mengubah makna field lama. |
+| 2026-08-09 | `myc.result.v1` | Field `units` ditambah (additive, Fase 5 SOL-11 Units/Shape/Provenance) — objek observasi NON-blocking (`annotations/unbound/unit_mismatches/shape_dims/duplicates/findings/report`); tidak mengubah makna field lama. |
 
 ## Aturan perubahan (untuk pengembang)
 

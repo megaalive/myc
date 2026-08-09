@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c state.c abi.c resource.c; do
+         agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c state.c abi.c resource.c units.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -756,7 +756,7 @@ else
     fail "Fase 5 abi: check --abi tidak masuk JSON summary"
 fi
 # Exit criteria SOL-14: ABI drift ditolak dalam transaction.
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/abi_tx_reject test/abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c > /dev/null 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/abi_tx_reject test/abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c > /dev/null 2>&1
 if ./test/abi_tx_reject > /dev/null 2>&1; then
     note "Fase 5 abi: ABI drift ditolak dalam transaction (exit criteria)"
 else
@@ -810,6 +810,50 @@ if ./myc check test/fixtures/resource_leak.c --no-cache --json-summary 2>&1 | gr
     note "Fase 5 resource: resource masuk JSON summary"
 else
     fail "Fase 5 resource: tidak masuk JSON summary"
+fi
+
+# --- 6k. Fase 5 (SOL-11): Units / Shape / Provenance Contracts ---
+# Fixture bersih: annotation konsisten => 0 temuan.
+if ./myc units test/fixtures/units_clean.c 2>&1 | grep -qF "0 unbound, 0 unit-mismatch, 0 shape-dim, 0 dup-conflict"; then
+    note "Fase 5 units: fixture bersih = 0 temuan (clean)"
+else
+    fail "Fase 5 units: fixture bersih memunculkan temuan"
+fi
+# Fixture rusak: unbound identifier terdeteksi (data_len tak ada di kode).
+if ./myc units test/fixtures/units_broken.c 2>&1 | grep -qF "1 unbound"; then
+    note "Fase 5 units: identifier annotation tak terikat (unbound) terdeteksi"
+else
+    fail "Fase 5 units: unbound tidak terdeteksi"
+fi
+# Unit mismatch pada assignment (count(elements) = raw_len(bytes)).
+if ./myc units test/fixtures/units_broken.c 2>&1 | grep -qF "1 unit-mismatch"; then
+    note "Fase 5 units: unit mismatch pada assignment terdeteksi"
+else
+    fail "Fase 5 units: unit mismatch tidak terdeteksi"
+fi
+# Shape-dim: capacity vs length beda unit (bytes vs elements).
+if ./myc units test/fixtures/units_broken.c 2>&1 | grep -qF "2 shape-dim"; then
+    note "Fase 5 units: shape_dim capacity vs length terdeteksi"
+else
+    fail "Fase 5 units: shape_dim tidak terdeteksi"
+fi
+# Dup: unit count elements lalu bytes + endian little lalu big.
+if ./myc units test/fixtures/units_broken.c 2>&1 | grep -qF "2 dup-conflict"; then
+    note "Fase 5 units: konflik annotation ganda (dup) terdeteksi"
+else
+    fail "Fase 5 units: dup tidak terdeteksi"
+fi
+# Units non-blocking: verdict tetap OK walau ada temuan unit.
+if ./myc check test/fixtures/units_broken.c --no-cache --json-summary 2>&1 | grep -qF '"verdict":"OK"'; then
+    note "Fase 5 units: temuan unit TIDAK menurunkan verdict (NON-blocking)"
+else
+    fail "Fase 5 units: verdict berubah oleh observasi unit"
+fi
+# Units masuk JSON summary.
+if ./myc check test/fixtures/units_clean.c --no-cache --json-summary 2>&1 | grep -qF '"units":{"ran":true'; then
+    note "Fase 5 units: units masuk JSON summary"
+else
+    fail "Fase 5 units: tidak masuk JSON summary"
 fi
 
 # --- 7a. Fase 0 Golden Schema + Malformed-Input (myc.result.v1) ---

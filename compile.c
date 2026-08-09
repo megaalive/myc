@@ -36,6 +36,7 @@
 #include "state.h"
 #include "abi.h"
 #include "resource.h"
+#include "units.h"
 #include "proc.h"
 #include "prove.h"
 #include "report.h"
@@ -913,6 +914,13 @@ void myc_pipeline(const myc_request *req, myc_result *res)
      * double-released | transferred | unknown per fungsi. NON-blocking
      * observasi teks deterministik; verdict TIDAK pernah turun. */
     myc_resource_scan(src, srclen, res);
+
+    /* --- Fase 5 (SOL-11): Units / Shape / Provenance Contracts ---
+     * Annotation ringan (unit, shape capacity/length, provenance,
+     * endian) ditelusuri lewat assignment intra-fungsi; temuan
+     * unbound/unit-mismatch/shape-dim/dup. NON-blocking observasi teks
+     * deterministik; verdict TIDAK pernah turun. */
+    myc_units_scan(src, srclen, res);
 
     /* --- Fase 5, SOL-14 (--abi): ABI/FFI Surface Certificate ---
      * Snapshot exported symbols + struct size/align/offset + enum +

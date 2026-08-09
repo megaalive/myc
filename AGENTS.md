@@ -1,4 +1,4 @@
-# AGENTS.md — Aturan proyek myc
+﻿# AGENTS.md â€” Aturan proyek myc
 
 Dokumen ini hanya memuat **aturan stabil**. Sejarah implementasi dan audit
 (MYC-AUDIT-001..030 dan fase pengembangan) ada di
@@ -6,7 +6,7 @@ Dokumen ini hanya memuat **aturan stabil**. Sejarah implementasi dan audit
 
 ## Tujuan & filosofi (keputusan 2026-08-01)
 
-**Tujuan myc adalah memory-safety dan minimnya bug yang ditimbulkannya —
+**Tujuan myc adalah memory-safety dan minimnya bug yang ditimbulkannya â€”
 BUKAN membatasi library yang boleh dipakai user.**
 
 - User memakai **banyak agent harness yang berbeda** dan **model yang
@@ -28,7 +28,7 @@ Konsekuensi desain:
 ## Non-negotiable trust rules
 
 1. **Heuristik teks = observasi ber-confidence, non-blocking.** Lint,
-   negative-space, scanner, dan contract adalah observasi — tidak pernah
+   negative-space, scanner, dan contract adalah observasi â€” tidak pernah
    menurunkan verdict.
 2. **Satu-satunya gate hard = bukti semantik.** Gate gcc (tier memori
    `-Werror`, `-fanalyzer`), sanitizer runtime (ASan/UBSan), proof (Eva),
@@ -36,26 +36,26 @@ Konsekuensi desain:
 3. **Jangan pernah mengklaim lebih dari bukti** (claim compiler):
    `L2 (EVA)` bukan "L2 PROVEN"; `L5 (FILC)` bukan "L5 FULL";
    exhaustive hanya untuk domain yang dideklarasikan.
-4. **Verification gap harus terlihat, bukan kesunyian** — gunakan
+4. **Verification gap harus terlihat, bukan kesunyian** â€” gunakan
    `--require-complete`; backend tak tersedia = `UNAVAILABLE` + debt.
-5. **Deterministik**: input + tool + scenario sama → receipt sama.
+5. **Deterministik**: input + tool + scenario sama â†’ receipt sama.
 
 ## Pipeline & gate
 
 ```
-scan includes (whitelist, non-blocking) → lint heuristik ber-confidence
-→ gcc -E → scan marker "# 1" depth-2 → scan denylist calls (non-blocking)
-→ gcc -c -O2 -Wall -Wextra -Werror -pedantic + memory tier        [HARD]
-→ --analyze   : gcc -fanalyzer
-→ --run       : clang ASan/UBSan (non-spoofable via log_path report)
-→ --metamorphic : -O0 vs -O2 (deteksi UB/toolchain-sensitive)
-→ --checked   : MYC_BUF fat-pointer (L4 SPATIAL)
-→ --prove     : Frama-C Eva (L2 EVA)
-→ --filc      : Fil-C (L5)
-→ --driver    : harness kasus tepi dari kontrak
-→ --negative  : observasi pola hilang (confidence 0.55–0.98)
-→ --quorum    : bandingkan semua backend yang diminta
-→ --require-complete : gap verifikasi = kegagalan CI (MYC-INCOMPLETE-*)
+scan includes (whitelist, non-blocking) â†’ lint heuristik ber-confidence
+â†’ gcc -E â†’ scan marker "# 1" depth-2 â†’ scan denylist calls (non-blocking)
+â†’ gcc -c -O2 -Wall -Wextra -Werror -pedantic + memory tier        [HARD]
+â†’ --analyze   : gcc -fanalyzer
+â†’ --run       : clang ASan/UBSan (non-spoofable via log_path report)
+â†’ --metamorphic : -O0 vs -O2 (deteksi UB/toolchain-sensitive)
+â†’ --checked   : MYC_BUF fat-pointer (L4 SPATIAL)
+â†’ --prove     : Frama-C Eva (L2 EVA)
+â†’ --filc      : Fil-C (L5)
+â†’ --driver    : harness kasus tepi dari kontrak
+â†’ --negative  : observasi pola hilang (confidence 0.55â€“0.98)
+â†’ --quorum    : bandingkan semua backend yang diminta
+â†’ --require-complete : gap verifikasi = kegagalan CI (MYC-INCOMPLETE-*)
 ```
 
 ## Module ownership
@@ -71,6 +71,7 @@ scan includes (whitelist, non-blocking) → lint heuristik ber-confidence
 | `state.c` | State-Machine Ghosting: ghost machine dari `//@ sm state/event/trans`, deteksi sink/unreachable/no-recovery/undeclared/unused + witness urutan event BFS (Fase 5, SOL-13) |
 | `abi.c` | ABI/FFI Surface Certificate: snapshot exported symbols + struct size/align/offset (helper program sizeof/offsetof) + enum + target triple + header digest; ABI delta tak diminta = hard transaction failure (Fase 5, SOL-14, `--abi`, `myc abi`) |
 | `resource.c` / `resource.h` | Resource Linearity Ledger: profil acquire->release (default POSIX/Win32 + kustom `//@ resource ACQ -> REL;`) ditelusuri per fungsi => leaked/double-release/transfer/unknown; observasi teks NON-blocking, verdict TIDAK pernah turun (Fase 5, SOL-12, `myc resource`) |
+| `units.c` / `units.h` | Units / Shape / Provenance Contracts: annotation ringan `//@ unit|shape|provenance|endian` ditelusuri deterministik (assignment mismatch, shape-dim, unbound identifier, annotation bertentangan); observasi teks NON-blocking, verdict TIDAK pernah turun (Fase 5, SOL-11, `myc units`) |
 | `negative.c` | Negative-space: mining "pola yang hilang" |
 | `lint.c` | Heuristik memory-safety ber-confidence (non-blocking) + `why`/`fix` |
  | `gate.c` | Status gate bertipe, evidence, claim compiler, debt, receipt |
@@ -107,7 +108,7 @@ scan includes (whitelist, non-blocking) → lint heuristik ber-confidence
 ## Dogfooding (wajib dipertahankan)
 
 1. **Self-dogfooding**: seluruh source myc harus `verdict: OK` via
-   `./myc check <file>` — dipertahankan di setiap perubahan.
+   `./myc check <file>` â€” dipertahankan di setiap perubahan.
 2. **Dogfooding lintas-program**: tool di `dogfood/` (ring buffer MYC_BUF,
    parser config, tilemap flood-fill) sebagai uji nyata jalur OK.
 
@@ -132,9 +133,9 @@ Setiap perubahan ke kode inti myc **wajib** melewati checklist ini:
       `ledger.c`, `transaction.c`, `witness.c`, `agent.c`, `frontier.c`,
       `observation.c`, `causal.c`, `nextbest.c`, `cache.c`, `context.c`,
       `budget.c`, `assume.c`).
-6. **Git hygiene**: `git diff --check` — tidak ada whitespace/CRLF issue.
+6. **Git hygiene**: `git diff --check` â€” tidak ada whitespace/CRLF issue.
 7. **Release process** (wajib untuk setiap release):
-   - Jalankan `bash release-guard.sh` — verifikasi `master` sudah di-push,
+   - Jalankan `bash release-guard.sh` â€” verifikasi `master` sudah di-push,
      CI hijau untuk `master`, workflow release siap.
    - Buat tag hanya setelah semua cek di atas lolos: `git tag vX.Y.Z` +
      `git push --tags`; workflow `release.yml` build binary + buat Release.

@@ -314,6 +314,18 @@ void myc_report_text(const myc_result *res)
         if (res->rsrc_report)
             printf("%s", res->rsrc_report);
     }
+    /* Fase 5 (SOL-11): Units / Shape / Provenance contracts (observasi). */
+    if (res->units_annotations > 0 || res->units_unbound > 0 ||
+        res->units_mismatches > 0 || res->units_shape_dims > 0 ||
+        res->units_duplicates > 0) {
+        printf("units (SOL-11): %d annotation, %d unbound, %d mismatch, "
+               "%d shape-dim, %d dup (observasi, NON-blocking)\n",
+               res->units_annotations, res->units_unbound,
+               res->units_mismatches, res->units_shape_dims,
+               res->units_duplicates);
+        if (res->units_report)
+            printf("%s", res->units_report);
+    }
     /* Fase 5 B4 (DS-08): kandidat kontrak dari komentar biasa (observasi). */
     if (res->harvest_candidates > 0) {
         printf("harvest (B4): %d kandidat komentar-biasa, %d validated, "
@@ -992,6 +1004,30 @@ char *myc_result_to_json(const myc_result *res)
     json_sb_puts(&b, "],\"report\":");
     json_sb_escape(&b, res->rsrc_report ? res->rsrc_report : "");
     json_sb_puts(&b, "},");
+    /* Fase 5 (SOL-11): Units / Shape / Provenance (observasi NON-blocking). */
+    json_sb_printf(&b, "\"units\":{\"ran\":%s,\"annotations\":%d,"
+                       "\"unbound\":%d,\"unit_mismatches\":%d,"
+                       "\"shape_dims\":%d,\"duplicates\":%d,\"findings\":[",
+                   res->units_ran ? "true" : "false",
+                   res->units_annotations, res->units_unbound,
+                   res->units_mismatches, res->units_shape_dims,
+                   res->units_duplicates);
+    for (i = 0; i < MYC_UNITS_MAX_FINDINGS; i++) {
+        const myc_units_finding *f = &res->units_finding_list[i];
+        if (f->text == NULL && f->witness == NULL)
+            break;
+        if (i > 0)
+            json_sb_puts(&b, ",");
+        json_sb_printf(&b, "{\"kind\":\"%s\",\"line\":%d,\"text\":",
+                       myc_units_finding_name(f->kind), f->line);
+        json_sb_escape(&b, f->text);
+        json_sb_printf(&b, ",\"witness\":");
+        json_sb_escape(&b, f->witness);
+        json_sb_puts(&b, "}");
+    }
+    json_sb_puts(&b, "],\"report\":");
+    json_sb_escape(&b, res->units_report ? res->units_report : "");
+    json_sb_puts(&b, "},");
     /* Fase 5 B4 (DS-08): harvest kandidat kontrak dari komentar biasa. */
     json_sb_printf(&b, "\"harvest\":{\"candidates\":%d,\"validated\":%d,"
                        "\"unbound\":%d,\"report\":",
@@ -1666,11 +1702,19 @@ void myc_report_json_summary(const myc_result *res)
     json_sb_printf(&b, "\"resource\":{\"ran\":%s,\"pairs\":%d,"
                        "\"acquires\":%d,\"releases\":%d,\"transferred\":%d,"
                        "\"leaks\":%d,\"double_releases\":%d,"
-                       "\"release_unknown\":%d},",
+                        "\"release_unknown\":%d},",
                    res->rsrc_ran ? "true" : "false", res->rsrc_pairs,
                    res->rsrc_acquires, res->rsrc_releases,
                    res->rsrc_transferred, res->rsrc_leaks,
                    res->rsrc_double_releases, res->rsrc_release_unknown);
+    /* Fase 5 (SOL-11): Units / Shape / Provenance (observasi). */
+    json_sb_printf(&b, "\"units\":{\"ran\":%s,\"annotations\":%d,"
+                       "\"unbound\":%d,\"unit_mismatches\":%d,"
+                       "\"shape_dims\":%d,\"duplicates\":%d},",
+                   res->units_ran ? "true" : "false",
+                   res->units_annotations, res->units_unbound,
+                   res->units_mismatches, res->units_shape_dims,
+                   res->units_duplicates);
     /* Fase 5 B3 (DS-07): coaching items ringkas. */
     json_sb_printf(&b, "\"coaching\":[");
     for (i = 0; i < res->coaching_count; i++) {

@@ -2464,3 +2464,35 @@ Menutup task Fase 5 "Resource linearity ledger" (roadmap 7.13):
   flags + MSYS2 build.bat); `resource.c` masuk build.sh/build.bat/
   _audit018.sh/ci.yml/_ci_linux.sh/_regress_run.bat dogfood list.
   Plan 74/81 (SOL-12 selesai; sisa Fase 5 tugas SOL-11 units/shape).
+
+### (27) Fase 5 — Units / Shape / Provenance Contracts — `units.c`/`units.h` (SOL-11)
+
+Menutup task Fase 5 "Units / shape / provenance contracts":
+
+- **Annotation ringan** di atas type system C: `//@ unit` (bytes vs
+  elements, dst), `//@ shape <id> capacity=<id> length=<id>`,
+  `//@ provenance <id> owned|borrowed|static`, `//@ endian <id> <little|big>`.
+  Memberi model vocabulary semantik yang C type system tidak miliki.
+- **Tracking subset deterministik** (analisis teks, bukan AST; NON-blocking;
+  verdict TIDAK pernah turun): unit disebarkan lewat assignment `a = b`
+  intra-file (sisi bertanda -> sisi belum, keyword C di-skip); `SHAPE_DIM`
+  bila capacity & length sebuah shape punya unit berbeda dimensi;
+  `UNBOUND` bila identifier annotation tak pernah muncul di source
+  (kecuali di komentar/string annotation itu sendiri); `DUP_CONFLICT`
+  bila annotation bertentangan (unit `count` diubah / endian diubah).
+- **Subcommand `myc units <file>`**: cetak report langsung (mirror
+  cmd_rsrc). Juga berjalan otomatis di `check` (setelah `myc_resource_scan`).
+- **Pipeline**: output teks + JSON full (`"units":{ ran, annotations,
+  unbound, unit_mismatches, shape_dims, duplicates, findings[], report }`)
+  + JSON summary (counts saja — additive di myc.result.v1, tercatat di
+  docs/result-schema.md); replay cache 6 counts (unt_r/a/u/m/s/d), report
+  & findings TIDAK di-cache (sama seperti resource).
+- **Fixture + CI**: `test/fixtures/units_clean.c` (0 temuan),
+  `units_broken.c` (1 unbound, 1 unit-mismatch, 2 shape-dim, 2 dup).
+  CI Linux 6k + Windows blok units: hasil fixtures + NON-blocking verdict
+  (OK) + JSON summary berisi units.
+- Validasi: self-dogfood `units.c` verdict OK; -Werror bersih (Linux flags
+  + MSYS2 build.bat); `units.c` masuk build.sh/build.bat/_audit018.sh/
+  ci.yml/_ci_linux.sh/_regress_run.bat dogfood list.
+  Plan 75/81 (SOL-11 & SOL-12 selesai; sisa Fase 5 per plan di
+  gptsol_deepseek-plan.md).

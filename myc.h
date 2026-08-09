@@ -517,6 +517,43 @@ typedef struct {
 
 const char *myc_rsrc_finding_name(myc_rsrc_finding_kind k);
 
+/* --- Fase 5, SOL-11: Units, Shape, dan Provenance Contracts ---
+ * Annotation ringan untuk memberi model vocabulary semantik yang tidak
+ * dimiliki type system C: bytes vs elements, capacity vs length, owned
+ * vs borrowed, host-endian vs wire-endian.
+ *
+ *   //@ unit        <ident> <unit>          -- span semantic satu kuantitas
+ *   //@ shape       <ident> capacity=K length=L [end=INCL|EXCL]
+ *   //@ provenance  <ident> owned|borrowed|static
+ *   //@ endian      <ident> little|big
+ *
+ * myc$ melacak subset sederhana secara deterministik (observasi
+ * NON-blocking, verdict tidak pernah turun). Temuan:
+ *   UNBOUND          = identifier annotation tidak pernah muncul di code.
+ *   UNIT_MISMATCH    = di dalam body, `dest = src` dengan unit berbeda.
+ *   SHAPE_DIM        = capacity dan length shape punya unit beda dimensi.
+ *   DUP_CONFLICT     = annotation berlawanan utk id yang sama (mis. unit
+ *                      bytes lalu elements; endian little lalu big). */
+#define MYC_UNITS_MAX_ANNS    64
+#define MYC_UNITS_MAX_FINDINGS 32
+#define MYC_UNITS_NAME_LEN    64
+
+typedef enum {
+    MYC_UNITS_UNBOUND = 0,    /* ident annotation tak terikat di source */
+    MYC_UNITS_UNIT_MISMATCH,  /* `lhs = rhs` beda unit di dalam fungsi  */
+    MYC_UNITS_SHAPE_DIM,      /* capacity vs length beda dimensi        */
+    MYC_UNITS_DUP_CONFLICT    /* dua annotasi bertentangan pada id sama  */
+} myc_units_finding_kind;
+
+typedef struct {
+    myc_units_finding_kind kind;
+    char *text;       /* arena: penjelasan */
+    char *witness;    /* arena: konteks (mis. "x = y @12@|L" -> label) */
+    int   line;
+} myc_units_finding;
+
+const char *myc_units_finding_name(myc_units_finding_kind k);
+
 /* Satu kasus uji driver ter-record (roadmap 7.5 "case record").
  * Merekam INPUT yang benar-benar diuji — parameter values + allocation
  * sizes — plus status eksekusi (guard requires lolos / dilewati).
@@ -1022,9 +1059,24 @@ typedef struct {
     int            rsrc_leaks;
     int            rsrc_double_releases;
     int            rsrc_release_unknown;
-    char          *rsrc_report;                /* arena */
+char          *rsrc_report;                /* arena */
     myc_rsrc_finding rsrc_finding_list[MYC_RSRC_MAX_FINDINGS];
     char          *abi_header_sha;             /* arena */
+
+    /* --- Fase 5, SOL-11: Units / Shape / Provenance Contracts ---
+     * units_ran=1 setelah myc_units_scan (observasi NON-blocking teks).
+     * units_annotations = ttl annotation //@ unit|shape|provenance|endian;
+     * units_unbound/mismatches/shape_dims/duplicates = hitungan temuan.
+     * units_report (arena) = ringkasan per fungsi + per annotation;
+     * temuan rinci di units_finding_list (arena). Deterministik. */
+    int            units_ran;
+    int            units_annotations;
+    int            units_unbound;
+    int            units_mismatches;
+    int            units_shape_dims;
+    int            units_duplicates;
+    char          *units_report;               /* arena */
+    myc_units_finding units_finding_list[MYC_UNITS_MAX_FINDINGS];
 
     /* --- Fase 5, B4 (Comments-as-Contracts, DS-08) ---
      * Panen kandidat kontrak dari komentar BIASA (bukan //@):
