@@ -254,7 +254,8 @@
     "--require-assumptions-closed",
     "--assumption-ack",
     "--perturb",
-    "--thread-probe"
+    "--thread-probe",
+    "--profile"
   ],
   "mcp_tools": [
     "check",

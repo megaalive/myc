@@ -756,7 +756,7 @@ else
     fail "Fase 5 abi: check --abi tidak masuk JSON summary"
 fi
 # Exit criteria SOL-14: ABI drift ditolak dalam transaction.
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/abi_tx_reject test/abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c > /dev/null 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/abi_tx_reject test/abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c profile.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c > /dev/null 2>&1
 if ./test/abi_tx_reject > /dev/null 2>&1; then
     note "Fase 5 abi: ABI drift ditolak dalam transaction (exit criteria)"
 else
@@ -855,6 +855,61 @@ if ./myc check test/fixtures/units_clean.c --no-cache --json-summary 2>&1 | grep
 else
     fail "Fase 5 units: tidak masuk JSON summary"
 fi
+
+# --- 6l. Fase 7 (SOL-20): Model/Harness Error Fingerprint ---
+# Opt-in: tanpa --profile / env, TIDAK ada file profil dibuat.
+rm -rf .myc/profiles
+./myc check test/fixtures/units_clean.c --no-cache > /dev/null 2>&1
+if [ ! -d .myc/profiles ] || [ -z "$(ls -A .myc/profiles 2>/dev/null)" ]; then
+    note "Fase 7 profile: tanpa opt-in, tidak ada profil dibuat"
+else
+    fail "Fase 7 profile: profil dibuat tanpa opt-in"
+fi
+# Opt-in: check dengan --profile membuat agregat + tercatat di list.
+rm -rf .myc/profiles
+./myc check test/fixtures/units_clean.c --no-cache --profile ci-harness > /dev/null 2>&1
+if ./myc profile show ci-harness 2>&1 | grep -qF "id      : ci-harness"; then
+    note "Fase 7 profile: profil tercatat via --profile"
+else
+    fail "Fase 7 profile: profil tidak tercatat"
+fi
+# env MYC_PROFILE_ID juga opt-in (tanpa flag).
+rm -rf .myc/profiles
+MYC_PROFILE_ID=ci-env ./myc check test/fixtures/units_clean.c --no-cache > /dev/null 2>&1
+if ./myc profile show ci-env 2>&1 | grep -qF "checks  : 1"; then
+    note "Fase 7 profile: env MYC_PROFILE_ID dihormati"
+else
+    fail "Fase 7 profile: env tidak dihormati"
+fi
+# Agregasi: 2 check => checks=2 (cache-hit pun dihitung = permintaan check).
+./myc check test/fixtures/units_clean.c --no-cache --profile ci-harness > /dev/null 2>&1
+./myc check test/fixtures/units_clean.c --no-cache --profile ci-harness > /dev/null 2>&1
+if ./myc profile show ci-harness 2>&1 | grep -qF "checks  : 2"; then
+    note "Fase 7 profile: agregasi antar check bekerja"
+else
+    fail "Fase 7 profile: agregasi tidak bekerja"
+fi
+# NON-blocking: profil tidak mengubah verdict / exit code.
+rm -rf .myc/profiles
+V1=$(./myc check test/fixtures/units_broken.c --no-cache --json-summary 2>&1)
+V2=$(./myc check test/fixtures/units_broken.c --no-cache --profile ci-harness --json-summary 2>&1)
+echo "$V1" | grep -qF '"verdict":"OK"' && echo "$V2" | grep -qF '"verdict":"OK"' \
+    && note "Fase 7 profile: profile NON-blocking (verdict tetap)" \
+    || fail "Fase 7 profile: profil mengubah verdict"
+# --profile id invalid = fail-fast exit 2.
+if ./myc check test/fixtures/units_clean.c --no-cache --profile 'bad id' > /dev/null 2>&1; then
+    fail "Fase 7 profile: id invalid tidak fail-fast"
+else
+    note "Fase 7 profile: id invalid ditolak (exit != 0)"
+fi
+# myc profile reset menghapus profil.
+if ./myc profile reset ci-harness 2>&1 | grep -qF "direset" && \
+   ! ./myc profile show ci-harness > /dev/null 2>&1; then
+    note "Fase 7 profile: reset menghapus profil"
+else
+    fail "Fase 7 profile: reset tidak bekerja"
+fi
+rm -rf .myc/profiles
 
 # --- 7a. Fase 0 Golden Schema + Malformed-Input (myc.result.v1) ---
 if bash test/_schema_golden.sh; then

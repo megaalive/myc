@@ -52,6 +52,7 @@
 #include "state.h"
 #include "resource.h"
 #include "units.h"
+#include "profile.h"
 #include "scenario.h"
 #include "canary.h"
 #include "testaudit.h"
@@ -1110,7 +1111,7 @@ static void usage(void)
     printf(
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
-        "  myc check <file.c> [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache] [--no-assumptions] [--cwd DIR]\n"
+        "  myc check <file.c> [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache] [--no-assumptions] [--cwd DIR] [--profile ID]\n"
         "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--exhaustive] [--stack [--stack-budget N]] [--fuzz [--fuzz-iters N] [--fuzz-seed S]] [--mutate-audit [--mutate-max N]] [--freestanding] [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete] [--scenario NAME [--scenario-file PATH]] [--matrix] [--abi]\n"
         "  myc check <file.c> --divergence   (Fase 4 A2: matriks toolchain {gcc,clang,tcc} x {-O0,-O2}, klasifikasi DS-02)\n"
         "  myc check <file.c> [--require-assumptions-closed] [--assumption-ack id:status,...]   (Fase 4 A1: ledger asumsi portabilitas)\n"
@@ -1144,6 +1145,13 @@ static void usage(void)
         "                        (C5/DS-12: scenario packs -- resep verifikasi\n"
         "                        per domain dari profil JSON; D3: --scenario auto\n"
         "                        menebak resep dari struktur source)\n"
+        "  myc profile list\n"
+        "  myc profile show <id>\n"
+        "  myc profile reset <id>\n"
+        "                        (Fase 7/SOL-20: opt-in Model/Harness Error\n"
+        "                        Fingerprint -- agregat lokal tanpa source;\n"
+        "                        aktif juga via --profile <id> atau\n"
+        "                        env MYC_PROFILE_ID)\n"
         "  myc version\n");
 }
 
@@ -1670,6 +1678,7 @@ int main(int argc, char **argv)
     myc_result  res;
     int         context_budget_tokens = 0;
     int         is_context = 0;
+    const char *profile_id = NULL;   /* Fase 7 (SOL-20): --profile / env */
 
     if (argc < 2) {
         usage();
@@ -1735,6 +1744,60 @@ int main(int argc, char **argv)
             return 2;
         }
         return cmd_units(argv[2]);
+    }
+
+    /* Fase 7 (SOL-20): myc profile list|show <id>|reset <id> —
+     * Model/Harness Error Fingerprint (opt-in, lokal, tanpa source). */
+    if (strcmp(argv[1], "profile") == 0) {
+        char buf[4096];
+        int  rc;
+        if (argc < 3) {
+            fprintf(stderr, "myc: profile membutuhkan `list`, `show <id>`, "
+                            "atau `reset <id>`\n");
+            return 2;
+        }
+        if (strcmp(argv[2], "list") == 0) {
+            rc = myc_profile_list(buf, sizeof(buf));
+            printf("%s", buf);
+            return rc;
+        }
+        if (strcmp(argv[2], "show") == 0) {
+            if (argc < 4) {
+                fprintf(stderr, "myc: profile show membutuhkan <id>\n");
+                return 2;
+            }
+            rc = myc_profile_show(argv[3], buf, sizeof(buf));
+            if (rc == -2) {
+                fprintf(stderr, "myc: id profile invalid\n");
+                return 2;
+            }
+            if (rc == -1) {
+                fprintf(stderr, "myc: profile tak ada: %s\n", argv[3]);
+                return 1;
+            }
+            printf("%s", buf);
+            return 0;
+        }
+        if (strcmp(argv[2], "reset") == 0) {
+            if (argc < 4) {
+                fprintf(stderr, "myc: profile reset membutuhkan <id>\n");
+                return 2;
+            }
+            rc = myc_profile_reset(argv[3]);
+            if (rc == -2) {
+                fprintf(stderr, "myc: id profile invalid\n");
+                return 2;
+            }
+            if (rc == -1) {
+                fprintf(stderr, "myc: profile tak ada: %s\n", argv[3]);
+                return 1;
+            }
+            printf("profile %s direset\n", argv[3]);
+            return 0;
+        }
+        fprintf(stderr, "myc: profile membutuhkan `list`, `show <id>`, "
+                        "atau `reset <id>`\n");
+        return 2;
     }
 
     /* Fase 5 (SOL-14): myc abi snapshot|diff|<f1.c> <f2.c> — ABI/FFI
@@ -1849,6 +1912,14 @@ int main(int argc, char **argv)
 
     /* SOL-22: budget token default untuk `myc context` (8K). */
     context_budget_tokens = 0;
+    /* Fase 7 (SOL-20): fingerprint opt-in diidentifikasi via flag
+     * --profile <id> ATAU env MYC_PROFILE_ID (flag menang atas env). */
+    profile_id = NULL;
+    {
+        const char *pe = getenv("MYC_PROFILE_ID");
+        if (pe && *pe && myc_profile_id_valid(pe))
+            profile_id = pe;
+    }
 
     /* Parse flags. Fase-2 (canonical ingress): unknown flag = error
      * (fail-fast), konsisten dengan reject unknown flag pada MCP server
@@ -1989,6 +2060,23 @@ int main(int argc, char **argv)
                 }
                 req.scenario_file = argv[++i];
                 known = 1;
+            } else if (strcmp(argv[i], "--profile") == 0) {
+                /* Fase 7 (SOL-20): Model/Harness Error Fingerprint.
+                 * Opt-in identifier harness/model. Bila id invalid =
+                 * fail-fast (konsisten MYC-AUDIT-019). */
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "myc: --profile membutuhkan argumen "
+                                    "(id model/harness, alias/hash)\n");
+                    return 2;
+                }
+                if (!myc_profile_id_valid(argv[i + 1])) {
+                    fprintf(stderr, "myc: --profile id invalid (charset "
+                                    "[A-Za-z0-9._-], max %d)\n",
+                            MYC_PROFILE_ID_MAX);
+                    return 2;
+                }
+                profile_id = argv[i + 1];
+                i++; known = 1;
             } else if (strcmp(argv[i], "--matrix") == 0) {
                 /* Fase 5 C4: target matrix bare metal (cross-compiler). */
                 req.matrix = 1;
@@ -2237,6 +2325,11 @@ int main(int argc, char **argv)
             }
         }
         myc_run(&req, &res);
+        /* Fase 7 (SOL-20): fingerprint opt-in. Selalu tercatat bila
+         * --profile/env aktif (cache-hit tetap = permintaan check).
+         * NON-blocking; gagal tulis tanpa dampak pada hasil/exit. */
+        if (profile_id)
+            myc_profile_record(&res, profile_id);
         /* --write-repro: tulis .myc-witness/ repro directory (Fase 1).
          * Harus sebelum free(src) karena membutuhkan source. */
         if (req.write_repro && res.witness) {

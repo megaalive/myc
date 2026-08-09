@@ -2496,3 +2496,49 @@ Menutup task Fase 5 "Units / shape / provenance contracts":
   ci.yml/_ci_linux.sh/_regress_run.bat dogfood list.
   Plan 75/81 (SOL-11 & SOL-12 selesai; sisa Fase 5 per plan di
   gptsol_deepseek-plan.md).
+
+### (28) Fase 7 — Model/Harness Error Fingerprint (SOL-20) — `profile.c`/`profile.h`
+
+DESAIN (Fase 7 #1, "Model/harness error profile opt-in"). Implementasi
+menyusul; masuk sebagai MYC-AUDIT-032.
+
+**Masalah (plan 1455–1476).** Model/harness berbeda punya pola salah yang
+berbeda; satu recipe gate untuk semua membuang waktu. Scheduler Fase 7
+butuh profil lokal yang menjawab: "harness ini cenderung memicu kelas
+finding apa, dan gate mana yang menemukannya?"
+
+**Scope tetap.** Hanya *fingerprint observasional* dari `myc_result`
+(agregasi klas per gate), **tanpa menyimpan source**, opt-in penuh.
+Fix-success/regression/churn/false-positive feedback **ditunda** ke task
+#2 (Trust Calibration Ledger). Scheduler EIG (task #3) memakai file ini
+sebagai input — di luar scope task #1.
+
+**Privacy (exit criteria).** Opt-in (`--profile <id>` / env
+`MYC_PROFILE_ID`), lokal di `.myc/profiles/<id>.json`, tanpa telemetry.
+File hanya berisi: `schema`, `id` (alias/hash dari user), agregat count
+per `gate` (gate_matrix status) dan per `finding_class` (hazard class /
+diag class), plus `checks` total, `checks_ok`, `duration_ms_total`/
+`duration_ms_max` (proksi time/token). **TIDAK pernah** `source_sha256`
+maupun snippet. Kalibrasi rendah (count < N) = observation saja, TIDAK
+pernah menurunkan verdict (trust rule 1 & 3).
+
+**API (profile.h).**
+- `int myc_profile_id_valid(const char *id)` — charset `[A-Za-z0-9._-]`,
+  panjang <= 63 (path-safe, anti-traversal).
+- `void myc_profile_record(const myc_result *res, const char *id)` —
+  load-or-init `.myc/profiles/<id>.json`, update agregat, save.
+  NON-blocking: gagal tulis = dilewati (pola `.myc/assumptions.json`).
+- `int myc_profile_show(const char *id, char *buf, size_t cap)` — laporan
+  teks (0 ok, -1 tak ada, -2 id invalid).
+- `int myc_profile_list(char *buf, size_t cap)` — daftar file profil.
+- `int myc_profile_reset(const char *id)` — hapus file (atau -1 tak ada).
+
+**Wiring.** `--profile <id>` di myc.c (fail-fast bila id invalid = exit 2,
+konsisten MYC-AUDIT-019) + env `MYC_PROFILE_ID` (flag menang atas env);
+record dipanggil SETELAH `myc_run` sebelum report (cache-hit tetap
+tercatat — profil menghitung *permintaan check*, bukan eksekusi ulang
+gate). Subcommand `myc profile list|show <id>|reset <id>`. Tidak ada
+perubahan `myc.result.v1` (profil = state eksternal, bukan hasil gate).
+
+**Batas jujur.** Aggregat kasar (count per gate/class), tanpa urutan
+temporal, tanpa per-finding detail, tanpa source hash.
