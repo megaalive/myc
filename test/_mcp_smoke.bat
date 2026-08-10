@@ -9,14 +9,14 @@ if errorlevel 1 (
   exit /b 1
 )
 echo --- respons (%OUT%)
-rem 13 pesan ber-id = 13 baris respons JSON (notification tidak dijawab;
+rem 15 pesan ber-id = 15 baris respons JSON (notification tidak dijawab;
 rem MYC-AUDIT-016: jsonrpc != "2.0" = -32600; flag tak dikenal = -32602;
 rem check = structuredContent + schema).
 rem Catatan: pakai for /f (bukan find /c) karena PATH bisa menunjuk ke GNU
 rem find dari Git Bash yang sintaksnya beda.
 set N=0
 for /f "usebackq delims=" %%L in ("%OUT%") do set /a N+=1
-if not "%N%"=="13" ( echo [FAIL] jumlah respons ^(%N%^) & exit /b 1 )
+if not "%N%"=="15" ( echo [FAIL] jumlah respons ^(%N%^) & exit /b 1 )
 findstr /C:"serverInfo" %OUT% >nul || ( echo [FAIL] initialize & exit /b 1 )
 findstr /C:"verdict" %OUT% | findstr /C:"OK" >nul || ( echo [FAIL] check ok & exit /b 1 )
 findstr /C:"RUNTIME_VIOLATION" %OUT% >nul || ( echo [FAIL] check run & exit /b 1 )
@@ -31,6 +31,11 @@ findstr /C:"contracts: requires=1 ensures=1" %OUT% >nul || ( echo [FAIL] tool co
 rem MYC-AUDIT-014: tool lint = observasi ber-confidence (non-blocking),
 rem bukan verdict VIOLATION.
 findstr /C:"observasi" %OUT% | findstr /C:"lint" >nul || ( echo [FAIL] tool lint & exit /b 1 )
+rem MYC-AUDIT-039: agent_check + pack proyek (pack_dir) -> pack_present
+findstr /C:"pack_present" %OUT% >nul || ( echo [FAIL] agent_check pack_present & exit /b 1 )
+findstr /C:"prompt_present" %OUT% >nul || ( echo [FAIL] agent_check pack isi & exit /b 1 )
+rem MYC-AUDIT-039: pack_bad (spec invalid) -> error -32602 (fail-fast)
+findstr /C:"myc.spec.json invalid" %OUT% >nul || ( echo [FAIL] agent_check pack_bad & exit /b 1 )
 echo [OK] mcp smoke lulus
 del %OUT%
 exit /b 0

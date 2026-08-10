@@ -147,9 +147,18 @@ Contoh:
 ### 7. `agent_check` — verifikasi source C dengan protokol agent (myc.agent.v2)
 
 - `source` (string, **wajib**): kode C yang akan diperiksa.
+- `pack_dir` (string, opsional): direktori pack proyek lokal
+  (`myc.prompt.md` + `myc.spec.json`); default = cwd server. Spec.json
+  ADA tapi invalid = error tool -32602 (fail-fast, pola CLI exit 2).
+- `no_pack` (boolean, opsional): `true` = nonaktifkan pack (perilaku =
+  pack absen).
 - **Hasil** JSON: `schema: "myc.agent.v2"`, `verdict`, `finding`,
-  `primary_action`, `witness`, `next_check_command`, `payload_size`.
-  Untuk konsumsi LLM agent.
+  `primary_action`, `witness`, `next_check_command`, `payload_size`,
+  plus objek `pack` (bila ada): `prompt_present`/`spec_present` +
+  `prompt_text` verbatim + `prompt_sha256`/`spec_sha256` + spec
+  (rules/allow_headers/deny_functions). `structuredContent` memuat
+  `pack_present` (bool). Pack NON-blocking: verdict tidak berubah;
+  dibuang terakhir saat enforcement cap (MYC-AUDIT-038/039).
 - **Batasan**: mengikuti pipeline `check` standar (compile gate), output
   dalam format agent-ready.
 
@@ -157,7 +166,8 @@ Contoh:
 
 ```
 {"name":"agent_check","arguments":{
-  "source":"int main(void){char*p=malloc(10);free(p);return *p;}"}}
+  "source":"int main(void){char*p=malloc(10);free(p);return *p;}",
+  "pack_dir":"."}}
 ```
 
 ## Catatan untuk agent

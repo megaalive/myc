@@ -12,3 +12,5 @@
 {"jsonrpc":"1.0","id":11,"method":"ping"}
 {"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"check","arguments":{"source":"#include <stdlib.h>\nint main(void){int*p=(int*)malloc(4);free(p);return 0;}\n","flags":["--rnu"]}}}
 {"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"check","arguments":{"source":"#include <stdlib.h>\nint main(void){int*p=(int*)malloc(4*sizeof(int));p[0]=1;free(p);return 0;}\n"}}}
+{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"agent_check","arguments":{"source":"#include <stdlib.h>\nint main(void){int*p=(int*)malloc(4*sizeof(int));p[0]=1;free(p);return 0;}\n","pack_dir":"test/fixtures/pack"}}}
+{"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"agent_check","arguments":{"source":"#include <stdlib.h>\nint main(void){int*p=(int*)malloc(4*sizeof(int));p[0]=1;free(p);return 0;}\n","pack_dir":"test/fixtures/pack_bad"}}}

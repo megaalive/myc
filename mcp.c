@@ -6,6 +6,8 @@
  * Tidak ada dependensi eksternal; memakai json.c (parser/serializer sendiri).
  *
  * Tool yang diekspos (tools/list + tools/call):
+ *   agent_check -- protokol agent myc.agent.v2 + pack proyek lokal
+ *                  opsional (pack_dir/no_pack, MYC-AUDIT-039)
  *   check   -- jalankan pipeline myc pada source C (verdict/assurance/dll)
  *   repair  -- kembalikan patch minimal untuk finding compile tertentu
  *   version -- versi myc + ketersediaan gcc/clang
@@ -471,9 +473,13 @@ static void tool_lint(json_value *id, json_value *args)
 static void tool_agent_check(json_value *id, json_value *args)
 {
     const char *source = NULL;
+    const char *pack_dir = NULL;
+    int         no_pack = 0;
     myc_request req;
     myc_result  res;
     myc_agent_result ar;
+    myc_pack_info pinfo;
+    int         pinfo_loaded = 0;
     json_value *result = NULL;
     json_value *content = NULL;
     json_value *item = NULL;
@@ -488,6 +494,15 @@ static void tool_agent_check(json_value *id, json_value *args)
         send_error(id, -32602, "Invalid params: 'source' wajib (string kode C)");
         return;
     }
+    /* Fase 7 (MYC-AUDIT-039): pack proyek lokal opsional (myc.prompt.md
+     * + myc.spec.json). pack_dir: NULL = cwd server (konsisten CLI);
+     * no_pack: true = nonaktifkan (perilaku = pack absen). */
+    pack_dir = json_get_str(args, "pack_dir");
+    {
+        json_value *np = json_get(args, "no_pack");
+        if (np && np->type == JSON_BOOL && np->boolean)
+            no_pack = 1;
+    }
 
     myc_request_init(&req);
     req.input.kind = MYC_SOURCE_MEMORY;
@@ -499,10 +514,38 @@ static void tool_agent_check(json_value *id, json_value *args)
     myc_result_init(&res);
     myc_pipeline(&req, &res);
 
+    /* Fase 7 (MYC-AUDIT-039): muat pack proyek lokal. spec.json ADA tapi
+     * invalid = error tool -32602 (fail-fast, pola CLI exit 2); OOM/IO =
+     * -32603. Tidak mempengaruhi verdict (NON-blocking). */
+    memset(&pinfo, 0, sizeof(pinfo));
+    if (!no_pack) {
+        int prc = myc_pack_load(pack_dir, no_pack, &pinfo);
+        if (prc == -1) {
+            send_error(id, -32602,
+                       "Invalid params: myc.spec.json invalid (skema: "
+                       "version=1, name wajib; rules/allow_headers/"
+                       "deny_functions = array string)");
+            myc_result_free(&res);
+            return;
+        }
+        if (prc == -2) {
+            send_error(id, -32603,
+                       "Internal error: gagal membaca pack proyek (OOM/IO)");
+            myc_result_free(&res);
+            return;
+        }
+        pinfo_loaded = 1;
+    }
+
     memset(&ar, 0, sizeof(ar));
-    if (myc_build_agent_result(&res, &ar, NULL, NULL, NULL) < 0) {
+    if (myc_build_agent_result(&res, &ar, NULL, NULL,
+                               pinfo_loaded ? &pinfo : NULL) < 0) {
+        /* Catatan: myc_build_agent_result SUDAH membebaskan ar secara
+         * internal sebelum return -1 (payload > cap) -- jangan free lagi
+         * di sini (double-free). Hanya res + pinfo yang perlu dibersihkan. */
         send_error(id, -32603, "Internal error: gagal build agent result");
-        myc_agent_result_free(&ar);
+        if (pinfo_loaded)
+            free(pinfo.prompt_text);
         myc_result_free(&res);
         return;
     }
@@ -533,6 +576,8 @@ static void tool_agent_check(json_value *id, json_value *args)
                                   ? ar.next_check.command : ""));
         json_obj_set(structured, "payload_size",
                      json_new_num((int64_t)ar.payload_size));
+        json_obj_set(structured, "pack_present",
+                     json_new_bool(ar.pack_json ? 1 : 0));
         json_obj_set(result, "structuredContent", structured);
     }
 
@@ -541,6 +586,8 @@ static void tool_agent_check(json_value *id, json_value *args)
 
     if (js) free((void *)js);
     myc_agent_result_free(&ar);
+    if (pinfo_loaded)
+        free(pinfo.prompt_text);
     myc_result_free(&res);
 }
 
@@ -864,7 +911,11 @@ static json_value *tools_list_body(void)
         "Jalankan pipeline myc pada source dan kembalikan hasil dalam "
         "format protokol agent (myc.agent.v2): finding_id, primary action, "
         "witness, next_check. Untuk konsumsi LLM agent. "
-        "source: kode C (string, wajib)."));
+        "source: kode C (string, wajib). pack_dir: direktori pack proyek "
+        "lokal myc.prompt.md + myc.spec.json (opsional; default cwd server, "
+        "Fase 7 MYC-AUDIT-039). no_pack: boolean opsional, true = "
+        "nonaktifkan pack. Pack NON-blocking: verdict tidak berubah; "
+        "structuredContent memuat pack_present."));
     {
         json_value *schema = json_new_obj();
         json_value *props = json_new_obj();
@@ -874,6 +925,17 @@ static json_value *tools_list_body(void)
         json_obj_set(p, "type", json_new_str("string"));
         json_obj_set(p, "description", json_new_str("Kode sumber C yang akan diperiksa (wajib)."));
         json_obj_set(props, "source", p);
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("string"));
+        json_obj_set(p, "description", json_new_str(
+            "Direktori pack proyek lokal (opsional; default cwd server). "
+            "Spec.json ADA tapi invalid = error tool -32602."));
+        json_obj_set(props, "pack_dir", p);
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("boolean"));
+        json_obj_set(p, "description", json_new_str(
+            "Nonaktifkan pack (opsional; perilaku = pack absen)."));
+        json_obj_set(props, "no_pack", p);
         json_obj_set(schema, "properties", props);
         {
             json_value *req = json_new_arr();

@@ -656,7 +656,8 @@ static int ctx_build_section(const myc_result *res, const char *src,
             }
             myc_agent_result_free(&ar);
         } else {
-            myc_agent_result_free(&ar);
+            /* myc_build_agent_result sudah membebaskan ar internal saat
+             * return -1 (payload > cap) -- jangan free lagi (double-free). */
             sb_puts(out, "(agent derivation gagal)\n");
         }
         if (!out->len)

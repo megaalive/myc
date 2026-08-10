@@ -2899,8 +2899,51 @@ pack (SOL-15) kini di-wire ke DUA jalur konsumsi model selain `myc prompt`:
   menang di rantai report) — inefisiensi baca disk, bukan bug; (c)
   context_sha256 semua run berubah (section `project pack` selalu ada)
   — deterministik, gap terlihat (trust rule 4), sudah didokumentasikan.
-- **Batas jujur (v2).** MCP server (mcp.c) tetap memanggil
-  `myc_build_agent_result` tanpa pack (NULL) — pack adalah jalur CLI;
-  MCP belum mem-parse `pack_dir` dari JSON-RPC (follow-up). Section pack
-  pada context dipotong pertama saat budget 4K default bila isi prompt.md
-  besar (wajar: prioritas terendah).
+- **Batas jujur (v2).** Section pack pada context dipotong pertama saat
+  budget 4K default bila isi prompt.md besar (wajar: prioritas terendah).
+  Wiring MCP (`pack_dir` dari JSON-RPC) dikerjakan di entry (35) —
+  MYC-AUDIT-039.
+
+## (35) Pack wiring MCP: agent_check + pack_dir — MYC-AUDIT-039 (2026-08-10)
+
+Follow-up MYC-AUDIT-038: pack proyek lokal (SOL-15) kini tersedia juga di
+jalur MCP server (`mcp.exe`), bukan hanya CLI:
+
+- **`tool_agent_check`** (mcp.c) mem-parse dua argumen baru dari JSON-RPC:
+  `pack_dir` (string opsional; NULL = cwd server, konsisten default CLI)
+  dan `no_pack` (boolean opsional; true = nonaktifkan). Setelah
+  `myc_pipeline`, server memuat pack via `myc_pack_load` dan meneruskan
+  `&pinfo` ke `myc_build_agent_result(..., pack)` (sebelumnya NULL).
+  spec.json ADA tapi invalid = error tool -32602 (fail-fast, pola CLI exit
+  2); OOM/IO = -32603. `pinfo.prompt_text` di-free di SEMUA jalur
+  (success, build-gagal, load-gagal) — tanpa leak.
+- **Hasil**: agent JSON di `content[0].text` memuat objek `pack`
+  (identik CLI: prompt_text verbatim + sha256 + spec); `structuredContent`
+  menambah field `pack_present` (bool) untuk konsumen mesin. Pack
+  NON-blocking: verdict TIDAK berubah; enforcement cap tetap (pack =
+  enrichment dibuang terakhir).
+- **tools/list**: schema agent_check mengekspos `pack_dir` (string) +
+  `no_pack` (boolean) + description; header komentar mcp.c di-update.
+- **Smoke test**: `test/mcp_smoke_input.jsonl` +2 pesan (id 14:
+  agent_check + pack_dir test/fixtures/pack → pack_present + isi pack;
+  id 15: pack_dir pack_bad → -32602). `test/_mcp_smoke.bat` kini 15
+  respons (sebelumnya 13) + 3 assert baru: `pack_present`,
+  `prompt_present` (isi pack di content), `myc.spec.json invalid`
+  (fail-fast). Di-verifikasi PASS + regression penuh.
+- **Code review**: 1 bug valid diperbaiki — double-free pada path error
+  `myc_build_agent_result < 0` di `tool_agent_check` (agent.c sudah free
+  internal sebelum return -1, mcp.c memanggil `myc_agent_result_free`
+  lagi = UB). Fix: hapus free ganda (pertahankan cleanup res + pinfo).
+  Pola identik PRE-EXISTING di context.c SEC_ACTION juga diperbaiki
+  (memori-safety). Minor: `myc_pack_load(pack_dir, no_pack, ...)` eksplisit
+  (bukan literal 0). Catatan diterima: pack selalu dicoba dari cwd server
+  walau pack_dir tidak diberikan (konsisten CLI --agent; spec invalid di
+  cwd = semua agent_check gagal -32602, sudah didokumentasikan).
+- **Docs**: docs/mcp-tools.md section agent_check (pack_dir/no_pack + objek
+  pack + pack_present). capabilities.md tidak memiliki row MCP (tidak
+  berubah).
+- **Batas jujur (v1).** `tool_check` (myc.result.v1) TIDAK memuat pack —
+  pack hanya relevan pada output agent (myc.agent.v2) dan paket context;
+  hasil check biasa tetap bebas pack (tidak mengubah skema myc.result.v1).
+  `pack_dir` MCP di-resolve relatif terhadap cwd server saat ini (belum
+  ada isolasi per-request; follow-up potensial).
