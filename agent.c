@@ -117,6 +117,12 @@ const char *myc_agent_result_json(const myc_agent_result *ar)
     agent_add_str(root, "source_sha256", ar->source_sha256);
     agent_add_str(root, "receipt_sha256", ar->receipt_sha256);
 
+    /* Fase 7 (privacy/size controls): cap payload yang dipakai run ini
+     * (0 = default 16384). Ukuran aktual (payload_size) TIDAK
+     * diserialisasi di sini agar enforcement size di build tidak
+     * circular (ukuran JSON yang dihitung = ukuran yang dihasilkan). */
+    agent_add_int(root, "payload_cap", (int)ar->payload_cap);
+
     agent_add_int(root, "finding", (int)ar->finding);
     agent_add_int(root, "verdict", (int)ar->verdict);
 
@@ -281,6 +287,13 @@ int myc_build_agent_result(const myc_result *res,
 
     myc_agent_result_init(ar);
 
+    /* Fase 7 (privacy/size controls): cap dari res (di-wire myc_run
+     * dari --agent-payload-cap); 0 = default MYC_AGENT_PAYLOAD_CAP.
+     * Enforcement di bawah memakai cap ini, bukan konstanta hardcoded. */
+    ar->payload_cap = res->agent_payload_cap > 0
+                          ? (size_t)res->agent_payload_cap
+                          : (size_t)MYC_AGENT_PAYLOAD_CAP;
+
     ar->finding = res->finding;
     ar->verdict = res->verdict;
     ar->assurance = res->assurance_vector;
@@ -402,28 +415,29 @@ int myc_build_agent_result(const myc_result *res,
         myc_frontier_free(&fs);
     }
 
-    /* Check payload size: bila melebihi cap, buang field ENRICHMENT
-     * bertahap (experiments_json dulu, lalu causal_json) dan cek ulang --
-     * protokol inti (verdict/finding/primary/witness) harus selalu utuh.
-     * Hanya bila protokol inti pun melebihi cap baru gagal total (-1). */
+    /* Check payload size: bila melebihi cap (dari res->agent_payload_cap,
+     * default MYC_AGENT_PAYLOAD_CAP), buang field ENRICHMENT bertahap
+     * (experiments_json dulu, lalu causal_json) dan cek ulang -- protokol
+     * inti (verdict/finding/primary/witness) harus selalu utuh. Hanya bila
+     * protokol inti pun melebihi cap baru gagal total (-1). */
     js = myc_agent_result_json(ar);
     ar->payload_size = js ? strlen(js) : 0;
     free((void *)js);
-    if (ar->payload_size > MYC_AGENT_PAYLOAD_CAP && ar->experiments_json) {
+    if (ar->payload_size > ar->payload_cap && ar->experiments_json) {
         free(ar->experiments_json);
         ar->experiments_json = NULL;
         js = myc_agent_result_json(ar);
         ar->payload_size = js ? strlen(js) : 0;
         free((void *)js);
     }
-    if (ar->payload_size > MYC_AGENT_PAYLOAD_CAP && ar->causal_json) {
+    if (ar->payload_size > ar->payload_cap && ar->causal_json) {
         free(ar->causal_json);
         ar->causal_json = NULL;
         js = myc_agent_result_json(ar);
         ar->payload_size = js ? strlen(js) : 0;
         free((void *)js);
     }
-    if (ar->payload_size > MYC_AGENT_PAYLOAD_CAP && ar->next_best_json) {
+    if (ar->payload_size > ar->payload_cap && ar->next_best_json) {
         free(ar->next_best_json);
         ar->next_best_json = NULL;
         js = myc_agent_result_json(ar);
@@ -431,7 +445,7 @@ int myc_build_agent_result(const myc_result *res,
         free((void *)js);
     }
 
-    if (ar->payload_size > MYC_AGENT_PAYLOAD_CAP) {
+    if (ar->payload_size > ar->payload_cap) {
         myc_agent_result_free(ar);
         return -1;
     }

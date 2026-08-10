@@ -209,6 +209,15 @@ myc_error_code myc_request_validate(const myc_request *req)
     if (req->max_output_bytes < 0 ||
         req->max_output_bytes > (int)MYC_MAX_OUTPUT_CAP_BYTES)
         return MYC_ERR_INVALID_OUTPUT_CAP;
+    /* Fase 7 (privacy/size): agent_payload_cap divalidasi di ingress juga
+     * (bukan hanya CLI) supaya jalur API/MCP tidak bisa lewatkan nilai di
+     * luar rentang -- konsisten pola MYC-AUDIT-020 (max_output_bytes).
+     * Rentang sah: 0 (default MYC_AGENT_PAYLOAD_CAP 16384) atau
+     * 1024..MYC_MAX_AGENT_PAYLOAD_CAP_BYTES. Negatif otomatis tertolak. */
+    if (req->agent_payload_cap != 0 &&
+        (req->agent_payload_cap < MYC_MIN_AGENT_PAYLOAD_CAP_BYTES ||
+         req->agent_payload_cap > (int)MYC_MAX_AGENT_PAYLOAD_CAP_BYTES))
+        return MYC_ERR_INVALID_AGENT_CAP;
     if (req->cwd && req->cwd[0] == '\0')
         return MYC_ERR_INVALID_CWD;
     return MYC_ERR_NONE;
@@ -929,6 +938,14 @@ void myc_run(const myc_request *req, myc_result *res)
             res->diags[res->diag_count].confidence = MYC_CONF_CONFIRMED;
             res->diag_count++;
         }
+        if (ve == MYC_ERR_INVALID_AGENT_CAP && res->diag_count < MYC_MAX_DIAGNOSTICS) {
+            const char *msg = "agent_payload_cap di luar rentang valid (0 atau 1024-1048576)";
+            res->diags[res->diag_count].line = 0;
+            res->diags[res->diag_count].col = 0;
+            res->diags[res->diag_count].message = myc_result_arena_dup(res, msg, 0);
+            res->diags[res->diag_count].confidence = MYC_CONF_CONFIRMED;
+            res->diag_count++;
+        }
         if (ve == MYC_ERR_INVALID_CWD && res->diag_count < MYC_MAX_DIAGNOSTICS) {
             const char *msg = "cwd tidak boleh kosong";
             res->diags[res->diag_count].line = 0;
@@ -940,6 +957,10 @@ void myc_run(const myc_request *req, myc_result *res)
         return;
     }
     res->require_complete = req->require_complete;
+    /* Fase 7 (privacy/size controls): cap payload agent di-wire ke hasil
+     * SEBELUM branch cache -- jalur cache-hit pun memakainya (agent output
+     * selalu dibangun ulang dari res, tidak di-replay dari cache). */
+    res->agent_payload_cap = req->agent_payload_cap;
 
     /* MYC-AUDIT-030 (Fase 2): canonicalize cwd di ingress. cwd relatif
      * (".", "./test/../test", dll) disamakan ke bentuk absolut+lexical
@@ -994,7 +1015,7 @@ void myc_run(const myc_request *req, myc_result *res)
                     /* Fase 4 A1: ledger asumsi portabilitas — deteksi +
                      * state + ack (NON-blocking; facts dari macro dump
                      * gcc; jalur cache-hit memakai facts dari entry). */
-                    if (!req2.no_assumptions)
+                    if (!req2.no_assumptions && !req2.no_persist)
                         myc_assume_run(&req2, res, buf, len, NULL);
                     /* #3: quorum juga dihitung di jalur file_path/STDIN
                      * (API/MCP), konsisten dengan jalur source in-memory. */
@@ -1011,14 +1032,18 @@ void myc_run(const myc_request *req, myc_result *res)
                      * require-complete) supaya kontrak dilihat pada hasil
                      * final. NON-blocking bila kontrak tidak aktif. */
                     myc_budget_enforce(&req2, res);
-                    myc_ledger_integrate(&req2, res);
-                    myc_cache_store(&req2, res, buf, len);
+                    /* Fase 7 (privacy/size): --no-persist = tanpa jejak
+                     * disk -- ledger temporal & cache tidak ditulis. */
+                    if (!req2.no_persist) {
+                        myc_ledger_integrate(&req2, res);
+                        myc_cache_store(&req2, res, buf, len);
+                    }
                 } else {
                     /* A1: pada cache-hit asumsi SELALU di-scan ulang
                      * (murni teks, ~ms, tanpa exec gcc — facts di-replay
                      * dari entry) supaya status .myc/assumptions.json
                      * selalu segar; tidak disimpan di cache entry. */
-                    if (!req2.no_assumptions)
+                    if (!req2.no_assumptions && !req2.no_persist)
                         myc_assume_run(&req2, res, buf, len,
                                        res->assumption_facts_ok
                                            ? &res->host_facts : NULL);
@@ -1045,7 +1070,7 @@ void myc_run(const myc_request *req, myc_result *res)
                                   eff->input.len)) {
             myc_pipeline(eff, res);
             /* Fase 4 A1: ledger asumsi portabilitas (non-blocking). */
-            if (!eff->no_assumptions)
+            if (!eff->no_assumptions && !eff->no_persist)
                 myc_assume_run(eff, res, eff->input.data, eff->input.len,
                                NULL);
             myc_quorum_analysis(eff, res);
@@ -1055,10 +1080,13 @@ void myc_run(const myc_request *req, myc_result *res)
             if (eff->require_assumptions_closed)
                 myc_assume_enforce(eff, res);
             myc_budget_enforce(eff, res);
-            myc_ledger_integrate(eff, res);
-            myc_cache_store(eff, res, eff->input.data, eff->input.len);
+            /* Fase 7 (privacy/size): --no-persist = tanpa jejak disk. */
+            if (!eff->no_persist) {
+                myc_ledger_integrate(eff, res);
+                myc_cache_store(eff, res, eff->input.data, eff->input.len);
+            }
         } else {
-            if (!eff->no_assumptions)
+            if (!eff->no_assumptions && !eff->no_persist)
                 myc_assume_run(eff, res, eff->input.data, eff->input.len,
                                res->assumption_facts_ok
                                    ? &res->host_facts : NULL);
@@ -1121,7 +1149,12 @@ static void usage(void)
         "  myc check <file.c> --divergence   (Fase 4 A2: matriks toolchain {gcc,clang,tcc} x {-O0,-O2}, klasifikasi DS-02)\n"
         "  myc check <file.c> [--require-assumptions-closed] [--assumption-ack id:status,...]   (Fase 4 A1: ledger asumsi portabilitas)\n"
         "  myc check <file.c> [--timeout MS] [--output-cap BYTES]\n"
-        "                        (timeout 0-600000 ms, 0 = default 30000; output-cap 0-104857600 byte, 0 = default 1 MiB)\n"
+        "                        (timeout 0-600000 ms, 0 = default 30000; output-cap 0-104857600 byte, 0 = default 1 MiB)\n");
+    printf(
+        "  myc check <file.c> [--agent-payload-cap BYTES] [--no-persist]\n"
+        "                        (Fase 7 privacy/size: cap payload --agent 0|1024-1048576,\n"
+        "                        0 = default 16384; --no-persist = tanpa jejak disk,\n"
+        "                        ledger/cache/asumsi/profil TIDAK ditulis)\n"
         "  myc check <file.c> --budget-contract '{\"required\":{\"runtime\":\"clean\"},\"max_time_ms\":10000}'\n"
         "                        (SOL-30: target assurance eksplisit; tak tercapai = INCONCLUSIVE + report)\n"
         "  myc check -          [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache]\n"
@@ -2579,6 +2612,38 @@ int main(int argc, char **argv)
                 }
                 i++;  /* konsumsi argumen nilai */
                 known = 1;
+            } else if (strcmp(argv[i], "--agent-payload-cap") == 0) {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "myc: --agent-payload-cap membutuhkan argumen BYTES\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                if (!parse_int_arg(argv[i + 1], &req.agent_payload_cap)) {
+                    fprintf(stderr, "myc: --agent-payload-cap: nilai bukan angka valid: %s\n",
+                            argv[i + 1]);
+                    myc_result_free(&res);
+                    return 2;
+                }
+                /* Fase 7 (privacy/size): 0 = default MYC_AGENT_PAYLOAD_CAP
+                 * (16384); 1024..MYC_MAX_AGENT_PAYLOAD_CAP_BYTES = override
+                 * eksplisit. Di luar itu fail-fast (pola
+                 * MYC_AUDIT-019/020); rentang sama dgn myc_request_validate
+                 * (jalur API/MCP). */
+                if (req.agent_payload_cap != 0 &&
+                    (req.agent_payload_cap < MYC_MIN_AGENT_PAYLOAD_CAP_BYTES ||
+                     req.agent_payload_cap > (int)MYC_MAX_AGENT_PAYLOAD_CAP_BYTES)) {
+                    fprintf(stderr, "myc: --agent-payload-cap di luar rentang "
+                                    "valid (0 atau 1024-%u): %d\n",
+                            (unsigned)MYC_MAX_AGENT_PAYLOAD_CAP_BYTES,
+                            req.agent_payload_cap);
+                    myc_result_free(&res);
+                    return 2;
+                }
+                i++;  /* konsumsi argumen nilai */
+                known = 1;
+            } else if (strcmp(argv[i], "--no-persist") == 0) {
+                req.no_persist = 1;
+                known = 1;
             }
             if (!known) {
                 /* fail-fast: tolak flag tidak dikenal (Fase-2 / AUDIT-016). */
@@ -2595,6 +2660,31 @@ int main(int argc, char **argv)
     if (req.no_assumptions && req.require_assumptions_closed) {
         fprintf(stderr, "myc: --no-assumptions tidak dapat dipakai bersama "
                         "--require-assumptions-closed\n");
+        myc_result_free(&res);
+        return 2;
+    }
+
+    /* Fase 7 (privacy/size): --no-persist = tanpa jejak disk; kombinasinya
+     * dengan fitur yang EKSPLISIT menulis ke disk = kontradiksi, fail-fast
+     * (pola A1). Profil SOL-20 menulis .myc/profiles/<id>.json; repro
+     * witness menulis .myc-witness/; require-assumptions-closed butuh
+     * asumsi di-scan (yang dimatikan --no-persist) sehingga menjadi
+     * trivially-closed -- semua ditolak. */
+    if (req.no_persist && profile_id) {
+        fprintf(stderr, "myc: --no-persist tidak dapat dipakai bersama "
+                        "--profile\n");
+        myc_result_free(&res);
+        return 2;
+    }
+    if (req.no_persist && req.write_repro) {
+        fprintf(stderr, "myc: --no-persist tidak dapat dipakai bersama "
+                        "--write-repro (repro menulis .myc-witness/)\n");
+        myc_result_free(&res);
+        return 2;
+    }
+    if (req.no_persist && req.require_assumptions_closed) {
+        fprintf(stderr, "myc: --no-persist tidak dapat dipakai bersama "
+                        "--require-assumptions-closed (asumsi tidak di-scan)\n");
         myc_result_free(&res);
         return 2;
     }
@@ -2661,8 +2751,10 @@ int main(int argc, char **argv)
         myc_run(&req, &res);
         /* Fase 7 (SOL-20): fingerprint opt-in. Selalu tercatat bila
          * --profile/env aktif (cache-hit tetap = permintaan check).
-         * NON-blocking; gagal tulis tanpa dampak pada hasil/exit. */
-        if (profile_id)
+         * NON-blocking; gagal tulis tanpa dampak pada hasil/exit.
+         * Fase 7 (privacy/size): --no-persist mematikan profil juga
+         * (kontradiksi sudah fail-fast; guard ganda defensif). */
+        if (profile_id && !req.no_persist)
             myc_profile_record(&res, profile_id);
         /* Fase 7 (SOL-21): Trust Calibration Ledger. Bila --calibrate/
          * env aktif, anotasi diagnostic yang merupakan rule dikalibrasi

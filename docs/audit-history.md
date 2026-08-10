@@ -2751,3 +2751,60 @@ deterministik tapi bukan AST; perbedaan kecil antar kandidat sebaiknya
 TIDAK dianggap dominansi tunggal oleh harness. `stack_impact` belum
 terukur. Pemakaian frontier tournament oleh harness (auto-pick) =
 follow-up.
+
+### (32) Fase 7 — Privacy/size controls (DS-14 #3) — `myc.c`/`myc.h`/`agent.c`/`agent.h`
+
+DESAIN (Fase 7 #6, "Privacy/size controls", plan baris 2032 — tanpa
+spesifikasi detail; dirancang di sini). Masuk sebagai MYC-AUDIT-036.
+
+**Gap yang diisi (yang SUDAH ada sebelumnya):** `--output-cap` (output
+backend), `--budget 4K|8K|16K` (context), `--no-cache`/`--no-assumptions`,
+profil SOL-20 privacy-first (angka saja, tanpa source), `_no_source_leak.sh`
+(sentinel tidak bocor), cap payload agent 16 KiB hardcoded.
+
+**Dua gap nyata yang kurang:**
+1. **Cap payload agent tidak bisa di-set dari CLI** — `MYC_AGENT_PAYLOAD_CAP`
+   (16384) konstanta. Flag baru `--agent-payload-cap BYTES` (0 = default
+   16384; valid 1024..1048576; non-angka / di luar rentang = fail-fast
+   exit 2, pola MYC-AUDIT-019/020).
+2. **Ledger temporal SELALU ditulis** (`.myc/ledger.json`, tanpa kondisi)
+   — tidak ada cara menjalankan check tanpa jejak disk. Flag baru
+   `--no-persist`: mode privasi — ledger, cache SOL-18, ledger asumsi
+   (`.myc/assumptions.json`), profil SOL-20 TIDAK ditulis. Verdict/hasil
+   run TIDAK berubah (NON-blocking penuh, trust rule 1-3); hanya tidak
+   meninggalkan jejak. Kontradiksi `--no-persist` + `--profile` =
+   fail-fast (pola A1, seperti --no-assumptions +
+   --require-assumptions-closed).
+
+**Wiring (minimal, tanpa ubah signature publik).** Field baru
+`req.agent_payload_cap` / `req.no_persist` (myc.h). `myc_run` meng-wire
+`res->agent_payload_cap = req->agent_payload_cap` SEBELUM branch cache
+sehingga jalur cache-hit pun memakainya; agent output SELALU dibangun
+ulang dari res (bukan di-replay), jadi TIDAK perlu simpan cap di cache
+entry dan TIDAK perlu masuk scenario hash. `myc_build_agent_result`
+membaca `res->agent_payload_cap` (0 = default) → enforcement buang
+enrichment bertahap sampai muat; `ar->payload_cap` + serialize
+`"payload_cap"` di agent JSON. Guard `--no-persist`: `if (!no_persist)`
+seputar `myc_ledger_integrate` + `myc_cache_store` (2 jalur: file/stdin +
+memory) dan `myc_assume_run` (4 lokasi); `myc_profile_record` ikut
+di-guard defensif.
+
+**Bug ditemukan saat dev.** (1) `-Woverlength-strings` — literal usage
+melebihi 4095 (baris baru flag) → pecah jadi dua `printf`. (2) binary
+TIDAK ter-update oleh `build.bat` (masalah filesystem/cache yang sudah
+dicatat AGENTS.md) — `bash build.sh` (yang direkomendasikan) menghasilkan
+binary dengan flag baru; tanpa itu tes `--no-persist` seolah gagal.
+
+**CI.** Blok 6r: 6 assert Linux + 6 assert Windows (`--agent-payload-cap
+4096` → `payload_cap":4096`; default 16384; non-angka → exit 2; 100
+di bawah min → exit 2; `--no-persist` → ledger tidak ditulis + verdict
+OK; `--no-persist` + `--profile` → exit 2). `tests/ok_hello.c` sebagai
+fixture (bukan test/fixtures/ — ok_hello ada di tests/).
+
+**Batas jujur (v1).** `--no-persist` berlaku untuk `myc check`;
+subcommand dengan intent eksplisit menulis (`myc calibrate mark`,
+`myc profile reset`) tetap menulis (bukan diam-diam ditekan). Cap di
+bawah protokol inti agent → output agent gagal total (`-1`, jujur, bukan
+truncate diam-diam). `payload_size` aktual tidak diserialize (hindari
+circular) — `payload_cap` saja. Cache/ledger tetap default ON tanpa
+flag (perilaku lama dipertahankan).

@@ -27,6 +27,10 @@ extern "C" {
 #define MYC_DEFAULT_TIMEOUT_MS 30000
 #define MYC_MAX_TIMEOUT_MS   600000           /* 10 menit */
 #define MYC_MAX_OUTPUT_CAP_BYTES (100u << 20)  /* 100 MiB */
+/* Fase 7 (privacy/size): batas atas --agent-payload-cap (1 MiB); 0 =
+ * default MYC_AGENT_PAYLOAD_CAP (16384). Rentang sah: 0 | 1024..MAX. */
+#define MYC_MIN_AGENT_PAYLOAD_CAP_BYTES 1024
+#define MYC_MAX_AGENT_PAYLOAD_CAP_BYTES (1u << 20)
 
 typedef enum {
     MC_OK = 0,
@@ -333,6 +337,10 @@ typedef enum {
     MYC_ERR_STDERR_READ_FAILED,
     MYC_ERR_INVALID_TIMEOUT,
     MYC_ERR_INVALID_OUTPUT_CAP,
+    /* Fase 7 (privacy/size): agent_payload_cap di luar rentang valid
+     * (0 atau 1024..1048576) dari jalur API/MCP -- CLI fail-fast di
+     * main, API divalidasi di ingress (pola MYC-AUDIT-020). */
+    MYC_ERR_INVALID_AGENT_CAP,
     MYC_ERR_INVALID_CWD,
     MYC_ERR_STDIN_TOO_LARGE,
     MYC_ERR_PROCESS_TREE_CLEANUP_FAILED,
@@ -744,6 +752,19 @@ typedef struct {
       * — matikan deteksi (default 0 = aktif, seperti --no-lint). */    int         require_assumptions_closed;
     char *assumption_acks;
     int  no_assumptions;
+    /* Fase 7 (Privacy/size controls, DS-14 #3):
+     * agent_payload_cap: --agent-payload-cap BYTES -- override
+     * MYC_AGENT_PAYLOAD_CAP (default 16384) untuk output --agent.
+     * 0 = default; rentang valid 1024..1048576 (1 KiB - 1 MiB),
+     * invalid = fail-fast exit 2 (pola MYC-AUDIT-019/020).
+     * no_persist: --no-persist -- mode privasi: JANGAN menulis state
+     * apa pun ke disk (ledger .myc/ledger.json, cache SOL-18, ledger
+     * asumsi .myc/assumptions.json, profil SOL-20, kalibrasi).
+     * Verdict/hasil run TIDAK berubah (NON-blocking penuh); hanya
+     * tidak meninggalkan jejak. Kontradiksi dgn --profile = fail-fast
+     * (pola A1: --no-assumptions + --require-assumptions-closed). */
+    int         agent_payload_cap;
+    int         no_persist;
     /* Fase 5, A3 (--exhaustive): gate Small-Domain Exhaustive Proof. */
     int         exhaustive;
     /* Fase 5, A4: subcommand `myc compare ref.c new.c [func...]`. */
@@ -1108,6 +1129,14 @@ char          *rsrc_report;                /* arena */
     int            cand_candidates;
     int            cand_frontier;
     char          *cand_report;                /* arena */
+
+    /* Fase 7 (Privacy/size controls): cap payload agent yang DIPAKAI
+     * run ini (0 = default MYC_AGENT_PAYLOAD_CAP). Di-wire dari
+     * req->agent_payload_cap di awal myc_run SEBELUM branch cache agar
+     * jalur cache-hit pun memakainya (agent output dibangun ulang dari
+     * res, bukan di-replay dari cache). Dipakai myc_build_agent_result
+     * untuk enforcement size; agent JSON memuat payload_cap. */
+    int            agent_payload_cap;
 
     /* --- Fase 5, B4 (Comments-as-Contracts, DS-08) ---
      * Panen kandidat kontrak dari komentar BIASA (bukan //@):

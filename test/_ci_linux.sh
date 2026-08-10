@@ -1098,6 +1098,53 @@ else
     note "Fase 7 cand: baseline hilang -> fail-fast exit 2"
 fi
 
+# --- 6r. Fase 7 (Privacy/size controls): --agent-payload-cap + --no-persist ---
+# `--agent-payload-cap BYTES`: override cap payload --agent (0 = default
+# MYC_AGENT_PAYLOAD_CAP 16384; valid 1024..1048576; invalid = fail-fast
+# exit 2, pola MYC-AUDIT-019/020). `--no-persist`: mode privasi tanpa
+# jejak disk -- ledger/cache/asumsi/profil TIDAK ditulis, verdict/hasil
+# run TIDAK berubah (NON-blocking penuh). Kontradiksi dgn --profile =
+# fail-fast (pola A1: --no-assumptions + --require-assumptions-closed).
+if ./myc check tests/ok_hello.c --agent --agent-payload-cap 4096 --no-cache 2>&1 | grep -qF 'payload_cap":4096'; then
+    note "Fase 7 priv: --agent-payload-cap 4096 diterapkan"
+else
+    fail "Fase 7 priv: cap 4096 tidak ter-reflect di agent JSON"
+fi
+if ./myc check tests/ok_hello.c --agent --no-cache 2>&1 | grep -qF 'payload_cap":16384'; then
+    note "Fase 7 priv: default cap 16384 (tanpa flag)"
+else
+    fail "Fase 7 priv: default cap bukan 16384"
+fi
+# fail-fast: non-angka + di luar rentang valid.
+if ./myc check tests/ok_hello.c --agent-payload-cap abc > /dev/null 2>&1; then
+    fail "Fase 7 priv: cap non-angka harus exit 2"
+else
+    note "Fase 7 priv: cap non-angka fail-fast exit 2"
+fi
+if ./myc check tests/ok_hello.c --agent-payload-cap 100 > /dev/null 2>&1; then
+    fail "Fase 7 priv: cap di bawah min harus exit 2"
+else
+    note "Fase 7 priv: cap 100 (di bawah min 1024) fail-fast exit 2"
+fi
+# --no-persist: ledger TIDAK ditulis + verdict tetap OK (NON-blocking).
+rm -f .myc/ledger.json
+if ./myc check tests/ok_hello.c --no-persist --no-cache 2>&1 | grep -qF "verdict:   OK"; then
+    if [ -f .myc/ledger.json ]; then
+        fail "Fase 7 priv: --no-persist tetap menulis ledger"
+    else
+        note "Fase 7 priv: --no-persist tanpa jejak ledger + verdict OK"
+    fi
+else
+    fail "Fase 7 priv: verdict --no-persist bukan OK"
+fi
+rm -f .myc/ledger.json
+# --no-persist + --profile = kontradiksi (pola A1).
+if ./myc check tests/ok_hello.c --no-persist --profile xyz > /dev/null 2>&1; then
+    fail "Fase 7 priv: --no-persist + --profile harus exit 2"
+else
+    note "Fase 7 priv: --no-persist + --profile kontradiksi fail-fast"
+fi
+
 # --- 7a. Fase 0 Golden Schema + Malformed-Input (myc.result.v1) ---
 if bash test/_schema_golden.sh; then
     note "Fase 0 golden schema: 13 cek PASS (schema + malformed input)"

@@ -98,6 +98,11 @@ typedef struct {
 
     /* Payload size (for budget enforcement) */
     size_t payload_size;
+
+    /* Cap payload yang DIPAKAI run ini (Fase 7 privacy/size controls):
+     * 0 = default MYC_AGENT_PAYLOAD_CAP; nilai dari res->agent_payload_cap
+     * (--agent-payload-cap). Diserialisasi di JSON agent sbg payload_cap. */
+    size_t payload_cap;
 } myc_agent_result;
 
 /* Inisialisasi dan pembebasan */

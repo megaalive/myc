@@ -709,6 +709,23 @@ findstr /C:"myc.candidate.v1" %OUT% >nul && echo [OK] cand: output --json memuat
 myc.exe compare-candidates test\fixtures\tidak-ada.c test\fixtures\cand_better.c > %OUT% 2>&1
 if errorlevel 1 (echo [OK] cand: baseline hilang fail-fast exit 2) else (echo [FAIL] cand: baseline hilang harus exit 2)
 del %OUT%
+echo --- 6r. Fase 7 (Privacy/size controls): --agent-payload-cap + --no-persist
+set OUT=%TEMP%\myc_priv_out.txt
+myc.exe check tests\ok_hello.c --agent --agent-payload-cap 4096 --no-cache > %OUT% 2>&1
+findstr /C:"payload_cap" %OUT% >nul && findstr /C:"4096" %OUT% >nul && echo [OK] priv: cap 4096 diterapkan || echo [FAIL] priv: cap 4096 tidak ter-reflect
+myc.exe check tests\ok_hello.c --agent --no-cache > %OUT% 2>&1
+findstr /C:"payload_cap" %OUT% >nul && findstr /C:"16384" %OUT% >nul && echo [OK] priv: default cap 16384 || echo [FAIL] priv: default cap salah
+myc.exe check tests\ok_hello.c --agent-payload-cap abc > %OUT% 2>&1
+if errorlevel 1 (echo [OK] priv: cap non-angka fail-fast exit 2) else (echo [FAIL] priv: cap non-angka harus exit 2)
+myc.exe check tests\ok_hello.c --agent-payload-cap 100 > %OUT% 2>&1
+if errorlevel 1 (echo [OK] priv: cap 100 di bawah min fail-fast) else (echo [FAIL] priv: cap 100 harus exit 2)
+if exist .myc\ledger.json del /q .myc\ledger.json
+myc.exe check tests\ok_hello.c --no-persist --no-cache > %OUT% 2>&1
+if exist .myc\ledger.json (echo [FAIL] priv: --no-persist tetap menulis ledger) else (echo [OK] priv: --no-persist tanpa jejak ledger)
+if exist .myc\ledger.json del /q .myc\ledger.json
+myc.exe check tests\ok_hello.c --no-persist --profile xyz > %OUT% 2>&1
+if errorlevel 1 (echo [OK] priv: --no-persist + --profile kontradiksi exit 2) else (echo [FAIL] priv: kontradiksi harus exit 2)
+del %OUT%
 echo --- Fase 0: Golden Schema + Malformed-Input (myc.result.v1)
 where bash >nul 2>&1
 if errorlevel 1 (
