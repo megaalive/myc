@@ -175,6 +175,20 @@ myc.exe check tests\semantics_parity.c --checked > %OUT% 2>&1
 findstr /C:"MYC-INCOMPLETE-RAW-BUFFERS" %OUT% >nul && echo [FAIL] semantics_parity murni MYC_BUF kena debt RAW-BUFFERS (false positive) || echo [OK] semantics_parity: tanpa raw buffer, tanpa debt
 myc.exe check tests\ok_checked.c --checked > %OUT% 2>&1
 findstr /C:"MYC-INCOMPLETE-RAW-BUFFERS" %OUT% >nul && echo [FAIL] ok_checked kena debt RAW-BUFFERS (false positive) || echo [OK] ok_checked: tanpa raw buffer, tanpa debt
+echo --- 4a2 INFRA-FAILED (MYC-AUDIT-041): backend ada tapi gagal -> debt GATE-INFRA-FAILED (dulu ditimpa jadi UNAVAILABLE)
+myc.exe check tests\ok_hello.c --filc --no-cache > %OUT% 2>&1
+findstr /C:"MYC-INCOMPLETE-GATE-UNAVAILABLE" %OUT% >nul && echo [OK] ok_hello --filc tanpa backend: debt GATE-UNAVAILABLE || echo [FAIL] debt GATE-UNAVAILABLE tidak muncul
+mkdir _fakebin 2>nul
+if not exist _fakebin\filc-clang.exe (
+  echo int main(void^) ^{return 3;^} > _fakebin\fc.c
+  gcc -O0 -o _fakebin\filc-clang.exe _fakebin\fc.c
+)
+set "SAVEPATH=%PATH%"
+set "PATH=%CD%\_fakebin;%PATH%"
+myc.exe check tests\ok_hello.c --filc --no-cache > %OUT% 2>&1
+findstr /C:"MYC-INCOMPLETE-GATE-INFRA-FAILED" %OUT% >nul && echo [OK] ok_hello --filc backend gagal: debt GATE-INFRA-FAILED dipertahankan || echo [FAIL] debt GATE-INFRA-FAILED tidak muncul (status ditimpa?)
+set "PATH=%SAVEPATH%"
+rmdir /s /q _fakebin 2>nul
 echo --- checked oob (--run --checked): bad_checked_oob harus RUNTIME_VIOLATION, ok_checked tetap L4
 echo === tests\bad_checked_oob.c
 myc.exe check tests\bad_checked_oob.c --run --checked > %OUT%

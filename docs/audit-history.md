@@ -2978,3 +2978,47 @@ tidak pernah bisa muncul. Kini di-wire penuh:
   sebenarnya sah); debt tetap NON-blocking sehingga over-count hanya
   memperkaya laporan, tidak pernah menurunkan verdict. Tidak mengubah
   receipt fingerprint (hanya menambah field laporan/cache).
+
+## (37) Audit 10 tipe debt MYC-INCOMPLETE + fix overwrite INFRA-FAILED — MYC-AUDIT-041 (2026-08-10)
+
+**Masalah.** Debt adalah gap verifikasi yang harus "terlihat, bukan
+kesunyian" (9.10). Setelah MYC-AUDIT-040 menghidupkan RAW-BUFFERS, audit
+menyeluruh dilakukan terhadap 10 tipe `MYC_DEBT_*` untuk memverifikasi
+setiap setter memiliki **jalur pemicu nyata** (bukan hanya setter statis
+yang kondisinya tak pernah terpenuhi — pola RAW-BUFFERS lama).
+
+**Temuan.** 9 tipe nyata terverifikasi empiris dengan skenario pemicu:
+
+| Tipe | Pemicu nyata | Bukti empiris |
+|---|---|---|
+| GATE-UNAVAILABLE | backend diminta, tak tersedia | `--filc` tanpa Fil-C → debt ✓ |
+| GATE-INFRA-FAILED | backend ADA tapi gagal exec/build | fake filc-clang exit 3 / fake clang non-exec → debt ✓ |
+| GATE-INCONCLUSIVE | backend jalan tapi hasil tak lengkap | `--run --timeout 1` pada infinite loop → debt ✓ |
+| NONZERO-CASES | `--driver` tapi 0 kasus tereksekusi | `driver_zero_cases.c` → debt ✓ |
+| ENSURES-UNPROVED | ensures di-parse, prove/run tak clean | `contract_clauses.c` → debt ✓ |
+| RAW-BUFFERS | `checked` + buffer biasa di luar MYC_BUF | `raw_buf_mixed.c` → debt ✓ (AUDIT-040) |
+| OUTPUT-TRUNCATED | output backend terpotong (cap) | `--run --output-cap 512` → debt ✓ |
+| BUDGET-UNMET | target assurance/waktu/output tak tercapai | `--budget-contract` target prove=clean → debt ✓ |
+| ASSUMPTIONS-OPEN | asumsi belum ditutup + `--require-assumptions-closed` | `assume_char_signed.c` → debt ✓ |
+
+**Bug yang ditemukan & diperbaiki (compile.c).** Jalur Fil-C build gagal
+`myc_filc_gate` men-set `MYC_GATE_INFRA_FAILED` dengan benar (filc.c:5
+jalur: temp-dir, exec, build exit ≠ 0, WSL detect, run exe), namun blok
+`else` di `myc_check_gates` selalu menimpanya menjadi
+`MYC_GATE_UNAVAILABLE` tanpa memeriksa status yang sudah di-set backend.
+Akibatnya `MYC-INCOMPLETE-GATE-INFRA-FAILED` **tidak pernah bisa muncul**
+— setter ada tapi jalur mati (persis pola RAW-BUFFERS). Fix: hanya timpa
+ke UNAVAILABLE bila status masih `NOT_APPLICABLE` (backend tidak
+men-set apa pun); status nyata backend dipertahankan — konsisten dengan
+pola yang sudah ada di blok prove (prove.c INFRA_FAILED dipertahankan).
+
+**Regresi.** Blok `4a2` baru di `_ci_linux.sh` (fake filc-clang
+di-compile via gcc di temp dir + PATH depan; assert UNAVAILABLE vs
+INFRA-FAILED) dan `_regress_run.bat` (fake `filc-clang.exe` di `_fakebin`;
+`--no-cache` agar PATH dihormati; escape `^{return 3;^}` agar batch tidak
+membaca kurung kurawal sebagai blok). Kedua blok hijau 2/2.
+
+**Verifikasi.** Build `-Werror` hijau; self-dogfood `compile.c` verdict
+OK; seluruh 9 tipe debt diregresi ulang tetap muncul; determinisme
+receipt dipertahankan (debt hanya dari gate status + counter yang
+deterministik).

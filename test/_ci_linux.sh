@@ -174,6 +174,26 @@ else
     note "ok_checked: tanpa raw buffer, tanpa debt"
 fi
 
+# --- 4a2. INFRA-FAILED: backend ADA tapi gagal (MYC-AUDIT-041) ---
+# Regresi audit debt: myc_filc_gate men-set INFRA_FAILED (build gagal);
+# compile.c harus MEMPERTAHANKAN status itu (dulu ditimpa jadi UNAVAILABLE
+# sehingga MYC-INCOMPLETE-GATE-INFRA-FAILED tak pernah bisa muncul).
+if ./myc check tests/ok_hello.c --filc --no-cache 2>&1 | grep -qF "MYC-INCOMPLETE-GATE-UNAVAILABLE"; then
+    note "ok_hello --filc (tanpa backend): debt GATE-UNAVAILABLE"
+else
+    fail "ok_hello --filc: debt GATE-UNAVAILABLE tidak muncul"
+fi
+FAKEBIN=$(mktemp -d)
+printf 'int main(void){return 3;}\n' > "$FAKEBIN/fc.c"
+gcc -O0 -o "$FAKEBIN/filc-clang" "$FAKEBIN/fc.c" 2>/dev/null
+gcc -O0 -o "$FAKEBIN/filc-clang.exe" "$FAKEBIN/fc.c" 2>/dev/null
+if PATH="$FAKEBIN:$PATH" ./myc check tests/ok_hello.c --filc --no-cache 2>&1 | grep -qF "MYC-INCOMPLETE-GATE-INFRA-FAILED"; then
+    note "ok_hello --filc (backend gagal): debt GATE-INFRA-FAILED dipertahankan"
+else
+    fail "ok_hello --filc: debt GATE-INFRA-FAILED tidak muncul (status ditimpa?)"
+fi
+rm -rf "$FAKEBIN"
+
 # --- 4b. checked coverage + semantics parity (MYC-AUDIT-026, roadmap 7.3) ---
 if ./myc check tests/semantics_parity.c --checked 2>&1 | grep -qF \
     "buffers=2 allocations=2 accesses=6 frees=2"; then

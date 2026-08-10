@@ -1335,11 +1335,19 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                     "Fil-C clean");
         } else {
             /* 9.10/AUDIT-004: gate DIMINTA tapi backend filc-clang tidak
-             * tersedia -> UNAVAILABLE + debt (bukan kesunyian). */
-            myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_UNAVAILABLE,
-                                "filc-clang tidak tersedia");
-            myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_SKIP,
-                                    "Fil-C unavailable (gap)");
+             * tersedia -> UNAVAILABLE + debt (bukan kesunyian).
+             * MYC-AUDIT-041: hanya timpa bila backend belum men-set status
+             * nyata (masih NOT_APPLICABLE). myc_filc_gate men-set
+             * INFRA_FAILED/INCONCLUSIVE/COMPLETED_FINDINGS pada jalur
+             * backend-ada-tapi-gagal; menimpanya ke UNAVAILABLE menghapus
+             * debt GATE-INFRA-FAILED (setter ada tapi tak pernah muncul). */
+            const myc_gate_result *fg = myc_gate_get(res, MYC_GATE_FILC);
+            if (!fg || fg->status == MYC_GATE_NOT_APPLICABLE) {
+                myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_UNAVAILABLE,
+                                    "filc-clang tidak tersedia");
+                myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_SKIP,
+                                        "Fil-C unavailable (gap)");
+            }
         }
         if (!req->run && !req->driver && !req->metamorphic &&
             !req->divergence) {
