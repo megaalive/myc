@@ -500,7 +500,7 @@ static void tool_agent_check(json_value *id, json_value *args)
     myc_pipeline(&req, &res);
 
     memset(&ar, 0, sizeof(ar));
-    if (myc_build_agent_result(&res, &ar, NULL, NULL) < 0) {
+    if (myc_build_agent_result(&res, &ar, NULL, NULL, NULL) < 0) {
         send_error(id, -32603, "Internal error: gagal build agent result");
         myc_agent_result_free(&ar);
         myc_result_free(&res);

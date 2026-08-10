@@ -765,6 +765,14 @@ typedef struct {
      * (pola A1: --no-assumptions + --require-assumptions-closed). */
     int         agent_payload_cap;
     int         no_persist;
+    /* Fase 7 (DS-15 pack wiring, MYC-AUDIT-038): pack proyek lokal
+     * (myc.prompt.md + myc.spec.json, SOL-15) untuk output --agent dan
+     * paket context SOL-22. pack_dir: --pack-dir DIR (NULL = cwd);
+     * no_pack: --no-pack (nonaktifkan; perilaku = pack absen). pack_dir
+     * malloc'd, di-free caller (myc.c main). NON-blocking: pack hanya
+     * memperkaya output, verdict TIDAK pernah berubah. */
+    char       *pack_dir;
+    int         no_pack;
     /* Fase 5, A3 (--exhaustive): gate Small-Domain Exhaustive Proof. */
     int         exhaustive;
     /* Fase 5, A4: subcommand `myc compare ref.c new.c [func...]`. */

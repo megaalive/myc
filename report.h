@@ -5,6 +5,7 @@
 #define MYC_REPORT_H
 
 #include "myc.h"
+#include "prompt.h"
 
 /* Serialisasi hasil ke string JSON (malloc'd; caller membebaskan).
   * Dipakai MCP server (P9) untuk konten tool. NULL bila gagal. */
@@ -18,6 +19,6 @@ const char *myc_quorum_status_name(myc_quorum_status s);
 
 /* Cetak protokol agent JSON ke stdout.
  * Return 0 bila sukses, -1 bila gagal. */
-int myc_report_agent(const myc_result *res);
+int myc_report_agent(const myc_result *res, const myc_pack_info *pack);
 
 #endif /* MYC_REPORT_H */

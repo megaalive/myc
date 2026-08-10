@@ -1155,14 +1155,18 @@ static void usage(void)
         "                        (Fase 7 privacy/size: cap payload --agent 0|1024-1048576,\n"
         "                        0 = default 16384; --no-persist = tanpa jejak disk,\n"
         "                        ledger/cache/asumsi/profil TIDAK ditulis)\n"
+        "  myc check <file.c> [--pack-dir DIR] [--no-pack]\n"
+        "                        (pack proyek lokal myc.prompt.md + myc.spec.json\n"
+        "                        utk output --agent; NON-blocking, Fase 7)\n"
         "  myc check <file.c> --budget-contract '{\"required\":{\"runtime\":\"clean\"},\"max_time_ms\":10000}'\n"
         "                        (SOL-30: target assurance eksplisit; tak tercapai = INCONCLUSIVE + report)\n"
         "  myc check -          [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache]\n"
         "                        (source dari stdin)\n"
-        "  myc context <file.c> [--finding-id ID] [--budget 4K|8K|16K] [gate flags...]\n"
+        "  myc context <file.c> [--finding-id ID] [--budget 4K|8K|16K] [--pack-dir DIR] [--no-pack] [gate flags...]\n"
         "                        (paket konteks minimal untuk model: function slice,\n"
         "                        callers/callees, contracts, witness, one action,\n"
-        "                        preservation obligations, verify command; SOL-22)\n"
+        "                        preservation obligations, verify command, project\n"
+        "                        pack; SOL-22 + pack Fase 7 NON-blocking)\n"
         "  myc policy\n"
         "  myc probe\n"
         "  myc prompt <file.c> [--pack-dir DIR] [--no-pack]\n"
@@ -1896,6 +1900,9 @@ int main(int argc, char **argv)
     int         is_context = 0;
     const char *profile_id = NULL;   /* Fase 7 (SOL-20): --profile / env */
     int         use_calibrate = 0;       /* Fase 7 (SOL-21): --calibrate */
+    myc_pack_info pinfo;                 /* Fase 7 (DS-15 wiring): pack
+                                            proyek lokal utk --agent & context */
+    int         pinfo_loaded = 0;
 
     if (argc < 2) {
         usage();
@@ -2504,6 +2511,20 @@ int main(int argc, char **argv)
                 req.require_complete = 1; known = 1;
             } else if (strcmp(argv[i], "--agent") == 0) {
                 req.agent = 1; known = 1;
+            } else if (strcmp(argv[i], "--pack-dir") == 0) {
+                /* Fase 7 (DS-15 wiring): pack proyek lokal utk --agent
+                 * dan context (myc.prompt.md + myc.spec.json). */
+                if (i + 1 >= argc) {
+                    fprintf(stderr,
+                            "myc: --pack-dir membutuhkan argumen DIR\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                free(req.pack_dir);
+                req.pack_dir = myc_strdup(argv[i + 1]);
+                i++; known = 1;
+            } else if (strcmp(argv[i], "--no-pack") == 0) {
+                req.no_pack = 1; known = 1;
             } else if (strcmp(argv[i], "--write-repro") == 0) {
                 req.write_repro = 1; known = 1;
             } else if (strcmp(argv[i], "--tx-verify") == 0) {
@@ -2823,11 +2844,40 @@ int main(int argc, char **argv)
                 free(repro_dir);
             }
         }
+        /* Fase 7 (DS-15 wiring): pack proyek lokal utk output --agent
+         * dan paket context SOL-22. NON-blocking: pack hanya memperkaya
+         * output, verdict TIDAK pernah berubah. spec.json ADA tapi
+         * invalid = fail-fast exit 2 (pola cmd_prompt). Tidak masuk
+         * cache key (output agent/context dibangun ulang dari res). */
+        if (is_context || req.agent) {
+            int prc = myc_pack_load(req.pack_dir, req.no_pack, &pinfo);
+            if (prc == -1) {
+                fprintf(stderr,
+                        "myc: %s invalid (skema: version=1, name wajib, "
+                        "domain opsional; rules/allow_headers/deny_functions "
+                        "= array string, batas sesuai prompt.h)\n",
+                        MYC_PACK_SPEC_FILE);
+                if (needs_free)
+                    free((void *)src);
+                myc_result_free(&res);
+                return 2;
+            }
+            if (prc == -2) {
+                fprintf(stderr,
+                        "myc: gagal membaca pack proyek (OOM/IO)\n");
+                if (needs_free)
+                    free((void *)src);
+                myc_result_free(&res);
+                return 1;
+            }
+            pinfo_loaded = 1;
+        }
         /* SOL-22: paket context dibangun DI SINI karena butuh source
          * (sebelum free(src)). Murni derivasi hasil run; deterministik. */
         if (is_context) {
             char  ctx_hash[65];
             char *pkg = myc_context_build(&res, src, len, &req,
+                                          pinfo_loaded ? &pinfo : NULL,
                                           req.tx_finding_id,
                                           context_budget_tokens > 0
                                               ? context_budget_tokens
@@ -2840,6 +2890,10 @@ int main(int argc, char **argv)
                 fprintf(stderr, "myc: gagal membangun context paket\n");
                 if (needs_free)
                     free((void *)src);
+                if (pinfo_loaded) {
+                    free(pinfo.prompt_text);
+                    pinfo_loaded = 0;
+                }
                 myc_result_free(&res);
                 return 1;
             }
@@ -2855,15 +2909,18 @@ int main(int argc, char **argv)
     else if (req.json_summary)
         myc_report_json_summary(&res);
     else if (req.agent)
-        myc_report_agent(&res);
+        myc_report_agent(&res, pinfo_loaded ? &pinfo : NULL);
     else
         myc_report_text(&res);
 
     myc_result_free(&res);
+    if (pinfo_loaded)
+        free(pinfo.prompt_text);
     free(req.tx_finding_id);
     myc_budget_free(&req.budget);
     free(req.assumption_acks);
     free(req.tx_edit_region);
+    free(req.pack_dir);
     if (req.run_stdin)
         free((void *)req.run_stdin);
     return res.verdict == MC_OK ? 0 : 1;

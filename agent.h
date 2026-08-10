@@ -2,6 +2,7 @@
 #define MYC_AGENT_H
 
 #include "myc.h"
+#include "prompt.h"
 
 #define MYC_AGENT_SCHEMA "myc.agent.v2"
 #define MYC_AGENT_MAX_FRONTIER 16
@@ -103,6 +104,12 @@ typedef struct {
      * 0 = default MYC_AGENT_PAYLOAD_CAP; nilai dari res->agent_payload_cap
      * (--agent-payload-cap). Diserialisasi di JSON agent sbg payload_cap. */
     size_t payload_cap;
+
+    /* Project-local pack (Fase 7, DS-15 wiring): objek JSON berisi
+     * prompt.md verbatim + spec (rules/allow/deny) + sha256 keduanya.
+     * NULL bila pack absen/--no-pack ATAU dibuang oleh enforcement cap
+     * (enrichment, dibuang TERAKHIR setelah next_best_json). */
+    char *pack_json;
 } myc_agent_result;
 
 /* Inisialisasi dan pembebasan */
@@ -110,11 +117,13 @@ void myc_agent_result_init(myc_agent_result *ar);
 void myc_agent_result_free(myc_agent_result *ar);
 
 /* Bangun agent protocol dari myc_result. Mengembalikan 0 jika
-   berhasil, -1 bila payload melebihi MYC_AGENT_PAYLOAD_CAP. */
+   berhasil, -1 bila payload melebihi MYC_AGENT_PAYLOAD_CAP.
+   pack: pack proyek lokal (myc_pack_load), NULL = tanpa pack. */
 int myc_build_agent_result(const myc_result *res,
                            myc_agent_result *ar,
                            const char *intent_hash,
-                           const char *scenario_hash);
+                           const char *scenario_hash,
+                           const myc_pack_info *pack);
 
 /* Serialisasi JSON ke buffer statis (terbatas). Mengembalikan
    pointer ke buffer internal (tidak perlu dibebaskan). */

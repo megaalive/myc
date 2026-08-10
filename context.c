@@ -468,12 +468,17 @@ enum {
     SEC_ACTION,
     SEC_PRESERVE,
     SEC_CAUSAL,
+    SEC_PACK,          /* Fase 7 (DS-15 wiring): pack proyek lokal --
+                          prioritas terendah, dipotong pertama saat
+                          budget penuh (konteks finding lebih penting
+                          daripada instruksi proyek) */
     SEC_COUNT
 };
 
 static const char *const SEC_NAMES[SEC_COUNT] = {
     "finding", "function", "callers/callees", "contracts", "witness",
-    "one action", "preservation obligations", "causal cluster"
+    "one action", "preservation obligations", "causal cluster",
+    "project pack"
 };
 
 /* Pilih diagnostic target: finding_id (f-%08x / line) atau root causal. */
@@ -523,9 +528,11 @@ static int ctx_select_diag(const myc_result *res, const char *finding_id)
 static int ctx_build_section(const myc_result *res, const char *src,
                              size_t srclen, int sec,
                              const ctx_func *f, int func_count,
-                             int fidx, int diag_idx, ctx_sb *out)
+                             int fidx, int diag_idx,
+                             const myc_pack_info *pack, ctx_sb *out)
 {
     const myc_diagnostic *d = NULL;
+    int i;
 
     (void)srclen;
     if (diag_idx >= 0 && diag_idx < res->diag_count)
@@ -636,7 +643,7 @@ static int ctx_build_section(const myc_result *res, const char *src,
     case SEC_ACTION: {
         /* one action: reuse derivasi agent (primary + next-best). */
         myc_agent_result ar;
-        if (myc_build_agent_result(res, &ar, NULL, NULL) == 0) {
+        if (myc_build_agent_result(res, &ar, NULL, NULL, NULL) == 0) {
             if (ar.next_best_json && ar.next_best_json[0])
                 sb_printf(out, "next-best experiment: %s\n", ar.next_best_json);
             if (ar.has_primary) {
@@ -692,6 +699,60 @@ static int ctx_build_section(const myc_result *res, const char *src,
         break;
     }
 
+    case SEC_PACK: {
+        /* Fase 7 (DS-15 wiring): pack proyek lokal. Setiap klaim punya
+         * sumber (sha256 isi file) -- jujur, deterministik. Pack absen
+         * ditandai eksplisit (gap terlihat, bukan kesunyian). */
+        if (pack && (pack->prompt_present || pack->spec_present)) {
+            if (pack->prompt_present) {
+                sb_printf(out, "prompt.md (sha256 %s):\n",
+                          pack->prompt_sha256[0] ? pack->prompt_sha256 : "?");
+                if (pack->prompt_text) {
+                    sb_puts(out, pack->prompt_text);
+                    if (pack->prompt_text_len > 0 &&
+                        pack->prompt_text[pack->prompt_text_len - 1] != '\n')
+                        sb_puts(out, "\n");
+                }
+                if (pack->prompt_total_len > pack->prompt_text_len)
+                    sb_printf(out, "[dipotong: %zu dari %zu byte, cap "
+                              "MYC_PACK_PROMPT_CAP]\n",
+                              pack->prompt_text_len, pack->prompt_total_len);
+            } else {
+                sb_puts(out, "(prompt.md tidak ada)\n");
+            }
+            if (pack->spec_present) {
+                sb_printf(out, "spec.json (sha256 %s): name=%s domain=%s\n",
+                          pack->spec_sha256[0] ? pack->spec_sha256 : "?",
+                          pack->spec_name[0] ? pack->spec_name : "(none)",
+                          pack->spec_domain[0] ? pack->spec_domain : "(none)");
+                if (pack->spec_n_rules > 0) {
+                    sb_puts(out, "rules:\n");
+                    for (i = 0; i < pack->spec_n_rules &&
+                                i < MYC_PACK_MAX_RULES; i++)
+                        sb_printf(out, "  - %s\n", pack->spec_rules[i]);
+                }
+                if (pack->spec_n_allow > 0) {
+                    sb_puts(out, "allow_headers:\n");
+                    for (i = 0; i < pack->spec_n_allow &&
+                                i < MYC_PACK_MAX_HEADS; i++)
+                        sb_printf(out, "  - %s\n", pack->spec_allow[i]);
+                }
+                if (pack->spec_n_deny > 0) {
+                    sb_puts(out, "deny_functions:\n");
+                    for (i = 0; i < pack->spec_n_deny &&
+                                i < MYC_PACK_MAX_DENIES; i++)
+                        sb_printf(out, "  - %s\n", pack->spec_deny[i]);
+                }
+            } else {
+                sb_puts(out, "(spec.json tidak ada)\n");
+            }
+        } else {
+            sb_puts(out, "(tidak ada pack proyek lokal: "
+                         "myc.prompt.md / myc.spec.json)\n");
+        }
+        break;
+    }
+
     default:
         break;
     }
@@ -705,6 +766,7 @@ static int ctx_build_section(const myc_result *res, const char *src,
 char *myc_context_build(const myc_result *res,
                         const char *src, size_t srclen,
                         const myc_request *req,
+                        const myc_pack_info *pack,
                         const char *finding_id,
                         int budget_tokens,
                         char hash_out[65])
@@ -746,7 +808,7 @@ char *myc_context_build(const myc_result *res,
         sb_printf(&body, "## %s\n", SEC_NAMES[i]);
         ctx_build_section(res, src, srclen, i,
                           funcs, func_count, fidx, diag_idx,
-                          &body);
+                          pack, &body);
         sb_puts(&body, "\n");
     }
 

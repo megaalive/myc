@@ -2838,10 +2838,69 @@ yang gitignored):
   (maxlen) dibanding `strlen` memakai `>=` agar selalu menyisakan slot
   NUL.
 
-**Batas jujur (v1).** Pack hanya masuk jalur `myc prompt` (system-prompt
-snippet) — BELUM di-wire ke `myc check --agent` / context pack (paket
-konteks SOL-22 tetap murni dari source+result; menyisipkan pack ke sana
-adalah follow-up). `myc.prompt.md` yang lebih dari 8 KiB dipotong dengan
-penanda eksplisit (bukan diam-diam). Spec `domain` kosong default
-"generic". Deterministik selama isi file pack tidak berubah (hash
-mencakup isi).
+**Batas jujur (v1).** `myc.prompt.md` yang lebih dari 8 KiB dipotong
+ dengan penanda eksplisit (bukan diam-diam). Spec `domain` kosong default
+ "generic". Deterministik selama isi file pack tidak berubah (hash
+ mencakup isi). Wiring ke `myc check --agent` + context SOL-22 dikerjakan
+ di entry (34) — MYC-AUDIT-038.
+
+## (34) Pack wiring: --agent + context SOL-22 — MYC-AUDIT-038 (2026-08-10)
+
+Follow-up MYC-AUDIT-037 (item plan terakhir): project-local prompt/spec
+pack (SOL-15) kini di-wire ke DUA jalur konsumsi model selain `myc prompt`:
+
+- **`myc check <file.c> --agent`** — agent JSON (myc.agent.v2) memuat
+  objek `pack`: `prompt_present`/`spec_present` + `prompt_text` verbatim
+  (ter-cap 8 KiB) + `prompt_sha256`/`spec_sha256` + spec (`name`/`domain`/
+  `rules`/`allow_headers`/`deny_functions`). Implementasi: field baru
+  `myc_agent_result.pack_json` (dibangun via json API dari
+  `myc_pack_info`), serialisasi `pack` sbg objek di
+  `myc_agent_result_json`, signature `myc_build_agent_result(..., pack)`
+  (NULL = tanpa pack; pemanggil report.c/mcp.c/context.c di-update).
+  **Enforcement `--agent-payload-cap`**: pack = enrichment yang dibuang
+  TERAKHIR (setelah experiments/causal/next_best) — konten proyek yang
+  user sengaja sediakan lebih berharga daripada eksperimen otomatis;
+  protokol inti (verdict/finding/primary/witness) tidak pernah dikorbankan
+  (verifikasi: cap 1300 pada file ber-finding → pack dibuang, verdict OK
+  tetap 1092 byte).
+- **`myc context <file.c>` (SOL-22)** — section baru `project pack`
+  (SEC_PACK, prioritas TERENDAH: dipotong pertama saat budget penuh —
+  konteks finding lebih penting daripada instruksi proyek). Render:
+  prompt.md verbatim + penanda potong jujur (bila > cap) + spec + sha256
+  keduanya; pack absen ditandai eksplisit "tidak ada pack proyek lokal"
+  (gap terlihat, bukan kesunyian — konsisten trust rule 4). Section masuk
+  hash deterministik context_sha256 (body dibangun lengkap dulu).
+- **Flag**: `--pack-dir DIR` + `--no-pack` kini diparse di loop utama
+  `check`/`context` (field baru `myc_request.pack_dir`/`no_pack`,
+  di-free di main); spec.json ADA tapi invalid = fail-fast exit 2 di
+  kedua jalur (pola cmd_prompt / scenario -2). NON-blocking penuh:
+  verdict TIDAK pernah berubah (diuji blok CI 6t). Tidak masuk cache key
+  (output agent/context dibangun ulang dari res setiap run — konsisten
+  pola `agent_payload_cap` MYC-AUDIT-036).
+- **Bug lama ditemukan & diperbaiki**: `MYC_ERR_INVALID_AGENT_CAP`
+  (ditambahkan MYC-AUDIT-036) belum ditangani di `myc_error_name`
+  (report.c) — `-Werror=switch` menyala saat kompilasi report.c;
+  case ditambahkan. Helper `agent_pack_build_json` dipindah setelah
+  `agent_add_str` (urutan definisi).
+- **CI**: blok 6t Linux (9 assert) + Windows (9 assert): objek pack di
+  agent JSON, isi pack terserialisasi, --no-pack menonaktifkan (kedua
+  jalur), pack_bad fail-fast exit 2 di --agent, section project pack di
+  context, verdict agent tetap OK (NON-blocking), + enforcement cap
+  (pack dibuang saat cap ketat 1300, verdict tetap OK). Fixtures reuse
+  `test/fixtures/pack/` + `pack_bad/`.
+- **Code review**: 1 bug valid diperbaiki — `agent_pack_build_json`
+  mengabaikan return `json_serialize` (OOM bisa memberi pointer sampah
+  ke `ar->pack_json`); kini `if (!json_serialize(...)) out = NULL`
+  (konsisten dgn `myc_agent_result_json`). Catatan yang DITERIMA (pola
+  eksisting, NON-blocking): (a) early-return di loop flag main bisa
+  membocorkan `req.pack_dir` bila `--pack-dir` mendahului flag yang
+  gagal — konsisten dgn pola `tx_finding_id` yang sudah ada sejak lama;
+  (b) `--agent --json` bersama memuat pack yang tak terpakai (as_json
+  menang di rantai report) — inefisiensi baca disk, bukan bug; (c)
+  context_sha256 semua run berubah (section `project pack` selalu ada)
+  — deterministik, gap terlihat (trust rule 4), sudah didokumentasikan.
+- **Batas jujur (v2).** MCP server (mcp.c) tetap memanggil
+  `myc_build_agent_result` tanpa pack (NULL) — pack adalah jalur CLI;
+  MCP belum mem-parse `pack_dir` dari JSON-RPC (follow-up). Section pack
+  pada context dipotong pertama saat budget 4K default bila isi prompt.md
+  besar (wajar: prioritas terendah).

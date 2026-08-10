@@ -1192,6 +1192,59 @@ else
     fail "Fase 7 pack: verdict check berubah oleh pack"
 fi
 
+# --- 6t. Fase 7 (pack wiring): pack masuk output --agent + context SOL-22 ---
+# Pack proyek lokal (myc.prompt.md + myc.spec.json) kini di-wire ke
+# `myc check --agent` (objek "pack" di agent JSON) dan `myc context`
+# (section "project pack", prioritas terendah). NON-blocking penuh.
+if ./myc check tests/ok_hello.c --agent --pack-dir test/fixtures/pack --no-cache 2>&1 | grep -qF 'prompt_present'; then
+    note "Fase 7 pack-wire: objek pack ada di agent JSON (--agent)"
+else
+    fail "Fase 7 pack-wire: objek pack hilang dari agent JSON"
+fi
+if ./myc check tests/ok_hello.c --agent --pack-dir test/fixtures/pack --no-cache 2>&1 | grep -qF 'pack-fixture'; then
+    note "Fase 7 pack-wire: isi prompt.md + spec terserialisasi (marker)"
+else
+    fail "Fase 7 pack-wire: isi pack tidak terserialisasi di agent JSON"
+fi
+if ./myc check tests/ok_hello.c --agent --pack-dir test/fixtures/pack --no-pack --no-cache 2>&1 | grep -qF 'prompt_present'; then
+    fail "Fase 7 pack-wire: --no-pack masih menyertakan pack di agent"
+else
+    note "Fase 7 pack-wire: --no-pack menonaktifkan pack di agent"
+fi
+if ./myc check tests/ok_hello.c --agent --pack-dir test/fixtures/pack_bad --no-cache > /dev/null 2>&1; then
+    fail "Fase 7 pack-wire: spec.json invalid harus exit 2 di --agent"
+else
+    note "Fase 7 pack-wire: spec invalid fail-fast exit 2 di --agent"
+fi
+if ./myc context tests/ok_hello.c --pack-dir test/fixtures/pack --no-cache 2>&1 | grep -qF '## project pack'; then
+    note "Fase 7 pack-wire: section project pack ada di context (SOL-22)"
+else
+    fail "Fase 7 pack-wire: section project pack hilang dari context"
+fi
+if ./myc context tests/ok_hello.c --pack-dir test/fixtures/pack --no-pack --no-cache 2>&1 | grep -qF 'tidak ada pack proyek'; then
+    note "Fase 7 pack-wire: context --no-pack menandai pack absen eksplisit"
+else
+    fail "Fase 7 pack-wire: context --no-pack tidak menandai pack absen"
+fi
+if ./myc check tests/ok_hello.c --agent --pack-dir test/fixtures/pack --no-cache 2>&1 | grep -qF '"verdict":0'; then
+    note "Fase 7 pack-wire: verdict agent tetap OK (NON-blocking)"
+else
+    fail "Fase 7 pack-wire: verdict agent berubah oleh pack"
+fi
+# Enforcement --agent-payload-cap: pack = enrichment yang dibuang
+# TERAKHIR. Cap 1300 pada file ber-finding -> pack dibuang tapi
+# protokol inti (verdict) tetap utuh.
+if ./myc check test/fixtures/blinky_bad.c --agent --pack-dir test/fixtures/pack --agent-payload-cap 1300 --no-cache 2>&1 | grep -qF 'prompt_present'; then
+    fail "Fase 7 pack-wire: pack harus dibuang saat cap ketat (enrichment terakhir)"
+else
+    note "Fase 7 pack-wire: pack dibuang saat cap ketat"
+fi
+if ./myc check test/fixtures/blinky_bad.c --agent --pack-dir test/fixtures/pack --agent-payload-cap 1300 --no-cache 2>&1 | grep -qF '"verdict":0'; then
+    note "Fase 7 pack-wire: verdict tetap OK saat pack dibuang (protokol inti utuh)"
+else
+    fail "Fase 7 pack-wire: verdict hilang saat pack dibuang"
+fi
+
 # --- 7a. Fase 0 Golden Schema + Malformed-Input (myc.result.v1) ---
 if bash test/_schema_golden.sh; then
     note "Fase 0 golden schema: 13 cek PASS (schema + malformed input)"

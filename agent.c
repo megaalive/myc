@@ -85,6 +85,7 @@ void myc_agent_result_free(myc_agent_result *ar)
     free(ar->causal_json);
     free(ar->next_best_json);
     free(ar->delta_receipt_sha);
+    free(ar->pack_json);
 }
 
 static void agent_add_str(json_value *obj, const char *key, const char *val)
@@ -95,6 +96,68 @@ static void agent_add_str(json_value *obj, const char *key, const char *val)
 static void agent_add_int(json_value *obj, const char *key, int val)
 {
     json_obj_set(obj, key, json_new_num((int64_t)val));
+}
+
+/* Fase 7 (DS-15 wiring): bangun objek JSON pack proyek lokal dari
+ * info (hasil myc_pack_load). NULL bila info kosong / OOM. Field
+ * prompt_sha256/prompt_text hanya ada bila prompt.md present;
+ * spec_sha256/name/domain/rules/allow_headers/deny_functions hanya
+ * bila spec.json present -- klaim selalu punya sumber (jujur). */
+static char *agent_pack_build_json(const myc_pack_info *info)
+{
+    json_value *root;
+    json_value *arr;
+    char *out = NULL;
+    int  i;
+
+    if (!info || (!info->prompt_present && !info->spec_present))
+        return NULL;
+
+    root = json_new_obj();
+    if (!root) return NULL;
+
+    json_obj_set(root, "prompt_present",
+                 json_new_num(info->prompt_present ? 1 : 0));
+    json_obj_set(root, "spec_present",
+                 json_new_num(info->spec_present ? 1 : 0));
+
+    if (info->prompt_present) {
+        agent_add_str(root, "prompt_sha256",
+            info->prompt_sha256[0] ? info->prompt_sha256 : NULL);
+        agent_add_str(root, "prompt_text", info->prompt_text);
+    }
+    if (info->spec_present) {
+        agent_add_str(root, "spec_sha256",
+            info->spec_sha256[0] ? info->spec_sha256 : NULL);
+        agent_add_str(root, "name",
+            info->spec_name[0] ? info->spec_name : NULL);
+        agent_add_str(root, "domain",
+            info->spec_domain[0] ? info->spec_domain : NULL);
+
+        arr = json_new_arr();
+        if (arr) {
+            for (i = 0; i < info->spec_n_rules && i < MYC_PACK_MAX_RULES; i++)
+                json_arr_push(arr, json_new_str(info->spec_rules[i]));
+            json_obj_set(root, "rules", arr);
+        }
+        arr = json_new_arr();
+        if (arr) {
+            for (i = 0; i < info->spec_n_allow && i < MYC_PACK_MAX_HEADS; i++)
+                json_arr_push(arr, json_new_str(info->spec_allow[i]));
+            json_obj_set(root, "allow_headers", arr);
+        }
+        arr = json_new_arr();
+        if (arr) {
+            for (i = 0; i < info->spec_n_deny && i < MYC_PACK_MAX_DENIES; i++)
+                json_arr_push(arr, json_new_str(info->spec_deny[i]));
+            json_obj_set(root, "deny_functions", arr);
+        }
+    }
+
+    if (!json_serialize(root, &out))
+        out = NULL;   /* OOM: gagal jujur, bukan pointer sampah */
+    json_free(root);
+    return out;
 }
 
 const char *myc_agent_result_json(const myc_agent_result *ar)
@@ -233,6 +296,16 @@ const char *myc_agent_result_json(const myc_agent_result *ar)
     agent_add_str(root, "next_best", ar->next_best_json);
     agent_add_str(root, "delta_receipt_sha", ar->delta_receipt_sha);
 
+    /* Fase 7 (DS-15 wiring): pack proyek lokal diserialisasi sebagai
+     * objek (bukan string) bila ada. pack_json dibangun dari isi pack
+     * dengan json API, jadi parse ulang di sini aman & deterministik. */
+    if (ar->pack_json) {
+        json_value *pv = NULL;
+        if (json_parse_cstr(ar->pack_json, &pv) && pv) {
+            json_obj_set(root, "pack", pv);
+        }
+    }
+
     ok = json_serialize(root, &out);
     json_free(root);
     if (!ok) return NULL;
@@ -278,7 +351,8 @@ char *myc_agent_build_next_check(const myc_result *res)
 int myc_build_agent_result(const myc_result *res,
                                   myc_agent_result *ar,
                                   const char *intent_hash,
-                                  const char *scenario_hash)
+                                  const char *scenario_hash,
+                                  const myc_pack_info *pack)
 {
     size_t i;
     const char *js = NULL;
@@ -286,6 +360,11 @@ int myc_build_agent_result(const myc_result *res,
     if (!res || !ar) return -1;
 
     myc_agent_result_init(ar);
+
+    /* Fase 7 (DS-15 wiring): pack proyek lokal -> enrichment terakhir
+     * (dibuang paling akhir saat enforcement cap di bawah). Hanya
+     * disertakan bila ada isi (prompt.md ATAU spec.json). */
+    ar->pack_json = agent_pack_build_json(pack);
 
     /* Fase 7 (privacy/size controls): cap dari res (di-wire myc_run
      * dari --agent-payload-cap); 0 = default MYC_AGENT_PAYLOAD_CAP.
@@ -440,6 +519,16 @@ int myc_build_agent_result(const myc_result *res,
     if (ar->payload_size > ar->payload_cap && ar->next_best_json) {
         free(ar->next_best_json);
         ar->next_best_json = NULL;
+        js = myc_agent_result_json(ar);
+        ar->payload_size = js ? strlen(js) : 0;
+        free((void *)js);
+    }
+    /* Pack = enrichment TERAKHIR yang dibuang: konten proyek yang user
+     * sengaja sediakan (version-controllable), lebih berharga daripada
+     * eksperimen otomatis; hanya dikorbankan bila benar-benar perlu. */
+    if (ar->payload_size > ar->payload_cap && ar->pack_json) {
+        free(ar->pack_json);
+        ar->pack_json = NULL;
         js = myc_agent_result_json(ar);
         ar->payload_size = js ? strlen(js) : 0;
         free((void *)js);

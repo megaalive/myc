@@ -741,6 +741,25 @@ if errorlevel 1 (echo [OK] pack: spec.json invalid fail-fast exit 2) else (echo 
 myc.exe check tests\ok_hello.c --no-cache > %OUT% 2>&1
 findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] pack: verdict check tidak berubah (NON-blocking) || echo [FAIL] pack: verdict check berubah
 del %OUT%
+echo --- 6t. Fase 7 (pack wiring): pack masuk output --agent + context SOL-22
+set OUT=%TEMP%\myc_packwire_out.txt
+myc.exe check tests\ok_hello.c --agent --pack-dir test\fixtures\pack --no-cache > %OUT% 2>&1
+findstr /C:"prompt_present" %OUT% >nul && echo [OK] pack-wire: objek pack ada di agent JSON || echo [FAIL] pack-wire: objek pack hilang dari agent JSON
+findstr /C:"pack-fixture" %OUT% >nul && echo [OK] pack-wire: isi prompt.md + spec terserialisasi || echo [FAIL] pack-wire: isi pack tidak terserialisasi
+myc.exe check tests\ok_hello.c --agent --pack-dir test\fixtures\pack --no-pack --no-cache > %OUT% 2>&1
+findstr /C:"prompt_present" %OUT% >nul && echo [FAIL] pack-wire: --no-pack masih menyertakan pack || echo [OK] pack-wire: --no-pack menonaktifkan pack di agent
+myc.exe check tests\ok_hello.c --agent --pack-dir test\fixtures\pack_bad --no-cache > %OUT% 2>&1
+if errorlevel 1 (echo [OK] pack-wire: spec invalid fail-fast exit 2 di --agent) else (echo [FAIL] pack-wire: spec invalid harus exit 2 di --agent)
+myc.exe context tests\ok_hello.c --pack-dir test\fixtures\pack --no-cache > %OUT% 2>&1
+findstr /C:"project pack" %OUT% >nul && echo [OK] pack-wire: section project pack ada di context || echo [FAIL] pack-wire: section project pack hilang dari context
+myc.exe context tests\ok_hello.c --pack-dir test\fixtures\pack --no-pack --no-cache > %OUT% 2>&1
+findstr /C:"tidak ada pack proyek" %OUT% >nul && echo [OK] pack-wire: context --no-pack menandai pack absen || echo [FAIL] pack-wire: context --no-pack tidak menandai pack absen
+myc.exe check tests\ok_hello.c --agent --pack-dir test\fixtures\pack --no-cache > %OUT% 2>&1
+if errorlevel 1 (echo [FAIL] pack-wire: verdict agent berubah oleh pack, exit != 0) else (echo [OK] pack-wire: verdict agent tetap OK NON-blocking)
+myc.exe check test\fixtures\blinky_bad.c --agent --pack-dir test\fixtures\pack --agent-payload-cap 1300 --no-cache > %OUT% 2>&1
+if errorlevel 1 (echo [FAIL] pack-wire: cap ketat harus tetap exit 0, protokol inti utuh) else (echo [OK] pack-wire: cap ketat tetap exit 0)
+findstr /C:"prompt_present" %OUT% >nul && echo [FAIL] pack-wire: pack harus dibuang saat cap ketat || echo [OK] pack-wire: pack dibuang saat cap ketat (enrichment terakhir)
+del %OUT%
 echo --- Fase 0: Golden Schema + Malformed-Input (myc.result.v1)
 where bash >nul 2>&1
 if errorlevel 1 (

@@ -59,6 +59,7 @@ const char *myc_error_name(myc_error_code c)
     case MYC_ERR_INVALID_TIMEOUT:              return "invalid_timeout";
     case MYC_ERR_INVALID_OUTPUT_CAP:           return "invalid_output_cap";
     case MYC_ERR_INVALID_CWD:                  return "invalid_cwd";
+    case MYC_ERR_INVALID_AGENT_CAP:            return "invalid_agent_cap";
     case MYC_ERR_STDIN_TOO_LARGE:              return "stdin_too_large";
     case MYC_ERR_INTERNAL:                    return "internal";
     }
@@ -1867,7 +1868,7 @@ void myc_report_json(const myc_result *res)
     }
 }
 
-int myc_report_agent(const myc_result *res)
+int myc_report_agent(const myc_result *res, const myc_pack_info *pack)
 {
     myc_agent_result ar;
     const char *js;
@@ -1876,7 +1877,7 @@ int myc_report_agent(const myc_result *res)
 
     memset(&ar, 0, sizeof(ar));
 
-    if (myc_build_agent_result(res, &ar, NULL, NULL) < 0)
+    if (myc_build_agent_result(res, &ar, NULL, NULL, pack) < 0)
         return -1;
 
     js = myc_agent_result_json(&ar);

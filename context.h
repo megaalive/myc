@@ -28,6 +28,7 @@
 #define MYC_CONTEXT_H
 
 #include "myc.h"
+#include "prompt.h"
 
 /* Budget default (token approximation) dan nilai yang diterima CLI. */
 #define MYC_CONTEXT_BUDGET_DEFAULT 8192
@@ -44,6 +45,10 @@
  * budget_tokens: target ukuran (approximation; bagian prioritas rendah
  *             di-truncate dengan penanda eksplisit).
  * hash_out : 65 byte diisi sha256 hex dari isi paket (tanpa baris hash).
+ * pack     : pack proyek lokal (myc_pack_load), NULL = tanpa pack.
+ *             Section "project pack" (prioritas terendah, dipotong
+ *             pertama saat budget penuh) memuat prompt.md verbatim +
+ *             spec + sha256; NON-blocking, TIDAK mengubah verdict.
  *
  * Mengembalikan string malloc'd (caller free) berisi paket teks, atau NULL
  * bila source/req/res tidak valid. Bila tidak ada finding terkonfirmasi,
@@ -53,6 +58,7 @@
 char *myc_context_build(const myc_result *res,
                         const char *src, size_t srclen,
                         const myc_request *req,
+                        const myc_pack_info *pack,
                         const char *finding_id,
                         int budget_tokens,
                         char hash_out[65]);
