@@ -165,6 +165,16 @@ for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c r
   myc.exe check "%%f" --checked > %OUT%
   findstr /B /C:"verdict:" /C:"assurance:" /C:"checked:" /C:"  build_ok:" %OUT%
 )
+echo --- checked raw buffers (MYC-AUDIT-040): raw_buf_mixed harus debt RAW-BUFFERS, semantics_parity bebas
+myc.exe check tests\raw_buf_mixed.c --checked > %OUT% 2>&1
+findstr /C:"MYC-INCOMPLETE-RAW-BUFFERS" %OUT% >nul && echo [OK] raw_buf_mixed: buffer biasa di luar MYC_BUF jadi debt RAW-BUFFERS || echo [FAIL] debt RAW-BUFFERS tidak muncul
+findstr /C:"raw_buffers:" %OUT% >nul && echo [OK] raw_buf_mixed: counter raw_buffers dilaporkan || echo [WARN] counter raw_buffers tidak muncul
+myc.exe check tests\raw_buf_mixed.c --checked --require-complete > %OUT% 2>&1
+findstr /C:"verdict:   INCONCLUSIVE" %OUT% >nul && echo [OK] require-complete: gap raw-buffers -^> INCONCLUSIVE || echo [WARN] gap raw-buffers tidak menggagalkan hasil
+myc.exe check tests\semantics_parity.c --checked > %OUT% 2>&1
+findstr /C:"MYC-INCOMPLETE-RAW-BUFFERS" %OUT% >nul && echo [FAIL] semantics_parity murni MYC_BUF kena debt RAW-BUFFERS (false positive) || echo [OK] semantics_parity: tanpa raw buffer, tanpa debt
+myc.exe check tests\ok_checked.c --checked > %OUT% 2>&1
+findstr /C:"MYC-INCOMPLETE-RAW-BUFFERS" %OUT% >nul && echo [FAIL] ok_checked kena debt RAW-BUFFERS (false positive) || echo [OK] ok_checked: tanpa raw buffer, tanpa debt
 echo --- checked oob (--run --checked): bad_checked_oob harus RUNTIME_VIOLATION, ok_checked tetap L4
 echo === tests\bad_checked_oob.c
 myc.exe check tests\bad_checked_oob.c --run --checked > %OUT%

@@ -80,6 +80,7 @@ typedef struct {
     int negative_callsites;
     int negative_deviations;
     int checked_buffers, checked_allocations, checked_accesses, checked_frees;
+    int checked_raw_buffers; /* MYC-AUDIT-040: buffer biasa di luar MYC_BUF */
     int driver_funcs, driver_cases, driver_skipped;
     int ran_negative, ran_checked, ran_driver;
 

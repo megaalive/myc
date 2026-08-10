@@ -2947,3 +2947,34 @@ jalur MCP server (`mcp.exe`), bukan hanya CLI:
   hasil check biasa tetap bebas pack (tidak mengubah skema myc.result.v1).
   `pack_dir` MCP di-resolve relatif terhadap cwd server saat ini (belum
   ada isolasi per-request; follow-up potensial).
+
+## (36) Wire debt MYC-INCOMPLETE-RAW-BUFFERS — MYC-AUDIT-040 (2026-08-10)
+
+Menutup temuan audit: `MYC_DEBT_RAW_BUFFERS` selama ini hanyalah enum +
+label (`myc.h`, gate.c) tanpa SATU pun setter — `MYC-INCOMPLETE-RAW-BUFFERS`
+tidak pernah bisa muncul. Kini di-wire penuh:
+
+- **Deteksi (compile.c).** `scan_checked_coverage` menambah output
+  `raw_buffers` = jumlah `[` di luar komentar/string/preprocessor
+  (deklarasi/akses array biasa). Makro MYC_BUF/MYC_NEW/MYC_AT/MYC_FREE
+  tidak memakai `[`, jadi tidak ada double-count. Nilai disimpan di
+  `myc_result.checked_raw_buffers` (dan capsule).
+- **Debt (gate.c).** `myc_build_debt` memicu `MYC_DEBT_RAW_BUFFERS` bila
+  `checked_uses_buf && checked_raw_buffers > 0`: source memakai disiplin
+  MYC_BUF tapi masih ada buffer biasa → transformasi fat-pointer (L4
+  SPATIAL) tidak menutup semua buffer — gap jujur. NON-blocking: verdict
+  tidak pernah turun; `--require-complete` menaikkannya jadi INCONCLUSIVE
+  (pola 9.10).
+- **Propagasi lengkap.** Field `checked_raw_buffers` di myc_result,
+  capsule (`myc_build_capsule`), cache entry SOL-18 (`chk_rb` di cache.c:
+  load/save/replay/new-entry) + laporan teks/JSON/capsule (report.c).
+- **Fixture + regresi.** `tests/raw_buf_mixed.c` (MYC_BUF + array biasa)
+  → debt RAW-BUFFERS muncul; `semantics_parity.c` / `ok_checked.c` (murni
+  MYC_BUF) → TANPA debt (no false positive). Assert di `_regress_run.bat`
+  + `_ci_linux.sh` (blok 4a): debt muncul, `--require-complete` →
+  INCONCLUSIVE, dua kontrol negatif tetap bersih.
+- **Batas jujur.** `raw_buffers` adalah proksi leksikal (setiap `[` di luar
+  komentar/string/pp dihitung, termasuk array parameter fungsi yang
+  sebenarnya sah); debt tetap NON-blocking sehingga over-count hanya
+  memperkaya laporan, tidak pernah menurunkan verdict. Tidak mengubah
+  receipt fingerprint (hanya menambah field laporan/cache).

@@ -345,6 +345,17 @@ static void myc_build_debt(myc_result *res)
                          "klausa ensures di-parse tapi tidak dibuktikan");
     }
 
+    /* MYC-AUDIT-040: buffer biasa di luar MYC_BUF. Source memakai disiplin
+     * MYC_BUF (checked_uses_buf) tapi masih ada `[` deklarasi/akses array
+     * biasa (checked_raw_buffers > 0) -> transformasi fat-pointer tidak
+     * menutup semua buffer (L4 SPATIAL parsial). Observasi teks
+     * deterministik, NON-blocking: verdict tidak pernah turun karenanya;
+     * gap terlihat di laporan + --require-complete menaikkannya. */
+    if (res->checked_uses_buf && res->checked_raw_buffers > 0 &&
+        !myc_debt_present(res, MYC_DEBT_RAW_BUFFERS))
+        myc_debt_add(res, MYC_DEBT_RAW_BUFFERS,
+                     "buffer biasa di luar MYC_BUF (akses [..] tidak dicek)");
+
     /* Output gate terpotong -> bukti utama hilang sebagian. */
     if ((res->truncated || res->run_truncated) &&
         !myc_debt_present(res, MYC_DEBT_OUTPUT_TRUNCATED))

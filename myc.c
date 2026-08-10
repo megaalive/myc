@@ -722,6 +722,8 @@ static myc_replay_capsule *myc_build_capsule(const myc_request *req,
     cap->checked_allocations = res->checked_allocations;
     cap->checked_accesses = res->checked_accesses;
     cap->checked_frees = res->checked_frees;
+    /* MYC-AUDIT-040: buffer biasa di luar MYC_BUF. */
+    cap->checked_raw_buffers = res->checked_raw_buffers;
     /* Driver (roadmap 7.5): ringkasan + per-case record utk replay. */
     cap->driver_funcs = res->driver_funcs;
     cap->driver_cases = res->driver_cases;

@@ -152,6 +152,28 @@ fi
 assert_out "ok_checked --checked -> L4" "assurance: L4" tests/ok_checked.c --checked
 assert_out "bad_checked --checked -> COMPILE_ERROR" "verdict:   COMPILE_ERROR" tests/bad_checked.c --checked
 
+# --- 4a. raw buffers di luar MYC_BUF (MYC-AUDIT-040) ---
+if ./myc check tests/raw_buf_mixed.c --checked 2>&1 | grep -qF "MYC-INCOMPLETE-RAW-BUFFERS"; then
+    note "raw_buf_mixed: buffer biasa di luar MYC_BUF -> debt RAW-BUFFERS"
+else
+    fail "raw_buf_mixed: debt RAW-BUFFERS tidak muncul"
+fi
+if ./myc check tests/raw_buf_mixed.c --checked --require-complete 2>&1 | grep -qF "verdict:   INCONCLUSIVE"; then
+    note "raw_buf_mixed --require-complete: gap raw-buffers -> INCONCLUSIVE"
+else
+    fail "raw_buf_mixed --require-complete: gap tidak menggagalkan hasil"
+fi
+if ./myc check tests/semantics_parity.c --checked 2>&1 | grep -qF "MYC-INCOMPLETE-RAW-BUFFERS"; then
+    fail "semantics_parity murni MYC_BUF kena debt RAW-BUFFERS (false positive)"
+else
+    note "semantics_parity: tanpa raw buffer, tanpa debt"
+fi
+if ./myc check tests/ok_checked.c --checked 2>&1 | grep -qF "MYC-INCOMPLETE-RAW-BUFFERS"; then
+    fail "ok_checked kena debt RAW-BUFFERS (false positive)"
+else
+    note "ok_checked: tanpa raw buffer, tanpa debt"
+fi
+
 # --- 4b. checked coverage + semantics parity (MYC-AUDIT-026, roadmap 7.3) ---
 if ./myc check tests/semantics_parity.c --checked 2>&1 | grep -qF \
     "buffers=2 allocations=2 accesses=6 frees=2"; then

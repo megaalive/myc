@@ -573,6 +573,13 @@ static int scan_hosted_api(const char *src, size_t len, myc_result *res)
  * skip komentar). Tidak menghitung referensi "MYC_BUF" di komentar (mencegah
  * over-claim L4).
  *
+ * MYC-AUDIT-040 (raw buffers): parameter `raw_buffers` diisi jumlah `[`
+ * di luar komentar/string/preprocessor (deklarasi/akses array biasa).
+ * Source yang memakai disiplin MYC_BUF seharusnya mengakses buffer via
+ * MYC_AT (yang tidak memakai `[`), jadi kemunculan `[` lain menandakan
+ * buffer biasa di luar MYC_BUF — transformasi fat-pointer tidak menutup
+ * semua buffer (debt MYC-INCOMPLETE-RAW-BUFFERS, NON-blocking).
+ *
  * Catatan jujur: scanner LEXICAL — menghitung invokasi bahkan di dalam
  * cabang preprocessor yang TIDAK aktif (mis. `#ifndef MYC_CHECKED` fallback
  * produksi yang memakai akses langsung b[i]); untuk source semacam itu
@@ -581,7 +588,8 @@ static int scan_hosted_api(const char *src, size_t len, myc_result *res)
  * tepat. */
 static int scan_checked_coverage(const char *src, size_t len,
                                  int *buffers, int *allocs,
-                                 int *accesses, int *frees)
+                                 int *accesses, int *frees,
+                                 int *raw_buffers)
 {
     /* auto storage (bukan static): initializer memakai parameter fungsi
      * (bukan konstanta) sehingga `static` tidak valid di C. */
@@ -600,7 +608,7 @@ static int scan_checked_coverage(const char *src, size_t len,
     int    uses = 0;
     size_t nmac = sizeof(macros) / sizeof(macros[0]);
 
-    *buffers = *allocs = *accesses = *frees = 0;
+    *buffers = *allocs = *accesses = *frees = *raw_buffers = 0;
     while (i < len) {
         char c = src[i];
         if (c == '/' && i + 1 < len) {
@@ -633,6 +641,12 @@ static int scan_checked_coverage(const char *src, size_t len,
                 i++;
             continue;
         }
+        /* MYC-AUDIT-040: `[` di luar komentar/string/preprocessor =
+         * deklarasi/akses array biasa (buffer di luar MYC_BUF). MYC_BUF /
+         * MYC_NEW / MYC_AT / MYC_FREE tidak memakai `[`, jadi tidak ada
+         * double-count dengan makro di bawah. */
+        if (c == '[')
+            (*raw_buffers)++;
         if (c >= 'A' && c <= 'Z') {
             size_t m;
             for (m = 0; m < nmac; m++) {
@@ -701,9 +715,9 @@ static void run_checked_gate(const myc_request *req, const char *gcc_path,
     const char **argv;
 
     {
-        int n_buf = 0, n_alloc = 0, n_at = 0, n_free = 0;
+        int n_buf = 0, n_alloc = 0, n_at = 0, n_free = 0, n_raw = 0;
         if (!scan_checked_coverage(src, srclen, &n_buf, &n_alloc, &n_at,
-                                   &n_free)) {
+                                   &n_free, &n_raw)) {
             add_diag_copy(res, 0, 0,
                           "checked build di-skip: tidak ada pola MYC_BUF di source");
             /* verdict sukses (gate kompilasi sudah lolos); jangan biarkan
@@ -717,6 +731,8 @@ static void run_checked_gate(const myc_request *req, const char *gcc_path,
         res->checked_allocations = n_alloc;
         res->checked_accesses = n_at;
         res->checked_frees = n_free;
+        /* MYC-AUDIT-040: buffer biasa di luar MYC_BUF (gap L4 jujur). */
+        res->checked_raw_buffers = n_raw;
     }
 
     /* susun argv: gcc + CHECKED_EXTRA + syntax base + mem warnings (+strict)

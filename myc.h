@@ -888,6 +888,12 @@ typedef struct {
     int checked_allocations;  /* invokasi MYC_NEW */
     int checked_accesses;     /* invokasi MYC_AT */
     int checked_frees;        /* invokasi MYC_FREE */
+    /* MYC-AUDIT-040: raw buffers di luar MYC_BUF — jumlah `[` di luar
+     * komentar/string/preprocessor (deklarasi/akses array biasa). Debt
+     * MYC-INCOMPLETE-RAW-BUFFERS bila source memakai MYC_BUF (checked)
+     * tapi masih ada buffer biasa: transformasi fat-pointer tidak menutup
+     * semua buffer. Observasi teks deterministik, NON-blocking. */
+    int checked_raw_buffers;
     /* Driver (roadmap 7.5): ringkasan + per-case record untuk replay.
      * String di-strdup (capsule dibebaskan myc_result_free). */
     int driver_funcs;
@@ -1182,6 +1188,10 @@ char          *rsrc_report;                /* arena */
     int         checked_allocations;    /* invokasi MYC_NEW */
     int         checked_accesses;       /* invokasi MYC_AT (akses yang dicek) */
     int         checked_frees;          /* invokasi MYC_FREE */
+    /* MYC-AUDIT-040: buffer biasa di luar MYC_BUF (jumlah `[` non-makro
+     * checked di luar komentar/string). Debt RAW-BUFFERS bila
+     * checked_uses_buf && checked_raw_buffers > 0. */
+    int         checked_raw_buffers;
 
     /* --- hasil gate Fil-C (D4.1, P8, --filc) --- */
     int         ran_filc;               /* 1 bila gate Fil-C dijalankan */

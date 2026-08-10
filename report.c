@@ -467,6 +467,10 @@ void myc_report_text(const myc_result *res)
             printf("  coverage:     buffers=%d allocations=%d accesses=%d frees=%d\n",
                    res->checked_buffers, res->checked_allocations,
                    res->checked_accesses, res->checked_frees);
+            /* MYC-AUDIT-040: buffer biasa di luar MYC_BUF (debt
+             * MYC-INCOMPLETE-RAW-BUFFERS, NON-blocking). */
+            printf("  raw_buffers:  %d (di luar MYC_BUF)\n",
+                   res->checked_raw_buffers);
         }
     }
 
@@ -734,10 +738,13 @@ if (res->debt_count > 0) {
              printf("  negative_callsites: %d  negative_deviations: %d\n",
                     cap->negative_callsites, cap->negative_deviations);
          /* MYC-AUDIT-026: coverage count checked-build di capsule. */
-         if (cap->checked)
+         if (cap->checked) {
              printf("  checked_coverage: buffers=%d allocations=%d accesses=%d frees=%d\n",
                     cap->checked_buffers, cap->checked_allocations,
                     cap->checked_accesses, cap->checked_frees);
+             /* MYC-AUDIT-040: buffer biasa di luar MYC_BUF. */
+             printf("  checked_raw_buffers: %d\n", cap->checked_raw_buffers);
+         }
          /* Roadmap 7.5: driver case records + harness sha (replay). */
          if (cap->driver) {
              int dci;
@@ -1106,6 +1113,8 @@ char *myc_result_to_json(const myc_result *res)
         json_sb_printf(&b, "\"checked_allocations\":%d,", res->checked_allocations);
         json_sb_printf(&b, "\"checked_accesses\":%d,", res->checked_accesses);
         json_sb_printf(&b, "\"checked_frees\":%d,", res->checked_frees);
+        /* MYC-AUDIT-040: buffer biasa di luar MYC_BUF (gap L4 jujur). */
+        json_sb_printf(&b, "\"checked_raw_buffers\":%d,", res->checked_raw_buffers);
     }
     json_sb_printf(&b, "\"ran_filc\":%s,", res->ran_filc ? "true" : "false");
     json_sb_printf(&b, "\"filc_panics\":%d,", res->filc_panics);
@@ -1520,6 +1529,9 @@ char *myc_result_to_json(const myc_result *res)
                             cap->checked_accesses);
              json_sb_printf(&b, "\"checked_frees\":%d,",
                             cap->checked_frees);
+             /* MYC-AUDIT-040: buffer biasa di luar MYC_BUF. */
+             json_sb_printf(&b, "\"checked_raw_buffers\":%d,",
+                            cap->checked_raw_buffers);
          }
          /* Roadmap 7.5: driver case records + harness sha (replay). */
          if (cap->driver) {

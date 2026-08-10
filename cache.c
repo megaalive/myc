@@ -181,6 +181,7 @@ static int cache_read_all(myc_cache_entry *out, int cap)
             v = json_get(e, "chk_a"); if (v && v->type == JSON_NUM) ce->checked_allocations = (int)v->num;
             v = json_get(e, "chk_at"); if (v && v->type == JSON_NUM) ce->checked_accesses = (int)v->num;
             v = json_get(e, "chk_f"); if (v && v->type == JSON_NUM) ce->checked_frees = (int)v->num;
+            v = json_get(e, "chk_rb"); if (v && v->type == JSON_NUM) ce->checked_raw_buffers = (int)v->num;
             v = json_get(e, "budget_active"); if (v && v->type == JSON_NUM) ce->budget_active = (int)v->num;
             v = json_get(e, "budget_met"); if (v && v->type == JSON_NUM) ce->budget_met = (int)v->num;
             v = json_get(e, "budget_report"); if (v && v->type == JSON_STR) snprintf(ce->budget_report, sizeof(ce->budget_report), "%s", v->str);
@@ -526,6 +527,7 @@ static void cache_write_all(const myc_cache_entry *entries, int count)
         json_obj_set(e, "chk_a", json_new_num((int64_t)ce->checked_allocations));
         json_obj_set(e, "chk_at", json_new_num((int64_t)ce->checked_accesses));
         json_obj_set(e, "chk_f", json_new_num((int64_t)ce->checked_frees));
+        json_obj_set(e, "chk_rb", json_new_num((int64_t)ce->checked_raw_buffers));
         json_obj_set(e, "budget_active", json_new_num((int64_t)ce->budget_active));
         json_obj_set(e, "budget_met", json_new_num((int64_t)ce->budget_met));
         json_obj_set(e, "budget_report", json_new_str(ce->budget_report));
@@ -1063,6 +1065,7 @@ static void cache_replay_into(const myc_cache_entry *e, myc_result *res)
     res->checked_allocations = e->checked_allocations;
     res->checked_accesses = e->checked_accesses;
     res->checked_frees = e->checked_frees;
+    res->checked_raw_buffers = e->checked_raw_buffers;
     res->driver_funcs = e->driver_funcs;
     res->driver_cases = e->driver_cases;
     res->driver_skipped = e->driver_skipped;
@@ -1469,6 +1472,7 @@ void myc_cache_store(const myc_request *req, const myc_result *res,
     ne->checked_allocations = res->checked_allocations;
     ne->checked_accesses = res->checked_accesses;
     ne->checked_frees = res->checked_frees;
+    ne->checked_raw_buffers = res->checked_raw_buffers;
     ne->budget_active = res->budget_active;
     ne->budget_met = res->budget_met;
     if (res->budget_report)
