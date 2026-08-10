@@ -7,7 +7,9 @@ semantik per tag rilis (`vX.Y.Z`).
 Sejarah implementasi & audit terperinci (MYC-AUDIT-001..039, fase
 pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 
-## [Unreleased] — Fase 7: Trust Calibration, Scheduler, Pack & Privacy (2026-08-10)
+## [Unreleased]
+
+## [v2026-08-10] — Fase 7: Trust Calibration, Scheduler, Pack & Privacy - 2026-08-10
 
 Fase 7 menyelesaikan rencana `gptsol_deepseek-plan.md` **81/81** — dari
 "model/harness error fingerprint" hingga pack proyek lokal yang di-wire ke
