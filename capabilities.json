@@ -257,7 +257,9 @@
     "--thread-probe",
     "--profile",
     "--calibrate",
-    "--match"
+    "--match",
+    "--pack-dir",
+    "--no-pack"
   ],
   "mcp_tools": [
     "check",

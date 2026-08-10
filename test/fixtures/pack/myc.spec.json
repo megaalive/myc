@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "name": "pack-fixture",
+  "domain": "embedded",
+  "rules": ["Semua buffer dinamis pakai MYC_BUF", "Cek NULL di setiap alokasi"],
+  "allow_headers": ["avr/io.h"],
+  "deny_functions": ["gets"]
+}

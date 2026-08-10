@@ -726,6 +726,21 @@ if exist .myc\ledger.json del /q .myc\ledger.json
 myc.exe check tests\ok_hello.c --no-persist --profile xyz > %OUT% 2>&1
 if errorlevel 1 (echo [OK] priv: --no-persist + --profile kontradiksi exit 2) else (echo [FAIL] priv: kontradiksi harus exit 2)
 del %OUT%
+echo --- 6s. Fase 7 (Project-local prompt/spec pack): myc prompt + pack
+set OUT=%TEMP%\myc_pack_out.txt
+myc.exe prompt tests\ok_hello.c --pack-dir test\fixtures\pack > %OUT% 2>&1
+findstr /C:"PACK-MARKER" %OUT% >nul && echo [OK] pack: prompt.md disisipkan verbatim || echo [FAIL] pack: PACK-MARKER tidak muncul
+findstr /C:"pack-fixture" %OUT% >nul && echo [OK] pack: spec name dari spec.json tampil || echo [FAIL] pack: spec name tidak muncul
+findstr /C:"MYC_BUF" %OUT% >nul && echo [OK] pack: rule dari spec.json tampil || echo [FAIL] pack: rule MYC_BUF tidak muncul
+findstr /C:"gets" %OUT% >nul && echo [OK] pack: deny_functions tampil || echo [FAIL] pack: deny_functions gets tidak muncul
+findstr /C:"sha256" %OUT% >nul && echo [OK] pack: sha256 dilaporkan || echo [FAIL] pack: sha256 tidak ada
+myc.exe prompt tests\ok_hello.c --pack-dir test\fixtures\pack --no-pack > %OUT% 2>&1
+findstr /C:"PACK-MARKER" %OUT% >nul && echo [FAIL] pack: --no-pack harus menonaktifkan pack || echo [OK] pack: --no-pack menonaktifkan pack
+myc.exe prompt tests\ok_hello.c --pack-dir test\fixtures\pack_bad > %OUT% 2>&1
+if errorlevel 1 (echo [OK] pack: spec.json invalid fail-fast exit 2) else (echo [FAIL] pack: spec.json invalid harus exit 2)
+myc.exe check tests\ok_hello.c --no-cache > %OUT% 2>&1
+findstr /C:"verdict:   OK" %OUT% >nul && echo [OK] pack: verdict check tidak berubah (NON-blocking) || echo [FAIL] pack: verdict check berubah
+del %OUT%
 echo --- Fase 0: Golden Schema + Malformed-Input (myc.result.v1)
 where bash >nul 2>&1
 if errorlevel 1 (

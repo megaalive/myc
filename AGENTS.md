@@ -90,6 +90,7 @@ scan includes (whitelist, non-blocking) â†’ lint heuristik ber-confidence
  | `report.c` / `json.c` | Laporan teks/JSON, capsule, parser JSON ketat |
  | `policy.c` | Profil header/fungsi (non-blocking) |
  | `scanner.c` | Scanner leksikal source |
+| `prompt.c` | D4 (DS-15) System-Prompt Contract Generator + project-local prompt/spec pack (Fase 7, item terakhir): `myc.prompt.md` teks bebas + `myc.spec.json` spec terstruktur (version:1, name wajib; rules/allow_headers/deny_functions) dicari di direktori proyek (--pack-dir, --no-pack), sha256 dilaporkan, NON-blocking (verdict tak pernah berubah), spec invalid = fail-fast |
 | `test/_schema_golden.sh` | Golden schema + malformed-input tests (Fase 0): myc.result.v1 field wajib + enum verdict + corpus korup |
 | `bench/` | Baseline benchmark 20 task (Fase -1, SOL-24): detection + false-positive + binary/latency/payload; report deterministik di bench/reports/ |
 | `docs/result-schema.md` | Truth freeze myc.result.v1 + myc.agent.v2 (Fase -1, SOL-24) |

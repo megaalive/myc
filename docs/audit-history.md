@@ -2808,3 +2808,40 @@ bawah protokol inti agent → output agent gagal total (`-1`, jujur, bukan
 truncate diam-diam). `payload_size` aktual tidak diserialize (hindari
 circular) — `payload_cap` saja. Cache/ledger tetap default ON tanpa
 flag (perilaku lama dipertahankan).
+
+## (33) Project-local prompt/spec pack — MYC-AUDIT-037 (2026-08-10)
+
+Item plan terakhir (81/81). Memperkaya `myc prompt` (D4/DS-15) dengan
+pack proyek lokal, version-controllable di direktori proyek (BUKAN `.myc/`
+yang gitignored):
+
+- `myc.prompt.md` — teks bebas proyek (hingga 8 KiB) disisipkan verbatim
+  ke snippet prompt; `myc.spec.json` — spec terstruktur divalidasi json.c
+  ketat (`version:1` + `name` wajib, `domain` opsional; `rules`/
+  `allow_headers`/`deny_functions` = array string dengan batas jumlah/
+  panjang).
+- `myc prompt <file.c> [--pack-dir DIR] [--no-pack]`: pack dicari di cwd
+  atau `--pack-dir`; `--no-pack` mematikan; spec ADA tapi invalid =
+  fail-fast exit 2 (pola scenario -2); pack absen = snippet inti normal.
+- NON-blocking penuh: pack TIDAK pernah mengubah verdict. Setiap klaim
+  diberi sumber (`dari myc.prompt.md` / `dari spec.json`) + sha256 isi
+  kedua file di output — deterministik, harness bisa verifikasi (tanpa
+  menyimpan source — konsisten SOL-20).
+- Implementasi di prompt.c/h (bukan modul baru — DS-15 sudah ada):
+  `myc_pack_load()` + `myc_prompt_build_packed()`; loader memakai
+  `myc_source_load` canonical (pola scenario load_profile_file); hash
+  via sha256.c. Fixture `test/fixtures/pack/` (valid) +
+  `test/fixtures/pack_bad/` (invalid). CI blok 6s Linux + Windows (8
+  assert: prompt.md verbatim, spec name/rules/allow/deny, sha256,
+  `--no-pack`, spec invalid exit 2, verdict check tetap OK).
+- Code review: tidak ada temuan blokir; catatan validasi ukuran string
+  (maxlen) dibanding `strlen` memakai `>=` agar selalu menyisakan slot
+  NUL.
+
+**Batas jujur (v1).** Pack hanya masuk jalur `myc prompt` (system-prompt
+snippet) — BELUM di-wire ke `myc check --agent` / context pack (paket
+konteks SOL-22 tetap murni dari source+result; menyisipkan pack ke sana
+adalah follow-up). `myc.prompt.md` yang lebih dari 8 KiB dipotong dengan
+penanda eksplisit (bukan diam-diam). Spec `domain` kosong default
+"generic". Deterministik selama isi file pack tidak berubah (hash
+mencakup isi).

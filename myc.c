@@ -1165,9 +1165,11 @@ static void usage(void)
         "                        preservation obligations, verify command; SOL-22)\n"
         "  myc policy\n"
         "  myc probe\n"
-        "  myc prompt <file.c>\n"
+        "  myc prompt <file.c> [--pack-dir DIR] [--no-pack]\n"
         "                        (D4/DS-15: system-prompt snippet deterministik\n"
-        "                        dari fakta target + kebijakan proyek)\n"
+        "                        dari fakta target + kebijakan proyek; pack\n"
+        "                        proyek lokal myc.prompt.md + myc.spec.json,\n"
+        "                        NON-blocking, Fase 7)\n"
         "  myc compare <ref.c> <new.c> [func...]\n"
         "                        (A4/DS-04: differential oracle pair --\n"
         "                        baterai input bersama dijalankan pada KEDUA\n"
@@ -1834,13 +1836,15 @@ static int cmd_abi_pair(const char *a_path, const char *b_path)
     return changed ? 1 : 0;
 }
 
-static int cmd_prompt(const char *path)
+static int cmd_prompt(const char *path, const char *pack_dir, int no_pack)
 {
     myc_source_input in;
     const char *buf;
     size_t      len;
     int         needs_free;
     myc_error_code le;
+    myc_pack_info info;
+    int         prc;
     char       *prompt;
 
     memset(&in, 0, sizeof(in));
@@ -1852,7 +1856,27 @@ static int cmd_prompt(const char *path)
                 path, myc_error_name(le));
         return 1;
     }
-    prompt = myc_prompt_build(buf, len);
+    /* Project-local pack: myc.prompt.md + myc.spec.json (Fase 7).
+     * spec.json ADA tapi invalid = fail-fast exit 2 (pola scenario). */
+    prc = myc_pack_load(pack_dir, no_pack, &info);
+    if (prc == -1) {
+        fprintf(stderr,
+                "myc: prompt: %s invalid (skema: version=1, name wajib, "
+                "domain opsional; rules/allow_headers/deny_functions = "
+                "array string, batas jumlah/panjang sesuai prompt.h)\n",
+                MYC_PACK_SPEC_FILE);
+        if (needs_free)
+            free((void *)buf);
+        return 2;
+    }
+    if (prc == -2) {
+        fprintf(stderr, "myc: prompt: gagal membaca pack proyek (OOM/IO)\n");
+        if (needs_free)
+            free((void *)buf);
+        return 1;
+    }
+    prompt = myc_prompt_build_packed(buf, len, &info);
+    free(info.prompt_text);
     if (needs_free)
         free((void *)buf);
     if (!prompt) {
@@ -1884,13 +1908,29 @@ int main(int argc, char **argv)
         return cmd_policy();
     if (strcmp(argv[1], "probe") == 0)
         return cmd_probe(argv[0]);
-    /* D4 (DS-15): myc prompt <file.c> -- system-prompt snippet. */
+    /* D4 (DS-15): myc prompt <file.c> [--pack-dir DIR] [--no-pack]
+     * system-prompt snippet + project-local pack (Fase 7, item terakhir). */
     if (strcmp(argv[1], "prompt") == 0) {
+        const char *ppack_dir = NULL;
+        int         pno_pack = 0;
+        int         pi;
         if (argc < 3) {
             fprintf(stderr, "myc: prompt membutuhkan argumen file.c\n");
             return 2;
         }
-        return cmd_prompt(argv[2]);
+        for (pi = 3; pi < argc; pi++) {
+            if (strcmp(argv[pi], "--pack-dir") == 0 && pi + 1 < argc) {
+                ppack_dir = argv[pi + 1];
+                pi++;
+            } else if (strcmp(argv[pi], "--no-pack") == 0) {
+                pno_pack = 1;
+            } else {
+                fprintf(stderr, "myc: prompt: flag tidak dikenal: %s\n",
+                        argv[pi]);
+                return 2;
+            }
+        }
+        return cmd_prompt(argv[2], ppack_dir, pno_pack);
     }
 
     /* A4 (DS-04): myc compare <ref.c> <new.c> [func...]. */

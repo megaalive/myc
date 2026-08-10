@@ -1145,6 +1145,53 @@ else
     note "Fase 7 priv: --no-persist + --profile kontradiksi fail-fast"
 fi
 
+# --- 6s. Fase 7 (Project-local prompt/spec pack): myc prompt + pack ---
+# `myc prompt <file.c>` (D4/DS-15) diperkaya pack proyek lokal:
+# myc.prompt.md (teks bebas) + myc.spec.json (spec terstruktur) di
+# direktori proyek (--pack-dir DIR; default cwd). NON-blocking penuh
+# (verdict TIDAK pernah berubah); --no-pack mematikan; spec.json ADA
+# tapi invalid = fail-fast exit 2 (pola scenario).
+if ./myc prompt tests/ok_hello.c --pack-dir test/fixtures/pack 2>&1 | grep -qF 'PACK-MARKER'; then
+    note "Fase 7 pack: prompt.md disisipkan verbatim"
+else
+    fail "Fase 7 pack: PACK-MARKER dari myc.prompt.md tidak muncul"
+fi
+if ./myc prompt tests/ok_hello.c --pack-dir test/fixtures/pack 2>&1 | grep -qF 'pack-fixture'; then
+    note "Fase 7 pack: spec name dari myc.spec.json tampil"
+else
+    fail "Fase 7 pack: spec name pack-fixture tidak muncul"
+fi
+if ./myc prompt tests/ok_hello.c --pack-dir test/fixtures/pack 2>&1 | grep -qF 'MYC_BUF'; then
+    note "Fase 7 pack: rule dari spec.json tampil"
+else
+    fail "Fase 7 pack: rule MYC_BUF dari spec.json tidak muncul"
+fi
+if ./myc prompt tests/ok_hello.c --pack-dir test/fixtures/pack 2>&1 | grep -qF 'gets'; then
+    note "Fase 7 pack: deny_functions dari spec.json tampil"
+else
+    fail "Fase 7 pack: deny_functions gets tidak muncul"
+fi
+if ./myc prompt tests/ok_hello.c --pack-dir test/fixtures/pack 2>&1 | grep -q 'sha256'; then
+    note "Fase 7 pack: sha256 pack dilaporkan (deterministik)"
+else
+    fail "Fase 7 pack: sha256 tidak ada di output"
+fi
+if ./myc prompt tests/ok_hello.c --pack-dir test/fixtures/pack --no-pack 2>&1 | grep -qF 'PACK-MARKER'; then
+    fail "Fase 7 pack: --no-pack harus menonaktifkan pack"
+else
+    note "Fase 7 pack: --no-pack menonaktifkan pack"
+fi
+if ./myc prompt tests/ok_hello.c --pack-dir test/fixtures/pack_bad > /dev/null 2>&1; then
+    fail "Fase 7 pack: spec.json invalid harus exit 2"
+else
+    note "Fase 7 pack: spec.json invalid fail-fast exit 2"
+fi
+if ./myc check tests/ok_hello.c --no-cache 2>&1 | grep -qF "verdict:   OK"; then
+    note "Fase 7 pack: verdict check tidak berubah (NON-blocking)"
+else
+    fail "Fase 7 pack: verdict check berubah oleh pack"
+fi
+
 # --- 7a. Fase 0 Golden Schema + Malformed-Input (myc.result.v1) ---
 if bash test/_schema_golden.sh; then
     note "Fase 0 golden schema: 13 cek PASS (schema + malformed input)"
