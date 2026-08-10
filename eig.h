@@ -96,4 +96,13 @@ char *myc_eig_json(const myc_eig_set *eig);
 /* Bebaskan eig set (command/source_anchor/rationale/report). */
 void myc_eig_free(myc_eig_set *eig);
 
+/* Tabel biaya default per eksperimen (DS-14) — diekspos agar modul lain
+ * memakai tabel yang sama, bukan salinan (Candidate Tournament SOL-10
+ * memakai dimensi verification_cost). */
+int myc_eig_gate_cost_ms(myc_experiment_type t);
+
+/* Biaya default utk hazard class dari rule table DS-14; 0 bila hazard
+ * tidak dikenal. Dipakai verification_cost di candidate.c. */
+int myc_eig_hazard_cost_ms(const char *hazard);
+
 #endif /* MYC_EIG_H */

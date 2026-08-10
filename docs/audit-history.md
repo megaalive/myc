@@ -2684,3 +2684,70 @@ rekomendasi oleh assurance budget (D3/SOL-30: enforce gate sesuai budget
 waktu) dan pengukuran exit criteria benchmark (median waktu vs bug
 discovery) = follow-up. Kalibrasi/profil hanya menggeser prior rekomendasi
 (tabel), TIDAK pernah menyentuh gate hard (trust rule 2).
+
+### (31) Fase 7 — Candidate Tournament dengan Pareto Frontier (SOL-10) — `candidate.c`/`candidate.h`
+
+DESAIN (Fase 7 #4, "Candidate tournament", plan SOL-10 / 1227). Masuk
+sebagai MYC-AUDIT-035.
+
+**Masalah (plan 1227–1241).** Model sering menghasilkan 2–4 patch alternatif;
+memilih berdasarkan "yang compile" terlalu lemah. `myc compare-candidates`
+menilai tiap kandidat pada DIMENSI terukur, lalu memilih kandidat pada
+Pareto frontier (bukan satu skor ajaib).
+
+**Dimensi v1 (8 terukur + 1 UNMEASURED, gap terlihat):**
+- `hard_gate` — pipeline myc (compile tier) lolos (verdict OK) [higher better];
+- `findings` — observasi lint + negative-space [lower better];
+- `obligations_lost` — requires/ensures hilang vs baseline (contract-delta)
+  [lower better];
+- `churn_lines` — baris ditambah+dihapus vs baseline (multiset line-hash
+  FNV-1a 64-bit, sort + two-pointer, deterministik) [lower better];
+- `verification_cost` — jumlah biaya default eksperimen utk frontier terbuka
+  (tabel DS-14, diekspos `myc_eig_hazard_cost_ms`) [lower better];
+- `runtime_proxy` — jumlah kata kunci loop for/while/do (komentar+string
+  dibuang dulu) [lower better];
+- `portability` — rasio include whitelist policy (0..1000) [higher better];
+- `readability` — 1 − rasio baris > 100 kolom (0..1000) [higher better];
+- `stack_impact` — UNMEASURED v1 (butuh gcc -fstack-usage per kandidat;
+  gap TERLIHAT di laporan, bukan kesunyian — trust rule 4).
+
+**Algoritma.** Pareto dominance murni tanpa bobot: A mendominasi B bila A ≥ B
+pada SEMUA dimensi terukur (arah higher-better) dan ketat pada ≥ 1 dimensi.
+Kandidat tak didominasi = frontier. Baseline ikut dalam perbandingan
+(mempertahankan original selalu merupakan opsi). Pemenang index terkecil
+menang (deterministik). Item yang tidak terukur (pipeline gagal/OOM) tidak
+ikut perbandingan dan ditandai di laporan.
+
+**Anti-overclaim (spec SOL-10).** myc TIDAK menyatakan kandidat "terbaik
+secara umum"; ia menyatakan "tidak didominasi pada dimensi yang terukur".
+Harness atau user tetap memilih final.
+
+**Wiring.** `myc compare-candidates <baseline.c> <c1.c> [c2.c ...] [--json]`
+(baseline + hingga 7 kandidat; baseline tak terbaca / flag tak dikenal /
+> 7 kandidat = fail-fast exit 2; normal = exit 0, NON-blocking). Report
+teks + JSON schema `myc.candidate.v1` (items + dims + frontier +
+dominated_by + note anti-overclaim). Field result `cand_ran/
+cand_candidates/cand_frontier/cand_report` (pola cmd_eig). `eig.h`
+mengekspos `myc_eig_gate_cost_ms` / `myc_eig_hazard_cost_ms` (tabel biaya
+DS-14 dipakai ulang, bukan salinan).
+
+**Bug ditemukan saat dev (keduanya diperbaiki):** (1) `boundary_ok(p - 1,
+idx)` di count_loops salah s — `s[idx]` membaca `(p-1)[p-clean-1]` = baca
+di luar konteks (UB, hasil loop liar); benar = `boundary_ok(clean, idx)`.
+(2) `base_hash` tidak di-sort sebelum `line_delta` (fungsi mengasumsikan
+kedua array terurut) — churn menggelembung (42/49, benar 14/24).
+
+**CI.** Fixture `test/fixtures/cand_base.c` (1 lint + 1 kontrak + 2 loop),
+`cand_better.c` (fix lint, kontrak dipertahankan → findings 0, churn 14),
+`cand_worse.c` (regresi: 2 lint + kontrak dibuang + do-while + baris
+panjang → findings 2, obligations_lost 1, churn 24, readability 965;
+runtime 5 = do+while, benar). Blok 6p: 10 assert Linux + 10 assert Windows
+(laporan, dimensi, gap stack terlihat, dominansi baseline→worse, JSON
+schema, NON-blocking exit 0, fail-fast baseline hilang). candidate.c di
+semua daftar build; self-dogfood OK (candidate.c/eig.c/myc.c verdict OK).
+
+**Batas jujur (v1).** Proksi teks (churn/runtime/portability/readability)
+deterministik tapi bukan AST; perbedaan kecil antar kandidat sebaiknya
+TIDAK dianggap dominansi tunggal oleh harness. `stack_impact` belum
+terukur. Pemakaian frontier tournament oleh harness (auto-pick) =
+follow-up.

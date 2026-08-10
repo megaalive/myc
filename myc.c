@@ -14,6 +14,8 @@
  *   myc policy                     -- tampilkan whitelist header
  *   myc probe                      -- self-test boundary argv (argv_probe)
  *   myc version                    -- tampilkan versi & gcc
+ *   myc compare-candidates <base.c> <c1.c> [c2.c ...]
+ *                                   -- tournament Pareto frontier (SOL-10)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,6 +57,7 @@
 #include "profile.h"
 #include "calibrate.h"
 #include "eig.h"
+#include "candidate.h"
 #include "scenario.h"
 #include "canary.h"
 #include "testaudit.h"
@@ -1636,6 +1639,60 @@ static int cmd_eig(const char *path, const char *profile_id,
     return rc;
 }
 
+/* Fase 7 (SOL-10): myc compare-candidates <baseline.c> <c1.c> [c2.c ...]
+ * Candidate Tournament dengan Pareto Frontier. Menilai tiap kandidat pada
+ * dimensi terukur deterministik (hard_gate/findings/obligations_lost/churn/
+ * verification_cost/runtime_proxy/portability/readability; stack_impact =
+ * UNMEASURED v1, gap terlihat). Frontier = TIDAK didominasi pada dimensi
+ * yang terukur (anti-overclaim: bukan klaim "terbaik umum"; harness/user
+ * memilih final). NON-blocking observasi; exit 0. */
+static int cmd_candidates(const char *baseline, const char *const *cands,
+                          int ncands, int as_json, const char *argv0)
+{
+    myc_candidate_set cs;
+    myc_result wr;
+    char *js = NULL;
+    char *exe_dir = NULL;
+    int rc = 0;
+
+    memset(&cs, 0, sizeof(cs));
+    exe_dir = myc_exe_dirname(argv0);
+    if (myc_candidate_tournament(baseline, cands, ncands, exe_dir,
+                                 &cs) != 0) {
+        fprintf(stderr, "%s",
+                cs.report ? cs.report : "compare-candidates: gagal\n");
+        free(exe_dir);
+        myc_candidate_free(&cs);
+        return 2;
+    }
+    free(exe_dir);
+
+    /* Wire ringkasan ke myc_result (pola cmd_eig/cmd_sm/cmd_units: report
+     * di arena + counts; dipakai replay cache di masa depan). */
+    myc_result_init(&wr);
+    wr.cand_ran = 1;
+    wr.cand_candidates = cs.ncandidates;
+    wr.cand_frontier = cs.frontier_count;
+    if (cs.report)
+        wr.cand_report = myc_result_arena_dup(&wr, cs.report, 0);
+    myc_result_free(&wr);
+
+    if (as_json) {
+        js = myc_candidate_json(&cs);
+        if (js) {
+            printf("%s\n", js);
+            free(js);
+        }
+    } else if (cs.report) {
+        printf("%s", cs.report);
+    } else {
+        printf("compare-candidates: tanpa laporan\n");
+    }
+
+    myc_candidate_free(&cs);
+    return rc;
+}
+
 /* --- Fase 5 (SOL-14): ABI/FFI Surface Certificate --- */
 static int cmd_abi_load(const char *path, const char **buf, size_t *len,
                         int *needs_free)
@@ -1892,6 +1949,48 @@ int main(int argc, char **argv)
         }
         return cmd_eig(argv[2], eig_profile, eig_budget, eig_changed,
                        eig_json, argv[0]);
+    }
+
+    /* Fase 7 (SOL-10): myc compare-candidates <base.c> <c1.c> [c2.c ...]
+     * Candidate Tournament dengan Pareto Frontier (--json). */
+    if (strcmp(argv[1], "compare-candidates") == 0) {
+        const char *cands[MYC_MAX_CANDIDATES - 1];
+        int cand_json = 0;
+        int nc = 0;
+        int k;
+        if (argc < 4) {
+            fprintf(stderr,
+                    "myc: compare-candidates membutuhkan baseline.c dan "
+                    "minimal satu kandidat\n");
+            return 2;
+        }
+        for (k = 3; k < argc; k++) {
+            if (argv[k][0] == '-' && argv[k][1] == '-') {
+                if (strcmp(argv[k], "--json") == 0) {
+                    cand_json = 1;
+                } else {
+                    fprintf(stderr,
+                            "myc: compare-candidates: flag tidak dikenal: "
+                            "%s\n", argv[k]);
+                    return 2;
+                }
+            } else {
+                if (nc >= MYC_MAX_CANDIDATES - 1) {
+                    fprintf(stderr,
+                            "myc: compare-candidates: maksimal %d kandidat\n",
+                            MYC_MAX_CANDIDATES - 1);
+                    return 2;
+                }
+                cands[nc++] = argv[k];
+            }
+        }
+        if (nc < 1) {
+            fprintf(stderr,
+                    "myc: compare-candidates membutuhkan minimal satu "
+                    "kandidat\n");
+            return 2;
+        }
+        return cmd_candidates(argv[2], cands, nc, cand_json, argv[0]);
     }
 
     /* Fase 7 (SOL-20): myc profile list|show <id>|reset <id> —

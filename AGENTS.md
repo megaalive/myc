@@ -105,6 +105,7 @@ scan includes (whitelist, non-blocking) â†’ lint heuristik ber-confidence
 | `scenario.c` | Scenario Packs: profil JSON resep gate per domain + auto budget (Fase 5, C5/D3/DS-12, `--scenario`, `myc scenario list/info`) |
 | `matrix.c` | Target Matrix bare metal: cross-compile + macro dump per target, portability matrix (Fase 5, C4, `--matrix`) |
 | `eig.c` / `eig.h` | Expected-Information-Gain Scheduler: rekomendasi eksperimen terurut skor `expected_value = P(new_evidence) x severity x scope / (time x token)`, prior tabel deterministik dikalibrasi dari ledger SOL-21 (`eig-<slug>`) + profil SOL-20; `myc eig <file> [--profile <id>] [--budget-ms N] [--unchanged] [--json]`; observasi NON-blocking (Fase 7, #2029/DS-14) |
+| `candidate.c` / `candidate.h` | Candidate Tournament Pareto Frontier: menilai kandidat patch pada dimensi terukur deterministik (hard_gate/findings/obligations_lost/churn/verification_cost/runtime_proxy/portability/readability; stack_impact UNMEASURED v1, gap terlihat); Pareto frontier = TIDAK didominasi pada dimensi yang terukur, anti-overclaim SOL-10 (bukan "terbaik umum", harness/user memilih final); `myc compare-candidates <base.c> <c1.c> [c2.c ...] [--json]`; observasi NON-blocking (Fase 7, SOL-10) |
 
 ## Dogfooding (wajib dipertahankan)
 

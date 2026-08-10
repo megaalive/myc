@@ -1094,6 +1094,21 @@ char          *rsrc_report;                /* arena */
     long long      eig_top_expected_value;
     char          *eig_report;                 /* arena */
 
+    /* --- Fase 7 (SOL-10): Candidate Tournament dengan Pareto Frontier ---
+     * cand_ran=1 setelah myc_candidate_tournament (`myc compare-candidates`
+     * <baseline.c> <c1.c> [c2.c ...]): menilai kandidat patch pada dimensi
+     * terukur deterministik (hard_gate/findings/obligations_lost/churn/
+     * verification_cost/runtime_proxy/portability/readability;
+     * stack_impact = UNMEASURED v1, gap terlihat). Pareto frontier =
+     * TIDAK didominasi pada dimensi yang terukur (anti-overclaim SOL-10:
+     * BUKAN klaim "terbaik umum"; harness/user memilih final). Observasi
+     * NON-blocking murni; cand_report (arena) = laporan teks; counts
+     * ringkas utk replay masa depan. */
+    int            cand_ran;
+    int            cand_candidates;
+    int            cand_frontier;
+    char          *cand_report;                /* arena */
+
     /* --- Fase 5, B4 (Comments-as-Contracts, DS-08) ---
      * Panen kandidat kontrak dari komentar BIASA (bukan //@):
      *   candidate  = pola bahasa terdeteksi (deterministik, bukan NLP);

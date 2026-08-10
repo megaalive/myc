@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-          agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c; do
+          agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -756,7 +756,7 @@ else
     fail "Fase 5 abi: check --abi tidak masuk JSON summary"
 fi
 # Exit criteria SOL-14: ABI drift ditolak dalam transaction.
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/abi_tx_reject test/abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c > /dev/null 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/abi_tx_reject test/abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c > /dev/null 2>&1
 if ./test/abi_tx_reject > /dev/null 2>&1; then
     note "Fase 5 abi: ABI drift ditolak dalam transaction (exit criteria)"
 else
@@ -1034,6 +1034,69 @@ else
 fi
 rm -f .myc/calibration.json
 rm -rf .myc/profiles
+
+# --- 6p. Fase 7 (SOL-10): Candidate Tournament dengan Pareto Frontier ---
+# `myc compare-candidates <base.c> <c1.c> [c2.c ...]`: menilai kandidat
+# patch pada dimensi terukur deterministik (hard_gate/findings/
+# obligations_lost/churn/verification_cost/runtime_proxy/portability/
+# readability; stack_impact = UNMEASURED v1, gap terlihat). Pareto
+# frontier = TIDAK didominasi pada dimensi yang terukur (anti-overclaim
+# SOL-10: bukan "terbaik umum"). NON-blocking: exit 0.
+if ./myc compare-candidates test/fixtures/cand_base.c test/fixtures/cand_better.c test/fixtures/cand_worse.c > /dev/null 2>&1; then
+    note "Fase 7 cand: tournament NON-blocking (exit 0)"
+else
+    fail "Fase 7 cand: exit bukan 0"
+fi
+if ./myc compare-candidates test/fixtures/cand_base.c test/fixtures/cand_better.c test/fixtures/cand_worse.c 2>&1 | grep -qF "candidate tournament (Fase 7, SOL-10)"; then
+    note "Fase 7 cand: laporan tournament tercetak"
+else
+    fail "Fase 7 cand: laporan tournament tidak tercetak"
+fi
+if ./myc compare-candidates test/fixtures/cand_base.c test/fixtures/cand_better.c test/fixtures/cand_worse.c 2>&1 | grep -qF "2 kandidat vs baseline"; then
+    note "Fase 7 cand: 2 kandidat vs baseline"
+else
+    fail "Fase 7 cand: jumlah kandidat salah"
+fi
+if ./myc compare-candidates test/fixtures/cand_base.c test/fixtures/cand_better.c test/fixtures/cand_worse.c 2>&1 | grep -qF "dimensi terukur: 8 dari 9"; then
+    note "Fase 7 cand: 8 dari 9 dimensi terukur"
+else
+    fail "Fase 7 cand: jumlah dimensi terukur salah"
+fi
+if ./myc compare-candidates test/fixtures/cand_base.c test/fixtures/cand_better.c test/fixtures/cand_worse.c 2>&1 | grep -qF "stack_impact = UNMEASURED"; then
+    note "Fase 7 cand: gap stack_impact UNMEASURED terlihat (bukan kesunyian)"
+else
+    fail "Fase 7 cand: gap stack_impact tidak terlihat"
+fi
+# cand_better (fix lint baseline): findings 0 + kontrak requires dipertahankan.
+if ./myc compare-candidates test/fixtures/cand_base.c test/fixtures/cand_better.c test/fixtures/cand_worse.c 2>&1 | grep -qF "findings=0 obligations_lost=0 churn=14"; then
+    note "Fase 7 cand: cand_better findings 0 + kontrak dipertahankan"
+else
+    fail "Fase 7 cand: dimensi cand_better tidak sesuai"
+fi
+# cand_worse (regresi): findings 2 + obligations_lost 1 (kontrak dibuang).
+if ./myc compare-candidates test/fixtures/cand_base.c test/fixtures/cand_better.c test/fixtures/cand_worse.c 2>&1 | grep -qF "findings=2 obligations_lost=1 churn=24"; then
+    note "Fase 7 cand: cand_worse findings 2 + obligations_lost 1"
+else
+    fail "Fase 7 cand: dimensi cand_worse tidak sesuai"
+fi
+# Pareto: cand_worse didominasi (oleh baseline, index terkecil menang).
+if ./myc compare-candidates test/fixtures/cand_base.c test/fixtures/cand_better.c test/fixtures/cand_worse.c 2>&1 | grep -qF "didominasi oleh: test/fixtures/cand_base.c"; then
+    note "Fase 7 cand: cand_worse didominasi oleh baseline"
+else
+    fail "Fase 7 cand: dominator cand_worse bukan baseline"
+fi
+# --json: schema myc.candidate.v1 deterministik.
+if ./myc compare-candidates test/fixtures/cand_base.c test/fixtures/cand_better.c test/fixtures/cand_worse.c --json 2>&1 | grep -qF '"schema":"myc.candidate.v1"'; then
+    note "Fase 7 cand: output --json memuat schema myc.candidate.v1"
+else
+    fail "Fase 7 cand: output --json tidak memuat schema"
+fi
+# Baseline tidak terbaca -> fail-fast exit 2 (bukan NON-blocking).
+if ./myc compare-candidates test/fixtures/tidak-ada.c test/fixtures/cand_better.c > /dev/null 2>&1; then
+    fail "Fase 7 cand: baseline hilang harus exit != 0"
+else
+    note "Fase 7 cand: baseline hilang -> fail-fast exit 2"
+fi
 
 # --- 7a. Fase 0 Golden Schema + Malformed-Input (myc.result.v1) ---
 if bash test/_schema_golden.sh; then

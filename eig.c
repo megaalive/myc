@@ -117,6 +117,21 @@ static int exp_prior(myc_experiment_type t)
     }
 }
 
+/* Ekspor tabel biaya default (DS-14) untuk modul lain. */
+int myc_eig_gate_cost_ms(myc_experiment_type t)
+{
+    return exp_cost(t);
+}
+
+int myc_eig_hazard_cost_ms(const char *hazard)
+{
+    size_t i;
+    for (i = 0; i < sizeof(EIG_RULES) / sizeof(EIG_RULES[0]); i++)
+        if (strcmp(EIG_RULES[i].hazard, hazard) == 0)
+            return exp_cost(EIG_RULES[i].candidates[0]);
+    return 0;
+}
+
 /* Slug deterministik hazard -> rule id kalibrasi: "eig-" + hazard dengan
  * karakter non-alnum -> '-', huruf kecil, '-' beruntun dipadatkan.
  * Contoh: "runtime memory (ASan/UBSan)" -> "eig-runtime-memory-asan-ubsan".
