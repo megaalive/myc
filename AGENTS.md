@@ -155,7 +155,8 @@ Setiap perubahan ke kode inti myc **wajib** melewati checklist ini:
 
 | Dokumen | Isi |
 |---|---|
-| [`docs/audit-history.md`](docs/audit-history.md) | Sejarah MYC-AUDIT-001..030, fase pengembangan, catatan bug lama |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release notes per rilis (Keep a Changelog) |
+| [`docs/audit-history.md`](docs/audit-history.md) | Sejarah MYC-AUDIT-001..039, fase pengembangan, catatan bug lama |
 | [`README.md`](README.md) | Penggunaan publik |
 | [`docs/capabilities.md`](docs/capabilities.md) | Kapabilitas gate/flag |
 | [`docs/quickstart.md`](docs/quickstart.md) | Memulai cepat |

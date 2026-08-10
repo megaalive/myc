@@ -215,6 +215,8 @@ schemas (`myc.result.v1`, `myc.repair.v1`) plus a text JSON payload. See
 - `docs/capabilities.md` — honest gate matrix and limitations (what each flag
   guarantees, and what it does **not**).
 - `docs/mcp-tools.md` — MCP server tool reference for coding agents.
+- `CHANGELOG.md` — release notes per rilis (Fase 7: trust calibration,
+  scheduler EIG, candidate tournament, privacy/size controls, pack).
 
 ## In CI
 
