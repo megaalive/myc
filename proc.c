@@ -407,14 +407,41 @@ char *myc_find_executable(const char *program)
     }
     return NULL;
 #else
-    /* POSIX: gunakan execvp yang mencari PATH sendiri. */
+    /* POSIX: cari di PATH seperti execvp; kembalikan NULL bila tak ada
+     * (konsisten dengan cabang _WIN32 yang memeriksa keberadaan file).
+     * Penting: filc.c mengandalkan NULL dari pengecekan ini untuk mendeteksi
+     * "backend tidak tersedia" (mis. wsl.exe di Linux) -> GATE_UNAVAILABLE,
+     * bukan GATE_INFRA_FAILED. */
     if (has_sep(program)) {
         if (access(program, X_OK) == 0)
             return myc_strdup(program);
         return NULL;
     }
-    /* Delegasikan pencarian PATH ke execvp; tandai butuh PATH search. */
-    return myc_strdup(program);
+    {
+        const char *path_env = getenv("PATH");
+        char       *dup, *tok, *save;
+        if (!path_env)
+            return NULL;
+        dup = myc_strdup(path_env);
+        if (!dup)
+            return NULL;
+        tok = strtok_r(dup, ":", &save);
+        while (tok) {
+            size_t need = strlen(tok) + 1 + strlen(program) + 1;
+            char  *cand = (char *)malloc(need);
+            if (cand) {
+                snprintf(cand, need, "%s/%s", tok, program);
+                if (access(cand, X_OK) == 0) {
+                    free(dup);
+                    return cand;
+                }
+                free(cand);
+            }
+            tok = strtok_r(NULL, ":", &save);
+        }
+        free(dup);
+        return NULL;
+    }
 #endif
 }
 
