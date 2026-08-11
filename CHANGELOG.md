@@ -7,14 +7,14 @@ semantik per tag rilis (`vX.Y.Z`).
 Sejarah implementasi & audit terperinci (MYC-AUDIT-001..039, fase
 pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 
-## [Unreleased]
+## [v2026-08-11] — Hotfix MYC-AUDIT-042 - 2026-08-11
 
 ### Fixed
 
 - POSIX `myc_find_executable` (proc.c) mengembalikan string nama program
   tanpa memeriksa keberadaan file di PATH — backend hilang (mis. `wsl.exe`
   di Linux) dilaporkan `GATE-INFRA-FAILED` alih-alih `GATE-UNAVAILABLE`.
- Kini iterasi `PATH` dengan `access(candidate, X_OK)` seperti cabang
+  Kini iterasi `PATH` dengan `access(candidate, X_OK)` seperti cabang
   `_WIN32`; konsisten dengan kontrak `filc.c` (042).
 
 ## [v2026-08-10] — Fase 7: Trust Calibration, Scheduler, Pack & Privacy - 2026-08-10
