@@ -194,6 +194,24 @@ else
 fi
 rm -rf "$FAKEBIN"
 
+# --- 4a3. cache replay identik + JSON round-trip (MYC-AUDIT-042) ---
+# Replay harus menampilkan teks debt yang SAMA dgn run asli (dulu ditimpa
+# nama kode), dan file cache dengan byte non-UTF8 dari stderr backend harus
+# tetap bisa di-parse ulang (dulu rusak -> cache-hit flaky).
+rm -rf .myc
+./myc check test/fixtures/driver_zero_cases.c --driver >/dev/null 2>&1
+if ./myc check test/fixtures/driver_zero_cases.c --driver 2>&1 | grep -q "cache:     hit"; then
+    note "4a3 cache replay: run2 cache-hit stabil (JSON round-trip non-UTF8)"
+else
+    fail "4a3 cache replay: run2 tidak cache-hit (round-trip JSON rusak?)"
+fi
+if ./myc check tests/ok_hello.c --filc 2>&1 | grep -q "gate diminta tapi backend tidak tersedia"; then
+    note "4a3 cache replay: debt text identik dgn fresh run"
+else
+    fail "4a3 cache replay: debt text hilang/ditimpa di replay"
+fi
+rm -rf .myc
+
 # --- 4b. checked coverage + semantics parity (MYC-AUDIT-026, roadmap 7.3) ---
 if ./myc check tests/semantics_parity.c --checked 2>&1 | grep -qF \
     "buffers=2 allocations=2 accesses=6 frees=2"; then

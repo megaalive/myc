@@ -3022,3 +3022,66 @@ membaca kurung kurawal sebagai blok). Kedua blok hijau 2/2.
 OK; seluruh 9 tipe debt diregresi ulang tetap muncul; determinisme
 receipt dipertahankan (debt hanya dari gate status + counter yang
 deterministik).
+
+## (38) Audit jalur debt dengan cache replay + fix debt text & JSON round-trip — MYC-AUDIT-042 (2026-08-11)
+
+**Tujuan.** Perluas audit MYC-AUDIT-041: pastikan 9 tipe debt `MYC-INCOMPLETE-*`
+juga berfungsi saat cache replay aktif (bukan hanya `--no-cache`) — replay
+harus menampilkan hasil yang identik dengan run asli (SOL-18).
+
+**Hasil audit (empiris, tiap tipe = run1 populate + run2 replay, cache
+diaktifkan):**
+
+| Tipe debt | cache-hit run2 | debt di run2 | receipt deterministik |
+|---|---|---|---|
+| GATE-UNAVAILABLE | ya | muncul, teks identik | sama |
+| GATE-INFRA-FAILED | ya | muncul, teks identik | sama |
+| GATE-INCONCLUSIVE | tidak* | muncul (pipeline ulang) | sama |
+| NONZERO-CASES | ya | muncul, teks identik | sama |
+| ENSURES-UNPROVED | ya | muncul, teks identik | sama |
+| RAW-BUFFERS | ya | muncul, teks identik | sama |
+| OUTPUT-TRUNCATED | ya | muncul, teks identik | sama |
+| BUDGET-UNMET | ya | muncul, teks identik | sama |
+| ASSUMPTIONS-OPEN | tidak* | muncul (pipeline ulang) | sama |
+
+*By design: GATE-INCONCLUSIVE (timeout) tidak di-store cache
+(`myc_cache_store` menolak `MYC_ERR_TIMEOUT`); ASSUMPTIONS-OPEN
+replay di-skip (`--require-assumptions-closed` stateful). Keduanya tetap
+menjalankan pipeline deterministik sehingga debt selalu muncul — bukan bug.
+
+**Bug 1 ditemukan & diperbaiki — debt text hilang saat replay (cache hanya
+simpan type).** Entry cache hanya menyimpan `debt[].type` (angka);
+`cache_replay_into` menimpa `text` dengan `myc_debt_type_name` (nama kode
+pendek) padahal run asli menampilkan kalimat penjelasan (mis.
+"gate diminta tapi backend tidak tersedia" vs "unavailable"). Melanggar
+replay identik SOL-18. Fix: field baru `char debt_text[MYC_MAX_DEBT][160]`
+di `myc_cache_entry` (cache.h); store menyalin `res->debt[i].text`;
+write/read serialisasi array string paralel (`debt_text`); replay memakai
+teks tersimpan (arena-dup, fallback nama kode untuk entry lama).
+Backward-compatible: entry tanpa `debt_text` = fallback lama.
+
+**Bug 2 ditemukan & diperbaiki — cache file tak bisa di-parse ulang saat
+backend stderr berisi byte non-UTF8 (round-trip JSON rusak, cache-hit
+flaky).** `ser_escape` (json.c) menulis byte `>= 0x80` MENTAH tanpa
+validasi UTF-8, sedangkan parser json.c menolak byte non-UTF8
+(`utf8_valid`). Akibatnya file cache yang ditulis dengan `stderr_text`
+berisi byte aneh dari output backend (mis. driver harness) GAGAL di-parse
+ulang pada run berikutnya — cache-hit jadi nondeterministik (flaky miss,
+pola `0 0 1 0 1...` teramati di `driver_zero_cases --driver`). Ini juga
+melanggar JSON-RPC 2.0 ketat di MCP. Fix: `ser_escape` memvalidasi UTF-8;
+urutan UTF-8 valid disalin apa adanya (output normal TIDAK berubah),
+byte/sequence invalid di-escape `\u00XX` sehingga round-trip selalu
+parseable. Verifikasi: loop 8x `driver_zero_cases --driver` kini stabil
+`0 1 1 1 1 1 1 1` (sebelumnya flaky); MCP smoke PASS; golden schema
+13/13 PASS; JSON output `ok_hello --json` valid.
+
+**Regresi CI blok 4a3** (Linux + Windows): (a) run2 `driver_zero_cases
+--driver` harus `cache: hit` (round-trip JSON); (b) debt text di replay
+harus identik dengan fresh run (`ok_hello --filc`). Keduanya 2/2 PASS di
+kedua platform.
+
+**Keterbatasan jujur.** Debt text di-replay identik tetapi *string statis*:
+entry cache lama (sebelum 042) tetap fallback ke nama kode hingga di-store
+ulang. Fix `ser_escape` memengaruhi SEMUA output JSON (report/MCP/cache)
+— untuk UTF-8 valid output byte-identik, hanya input non-UTF8 yang kini
+di-escape (sebelumnya rusak).

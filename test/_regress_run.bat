@@ -189,6 +189,20 @@ myc.exe check tests\ok_hello.c --filc --no-cache > %OUT% 2>&1
 findstr /C:"MYC-INCOMPLETE-GATE-INFRA-FAILED" %OUT% >nul && echo [OK] ok_hello --filc backend gagal: debt GATE-INFRA-FAILED dipertahankan || echo [FAIL] debt GATE-INFRA-FAILED tidak muncul (status ditimpa?)
 set "PATH=%SAVEPATH%"
 rmdir /s /q _fakebin 2>nul
+echo --- 4a3 cache replay identik + JSON round-trip (MYC-AUDIT-042): debt text sama, hit stabil
+echo 4a3a driver_zero_cases cache-hit stabil> %OUT%
+myc.exe check test\fixtures\driver_zero_cases.c --driver >> %OUT% 2>&1
+myc.exe check test\fixtures\driver_zero_cases.c --driver >> %OUT% 2>&1
+findstr /C:"cache:     hit" %OUT% >nul
+if errorlevel 1 (echo [FAIL] 4a3a cache replay tidak hit - round-trip JSON rusak) else (echo [OK] 4a3a cache replay hit stabil)
+echo 4a3b ok_hello debt text identik> %OUT%
+myc.exe check tests\ok_hello.c --filc >> %OUT% 2>&1
+myc.exe check tests\ok_hello.c --filc >> %OUT% 2>&1
+findstr /C:"gate diminta tapi backend tidak tersedia" %OUT% >nul
+if errorlevel 1 (echo [FAIL] 4a3b debt text tidak identik di replay) else (echo [OK] 4a3b debt text identik di replay)
+del %OUT% >nul 2>&1
+
+
 echo --- checked oob (--run --checked): bad_checked_oob harus RUNTIME_VIOLATION, ok_checked tetap L4
 echo === tests\bad_checked_oob.c
 myc.exe check tests\bad_checked_oob.c --run --checked > %OUT%

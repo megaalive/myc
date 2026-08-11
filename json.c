@@ -841,8 +841,34 @@ static int ser_escape(json_sb *b, const char *s)
         default:
             if (c < 0x20) {
                 if (!json_sb_printf(b, "\\u%04x", (unsigned)c)) return 0;
-            } else {
+            } else if (c < 0x80) {
                 if (!json_sb_putc(b, (char)c)) return 0;
+            } else {
+                /* Byte >= 0x80: parser (utf8_valid) HANYA menerima urutan
+                 * UTF-8 valid; menulis byte non-UTF8 mentah membuat JSON
+                 * tidak bisa di-parse ulang (cache round-trip rusak,
+                 * MYC-AUDIT-042). UTF-8 valid disalin apa adanya;
+                 * byte/sequence invalid di-escape \u00XX agar round-trip
+                 * deterministik. */
+                size_t nb = 0;
+                size_t k;
+                int    ok;
+                if (c >= 0xC2 && c <= 0xDF)      nb = 2;
+                else if (c >= 0xE0 && c <= 0xEF) nb = 3;
+                else if (c >= 0xF0 && c <= 0xF4) nb = 4;
+                ok = (nb >= 2);
+                for (k = 1; ok && k < nb; k++) {
+                    unsigned char cc = (unsigned char)s[k];
+                    if (cc == 0 || (cc & 0xC0) != 0x80)
+                        ok = 0;
+                }
+                if (ok) {
+                    for (k = 0; k < nb; k++)
+                        if (!json_sb_putc(b, s[k])) return 0;
+                    s += nb - 1;
+                } else {
+                    if (!json_sb_printf(b, "\\u%04x", (unsigned)c)) return 0;
+                }
             }
             break;
         }

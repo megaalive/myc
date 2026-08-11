@@ -438,6 +438,18 @@ static int cache_read_all(myc_cache_entry *out, int cap)
                                 (myc_debt_type)d->items[k]->num;
                     }
                 }
+                /* MYC-AUDIT-042: teks deskriptif debt (paralel dgn type;
+                 * entry cache LAMA tanpa field ini -> kosong, replay
+                 * fallback ke myc_debt_type_name seperti sebelumnya). */
+                d = json_get(e, "debt_text");
+                if (d && d->type == JSON_ARR) {
+                    for (k = 0; k < (int)d->len && k < MYC_MAX_DEBT; k++) {
+                        if (d->items[k] && d->items[k]->type == JSON_STR)
+                            snprintf(ce->debt_text[k],
+                                     sizeof(ce->debt_text[k]), "%s",
+                                     d->items[k]->str);
+                    }
+                }
             }
 
             /* diagnostics */
@@ -766,6 +778,13 @@ static void cache_write_all(const myc_cache_entry *entries, int count)
                 json_arr_push(tmp, json_new_num((int64_t)ce->debt[k].type));
             json_obj_set(e, "debt", tmp);
         }
+        /* MYC-AUDIT-042: teks deskriptif debt (replay identik SOL-18). */
+        tmp = json_new_arr();
+        if (tmp) {
+            for (k = 0; k < ce->debt_count; k++)
+                json_arr_push(tmp, json_new_str(ce->debt_text[k]));
+            json_obj_set(e, "debt_text", tmp);
+        }
 
         /* diagnostics */
         tmp = json_new_arr();
@@ -1040,11 +1059,17 @@ static void cache_replay_into(const myc_cache_entry *e, myc_result *res)
         res->gate_count++;
     }
 
-    /* debt (string statis dari myc_debt_type_name) */
+    /* debt (MYC-AUDIT-042: teks deskriptif asli di-replay identik;
+     * entry cache lama tanpa debt_text -> fallback nama kode). */
     res->debt_count = 0;
     for (i = 0; i < e->debt_count && i < MYC_MAX_DEBT; i++) {
         res->debt[res->debt_count].type = e->debt[i].type;
-        res->debt[res->debt_count].text = myc_debt_type_name(e->debt[i].type);
+        if (e->debt_text[i][0])
+            res->debt[res->debt_count].text =
+                myc_result_arena_dup(res, e->debt_text[i], 0);
+        else
+            res->debt[res->debt_count].text =
+                myc_debt_type_name(e->debt[i].type);
         res->debt_count++;
     }
 
@@ -1704,7 +1729,12 @@ void myc_cache_store(const myc_request *req, const myc_result *res,
         ne->gate_count++;
     }
     for (i = 0; i < (int)res->debt_count && i < MYC_MAX_DEBT; i++) {
-        ne->debt[ne->debt_count++].type = res->debt[i].type;
+        ne->debt[ne->debt_count].type = res->debt[i].type;
+        /* MYC-AUDIT-042: simpan teks deskriptif (replay identik). */
+        snprintf(ne->debt_text[ne->debt_count],
+                 sizeof(ne->debt_text[ne->debt_count]), "%s",
+                 res->debt[i].text ? res->debt[i].text : "");
+        ne->debt_count++;
     }
     for (i = 0; i < (int)res->diag_count && i < MYC_MAX_DIAGNOSTICS; i++) {
         ne->diag_line[i] = res->diags[i].line;

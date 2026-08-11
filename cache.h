@@ -66,6 +66,11 @@ typedef struct {
 
     /* debt snapshot (untuk replay + require-complete enforcement) */
     myc_debt_item     debt[MYC_MAX_DEBT];
+    /* Teks deskriptif debt (MYC-AUDIT-042): cache lama hanya menyimpan
+     * type (angka) sehingga replay menimpa text dengan myc_debt_type_name
+     * (nama kode pendek) padahal run asli menampilkan kalimat penjelasan.
+     * Untuk replay identik (SOL-18), text ikut disimpan. */
+    char              debt_text[MYC_MAX_DEBT][160];
     int               debt_count;
 
     /* diagnostics snapshot (untuk replay agent/causal/observation) */
