@@ -1,0 +1,50 @@
+{
+  "entries": [
+    {
+      "key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "source": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "scenario": "0123456789abcdef",
+      "tool": "gcc:12.2.0|clang:?",
+      "cwd": "/tmp",
+      "path": "",
+      "receipt": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "fingerprint": "0123456789abcdef",
+      "verdict": 0,
+      "err": 0,
+      "assurance": 3,
+      "finding": 1,
+      "completeness": 1,
+      "claim": 1,
+      "duration_ms": 4,
+      "lint_obs": 0,
+      "neg_calls": 0,
+      "neg_dev": 0,
+      "chk_b": 0,
+      "chk_a": 0,
+      "chk_at": 0,
+      "chk_f": 0,
+      "chk_rb": 0,
+      "budget_active": 0,
+      "budget_met": 0,
+      "budget_report": "",
+      "drv_funcs": 0,
+      "drv_cases": 0,
+      "drv_skip": 0,
+      "ran_neg": 0,
+      "ran_chk": 0,
+      "ran_drv": 0,
+      "exit_code": 0,
+      "req_complete": 0,
+      "truncated": 0,
+      "run_timed_out": 0,
+      "av": [1, 1, 0, 0, 0, 0, 0],
+      "gates": [
+        {"id": 1, "requested": 1, "status": 5, "findings": 0}
+      ],
+      "debt": [],
+      "debt_text": [],
+      "diags": [],
+      "funcs": []
+    }
+  ]
+}

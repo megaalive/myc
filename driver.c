@@ -23,6 +23,7 @@
  */
 #include "driver.h"
 #include "regress.h"
+#include "persist.h"
 
 #include <ctype.h>
 #include <stdarg.h>
@@ -1664,13 +1665,17 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
     }
     /* 8b. Finding = bukti FILE report sanitizer (log_path, non-spoofable)
      * ATAU marker teks yang terkonfirmasi exit != 0 (MYC-AUDIT-017).
-     * Teks mirip marker dengan exit 0 diabaikan (bukan bukti). */
+     * Teks mirip marker dengan exit 0 diabaikan (bukan bukti).
+     * PR-008 (INV-006): report HANYA bukti bila exit != 0 — env memakai
+     * abort_on_error=1, jadi bug nyata selalu non-zero; report + exit 0
+     * = file buatan harness (cwd = tmp_dir) -> DITOLAK. */
     {
         char *asan_rpt = myc_read_sanitizer_report(tmp_dir,
                                                    "myc_drv_asan_rpt");
         char *ubsan_rpt = myc_read_sanitizer_report(tmp_dir,
                                                     "myc_drv_ubsan_rpt");
-        int   report_evidence = (asan_rpt != NULL) || (ubsan_rpt != NULL);
+        int   report_evidence = ((asan_rpt != NULL) || (ubsan_rpt != NULL)) &&
+                                res->exit_code != 0;
         int   omarker = drv_marker_found(res->driver_stdout_text,
                                          res->driver_stderr_text);
         free(asan_rpt);
@@ -2152,7 +2157,6 @@ static void ex_state_write(const ex_state_entry *entries, int n)
 {
     json_value *root, *arr;
     char *out;
-    FILE *f;
     int   i;
     root = json_new_obj();
     if (!root)
@@ -2173,11 +2177,11 @@ static void ex_state_write(const ex_state_entry *entries, int n)
     }
     json_obj_set(root, "entries", arr);
     if (json_serialize(root, &out)) {
-        f = fopen(EXH_STATE_FILE, "wb");
-        if (f) {
-            fputs(out, f);
-            fclose(f);
-        }
+        /* PR-012 (MYC-AUDIT-044, P3-T03): tulis ATOMIK (temp+flush+
+         * fsync+rename). Crash kapan pun -> exhaustive.json OLD valid
+         * ATAU NEW valid, tidak pernah setengah. NON-blocking: gagal
+         * diabaikan (seperti dulu). */
+        (void)myc_persist_atomic_write_str(EXH_STATE_FILE, out);
         free(out);
     }
     json_free(root);
@@ -2578,13 +2582,16 @@ int myc_exhaustive_gate(const myc_request *req, const char *source,
         goto out;
     }
 
-    /* 10. Finding = bukti report sanitizer / assert (non-spoofable). */
+    /* 10. Finding = bukti report sanitizer / assert (non-spoofable).
+     * PR-008 (INV-006): report hanya bukti bila exit != 0 (spoof file
+     * report palsu + exit 0 ditolak; konsisten gate run/driver). */
     {
         char *asan_rpt = myc_read_sanitizer_report(tmp_dir,
                                                    "myc_exh_asan_rpt");
         char *ubsan_rpt = myc_read_sanitizer_report(tmp_dir,
                                                     "myc_exh_ubsan_rpt");
-        int   report_evidence = (asan_rpt != NULL) || (ubsan_rpt != NULL);
+        int   report_evidence = ((asan_rpt != NULL) || (ubsan_rpt != NULL)) &&
+                                res->exit_code != 0;
         int   omarker = drv_marker_found(res->exhaustive_stdout_text,
                                          res->exhaustive_stderr_text);
         int   ex_assert_fail = res->exhaustive_stderr_text &&
@@ -3836,7 +3843,8 @@ int myc_fuzz_gate(const myc_request *req, const char *source,
             free(ubsan_rpt);
             myc_remove_sanitizer_reports(tmp_dir, "myc_fuz_asan_rpt");
             myc_remove_sanitizer_reports(tmp_dir, "myc_fuz_ubsan_rpt");
-            if ((asan_rpt || ubsan_rpt) || (omarker && pres.exit_code != 0))
+            if (((asan_rpt || ubsan_rpt) && pres.exit_code != 0) ||
+                (omarker && pres.exit_code != 0))
                 crashe = 1;
             if (crashe) {
                 char note[512];

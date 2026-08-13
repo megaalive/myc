@@ -8,8 +8,15 @@
  * yang berubah + dependents yang perlu diverifikasi ulang).
  *
  * Design (jujur, deterministic):
- *   - Key  = sha256(source_sha256 + scenario_hash + tool_key + cwd).
- *     Cache TIDAK dipakai bila flags/tool/scenario berubah (SOL-18).
+ *   - Key v2 (PR-011, MYC-AUDIT-043) = sha256("v2|src + scen + tool +
+ *     cwd + stdin + t + o + hdir + g2") — lihat docs/cache-key.md utk
+ *     spesifikasi per dimensi. Cache TIDAK dipakai bila salah satu
+ *     dimensi berubah (SOL-18): source, scenario hash (flags gate inti +
+ *     asumsi + budget), tool identity (gcc/clang version), cwd, stdin
+ *     verifikasi (--run-stdin), timeout, output cap, checked header dir,
+ *     dan flags gate Fase 5/6 (lint/exhaustive/stack/fuzz/mutate/
+ *     freestanding/matrix/abi/perturb/thread-probe). Entry v1 lama
+ *     otomatis miss (upgrade mulus).
  *   - Hit  = replay penuh hasil: verdict/assurance/finding/completeness/
  *     claim/receipt/gates/diags/debt — receipt_sha256 IKUT di-replay
  *     (deterministik: receipt adalah hash dari status yang sama).

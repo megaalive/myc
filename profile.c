@@ -17,6 +17,7 @@
 #include "profile.h"
 #include "json.h"
 #include "gate.h"
+#include "persist.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -218,7 +219,6 @@ static void save_profile(const my_profile *pf)
     char path[PROFILE_FILE_CAP];
     json_value *root, *ob;
     char *js = NULL;
-    FILE *f;
     int i, g, s;
     prof_ensure_dir();
     prof_path_id(pf->id, path, sizeof(path));
@@ -266,12 +266,12 @@ static void save_profile(const my_profile *pf)
     json_free(root);
     if (!js)
         return;
-    f = fopen(path, "wb");
-    if (f) {
-        fputs(js, f);
-        fclose(f);
+    /* PR-012 (MYC-AUDIT-044, P3-T03): tulis ATOMIK (temp+flush+fsync+
+     * rename). Crash kapan pun -> profiles/<id>.json OLD valid ATAU NEW
+     * valid, tidak pernah setengah. Index tetap ditambah hanya bila
+     * tulis profile sukses (seperti dulu). NON-blocking: gagal diabaikan. */
+    if (myc_persist_atomic_write_str(path, js))
         prof_index_add(pf->id);
-    }
     free(js);
 }
 

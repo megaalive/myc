@@ -6,6 +6,7 @@
  */
 #include "calibrate.h"
 #include "json.h"
+#include "persist.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -154,7 +155,6 @@ static void calib_save(const myc_calib_entry *entries, int count)
     char path[256];
     json_value *root, *arr;
     char *js = NULL;
-    FILE *f;
     int i;
 
     if (count <= 0)
@@ -191,11 +191,10 @@ static void calib_save(const myc_calib_entry *entries, int count)
         json_free(root);
         return;
     }
-    f = fopen(path, "wb");
-    if (f) {
-        fputs(js, f);
-        fclose(f);
-    }
+    /* PR-012 (MYC-AUDIT-044, P3-T03): tulis ATOMIK (temp+flush+fsync+
+     * rename). Crash kapan pun -> calibration.json OLD valid ATAU NEW
+     * valid, tidak pernah setengah. NON-blocking: gagal diabaikan. */
+    (void)myc_persist_atomic_write_str(path, js);
     free(js);
     json_free(root);
 }

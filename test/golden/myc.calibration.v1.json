@@ -1,0 +1,24 @@
+{
+  "schema": "myc.calibration.v1",
+  "entries": [
+    {
+      "rule": "lint-oob",
+      "accepted": 12,
+      "rejected": 3,
+      "confirmed_later": 2,
+      "missed": 1,
+      "useful_fix": 5,
+      "harmful_fix": 0,
+      "match": "out of bounds"
+    },
+    {
+      "rule": "gcc-analyzer-leak",
+      "accepted": 4,
+      "rejected": 1,
+      "confirmed_later": 0,
+      "missed": 0,
+      "useful_fix": 1,
+      "harmful_fix": 1
+    }
+  ]
+}

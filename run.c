@@ -75,7 +75,13 @@ static const char *const SANITIZER_MARKERS[] = {
  * bukti yang TIDAK bisa dipalsukan program secara tidak sengaja (report
  * ditulis runtime sanitizer sendiri, bukan stdout/stderr program).
  * LC_ALL=C menstabilkan output lintas locale. Nama base dipilih unik per
- * fase agar tidak tabrakan antar run di tmp_dir yang sama. */
+ * fase agar tidak tabrakan antar run di tmp_dir yang sama.
+ *
+ * PR-008 (INV-006): report HANYA bukti bila exit code != 0. Karena env
+ * memakai abort_on_error=1/halt_on_error=1, bug memori nyata SELALU
+ * berakhir non-zero (abort/SIGABRT); report yang muncul bersama exit 0
+ * = file buatan program (cwd child = tmp_dir, program bisa menulis
+ * "<base>.<pid>" palsu) -> DITOLAK, konsisten dengan aturan marker teks. */
 static const char *const RUN_ENV[] = {
     "ASAN_OPTIONS=log_path=myc_run_asan_rpt:abort_on_error=1:halt_on_error=1",
     "UBSAN_OPTIONS=log_path=myc_run_ubsan_rpt:halt_on_error=1:print_stacktrace=1",
@@ -392,7 +398,10 @@ static int myc_runtime_canary(const char *clang_path, const char *tmp_dir,
         if (!rpt)
             rpt = myc_read_sanitizer_report(tmp_dir, "myc_canary_ubsan_rpt");
         int ec = pres.exit_code;
-        ret = (rpt || m || ec != 0) ? 1 : 0;
+        /* PR-008: konsisten dengan 6 titik lain — report/marker hanya
+         * bukti backend-sehat bila exit != 0 (env abort_on_error=1).
+         * Report + exit 0 = file mencurigakan -> backend TIDAK dipercaya. */
+        ret = (((rpt != NULL || m != NULL) && ec != 0) || ec != 0) ? 1 : 0;
         free(rpt);
         myc_remove_sanitizer_reports(tmp_dir, "myc_canary_asan_rpt");
         myc_remove_sanitizer_reports(tmp_dir, "myc_canary_ubsan_rpt");
@@ -672,8 +681,9 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
         const char  *rpt = asan_rpt ? asan_rpt : ubsan_rpt;
         const char  *omarker = marker_found(res->run_stdout_text,
                                             res->run_stderr_text);
-        int          report_evidence = (asan_rpt != NULL) ||
-                                       (ubsan_rpt != NULL);
+        int          report_evidence = ((asan_rpt != NULL) ||
+                                        (ubsan_rpt != NULL)) &&
+                                       res->exit_code != 0;
 
         if (report_evidence || (omarker && res->exit_code != 0)) {
             /* finding: bukti saluran report, atau marker terkonfirmasi
@@ -1100,7 +1110,10 @@ int myc_metamorphic_gate(const myc_request *req, const char *source,
             rpt = myc_read_sanitizer_report(tmp_dir, base_asan);
             if (!rpt)
                 rpt = myc_read_sanitizer_report(tmp_dir, base_ubsan);
-            *findp = (rpt != NULL || (marker && pres.exit_code != 0)) ? 1 : 0;
+            /* PR-008: report hanya bukti bila exit != 0 (spoof file
+             * report palsu + exit 0 ditolak; konsisten run gate). */
+            *findp = ((rpt != NULL || marker != NULL) &&
+                      pres.exit_code != 0) ? 1 : 0;
             if (rpt) {
                 const char *rm = report_marker_of(rpt);
                 char note[192];
@@ -1619,7 +1632,9 @@ int myc_divergence_gate(const myc_request *req, const char *source,
                 if (!rpt)
                     rpt = myc_read_sanitizer_report(tmp_dir, base_ubsan);
                 omarker = marker_found(pres.stdout_data, pres.stderr_data);
-                if (rpt) {
+                /* PR-008: report hanya bukti bila exit != 0 (spoof file
+                 * report palsu + exit 0 ditolak; konsisten run gate). */
+                if (rpt && pres.exit_code != 0) {
                     const char *rm = report_marker_of(rpt);
                     cell->finding = 1;
                     if (rm)

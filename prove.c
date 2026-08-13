@@ -540,15 +540,39 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
             res->prove_proof_obligations =
                 count_proof_obligations(pres.stdout_data) +
                 count_proof_obligations(pres.stderr_data);
+            /* PR-009 (INV-001): exit 0 + 0 alarm BUKAN otomatis clean —
+             * output malformed (garbage tanpa ANALYSIS SUMMARY) TIDAK boleh
+             * dipromosikan menjadi clean. Konsisten dengan jalur WSL yang
+             * mengecek "ANALYSIS SUMMARY" sebelum COMPLETED_CLEAN. */
             if (alarms == 0) {
-                res->verdict = MC_OK;
-                res->err = MYC_ERR_NONE;
-                add_diag_prove(res, "prove: Eva 0 alarm RTE (abstract interpretation, "
-                                    "entry main; bukan proof obligation WP)");
-                myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_COMPLETED_CLEAN,
-                                    "Eva 0 alarm");
-                myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_CLEAN,
-                                        "Eva 0 alarm RTE");
+                if (pres.stdout_data &&
+                    strstr(pres.stdout_data, "ANALYSIS SUMMARY")) {
+                    res->verdict = MC_OK;
+                    res->err = MYC_ERR_NONE;
+                    add_diag_prove(res, "prove: Eva 0 alarm RTE (abstract "
+                                        "interpretation, entry main; bukan "
+                                        "proof obligation WP)");
+                    myc_gate_set_status(res, MYC_GATE_PROVE,
+                                        MYC_GATE_COMPLETED_CLEAN,
+                                        "Eva 0 alarm + summary");
+                    myc_result_add_evidence(res, MYC_GATE_PROVE,
+                                            MYC_EVIDENCE_CLEAN,
+                                            "Eva 0 alarm RTE + summary");
+                } else {
+                    /* output malformed/tanpa summary: bukan bukti bersih.
+                     * Gate di-skip (NOT_APPLICABLE), bukan clean palsu. */
+                    add_diag_prove(res, "gate Eva di-skip: output frama-c "
+                                        "tidak memuat ANALYSIS SUMMARY "
+                                        "(malformed/tidak menganalisis) - "
+                                        "assurance statis dipertahankan");
+                    myc_gate_set_status(res, MYC_GATE_PROVE,
+                                        MYC_GATE_NOT_APPLICABLE,
+                                        "Eva tanpa summary (output malformed)");
+                    myc_result_add_evidence(res, MYC_GATE_PROVE,
+                                            MYC_EVIDENCE_SKIP,
+                                            "Eva di-skip: tanpa ANALYSIS "
+                                            "SUMMARY (INV-001)");
+                }
             } else {
                 res->verdict = MC_PROVE_VIOLATION;
                 res->err = MYC_ERR_NONE;

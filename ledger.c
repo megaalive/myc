@@ -15,6 +15,7 @@
 #include "sha256.h"
 #include "gate.h"
 #include "budget.h"
+#include "persist.h"
 
 #ifdef _WIN32
 #include <direct.h>
@@ -360,7 +361,6 @@ int myc_ledger_write(const myc_ledger_entry *entry)
     json_value *root;
     json_value *arr;
     char *js;
-    FILE *f;
     int i;
     int replaced = 0;
 
@@ -439,13 +439,18 @@ int myc_ledger_write(const myc_ledger_entry *entry)
     if (!js)
         return 0;
 
-    f = fopen(MYC_LEDGER_FILE, "w");
-    if (!f) {
+    /* PR-012 (MYC-AUDIT-044, P3-T03): tulis ATOMIK (temp+flush+fsync+
+     * rename). Crash kapan pun -> ledger.json OLD valid ATAU NEW valid,
+     * tidak pernah setengah (receipt chain tidak pernah membaca JSON
+     * korup). NON-blocking: gagal = return 0 (seperti dulu).
+     * Catatan byte-format: newline trailing lama (`fprintf "%s\n"`)
+     * sengaja TIDAK dipertahankan — pembaca json_parse_cstr tidak
+     * peduli, dan konsisten dengan file state .myc lain yang tanpa
+     * newline. */
+    if (!myc_persist_atomic_write_str(MYC_LEDGER_FILE, js)) {
         free(js);
         return 0;
     }
-    fprintf(f, "%s\n", js);
-    fclose(f);
     free(js);
 
     (void)replaced;

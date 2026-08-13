@@ -76,7 +76,7 @@ fi
 # --- 1. self-dogfooding ---
 for f in myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c \
          run.c contract.c prove.c filc.c driver.c json.c mcp.c negative.c \
-          agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c; do
+          agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c; do
     if ./myc check "$f" 2>&1 | grep -qF "verdict:   OK"; then
         :
     else
@@ -816,7 +816,7 @@ else
     fail "Fase 5 abi: check --abi tidak masuk JSON summary"
 fi
 # Exit criteria SOL-14: ABI drift ditolak dalam transaction.
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/abi_tx_reject test/abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c > /dev/null 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/abi_tx_reject test/abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c > /dev/null 2>&1
 if ./test/abi_tx_reject > /dev/null 2>&1; then
     note "Fase 5 abi: ABI drift ditolak dalam transaction (exit criteria)"
 else

@@ -1215,7 +1215,16 @@ static void usage(void)
          "                        skor expected_value = P(new-evidence) x\n"
          "                        severity x scope / (time x token); prior tabel\n"
          "                        deterministik dikalibrasi dari ledger SOL-21 +\n"
-         "                        profil SOL-20; NON-blocking, verdict tetap)\n"
+         "                        profil SOL-20; NON-blocking, verdict tetap)\n");
+    /* PR-017: blok usage backends dipisah ke printf tersendiri — string
+     * literal yang BERTETANGGA digabung compiler (overlength-strings),
+     * dan gabungan usage utama sudah mendekati batas 4095 C99. */
+    printf(
+         "  myc backends [--canary]\n"
+         "                        (PR-017/P5-T01: backend qualification registry\n"
+         "                        -- tier kebijakan A/B/C + path + versi exact\n"
+         "                        tiap backend; --canary jalankan canary per\n"
+         "                        backend (kualifikasi hidup; mahal). NON-blocking)\n"
          "  myc version\n");
 }
 
@@ -2264,6 +2273,26 @@ int main(int argc, char **argv)
         }
         fprintf(stderr, "myc: canary membutuhkan `list` atau `run [backend]`\n");
         return 2;
+    }
+
+    /* PR-017 (P5-T01/P5-T02): myc backends [--canary] — backend
+     * qualification registry: tier kebijakan + identitas exact (path +
+     * versi) per backend + status canary. `--canary` menjalankan canary
+     * per backend (mahal). NON-blocking: registry adalah laporan, verdict
+     * target tidak terpengaruh. */
+    if (strcmp(argv[1], "backends") == 0) {
+        int run_canary = 0;
+        int bi;
+        for (bi = 2; bi < argc; bi++) {
+            if (strcmp(argv[bi], "--canary") == 0)
+                run_canary = 1;
+            else {
+                fprintf(stderr, "myc: backends: flag tak dikenal: %s\n",
+                        argv[bi]);
+                return 2;
+            }
+        }
+        return myc_backends_report(stdout, run_canary);
     }
 
     /* C5 (DS-12): myc scenario list | info <name>. */

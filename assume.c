@@ -37,6 +37,7 @@
 #include "sha256.h"
 #include "proc.h"
 #include "ledger.h"
+#include "persist.h"
 
 #ifdef _WIN32
 #include <direct.h>
@@ -821,7 +822,6 @@ static void asm_state_save(const asm_state *st)
 {
     json_value *root, *arr;
     char *js = NULL;
-    FILE *f;
     int i;
 
     if (!st || st->count == 0)
@@ -855,11 +855,10 @@ static void asm_state_save(const asm_state *st)
     json_free(root);
     if (!js)
         return;
-    f = fopen(MYC_ASSUME_FILE, "wb");
-    if (f) {
-        fputs(js, f);
-        fclose(f);
-    }
+    /* PR-012 (MYC-AUDIT-044, P3-T03): tulis ATOMIK (temp+flush+fsync+
+     * rename). Crash kapan pun -> assumptions.json OLD valid ATAU NEW
+     * valid, tidak pernah setengah. NON-blocking: gagal diabaikan. */
+    (void)myc_persist_atomic_write_str(MYC_ASSUME_FILE, js);
     free(js);
 }
 

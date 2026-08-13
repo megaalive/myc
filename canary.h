@@ -50,4 +50,61 @@ const char *const *myc_canary_backends(int *count);
  * backend terverifikasi hidup). */
 int myc_canary_run(const char *backend, FILE *out);
 
+/* ------------------------------------------------------------------ */
+/* Backend qualification registry (PR-017 / P5-T01 + P5-T02)           */
+/* ------------------------------------------------------------------ */
+
+/* Tier kebijakan backend (docs/backends.md, PR-017):
+ *   A = release-blocking, diuji CI (Windows + Linux)
+ *   B = supported, non-blocking (kehadiran/kerusakan = debt, bukan FAIL)
+ *   C = best-effort / eksperimental (observasi saja)                  */
+#define MYC_BACKEND_TIER_A "A"
+#define MYC_BACKEND_TIER_B "B"
+#define MYC_BACKEND_TIER_C "C"
+
+/* Satu baris kebijakan backend: siapa backend-nya, executable utama yang
+ * dicari (NULL = internal, tanpa binary eksternal), tier dukungan, versi
+ * minimum yang didukung (NULL = tidak ada pernyataan minimum), dan apa
+ * evidence yang diekstrak (dokumentasi P5-T01). */
+typedef struct {
+    const char *backend;     /* nama backend: compile|analyzer|run|driver|
+                                exhaustive|fuzz|mutate|stack|lint|prove|
+                                filc|matrix|checked */
+    const char *exe;         /* executable utama (gcc / clang / filc-clang /
+                                frama-c / arm-none-eabi-gcc ...); NULL =
+                                internal (tanpa binary eksternal) */
+    const char *tier;        /* MYC_BACKEND_TIER_A / _B / _C */
+    const char *min_version; /* versi minimum; NULL = n/a */
+    const char *evidence;    /* evidence yang diekstrak (satu kalimat) */
+} myc_backend_policy;
+
+/* Tabel kebijakan backend (static). *count = jumlah entri. */
+const myc_backend_policy *myc_backend_policy_table(int *count);
+
+/* Identitas backend yang di-resolve saat ini: path executable + versi
+ * (baris pertama `<exe> --version`). Dua string malloc'd; pemanggil
+ * membebaskan dengan myc_backend_probe_free(). `found` = executable
+ * ditemukan; `path`/`version` NULL bila tidak. */
+typedef struct {
+    const myc_backend_policy *policy;  /* entry kebijakan (milik tabel) */
+    int    found;                      /* executable ditemukan di PATH */
+    char  *path;                       /* path absolut resolv (malloc'd) */
+    char  *version;                    /* versi exact (malloc'd) */
+} myc_backend_probe;
+
+/* Probe identitas backend [backend] (NULL = semua). Mengisi array
+ * `out` (calloc'd, *count entri) — SETIAP entri milik pemanggil dan
+ * di-free via myc_backend_probe_free(). Return 1 sukses, 0 gagal. */
+int myc_backend_probe_run(const char *backend, myc_backend_probe **out,
+                          int *count);
+
+/* Bebaskan array hasil myc_backend_probe. */
+void myc_backend_probe_free(myc_backend_probe *p, int count);
+
+/* Cetak registry backend ke out: tier, path, versi, dan status canary
+ * per backend. `run_canary` = 1 menjalankan canary backend tsb (mahal);
+ * 0 hanya mencantumkan jumlah canary yang tersedia. Return jumlah
+ * backend yang canary-nya GAGAL (0 = semua terverifikasi hidup). */
+int myc_backends_report(FILE *out, int run_canary);
+
 #endif /* MYC_CANARY_H */

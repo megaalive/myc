@@ -9,6 +9,7 @@
 
 #include "json.h"
 #include "ledger.h"
+#include "persist.h"
 #include "policy.h"
 #include "proc.h"
 #include "sha256.h"
@@ -21,6 +22,11 @@
 #include <sys/stat.h>
 #define cache_mkdir(p) mkdir(p, 0700)
 #endif
+
+/* PR-013 (MYC-AUDIT-045, P3-T04): sidecar integrity hash dari file cache.
+ * Berisi sha256 HEX atas byte MENTAH evidence_cache.json (64 hex). Ditulis
+ * atomik SETELAH file cache; pembaca membandingkan hash byte file. */
+#define MYC_CACHE_SHA_FILE ".myc/evidence_cache.sha256"
 
 /* ------------------------------------------------------------------ */
 /* Key + tool identity                                                 */
@@ -64,13 +70,57 @@ static void cache_tool_key(const myc_request *req, char *out, size_t cap)
     free(clang_ver);
 }
 
-/* Key kanonik: sha256(source + scenario + tool + cwd). */
+/* PR-011 (MYC-AUDIT-043): hash deterministik flag gate Fase 5/6 yang
+ * MENGUBAH HASIL tetapi belum tercakup myc_ledger_build_scenario_hash
+ * (lint, exhaustive, stack + stack_budget, fuzz + iters + seed,
+ * mutate-audit + max, freestanding, matrix, abi, perturb, thread-probe).
+ * Tanpa dimensi ini dua run dgn resep gate berbeda berbagi cache entry:
+ * replay lintas-flag = stale/lossy (mis. --fuzz hit dari entry polos =
+ * gate fuzz HILANG dari output; --exhaustive hit dari entry polos =
+ * ex_* = 0; --stack --stack-budget beda = observasi stack stale). */
+static void cache_gates2_hash(const myc_request *req, char out[33])
+{
+    sha256_ctx gctx;
+    uint8_t    gmd[32];
+    char       ghex[65];
+    char       gbuf[512];
+    int        gn = 0;
+
+    gn += snprintf(gbuf + gn, sizeof(gbuf) - gn,
+                   "lint=%d|exh=%d|stk=%d|stb=%d|fz=%d|fzi=%d|fzs=%u|mut=%d|"
+                   "mutm=%d|free=%d|mat=%d|abi=%d|pert=%d|tp=%d",
+                   req->run_lint, req->exhaustive, req->stack,
+                   req->stack_budget, req->fuzz, req->fuzz_iters,
+                   req->fuzz_seed, req->mutate_audit, req->mutate_max,
+                   req->freestanding, req->matrix, req->abi, req->perturb,
+                   req->thread_probe);
+    if (gn >= (int)sizeof(gbuf))
+        gn = (int)sizeof(gbuf) - 1;
+    sha256_init(&gctx);
+    sha256_update(&gctx, gbuf, (size_t)gn);
+    sha256_final(&gctx, gmd);
+    sha256_hex(gmd, 32, ghex);
+    memcpy(out, ghex, 16);   /* potong eksplisit: hindari -Wformat-truncation */
+    out[16] = '\0';
+}
+
+/* Key kanonik v2: sha256(source + scenario + tool + cwd + stdin +
+ * timeout + output cap + header dir + flags gate Fase 5/6).
+ *
+ * Spesifikasi lengkap per dimensi: docs/cache-key.md (PR-011).
+ * Perubahan v1→v2 (MYC-AUDIT-043): tambah `stdin` (--run-stdin mengubah
+ * hasil gate run), `t` (timeout_ms), `o` (max_output_bytes), `hdir`
+ * (checked_header_dir — myc_buf.h berbeda = hasil L4 berbeda), dan `g2`
+ * (hash flags gate Fase 5/6 di atas). Entry v1 lama otomatis MISS pada
+ * v2 (upgrade mulus — replay stale tidak pernah terjadi). */
 static void cache_build_key(const myc_request *req,
                             const char *src, size_t srclen,
                             const char *tool_key, char out[65])
 {
     char source_hex[65];
     char scenario[17];
+    char stdin_hex[33];
+    char gates2[33];
     char *scen_full;
     char buf[8192];
     int  n;
@@ -85,9 +135,29 @@ static void cache_build_key(const myc_request *req,
         snprintf(scenario, sizeof(scenario), "?");
     }
 
-    n = snprintf(buf, sizeof(buf), "v1|src:%s|scen:%s|tool:%s|cwd:%s|",
+    /* PR-011: --run-stdin mengubah PERILAKU program verifikasi → hasil
+     * gate run berbeda; wajib jadi dimensi key (sebelumnya absen = dua
+     * run dgn stdin berbeda berbagi entry = replay stale). */
+    if (req->run_stdin && req->run_stdin_len > 0) {
+        char sh[65];
+        sha256_hex(req->run_stdin, req->run_stdin_len, sh);
+        memcpy(stdin_hex, sh, 16);   /* potong eksplisit: hindari -Wformat-truncation */
+        stdin_hex[16] = '\0';
+    } else {
+        snprintf(stdin_hex, sizeof(stdin_hex), "-");
+    }
+
+    cache_gates2_hash(req, gates2);
+
+    n = snprintf(buf, sizeof(buf),
+                 "v2|src:%s|scen:%s|tool:%s|cwd:%s|stdin:%s|t:%d|o:%d|"
+                 "hdir:%s|g2:%s|",
                  source_hex, scenario, tool_key ? tool_key : "",
-                 req->cwd ? req->cwd : "");
+                 req->cwd ? req->cwd : "",
+                 stdin_hex,
+                 req->timeout_ms, req->max_output_bytes,
+                 req->checked_header_dir ? req->checked_header_dir : "",
+                 gates2);
     if (n < 0)
         n = 0;
     if ((size_t)n >= sizeof(buf))
@@ -99,13 +169,169 @@ static void cache_build_key(const myc_request *req,
 /* Persistence: .myc/evidence_cache.json                              */
 /* ------------------------------------------------------------------ */
 
+static void cache_write_all(const myc_cache_entry *entries, int count);
+
+/* PR-013 (MYC-AUDIT-045, P3-T04): cache corruption recovery. Integritas
+ * file diverifikasi via sidecar sha256 atas byte MENTAH (MYC_CACHE_SHA_FILE)
+ * — bukan re-serialisasi JSON (teks backend bisa berisi byte non-UTF8 yang
+ * tidak round-trip stabil). Entry yang lolos hash tetap divalidasi SEMANTIK
+ * sebelum di-parse ke struct (fail-closed): truncated JSON, flip bit,
+ * field asing, hash salah, entry duplikat, versi backend basi, timestamp
+ * mustahil, state gate mustahil TIDAK boleh pernah di-replay sebagai
+ * bukti. Entry korup dikarantina: dilewati, dihitung, file di-heal
+ * (rewrite tanpa entry tsb), replay menjadi MISS -> pipeline menghitung
+ * ulang (recompute). "Never crash and never trust it" (P3-T04). */
+
+/* 64 karakter hex (sha256 hex). */
+static int cache_hex64(const char *s)
+{
+    size_t i;
+    if (!s || strlen(s) != 64)
+        return 0;
+    for (i = 0; i < 64; i++) {
+        char c = s[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+              (c >= 'A' && c <= 'F')))
+            return 0;
+    }
+    return 1;
+}
+
+/* Baca hex sha256 dari file sidecar. Return 1 bila 64-hex terbaca. */
+static int cache_sidecar_read(char out[65])
+{
+    FILE *f;
+    char tmp[96];
+    size_t n;
+
+    f = fopen(MYC_CACHE_SHA_FILE, "rb");
+    if (!f)
+        return 0;
+    n = fread(tmp, 1, sizeof(tmp) - 1, f);
+    fclose(f);
+    if (n == 0)
+        return 0;
+    tmp[n] = '\0';
+    while (n > 0 && (tmp[n - 1] == '\n' || tmp[n - 1] == '\r' ||
+                     tmp[n - 1] == ' '))
+        tmp[--n] = '\0';
+    if (n != 64)
+        return 0;
+    memcpy(out, tmp, 65);
+    out[64] = '\0';
+    return cache_hex64(out);
+}
+
+/* Semantik: skema field wajib, enum di range (BUKAN di-clamp ke 0 = OK!),
+ * state mustahil ditolak. Dijalankan SETELAH integritas byte file lolos
+ * (sidecar): walau hash sah, nilai mustahil tetap dikarantina (anti
+ * false-clean replay). */
+static int cache_entry_semantic_ok(const json_value *e, char *why,
+                                   size_t whycap)
+{
+    const char *key = json_get_str(e, "key");
+    const char *src = json_get_str(e, "source");
+    json_value *v;
+    int64_t verdict, err;
+
+    if (!key || !cache_hex64(key)) {
+        snprintf(why, whycap, "key bukan sha256 hex64");
+        return 0;
+    }
+    if (!src || !cache_hex64(src)) {
+        snprintf(why, whycap, "source bukan sha256 hex64");
+        return 0;
+    }
+    v = json_get(e, "verdict");
+    if (!v || v->type != JSON_NUM || v->num < 0 || v->num > MC_INCONCLUSIVE) {
+        snprintf(why, whycap, "verdict hilang/out-of-range");
+        return 0;
+    }
+    verdict = v->num;
+    v = json_get(e, "err");
+    if (!v || v->type != JSON_NUM || v->num < 0 ||
+        v->num >= (int64_t)MYC_ERR_INTERNAL) {
+        snprintf(why, whycap, "err hilang/out-of-range");
+        return 0;
+    }
+    err = v->num;
+    /* State mustahil: store menolak verdict MC_ERROR (hasil error bukan
+     * bukti), jadi MC_ERROR + err NONE tidak mungkin pernah sah. */
+    if (verdict == MC_ERROR && err == MYC_ERR_NONE) {
+        snprintf(why, whycap, "state mustahil: MC_ERROR tanpa err");
+        return 0;
+    }
+    v = json_get(e, "assurance");
+    if (v && (v->type != JSON_NUM || v->num < 0 ||
+              v->num > MYC_ASSURANCE_L5_FILC)) {
+        snprintf(why, whycap, "assurance out-of-range");
+        return 0;
+    }
+    v = json_get(e, "finding");
+    if (v && (v->type != JSON_NUM || v->num < 0 ||
+              v->num > MYC_FINDING_INCONCLUSIVE)) {
+        snprintf(why, whycap, "finding out-of-range");
+        return 0;
+    }
+    v = json_get(e, "completeness");
+    if (v && (v->type != JSON_NUM || v->num < 0 ||
+              v->num > MYC_COMPLETENESS_INCOMPLETE)) {
+        snprintf(why, whycap, "completeness out-of-range");
+        return 0;
+    }
+    v = json_get(e, "claim");
+    if (v && (v->type != JSON_NUM || v->num < 0 ||
+              v->num > MYC_CLAIM_UNVERIFIED)) {
+        snprintf(why, whycap, "claim out-of-range");
+        return 0;
+    }
+    /* Timestamp: duration_ms mustahil negatif / raksasa. */
+    v = json_get(e, "duration_ms");
+    if (v && (v->type != JSON_NUM || v->num < 0 ||
+              v->num > ((int64_t)1 << 40))) {
+        snprintf(why, whycap, "duration_ms mustahil");
+        return 0;
+    }
+    /* Gates: id/status wajib di range bila ada (anti impossible gate state). */
+    v = json_get(e, "gates");
+    if (v) {
+        size_t gi;
+        if (v->type != JSON_ARR) {
+            snprintf(why, whycap, "gates bukan array");
+            return 0;
+        }
+        for (gi = 0; gi < v->len; gi++) {
+            json_value *go = v->items[gi];
+            json_value *gv;
+            if (!go || go->type != JSON_OBJ)
+                continue;
+            gv = json_get(go, "id");
+            if (gv && (gv->type != JSON_NUM || gv->num < 0 ||
+                       gv->num >= (int64_t)MYC_GATE_COUNT)) {
+                snprintf(why, whycap, "gate id out-of-range");
+                return 0;
+            }
+            gv = json_get(go, "status");
+            if (gv && (gv->type != JSON_NUM || gv->num < 0 ||
+                       gv->num > MYC_GATE_COMPLETED_OBSERVATIONS)) {
+                snprintf(why, whycap, "gate status out-of-range");
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
 static int cache_read_all(myc_cache_entry *out, int cap)
 {
     FILE *f;
     long  sz;
     char *buf;
     json_value *root, *arr;
-    int i, n = 0;
+    int i, n = 0, qbad = 0;
+    char qwhy[96];
+
+    qwhy[0] = '\0';
 
     if (cap <= 0)
         return 0;
@@ -132,24 +358,78 @@ static int cache_read_all(myc_cache_entry *out, int cap)
     buf[sz] = '\0';
     fclose(f);
 
+    /* PR-013 (MYC-AUDIT-045, P3-T04): integritas via sidecar sha256 atas
+     * byte MENTAH file. Sidecar hilang/stale/tampered = seluruh file
+     * di-ignore (fail-closed) -> replay MISS -> recompute. Hash atas byte
+     * mentah (bukan re-serialisasi JSON) stabil untuk konten apa pun. */
+    {
+        char hex[65];
+        char fhex[65];
+        sha256_hex(buf, (size_t)sz, hex);
+        if (!cache_sidecar_read(fhex) || strcmp(hex, fhex) != 0) {
+            free(buf);
+            fprintf(stderr,
+                    "myc: cache: %s corrupt (integrity sha256 mismatch) - "
+                    "ignored; evidence recomputed\n", MYC_CACHE_FILE);
+            return 0;
+        }
+    }
+
     if (!json_parse(buf, (size_t)sz, &root) || !root ||
         root->type != JSON_OBJ) {
         if (root)
             json_free(root);
         free(buf);
+        fprintf(stderr,
+                "myc: cache: %s corrupt (JSON parse failed) - ignored; "
+                "evidence recomputed\n", MYC_CACHE_FILE);
         return 0;
     }
     arr = json_get(root, "entries");
-    if (arr && arr->type == JSON_ARR) {
-        for (i = 0; i < (int)arr->len && n < cap; i++) {
-            json_value *e = arr->items[i];
-            json_value *v;
-            myc_cache_entry *ce = &out[n];
-            int k;
+    if (!arr || arr->type != JSON_ARR) {
+        /* Schema korup: file cache tanpa array entries (fail-closed). */
+        json_free(root);
+        free(buf);
+        fprintf(stderr,
+                "myc: cache: %s corrupt (entries schema) - ignored; "
+                "evidence recomputed\n", MYC_CACHE_FILE);
+        return 0;
+    }
+    for (i = 0; i < (int)arr->len && n < cap; i++) {
+        json_value *e = arr->items[i];
+        json_value *v;
+        myc_cache_entry *ce = &out[n];
+        int k;
 
-            if (!e || e->type != JSON_OBJ)
+        if (!e || e->type != JSON_OBJ) {
+            snprintf(qwhy, sizeof(qwhy), "entry bukan objek");
+            qbad++;
+            continue;
+        }
+        /* PR-013 (MYC-AUDIT-045, P3-T04): validasi semantik SEBELUM parse
+         * (fail-closed) — integritas byte file sudah diverifikasi sidecar.
+         * Entry mustahil dikarantina: dilewati, dihitung, file di-heal
+         * setelah loop; replay MISS -> recompute. */
+        if (!cache_entry_semantic_ok(e, qwhy, sizeof(qwhy))) {
+            qbad++;
+            continue;
+        }
+        /* Dedup: key sama = entry duplikat (pertahankan yang pertama). */
+        v = json_get(e, "key");
+        if (v && v->type == JSON_STR) {
+            int di, dup = 0;
+            for (di = 0; di < n; di++)
+                if (strcmp(out[di].key_sha256, v->str) == 0) {
+                    dup = 1;
+                    break;
+                }
+            if (dup) {
+                snprintf(qwhy, sizeof(qwhy), "duplicate key");
+                qbad++;
                 continue;
-            memset(ce, 0, sizeof(*ce));
+            }
+        }
+        memset(ce, 0, sizeof(*ce));
 
             v = json_get(e, "key");   if (v && v->type == JSON_STR) snprintf(ce->key_sha256, sizeof(ce->key_sha256), "%s", v->str);
             v = json_get(e, "source"); if (v && v->type == JSON_STR) snprintf(ce->source_sha256, sizeof(ce->source_sha256), "%s", v->str);
@@ -489,16 +769,25 @@ static int cache_read_all(myc_cache_entry *out, int cap)
 
             n++;
         }
-    }
     json_free(root);
     free(buf);
+    if (qbad > 0) {
+        /* Karantina + self-heal: tulis ulang file TANPA entry korup agar
+         * korupsi tidak dibaca berulang. Entry tersisa tetap valid (hash
+         * dihitung ulang oleh cache_write_all). NON-blocking. */
+        fprintf(stderr,
+                "myc: cache: quarantined %d corrupt cache entr%s (%s) - "
+                "recomputing evidence\n",
+                qbad, qbad == 1 ? "y" : "ies",
+                qwhy[0] ? qwhy : "?");
+        cache_write_all(out, n);
+    }
     return n;
 }
 
 /* Tulis ulang cache file (ukuran kecil, rewrite penuh seperti ledger). */
 static void cache_write_all(const myc_cache_entry *entries, int count)
 {
-    FILE *f;
     json_value *root, *arr;
     char *out;
     int ok, i, k;
@@ -826,10 +1115,19 @@ static void cache_write_all(const myc_cache_entry *entries, int count)
     if (!ok || !out)
         return;
 
-    f = fopen(MYC_CACHE_FILE, "wb");
-    if (f) {
-        fwrite(out, 1, strlen(out), f);
-        fclose(f);
+    /* PR-012 (MYC-AUDIT-044, P3-T03): tulis ATOMIK (temp+flush+fsync+
+     * rename). Crash kapan pun -> evidence_cache.json OLD valid ATAU
+     * NEW valid, tidak pernah setengah (replay tidak pernah melihat
+     * JSON korup). NON-blocking: gagal tulis diabaikan (seperti dulu). */
+    (void)myc_persist_atomic_write_str(MYC_CACHE_FILE, out);
+    /* PR-013 (MYC-AUDIT-045, P3-T04): sidecar sha256 atas byte mentah
+     * file, ditulis SETELAH file cache (crash di antara keduanya =
+     * sidecar stale -> pembaca meng-ignore + recompute; aman, bukan
+     * trust). NON-blocking. */
+    {
+        char hex[65];
+        sha256_hex(out, strlen(out), hex);
+        (void)myc_persist_atomic_write_str(MYC_CACHE_SHA_FILE, hex);
     }
     free(out);
 }

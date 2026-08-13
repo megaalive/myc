@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "name": "cli-daily",
+      "desc": "CLI harian: compile + run + analyzer",
+      "flags": ["run", "analyzer"],
+      "env": {}
+    },
+    {
+      "name": "firmware",
+      "desc": "Firmware bare-metal: freestanding + stack + divergence + MMIO rules",
+      "flags": ["freestanding", "stack", "divergence"],
+      "env": {"stack_budget": 4096, "no_heap": true, "no_recursion": true}
+    }
+  ]
+}

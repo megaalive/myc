@@ -233,20 +233,27 @@ static const char *rc_gate_status(myc_gate_status s)
     }
     return "unknown";
 }
-static void myc_build_receipt(myc_result *res)
+/* PR-014 (MYC-AUDIT-046): kanonikal receipt string. Byte-string yang
+ * di-hash untuk receipt_sha256 -- deterministik dan OBSERVABLE agar test
+ * vector mengunci format (docs/receipt-canonical.md, test/receipt_vectors.c,
+ * blok 17 _audit018.sh). Urutan gate/debt = urutan insert (bukan sorted).
+ * Bila string penuh melebihi cap, output = cap-1 byte pertama + NUL
+ * (truncation deterministik, IDENTIK dengan yang di-hash myc_build_receipt).
+ * Return panjang string yang ditulis (0 bila res NULL / buf NULL / cap 0). */
+size_t myc_receipt_canonical(const myc_result *res, char *buf, size_t cap)
 {
     static const char *const VERSION = "myc.receipt.v1|";
-    char   buf[4096];
     size_t off = 0;
     size_t i;
 
-    if (!res)
-        return;
+    if (!res || !buf || cap == 0)
+        return 0;
+    buf[0] = '\0';
 
 #define R_APPEND(s) do { \
         const char *_p = (s); \
         size_t _l = _p ? strlen(_p) : 0; \
-        if (off + _l + 1 >= sizeof(buf)) _l = sizeof(buf) - off - 1; \
+        if (off + _l + 1 >= cap) _l = cap - off - 1; \
         if (_l) { memcpy(buf + off, _p, _l); off += _l; } \
         buf[off] = '\0'; \
     } while (0)
@@ -275,9 +282,19 @@ static void myc_build_receipt(myc_result *res)
     R_APPEND("|sha=");
     R_APPEND(res->source_sha256 ? res->source_sha256 : "");
     R_APPEND("|");
-
-    sha256_hex(buf, off, res->receipt_sha256);
 #undef R_APPEND
+
+    return off;
+}
+
+static void myc_build_receipt(myc_result *res)
+{
+    char buf[4096];
+
+    if (!res)
+        return;
+    myc_receipt_canonical(res, buf, sizeof(buf));
+    sha256_hex(buf, strlen(buf), res->receipt_sha256);
 }
 
 /* 9.10: bangun ulang receipt SETELAH enforcement require-complete
@@ -318,7 +335,18 @@ static void myc_build_debt(myc_result *res)
                 myc_debt_add(res, MYC_DEBT_GATE_INCONCLUSIVE,
                              "gate diminta tapi hasil tidak lengkap");
             break;
+        case MYC_GATE_NOT_REQUESTED:
+        case MYC_GATE_NOT_APPLICABLE:
+        case MYC_GATE_COMPLETED_CLEAN:
+        case MYC_GATE_COMPLETED_FINDINGS:
+        case MYC_GATE_COMPLETED_OBSERVATIONS:
+            break;   /* benign: tidak ada debt */
         default:
+            /* INV-011: status tak dikenal = gap verifikasi (fails closed),
+             * konsisten dengan reducer (myc_reduce_verdict). */
+            if (!myc_debt_present(res, MYC_DEBT_GATE_INCONCLUSIVE))
+                myc_debt_add(res, MYC_DEBT_GATE_INCONCLUSIVE,
+                             "gate diminta tapi status tak dikenal (fails closed)");
             break;
         }
     }
@@ -541,6 +569,13 @@ void myc_reduce_verdict(myc_result *res)
         case MYC_GATE_UNAVAILABLE:
         case MYC_GATE_INFRA_FAILED:
         case MYC_GATE_INCONCLUSIVE:
+            has_incomplete = 1;
+            break;
+        default:
+            /* INV-011: status tak dikenal (di luar enum) = fails closed.
+             * TIDAK boleh direinterpretasi sebagai clean -- sebelumnya
+             * jatuh diam-diam ke MC_OK (bug ditemukan test PR-003
+             * reducer_exhaustive INV-011). */
             has_incomplete = 1;
             break;
         }

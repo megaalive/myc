@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "name": "pack-fixture",
+  "domain": "embedded",
+  "rules": [
+    "Jangan memakai alokasi dinamis",
+    "Semua buffer harus MYC_BUF"
+  ],
+  "allow_headers": ["stdint.h", "stddef.h"],
+  "deny_functions": ["system", "exec"]
+}

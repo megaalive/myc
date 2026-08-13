@@ -755,8 +755,20 @@ static char *drain_assemble(drain_buf *d, size_t *out_len, int *out_truncated)
     char  *buf;
     size_t i, j;
     *out_truncated = d->truncated;
-    if (total < 1)
-        total = 1;
+    if (total < 1) {
+        /* Output KOSONG: kembalikan string kosong berpanjang 0, bukan
+         * 1 byte heap yang TIDAK pernah ditulis. Bug ditemukan PR-016
+         * (protocol-clean): versi lama memaksa total=1 lalu memcpy 0 byte
+         * sehingga buf[0] berisi byte stale (uninitialized read) dan
+         * *out_len=1 -- stdout_shown=1 padahal stdout_total=0; heap
+         * stale bisa bocor ke laporan. Fix: shown=0 + NUL. */
+        buf = (char *)malloc(1);
+        if (!buf)
+            return NULL;
+        buf[0] = '\0';
+        *out_len = 0;
+        return buf;
+    }
     buf = (char *)malloc(total + 1);
     if (!buf)
         return NULL;
@@ -808,6 +820,72 @@ static void *drain_thread(void *arg)
 }
 #endif
 
+/* ------------------------------------------------------------------ */
+/* Writer stdin (PR-006, P1-T03: deadlock matrix)                      */
+/* ------------------------------------------------------------------ */
+/* Tulis stdin dari THREAD terpisah. write()/WriteFile() blocking pada
+ * pipe penuh HARUS tunduk pada timeout: tanpa thread ini, child yang
+ * tidak pernah membaca stdin dan tidak pernah exit (mis. --sleep lama /
+ * hang) membuat myc_proc_run menggantung abadi walau timeout_ms diset --
+ * bug ditemukan deadlock matrix (PR-006). Bila child mati/dibunuh pada
+ * timeout, sisi read pipe tertutup -> writer berhenti (broken pipe /
+ * EPIPE) dan bisa di-join. */
+typedef struct {
+#ifdef _WIN32
+    HANDLE handle;
+#else
+    int     fd;
+#endif
+    const char *data;
+    size_t  len;
+} stdin_writer_arg;
+
+#ifdef _WIN32
+static unsigned __stdcall stdin_writer_thread(void *arg)
+{
+    stdin_writer_arg *w = (stdin_writer_arg *)arg;
+    DWORD total = 0;
+    while (total < (DWORD)w->len) {
+        DWORD chunk = (DWORD)w->len - total;
+        DWORD wr = 0;
+        if (chunk > 65536)
+            chunk = 65536;
+        if (!WriteFile(w->handle, w->data + total, chunk, &wr, NULL)) {
+            /* child keluar / dibunuh lebih dulu (broken pipe) atau error
+             * lain: selesai saja; hasil akhir tetap valid via wait loop. */
+            break;
+        }
+        total += wr;
+    }
+    /* Tutup sisi tulis stdin SETELAH selesai: child yang membaca sampai
+     * EOF (mis. drain_stdin) baru bisa lanjut bila write end tertutup.
+     * Tanpa ini child memblok selamanya menunggu EOF (regresi proc_flood
+     * T1, ditemukan saat wire PR-006). Pemanggil men-set stdin_wr=NULL
+     * setelah join agar tidak double-close. */
+    CloseHandle(w->handle);
+    return 0;
+}
+#else
+static void *stdin_writer_thread(void *arg)
+{
+    stdin_writer_arg *w = (stdin_writer_arg *)arg;
+    size_t off = 0;
+    while (off < w->len) {
+        ssize_t wr = write(w->fd, w->data + off, w->len - off);
+        if (wr < 0 && errno == EINTR)
+            continue;
+        if (wr <= 0)
+            break;   /* EPIPE: child keluar / dibunuh lebih dulu */
+        off += (size_t)wr;
+    }
+    /* Lihat catatan Windows: tutup write end agar child yang membaca
+     * sampai EOF bisa lanjut. Pemanggil men-set in_pipe[1]=-1 setelah
+     * join agar close_if_valid_fd tidak double-close. */
+    close(w->fd);
+    return NULL;
+}
+#endif
+
 void myc_proc_result_free(myc_proc_result *res)
 {
     if (!res)
@@ -854,6 +932,9 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
     int     timed_out = 0;
     int     proc_alive = 1;
     HANDLE  drain_threads[2] = { NULL, NULL };
+    HANDLE  stdin_writer = NULL;
+    stdin_writer_arg warg;
+    BOOL    job_assigned = FALSE;
     size_t  max_out = req->max_output_bytes ? req->max_output_bytes : MYC_MAX_OUTPUT_BYTES;
     DWORD   timeout_ms = (DWORD)(req->timeout_ms > 0 ? req->timeout_ms : MYC_DEFAULT_TIMEOUT_MS);
 
@@ -926,14 +1007,32 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
         goto cleanup;
     }
 
-    /* Assign proses ke Job Object (jika ada) untuk cleanup pohon. */
+    /* Assign proses ke Job Object (jika ada) untuk cleanup pohon.
+     * PR-007/P1-T04 (hardening): hasil assignment DIPERIKSA. Bila gagal
+     * (mis. lingkungan menjalankan myc di dalam job yang melarang nesting),
+     * TerminateJobObject di jalur timeout akan membunuh TIDAK ADA apa pun
+     * secara diam-diam -> turun ke TerminateProcess (child langsung saja).
+     * Konsumen dapat mendeteksi lubang ini lewat proc_fixture
+     * --spawn-breakaway (breakaway_status=1) di test proc_tree_kill T2. */
     if (job)
-        AssignProcessToJobObject(job, pi.hProcess);
+        job_assigned = AssignProcessToJobObject(job, pi.hProcess);
 
     /* Tutup sisi yang diwarisi oleh proses induk. */
     close_if_valid_handle(&stdin_rd);
     close_if_valid_handle(&stdout_wr);
     close_if_valid_handle(&stderr_wr);
+
+    /* PR-010 (bug proc.c, ditemukan lewat timing E2E fuzz): saat
+     * stdin_len==0 TIDAK ada writer thread yang menutup stdin_wr, sehingga
+     * write end pipe stdin tetap terbuka selama wait loop. Child yang
+     * membaca stdin sampai EOF (mis. `gcc -dM -E -` dari assume.c, atau
+     * program --run yang membaca stdin tanpa --run-stdin) memblok abadi
+     * menunggu EOF dan baru terbunuh saat timeout = pajak ~15 s pada
+     * SETIAP `myc check` (Windows). Tutup SEKARANG -> child mendapat EOF
+     * instan. Idempoten (helper men-null-kan); jalur writer (stdin_len>0)
+     * tidak masuk. */
+    if (req->stdin_len == 0)
+        close_if_valid_handle(&stdin_wr);
 
     /* Mulai thread drain. */
     if (!drain_init(&out, max_out) || !drain_init(&err, max_out)) {
@@ -951,29 +1050,48 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
         HANDLE th[2];
         th[0] = (HANDLE)_beginthreadex(NULL, 0, drain_thread, &out, 0, NULL);
         th[1] = (HANDLE)_beginthreadex(NULL, 0, drain_thread, &err, 0, NULL);
-        /* simpan untuk ditunggu nanti */
+        if (!th[0] || !th[1]) {
+            /* PR-007 (hardening): tanpa drain thread, child yang mengisi
+             * pipe output memblok sampai timeout 60 s (lambat, output
+             * hilang). Gagal cepat: bunuh child, laporkan INTERNAL. */
+            if (th[0]) { WaitForSingleObject(th[0], 2000); CloseHandle(th[0]); }
+            if (th[1]) { WaitForSingleObject(th[1], 2000); CloseHandle(th[1]); }
+            drain_threads[0] = drain_threads[1] = NULL;
+            res->err = MYC_ERR_INTERNAL;
+            res->ok = 0;
+            TerminateProcess(pi.hProcess, 1);
+            WaitForSingleObject(pi.hProcess, 5000);
+            close_if_valid_handle(&stdin_wr);
+            goto join_drain;
+        }
         drain_threads[0] = th[0];
         drain_threads[1] = th[1];
     }
 
-    /* Tulis stdin. */
+    /* Tulis stdin dari thread terpisah (PR-006): write blocking pada pipe
+     * penuh harus tunduk pada timeout -- child yang tak membaca stdin dan
+     * tak pernah exit = hang abadi bila ditulis sinkron. Bila child
+     * mati/dibunuh, pipe putus -> writer berhenti (broken pipe). */
+    warg.handle = stdin_wr;
+    warg.data = (const char *)req->stdin_data;
+    warg.len = req->stdin_len;
     if (req->stdin_len > 0) {
-        DWORD total_written = 0;
-        DWORD wr;
-        while (total_written < (DWORD)req->stdin_len) {
-            DWORD chunk = (DWORD)req->stdin_len - total_written;
-            if (chunk > 65536)
-                chunk = 65536;
-            if (!WriteFile(stdin_wr, (const char *)req->stdin_data + total_written, chunk, &wr, NULL)) {
-                if (GetLastError() == ERROR_BROKEN_PIPE)
-                    break; /* child keluar lebih dulu */
-                res->err = MYC_ERR_EXECUTE_FAILED;
-                break;
-            }
-            total_written += wr;
+        stdin_writer = (HANDLE)_beginthreadex(NULL, 0, stdin_writer_thread,
+                                              &warg, 0, NULL);
+        if (!stdin_writer) {
+            /* Gagal membuat writer: bunuh child, tutup, join drain,
+             * laporkan error internal (bukan hang tanpa batas). */
+            res->err = MYC_ERR_INTERNAL;
+            res->ok = 0;
+            if (job && job_assigned)
+                TerminateJobObject(job, 1);
+            else
+                TerminateProcess(pi.hProcess, 1);
+            WaitForSingleObject(pi.hProcess, 5000);
+            close_if_valid_handle(&stdin_wr);
+            goto join_drain;
         }
     }
-    close_if_valid_handle(&stdin_wr);
 
     /* Tunggu proses, dengan batas waktu. */
     while (1) {
@@ -995,8 +1113,11 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
     }
 
     if (timed_out) {
-        /* Bunuh seluruh pohon proses. */
-        if (job) {
+        /* Bunuh seluruh pohon proses. Hanya via job bila assignment berhasil
+         * (PR-007): job yang ada tapi kosong -> TerminateJobObject membunuh
+         * apa pun secara diam-diam; fallback TerminateProcess (child
+         * langsung). */
+        if (job && job_assigned) {
             TerminateJobObject(job, 1);
         } else {
             TerminateProcess(pi.hProcess, 1);
@@ -1018,6 +1139,19 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
     res->duration_ms = now_ms() - t0;
     (void)proc_alive;
 
+    /* Join writer stdin (bounded; pipe sudah putus: child exit/dibunuh,
+     * jadi writer berhenti sendiri). Writer MENUTUP stdin_wr saat selesai
+     * (agar child yang membaca sampai EOF bisa lanjut) -> null-kan agar
+     * close_if_valid_handle di bawah tidak double-close. */
+    if (stdin_writer) {
+        WaitForSingleObject(stdin_writer, 2000);
+        CloseHandle(stdin_writer);
+        stdin_writer = NULL;
+        stdin_wr = NULL;
+    }
+    close_if_valid_handle(&stdin_wr);
+
+join_drain:
     /* Tunggu thread drain selesai (hasilnya sudah lengkap). */
     if (drain_threads[0]) {
         WaitForSingleObject(drain_threads[0], 2000);
@@ -1087,8 +1221,9 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
     char  **child_env = NULL;
     pid_t   pid = -1;
     drain_buf out = {0}, err = {0};
-    pthread_t to = 0, te = 0;
-    int     to_created = 0, te_created = 0;
+    pthread_t to = 0, te = 0, tw = 0;
+    int     to_created = 0, te_created = 0, tw_created = 0;
+    struct sigaction saved_sigpipe;
     size_t  max_out = req->max_output_bytes ? req->max_output_bytes : MYC_MAX_OUTPUT_BYTES;
     unsigned long long t0;
     int     status = 0;
@@ -1210,32 +1345,11 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
     }
     te_created = 1;
 
-    /* Tulis stdin SETELAH drain thread sudah berjalan. */
-    if (req->stdin_len > 0) {
-        struct sigaction sa, oldsa;
-        size_t off = 0;
-        /* SIGPIPE: child bisa mati sebelum selesai membaca stdin (exec
-         * gagal / crash dini / chdir(cwd) gagal). Default SIGPIPE =
-         * terminate PARENT -- bug: myc/mcp/proc_flood ikut mati padahal
-         * write() cukup return EPIPE. Tahan SIGPIPE selama menulis,
-         * pulihkan handler lama setelahnya. */
-        memset(&sa, 0, sizeof(sa));
-        sa.sa_handler = SIG_IGN;
-        sigaction(SIGPIPE, &sa, &oldsa);
-        while (off < req->stdin_len) {
-            ssize_t w = write(in_pipe[1], (const char *)req->stdin_data + off,
-                              req->stdin_len - off);
-            if (w <= 0)
-                break; /* broken pipe: child mungkin sudah exit */
-            off += (size_t)w;
-        }
-        sigaction(SIGPIPE, &oldsa, NULL);
-    }
-    close_if_valid_fd(&in_pipe[1]);
-
     /* Periksa apakah execvp berhasil: baca dari exec_pipe[0].
      * Jika exec berhasil, pipe ditutup oleh FD_CLOEXEC → read() = 0.
-     * Jika exec gagal, child menulis errno. */
+     * Jika exec gagal, child menulis errno.
+     * (Dipindah SEBELUM writer stdin, PR-006: hasil exec sudah tersedia
+     * sejak fork; bila exec gagal, stdin tidak perlu ditulis.) */
     {
         int exec_errno = 0;
         ssize_t r = read(exec_pipe[0], &exec_errno, sizeof(exec_errno));
@@ -1248,6 +1362,36 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
         /* r==0: exec berhasil. r<0: error read, tetap lanjut. */
     }
     close_if_valid_fd(&exec_pipe[0]);
+
+    /* PR-010 (bug proc.c, simetris cabang Windows): stdin_len==0 -> tidak
+     * ada writer thread, in_pipe[1] tetap terbuka selama wait loop sehingga
+     * child yang membaca stdin sampai EOF (mis. `gcc -dM -E -` dari
+     * assume.c) hang sampai timeout (~15 s tiap `myc check` di Linux juga).
+     * Tutup sekarang -> EOF instan. Idempoten; jalur writer (stdin_len>0)
+     * tidak masuk. */
+    if (req->stdin_len == 0)
+        close_if_valid_fd(&in_pipe[1]);
+
+    /* Tulis stdin dari thread terpisah (PR-006): write blocking pada pipe
+     * penuh harus tunduk pada timeout. SIGPIPE diabaikan selama writer
+     * hidup (child bisa mati/dibunuh kapan saja: EPIPE cukup); handler
+     * lama dipulihkan setelah join. */
+    if (req->stdin_len > 0) {
+        struct sigaction sa;
+        stdin_writer_arg warg;
+        warg.fd = in_pipe[1];
+        warg.data = (const char *)req->stdin_data;
+        warg.len = req->stdin_len;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_handler = SIG_IGN;
+        sigaction(SIGPIPE, &sa, &saved_sigpipe);
+        if (pthread_create(&tw, NULL, stdin_writer_thread, &warg) != 0) {
+            sigaction(SIGPIPE, &saved_sigpipe, NULL);
+            res->err = MYC_ERR_INTERNAL;
+            goto cleanup_kill;
+        }
+        tw_created = 1;
+    }
 
     /* Tunggu child selesai atau timeout. */
     while (1) {
@@ -1262,6 +1406,12 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
             /* MYC-AUDIT-011: bunuh seluruh process group child. */
             kill(-pid, SIGKILL);
             kill(pid, SIGKILL);
+            /* Writer stdin terblokir di write() pada pipe penuh: read end
+             * child yang terbunuh tertutup -> write() dapat EPIPE -> writer
+             * keluar sendiri dan menutup in_pipe[1]. JANGAN menutup di sini
+             * (review PR-006): close() dari thread lain tidak membatalkan
+             * write yang terblokir, dan writer akan menutup fd yang sama =
+             * double-close rapuh bila nomor fd sempat dipakai ulang. */
             waitpid(pid, &status, 0);
             pid = -1;
             break;
@@ -1271,6 +1421,18 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
             nanosleep(&ts, NULL);
         }
     }
+
+    /* Join writer stdin + pulihkan SIGPIPE (SEBELUM drain join: child
+     * sudah exit/dibunuh -> pipe putus -> writer berhenti sendiri).
+     * Writer MENUTUP in_pipe[1] saat selesai (EOF untuk child) -> set -1
+     * agar close_if_valid_fd di bawah tidak double-close. */
+    if (tw_created) {
+        pthread_join(tw, NULL);
+        tw_created = 0;
+        sigaction(SIGPIPE, &saved_sigpipe, NULL);
+        in_pipe[1] = -1;
+    }
+    close_if_valid_fd(&in_pipe[1]);
 
     /* MYC-AUDIT-001: join kedua thread sebelum menyentuh buffer hasil.
      * Child sudah exit -> sisi write pipe sudah tertutup -> drain thread

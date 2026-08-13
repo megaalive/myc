@@ -1,0 +1,17 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{}"
+      }
+    ],
+    "structuredContent": {
+      "schema": "myc.result.v1",
+      "verdict": "OK"
+    },
+    "isError": false
+  }
+}

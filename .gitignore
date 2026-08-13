@@ -17,6 +17,12 @@ docs/myc-serious-review-and-roadmap.md
 deepseek-plan.md
 gptsol_deepseek-plan.md
 next-plan.md
+myc-production-readiness-plan.md
+
+# scratch logs / repro (sesi dev, bukan deliverable)
+ci_linux_local.txt
+ci_job_logs.txt
+repro_filc.sh
 
 # runtime artifacts
 .myc/

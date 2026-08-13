@@ -193,12 +193,25 @@ static void tool_check(json_value *id, json_value *args)
         req.run_stdin_len = strlen(run_stdin);
     }
 
-    if (flags && flags->type == JSON_ARR) {
+    /* Flags wajib array string (PR-016, MYC-AUDIT-048): tipe salah
+     * (mis. "flags":"--run") atau entry non-string TIDAK boleh di-abaikan
+     * diam-diam -- mematikan gate tanpa sepengetahuan pemanggil = silent
+     * misbehavior. Fail-fast -32602, konsisten dengan kebijakan unknown
+     * flag (MYC-AUDIT-016). */
+    if (flags) {
+        if (flags->type != JSON_ARR) {
+            send_error(id, -32602,
+                       "Invalid params: 'flags' harus array string");
+            return;
+        }
         for (i = 0; i < flags->len; i++) {
             const char *f = flags->items[i] && flags->items[i]->type == JSON_STR
                                 ? flags->items[i]->str : NULL;
-            if (!f)
-                continue;
+            if (!f) {
+                send_error(id, -32602,
+                           "Invalid params: 'flags' harus array string");
+                return;
+            }
             if (strcmp(f, "--run") == 0)
                 req.run = 1;
             else if (strcmp(f, "--prove") == 0)

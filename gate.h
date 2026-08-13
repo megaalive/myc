@@ -32,6 +32,17 @@ const myc_gate_result *myc_gate_get(const myc_result *res, myc_gate_id id);
 void myc_reduce_verdict(myc_result *res);
 myc_claim_status myc_validate_claim(const myc_result *res);
 
+/* PR-014 (MYC-AUDIT-046): kanonikal receipt STRING -- byte-string yang
+ * di-hash untuk receipt_sha256 (myc_build_receipt di gate.c), dibuat
+ * OBSERVABLE agar format dibekukan oleh test vector
+ * (docs/receipt-canonical.md, test/receipt_vectors.c, blok 17).
+ * Deterministik: urutan gate/debt = urutan insert (bukan sorted).
+ * Bila string penuh melebihi cap, output = cap-1 byte pertama + NUL
+ * (truncation deterministik, IDENTIK dengan yang di-hash).
+ * Return panjang string yang ditulis (0 bila res NULL / buf NULL /
+ * cap == 0). */
+size_t myc_receipt_canonical(const myc_result *res, char *buf, size_t cap);
+
 /* Tambah event ke evidence ledger (append-only). */
 void myc_result_add_evidence(myc_result *res,
                              myc_gate_id gate,

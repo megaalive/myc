@@ -15,6 +15,7 @@
 #include <string.h>
 
 #include "myc.h"
+#include "proc.h"
 
 static const myc_canary CANARIES[] = {
     /* ---- compile: canary negatif + positif ---- */
@@ -280,4 +281,199 @@ int myc_canary_run(const char *backend, FILE *out)
             fprintf(out, " -- semua backend terverifikasi hidup\n");
     }
     return nfail;
+}
+
+/* ------------------------------------------------------------------ */
+/* Backend qualification registry (PR-017 / P5-T01 + P5-T02)           */
+/* ------------------------------------------------------------------ */
+/* Kebijakan dukungan per backend (docs/backends.md). Tier A = wajib CI
+ * dan release-blocking; B = supported non-blocking; C = best-effort.
+ * `exe` adalah executable utama yang dicari di PATH; untuk backend yang
+ * berjalan via WSL di Windows (prove/filc), probe menampilkan executable
+ * host bila tersedia — kehadiran WSL diverifikasi terpisah oleh gate. */
+static const myc_backend_policy POLICIES[] = {
+    { "compile",  "gcc",            MYC_BACKEND_TIER_A, "gcc 9+",
+      "gate compile -Werror + memory tier; evidence = diagnostic GCC JSON" },
+    { "analyzer", "gcc",            MYC_BACKEND_TIER_A, "gcc 10+ (fanalyzer)",
+      "-fanalyzer interprocedural; evidence = finding fanalyzer" },
+    { "run",      "clang",          MYC_BACKEND_TIER_A, "clang 11+ (ASan/UBSan)",
+      "ASan/UBSan runtime non-spoofable (log_path); evidence = sanitizer report" },
+    { "driver",   "gcc",            MYC_BACKEND_TIER_A, NULL,
+      "harness kasus tepi dari kontrak; evidence = driver case records" },
+    { "exhaustive", "gcc",          MYC_BACKEND_TIER_A, NULL,
+      "domain eksplorasi terbatas + counterexample; evidence = exhaustive report" },
+    { "fuzz",     "gcc",            MYC_BACKEND_TIER_A, NULL,
+      "fuzz-lite deterministik; evidence = crash reproduksibel" },
+    { "mutate",   "gcc",            MYC_BACKEND_TIER_B, NULL,
+      "mutation-audited verification; evidence = mutation coverage gap" },
+    { "stack",    "gcc",            MYC_BACKEND_TIER_B, NULL,
+      "stack budget + call graph; evidence = stack report" },
+    { "lint",     NULL,              MYC_BACKEND_TIER_A, NULL,
+      "heuristik memory-safety internal (observasi NON-blocking)" },
+    { "checked",  NULL,              MYC_BACKEND_TIER_B, NULL,
+      "MYC_BUF fat-pointer (L4 SPATIAL); internal, tanpa binary eksternal" },
+    { "prove",    "frama-c",        MYC_BACKEND_TIER_B, "frama-c 28+",
+      "Frama-C Eva (L2 EVA); evidence = alarm Eva RTE" },
+    { "filc",     "filc-clang",     MYC_BACKEND_TIER_B, NULL,
+      "Fil-C (L5, Linux/WSL); evidence = filc panics" },
+    { "matrix",   "arm-none-eabi-gcc", MYC_BACKEND_TIER_B, NULL,
+      "cross-compile portability matrix; evidence = macro dump per target" },
+};
+
+const myc_backend_policy *myc_backend_policy_table(int *count)
+{
+    if (count)
+        *count = (int)(sizeof(POLICIES) / sizeof(POLICIES[0]));
+    return POLICIES;
+}
+
+int myc_backend_probe_run(const char *backend, myc_backend_probe **out,
+                          int *count)
+{
+    int npol = 0;
+    const myc_backend_policy *t = myc_backend_policy_table(&npol);
+    myc_backend_probe *arr;
+    int n = 0, i;
+
+    if (!out || !count)
+        return 0;
+    /* hitung jumlah policy yang diminta */
+    for (i = 0; i < npol; i++)
+        if (!backend || strcmp(backend, t[i].backend) == 0)
+            n++;
+    if (n == 0)
+        return 0;
+    arr = (myc_backend_probe *)calloc((size_t)n, sizeof(*arr));
+    if (!arr)
+        return 0;
+    {
+        int k = 0;
+        for (i = 0; i < npol; i++) {
+            const myc_backend_policy *p;
+            if (backend && strcmp(backend, t[i].backend) != 0)
+                continue;
+            p = &t[i];
+            arr[k].policy = p;
+            if (p->exe) {
+                arr[k].path = myc_find_executable(p->exe);
+                if (arr[k].path) {
+                    arr[k].found = 1;
+                    arr[k].version = myc_tool_version(arr[k].path);
+                } else {
+                    /* Backend WSL-only (prove/filc): executable host tidak
+                     * ada TAPI wsl.exe tersedia — gate menjalankan backend
+                     * di dalam WSL. Tampilkan jujur agar registry tidak
+                     * menyesatkan pengguna Windows yang memasang Frama-C/
+                     * Fil-C di WSL. found=2 = tersedia via WSL; path tetap
+                     * NULL (path backend sebenarnya di dalam WSL, bukan
+                     * wsl.exe). */
+#ifdef _WIN32
+                    if (strcmp(p->backend, "prove") == 0 ||
+                        strcmp(p->backend, "filc") == 0) {
+                        char *wsl = myc_find_executable("wsl.exe");
+                        if (wsl) {
+                            arr[k].found = 2;
+                            free(wsl);
+                        }
+                    }
+#endif
+                }
+            }
+            k++;
+        }
+    }
+    *out = arr;
+    *count = n;
+    return 1;
+}
+
+void myc_backend_probe_free(myc_backend_probe *p, int count)
+{
+    int i;
+    if (!p)
+        return;
+    for (i = 0; i < count; i++) {
+        free(p[i].path);
+        free(p[i].version);
+    }
+    free(p);
+}
+
+/* Hitung jumlah canary yang tersedia untuk backend [backend]. */
+static int canary_count_for(const char *backend)
+{
+    int ncan = 0, n = 0, i;
+    const myc_canary *t = myc_canary_table(&ncan);
+    for (i = 0; i < ncan; i++)
+        if (strcmp(t[i].backend, backend) == 0)
+            n++;
+    return n;
+}
+
+int myc_backends_report(FILE *out, int run_canary)
+{
+    myc_backend_probe *arr = NULL;
+    int n = 0, i, total_fail = 0;
+
+    if (!myc_backend_probe_run(NULL, &arr, &n))
+        return 1;
+    if (out)
+        fprintf(out, "backend qualification registry (PR-017/P5-T01):\n\n");
+    for (i = 0; i < n; i++) {
+        const myc_backend_policy *p = arr[i].policy;
+        int ncan = canary_count_for(p->backend);
+        int cstat = -1;   /* -1 = tak dijalankan */
+        if (run_canary && ncan > 0)
+            cstat = myc_canary_run(p->backend, NULL);
+        if (out) {
+            fprintf(out, "  [%s] %-10s tier=%s",
+                    arr[i].found ? "OK" : "--", p->backend, p->tier);
+            if (arr[i].found == 2) {
+                fprintf(out, " via WSL (wsl.exe tersedia; backend di dalam "
+                        "WSL)");
+            } else if (arr[i].found == 1) {
+                fprintf(out, " path=%s", arr[i].path);
+                if (arr[i].version)
+                    fprintf(out, " version=%s", arr[i].version);
+                else
+                    fprintf(out, " version=(tidak terbaca)");
+            } else if (p->exe) {
+                fprintf(out, " executable '%s' TIDAK ditemukan", p->exe);
+            } else {
+                fprintf(out, " internal (tanpa binary eksternal)");
+            }
+            if (ncan > 0)
+                fprintf(out, " canary=%d", ncan);
+            if (run_canary && ncan > 0) {
+                if (cstat == 0)
+                    fprintf(out, " -> PASS");
+                else
+                    fprintf(out, " -> FAIL(%d)", cstat);
+            }
+            fprintf(out, "\n");
+            if (p->evidence)
+                fprintf(out, "           evidence: %s\n", p->evidence);
+        }
+        /* Hitung gagal TEPAT SATU KALI per backend — di luar blok `out`
+         * agar return benar walau out==NULL (review PR-017: versi awal
+         * menambah total_fail di dalam blok `if (out)` DAN di sini =
+         * double-count setiap backend yang gagal). */
+        if (run_canary && ncan > 0 && cstat > 0)
+            total_fail++;
+    }
+    if (out) {
+        fprintf(out, "\n%d backend terdaftar; tier A = release-blocking, "
+                "B = supported non-blocking, C = best-effort.\n", n);
+        fprintf(out, "Kebijakan lengkap: docs/backends.md (P5-T01, PR-017).\n");
+        if (run_canary)
+            fprintf(out, total_fail == 0
+                    ? "canary qualification: SEMUA backend terverifikasi hidup\n"
+                    : "canary qualification: %d backend GAGAL -- klaimnya "
+                      "tidak dipercaya (UNRELIABLE)\n", total_fail);
+        else
+            fprintf(out, "jalankan `myc backends --canary` untuk kualifikasi "
+                    "canary per backend\n");
+    }
+    myc_backend_probe_free(arr, n);
+    return total_fail;
 }

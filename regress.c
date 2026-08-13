@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "sha256.h"
+#include "persist.h"
 
 #if defined(_WIN32)
 #include <direct.h>
@@ -56,12 +57,14 @@ void myc_regress_save(myc_result *res, const char *source, size_t len,
         fclose(f);   /* sudah ada (idempoten) */
         return;
     }
-    f = fopen(path, "wb");
-    if (!f)
+    /* PR-012 (MYC-AUDIT-044, P3-T03): tulis seed ATOMIK (temp+flush+
+     * fsync+rename). Crash saat menyimpan counterexample -> seed OLD
+     * valid ATAU NEW valid, tidak pernah seed setengah yang nanti
+     * di-replay sebagai korpus. NON-blocking: gagal = seed di-skip
+     * (index TIDAK ditambah — konsisten dgn perilaku lama). */
+    if (!myc_persist_atomic_write(path, source ? source : "",
+                                  source ? len : 0))
         return;
-    if (source && len > 0)
-        fwrite(source, 1, len, f);
-    fclose(f);
 
     /* append index: <kind> <sha8> <detail> [<seed>] */
     f = fopen(REG_INDEX, "ab");
