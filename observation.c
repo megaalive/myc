@@ -248,8 +248,8 @@ void myc_experiment_free(myc_experiment_set *exps)
         return;
     for (i = 0; i < exps->count; i++) {
         myc_experiment *e = &exps->experiments[i];
-        free(e->source_anchor);
-        free(e->command);
+        myc_free(e->source_anchor);
+        myc_free(e->command);
     }
     memset(exps, 0, sizeof(*exps));
 }

@@ -201,7 +201,7 @@ static json_value *effective_root(const char *profile_path,
     }
 
     if (ufree && utext)
-        free((void *)utext);
+        myc_free((void *)utext);
     if (text_out)
         *text_out = NULL;
     if (free_out)

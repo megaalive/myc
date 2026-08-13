@@ -39,7 +39,7 @@ char *myc_ledger_timestamp(void)
 #else
     tm_info = localtime(&now);
 #endif
-    buf = (char *)malloc(32);
+    buf = (char *)myc_malloc(32);
     if (buf)
         strftime(buf, 32, "%Y-%m-%dT%H:%M:%SZ", tm_info);
     return buf;
@@ -100,7 +100,7 @@ char *myc_ledger_build_anchor(const char *source, size_t source_len,
             }
             if (name_end > name_start && name_end - name_start < 128) {
                 size_t nl = (size_t)(name_end - name_start);
-                char *t = (char *)malloc(nl + 1);
+                char *t = (char *)myc_malloc(nl + 1);
                 if (t) {
                     memcpy(t, name_start, nl);
                     t[nl] = '\0';
@@ -137,7 +137,7 @@ char *myc_ledger_build_anchor(const char *source, size_t source_len,
         snprintf(buf, sizeof(buf), "%s:%d:%s", func, line, hex);
     }
 
-    free(func);
+    myc_free(func);
     return myc_strdup(buf);
 }
 
@@ -226,7 +226,7 @@ char *myc_ledger_build_scenario_hash(const myc_request *req,
 
     /* Truncate to 16 hex chars (8 bytes) for readability */
     {
-        char *short_hex = (char *)malloc(17);
+        char *short_hex = (char *)myc_malloc(17);
         if (short_hex) {
             memcpy(short_hex, hex, 16);
             short_hex[16] = '\0';
@@ -269,7 +269,7 @@ int myc_ledger_read(myc_ledger *ledger)
         fclose(f);
         return 0;
     }
-    buf = (char *)malloc((size_t)fsize + 1);
+    buf = (char *)myc_malloc((size_t)fsize + 1);
     if (!buf) {
         fclose(f);
         return 0;
@@ -279,7 +279,7 @@ int myc_ledger_read(myc_ledger *ledger)
     fclose(f);
 
     if (!json_parse_cstr(buf, &root) || !root) {
-        free(buf);
+        myc_free(buf);
         return 0;
     }
 
@@ -338,7 +338,7 @@ int myc_ledger_read(myc_ledger *ledger)
     }
 
     json_free(root);
-    free(buf);
+    myc_free(buf);
     return ledger->count > 0 ? 1 : 0;
 }
 
@@ -448,10 +448,10 @@ int myc_ledger_write(const myc_ledger_entry *entry)
      * peduli, dan konsisten dengan file state .myc lain yang tanpa
      * newline. */
     if (!myc_persist_atomic_write_str(MYC_LEDGER_FILE, js)) {
-        free(js);
+        myc_free(js);
         return 0;
     }
-    free(js);
+    myc_free(js);
 
     (void)replaced;
     return 1;
@@ -504,17 +504,17 @@ void myc_ledger_free(myc_ledger *ledger)
         return;
     for (i = 0; i < ledger->count; i++) {
         myc_ledger_entry *le = &ledger->entries[i];
-        free(le->source_sha256);
-        free(le->anchor);
-        free(le->receipt_sha256);
-        free(le->receipt_parent);
-        free(le->scenario_hash);
-        free(le->timestamp);
-        free(le->source_anchor_line);
-        free(le->gate_id);
-        free(le->gate_status);
-        free(le->verdict);
-        free(le->finding);
+        myc_free(le->source_sha256);
+        myc_free(le->anchor);
+        myc_free(le->receipt_sha256);
+        myc_free(le->receipt_parent);
+        myc_free(le->scenario_hash);
+        myc_free(le->timestamp);
+        myc_free(le->source_anchor_line);
+        myc_free(le->gate_id);
+        myc_free(le->gate_status);
+        myc_free(le->verdict);
+        myc_free(le->finding);
     }
     memset(ledger, 0, sizeof(*ledger));
 }

@@ -98,7 +98,7 @@ int myc_scan_include_raw(const char *source, size_t len, myc_result *res)
                         end++;
                     if (end < len) {
                         size_t hlen = end - start;
-                        char   *hname = (char *)malloc(hlen + 1);
+                        char   *hname = (char *)myc_malloc(hlen + 1);
                         if (hname) {
                             memcpy(hname, source + start, hlen);
                             hname[hlen] = '\0';
@@ -107,7 +107,7 @@ int myc_scan_include_raw(const char *source, size_t len, myc_result *res)
                                          "warning: include di luar whitelist "
                                          "(non-blocking)");
                             }
-                            free(hname);
+                            myc_free(hname);
                         }
                     }
                     i = end + 1;
@@ -120,7 +120,7 @@ int myc_scan_include_raw(const char *source, size_t len, myc_result *res)
                         end++;
                     if (end < len) {
                         size_t hlen = end - start;
-                        char   *hname = (char *)malloc(hlen + 1);
+                        char   *hname = (char *)myc_malloc(hlen + 1);
                         if (hname) {
                             memcpy(hname, source + start, hlen);
                             hname[hlen] = '\0';
@@ -129,7 +129,7 @@ int myc_scan_include_raw(const char *source, size_t len, myc_result *res)
                                          "warning: include lokal/kuotasi di "
                                          "luar whitelist (non-blocking)");
                             }
-                            free(hname);
+                            myc_free(hname);
                         }
                     }
                     i = end + 1;
@@ -222,7 +222,7 @@ int myc_scan_markers(const char *pre, size_t len, myc_result *res)
                     }
                     if (end < len && end > start) {
                         size_t plen = end - start;
-                        char  *path = (char *)malloc(plen + 1);
+                        char  *path = (char *)myc_malloc(plen + 1);
                         if (path) {
                             memcpy(path, pre + start, plen);
                             path[plen] = '\0';
@@ -247,7 +247,7 @@ int myc_scan_markers(const char *pre, size_t len, myc_result *res)
                                 if (user_depth > 1)
                                     user_depth--;
                             }
-                            free(path);
+                            myc_free(path);
                         }
                     }
                     while (i < len && pre[i] != '\n')

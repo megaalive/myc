@@ -100,24 +100,24 @@ char *myc_read_sanitizer_report(const char *dir, const char *base)
     WIN32_FIND_DATAA fd;
     HANDLE           h;
     size_t           plen = strlen(dir) + 1 + strlen(base) + 2 + 1;
-    char            *pattern = (char *)malloc(plen);
+    char            *pattern = (char *)myc_malloc(plen);
     if (!pattern)
         return NULL;
     snprintf(pattern, plen, "%s/%s.*", dir, base);
     h = FindFirstFileA(pattern, &fd);
-    free(pattern);
+    myc_free(pattern);
     if (h == INVALID_HANDLE_VALUE)
         return NULL;
     do {
         size_t pathlen = strlen(dir) + 1 + strlen(fd.cFileName) + 1;
-        char  *path = (char *)malloc(pathlen);
+        char  *path = (char *)myc_malloc(pathlen);
         FILE  *f;
         long   sz;
         if (!path)
             break;
         snprintf(path, pathlen, "%s/%s", dir, fd.cFileName);
         f = fopen(path, "rb");
-        free(path);
+        myc_free(path);
         if (!f)
             continue;
         if (fseek(f, 0, SEEK_END) == 0) {
@@ -127,12 +127,12 @@ char *myc_read_sanitizer_report(const char *dir, const char *base)
             sz = 0;
         }
         if (sz > 0) {
-            content = (char *)malloc((size_t)sz + 1);
+            content = (char *)myc_malloc((size_t)sz + 1);
             if (content) {
                 if (fread(content, 1, (size_t)sz, f) == (size_t)sz) {
                     content[sz] = '\0';
                 } else {
-                    free(content);
+                    myc_free(content);
                     content = NULL;
                 }
             }
@@ -158,12 +158,12 @@ char *myc_read_sanitizer_report(const char *dir, const char *base)
             e->d_name[bl] != '.')
             continue;
         pathlen = strlen(dir) + 1 + nlen + 1;
-        path = (char *)malloc(pathlen);
+        path = (char *)myc_malloc(pathlen);
         if (!path)
             break;
         snprintf(path, pathlen, "%s/%s", dir, e->d_name);
         f = fopen(path, "rb");
-        free(path);
+        myc_free(path);
         if (!f)
             continue;
         if (fseek(f, 0, SEEK_END) == 0) {
@@ -173,12 +173,12 @@ char *myc_read_sanitizer_report(const char *dir, const char *base)
             sz = 0;
         }
         if (sz > 0) {
-            content = (char *)malloc((size_t)sz + 1);
+            content = (char *)myc_malloc((size_t)sz + 1);
             if (content) {
                 if (fread(content, 1, (size_t)sz, f) == (size_t)sz) {
                     content[sz] = '\0';
                 } else {
-                    free(content);
+                    myc_free(content);
                     content = NULL;
                 }
             }
@@ -198,21 +198,21 @@ void myc_remove_sanitizer_reports(const char *dir, const char *base)
     WIN32_FIND_DATAA fd;
     HANDLE           h;
     size_t           plen = strlen(dir) + 1 + strlen(base) + 2 + 1;
-    char            *pattern = (char *)malloc(plen);
+    char            *pattern = (char *)myc_malloc(plen);
     if (!pattern)
         return;
     snprintf(pattern, plen, "%s/%s.*", dir, base);
     h = FindFirstFileA(pattern, &fd);
-    free(pattern);
+    myc_free(pattern);
     if (h == INVALID_HANDLE_VALUE)
         return;
     do {
         size_t pathlen = strlen(dir) + 1 + strlen(fd.cFileName) + 1;
-        char  *path = (char *)malloc(pathlen);
+        char  *path = (char *)myc_malloc(pathlen);
         if (path) {
             snprintf(path, pathlen, "%s/%s", dir, fd.cFileName);
             DeleteFileA(path);
-            free(path);
+            myc_free(path);
         }
     } while (FindNextFileA(h, &fd));
     FindClose(h);
@@ -230,11 +230,11 @@ void myc_remove_sanitizer_reports(const char *dir, const char *base)
             e->d_name[bl] != '.')
             continue;
         pathlen = strlen(dir) + 1 + nlen + 1;
-        path = (char *)malloc(pathlen);
+        path = (char *)myc_malloc(pathlen);
         if (path) {
             snprintf(path, pathlen, "%s/%s", dir, e->d_name);
             unlink(path);
-            free(path);
+            myc_free(path);
         }
     }
     closedir(d);
@@ -256,7 +256,7 @@ char *myc_strdup(const char *s)
     if (!s)
         return NULL;
     n = strlen(s) + 1;
-    r = (char *)malloc(n);
+    r = (char *)myc_malloc(n);
     if (r)
         memcpy(r, s, n);
     return r;
@@ -311,7 +311,7 @@ char *myc_tool_version(const char *exe)
         myc_proc_result_free(&pr);
         return NULL;
     }
-    v = (char *)malloc(n + 1);
+    v = (char *)myc_malloc(n + 1);
     if (v) {
         memcpy(v, pr.stdout_data, n);
         v[n] = '\0';
@@ -336,7 +336,7 @@ static char *path_join(const char *dir, const char *name, const char *ext)
     size_t nl = strlen(name);
     size_t el = ext ? strlen(ext) : 0;
     size_t need = dl + 1 + nl + el + 1;
-    char   *out = (char *)malloc(need);
+    char   *out = (char *)myc_malloc(need);
     if (!out)
         return NULL;
     if (dir && dl) {
@@ -374,7 +374,7 @@ char *myc_find_executable(const char *program)
         attrs = GetFileAttributesA(cand);
         if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY))
             return cand;
-        free(cand);
+        myc_free(cand);
         return NULL;
     }
 
@@ -391,19 +391,19 @@ char *myc_find_executable(const char *program)
             for (i = 0; i < 2; i++) {
                 cand = path_join(tok, program, exts[i]);
                 if (!cand) {
-                    free(dup);
+                    myc_free(dup);
                     return NULL;
                 }
                 attrs = GetFileAttributesA(cand);
                 if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
-                    free(dup);
+                    myc_free(dup);
                     return cand;
                 }
-                free(cand);
+                myc_free(cand);
             }
             tok = strtok_s(NULL, ";", &save);
         }
-        free(dup);
+        myc_free(dup);
     }
     return NULL;
 #else
@@ -428,18 +428,18 @@ char *myc_find_executable(const char *program)
         tok = strtok_r(dup, ":", &save);
         while (tok) {
             size_t need = strlen(tok) + 1 + strlen(program) + 1;
-            char  *cand = (char *)malloc(need);
+            char  *cand = (char *)myc_malloc(need);
             if (cand) {
                 snprintf(cand, need, "%s/%s", tok, program);
                 if (access(cand, X_OK) == 0) {
-                    free(dup);
+                    myc_free(dup);
                     return cand;
                 }
-                free(cand);
+                myc_free(cand);
             }
             tok = strtok_r(NULL, ":", &save);
         }
-        free(dup);
+        myc_free(dup);
         return NULL;
     }
 #endif
@@ -469,7 +469,7 @@ static char *build_env_block(const char *const *overrides)
         for (o = 0; overrides[o]; o++)
             need += strlen(overrides[o]) + 1;
     }
-    out = (char *)malloc(need);
+    out = (char *)myc_malloc(need);
     if (!out) {
         FreeEnvironmentStringsA(parent);
         return NULL;
@@ -526,7 +526,7 @@ static char **build_env_array(const char *const *overrides)
         n++;
     for (i = 0; overrides && overrides[i]; i++)
         n_ov++;
-    out = (char **)malloc(sizeof(char *) * ((size_t)n + (size_t)n_ov + 1));
+    out = (char **)myc_malloc(sizeof(char *) * ((size_t)n + (size_t)n_ov + 1));
     if (!out)
         return NULL;
     for (i = 0; i < n; i++) {
@@ -583,7 +583,7 @@ static void append_arg(char **buf, size_t *cap, size_t *len, const char *arg)
         size_t ncap = *cap ? *cap * 2 : 64;
         while (ncap < need)
             ncap *= 2;
-        *buf = (char *)realloc(*buf, ncap);
+        *buf = (char *)myc_realloc(*buf, ncap);
         if (!*buf) {
             *cap = 0;
             return;
@@ -640,7 +640,7 @@ static char *build_cmdline(const char *const *argv)
             /* sisip spasi pemisah */
             if (len + 2 > cap) {
                 size_t ncap = cap ? cap * 2 : 64;
-                buf = (char *)realloc(buf, ncap);
+                buf = (char *)myc_realloc(buf, ncap);
                 if (!buf) {
                     cap = 0;
                     return NULL;
@@ -689,11 +689,11 @@ static int drain_init(drain_buf *d, size_t max)
     /* Sisihkan sebagian budget untuk tail (akhir output: sanitizer report). */
     d->head_cap = head_cap = (max / 3) * 2;
     d->tail_cap = tail_cap = max - head_cap;
-    d->hdr = (char *)malloc(head_cap ? head_cap + 1 : 1);
-    d->tail = (char *)malloc(tail_cap ? tail_cap + 1 : 1);
+    d->hdr = (char *)myc_malloc(head_cap ? head_cap + 1 : 1);
+    d->tail = (char *)myc_malloc(tail_cap ? tail_cap + 1 : 1);
     if (!d->hdr || !d->tail) {
-        free(d->hdr);
-        free(d->tail);
+        myc_free(d->hdr);
+        myc_free(d->tail);
         d->hdr = d->tail = NULL;
         return 0;
     }
@@ -762,14 +762,14 @@ static char *drain_assemble(drain_buf *d, size_t *out_len, int *out_truncated)
          * sehingga buf[0] berisi byte stale (uninitialized read) dan
          * *out_len=1 -- stdout_shown=1 padahal stdout_total=0; heap
          * stale bisa bocor ke laporan. Fix: shown=0 + NUL. */
-        buf = (char *)malloc(1);
+        buf = (char *)myc_malloc(1);
         if (!buf)
             return NULL;
         buf[0] = '\0';
         *out_len = 0;
         return buf;
     }
-    buf = (char *)malloc(total + 1);
+    buf = (char *)myc_malloc(total + 1);
     if (!buf)
         return NULL;
     memcpy(buf, d->hdr, d->head_len);
@@ -890,8 +890,8 @@ void myc_proc_result_free(myc_proc_result *res)
 {
     if (!res)
         return;
-    free(res->stdout_data);
-    free(res->stderr_data);
+    myc_free(res->stdout_data);
+    myc_free(res->stderr_data);
     res->stdout_data = NULL;
     res->stderr_data = NULL;
 }
@@ -1036,10 +1036,10 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
 
     /* Mulai thread drain. */
     if (!drain_init(&out, max_out) || !drain_init(&err, max_out)) {
-        free(out.hdr);
-        free(out.tail);
-        free(err.hdr);
-        free(err.tail);
+        myc_free(out.hdr);
+        myc_free(out.tail);
+        myc_free(err.hdr);
+        myc_free(err.tail);
         res->err = MYC_ERR_INTERNAL;
         res->ok = 0;
         goto cleanup_pi;
@@ -1174,18 +1174,18 @@ join_drain:
         res->sanitizer_marker[sizeof(res->sanitizer_marker) - 1] = '\0';
     }
     if (!res->stdout_data)
-        res->stdout_data = (char *)malloc(1);
+        res->stdout_data = (char *)myc_malloc(1);
     if (!res->stderr_data)
-        res->stderr_data = (char *)malloc(1);
+        res->stderr_data = (char *)myc_malloc(1);
     if (res->stdout_data && !res->stdout_shown)
         res->stdout_data[0] = '\0';
     if (res->stderr_data && !res->stderr_shown)
         res->stderr_data[0] = '\0';
 
-    free(out.hdr); out.hdr = NULL;
-    free(out.tail); out.tail = NULL;
-    free(err.hdr); err.hdr = NULL;
-    free(err.tail); err.tail = NULL;
+    myc_free(out.hdr); out.hdr = NULL;
+    myc_free(out.tail); out.tail = NULL;
+    myc_free(err.hdr); err.hdr = NULL;
+    myc_free(err.tail); err.tail = NULL;
 
 cleanup_pi:
     close_if_valid_handle(&stdin_rd);
@@ -1199,9 +1199,9 @@ cleanup_pi:
     close_if_valid_handle(&pi.hThread);
 
 cleanup:
-    free(cmdline);
-    free(cmdline_copy);
-    free(env_block);
+    myc_free(cmdline);
+    myc_free(cmdline_copy);
+    myc_free(env_block);
     if (done) {
         /* hasil sudah disalin */
     }
@@ -1481,15 +1481,15 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
         res->sanitizer_marker[sizeof(res->sanitizer_marker) - 1] = '\0';
     }
     res->truncated = out.truncated || err.truncated;
-    if (!res->stdout_data) { res->stdout_data = (char *)malloc(1); if (res->stdout_data) res->stdout_data[0] = '\0'; }
-    if (!res->stderr_data) { res->stderr_data = (char *)malloc(1); if (res->stderr_data) res->stderr_data[0] = '\0'; }
+    if (!res->stdout_data) { res->stdout_data = (char *)myc_malloc(1); if (res->stdout_data) res->stdout_data[0] = '\0'; }
+    if (!res->stderr_data) { res->stderr_data = (char *)myc_malloc(1); if (res->stderr_data) res->stderr_data[0] = '\0'; }
 
     /* hdr + tail dibebaskan (data hasil sudah ter-amount di atas). */
-    free(out.hdr); out.hdr = NULL;
-    free(out.tail); out.tail = NULL;
-    free(err.hdr); err.hdr = NULL;
-    free(err.tail); err.tail = NULL;
-    free(child_env);  /* env array dibangun di parent; bebas di jalur sukses */
+    myc_free(out.hdr); out.hdr = NULL;
+    myc_free(out.tail); out.tail = NULL;
+    myc_free(err.hdr); err.hdr = NULL;
+    myc_free(err.tail); err.tail = NULL;
+    myc_free(child_env);  /* env array dibangun di parent; bebas di jalur sukses */
     return res->ok ? 1 : 0;
 
 cleanup_kill:
@@ -1511,9 +1511,9 @@ cleanup_pipes:
     close_if_valid_fd(&err_pipe[1]);
     close_if_valid_fd(&exec_pipe[0]);
     close_if_valid_fd(&exec_pipe[1]);
-    free(out.hdr); free(out.tail);
-    free(err.hdr); free(err.tail);
-    free(child_env);
+    myc_free(out.hdr); myc_free(out.tail);
+    myc_free(err.hdr); myc_free(err.tail);
+    myc_free(child_env);
     return 0;
 }
 

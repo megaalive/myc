@@ -230,7 +230,7 @@ static filc_report parse_filc_report(myc_result *res, const char *out,
         while (p && *p) {
             const char *nl = strchr(p, '\n');
             size_t      len = nl ? (size_t)(nl - p) : strlen(p);
-            char       *lb = (char *)malloc(len + 1);
+            char       *lb = (char *)myc_malloc(len + 1);
             if (lb) {
                 memcpy(lb, p, len);
                 lb[len] = '\0';
@@ -269,7 +269,7 @@ static filc_report parse_filc_report(myc_result *res, const char *out,
                             pending_origin = 0;
                     }
                 }
-                free(lb);
+                myc_free(lb);
             }
             if (!nl)
                 break;
@@ -314,8 +314,8 @@ static void panic_diag(myc_result *res, int panics)
 static void adopt_filc_output(myc_result *res, myc_proc_result *pr,
                               int exit_code)
 {
-    free(res->filc_stdout_text);
-    free(res->filc_stderr_text);
+    myc_free(res->filc_stdout_text);
+    myc_free(res->filc_stderr_text);
     res->filc_stdout_text = pr->stdout_data; pr->stdout_data = NULL;
     res->filc_stderr_text = pr->stderr_data; pr->stderr_data = NULL;
     res->exit_code = exit_code;
@@ -377,7 +377,7 @@ static int run_filc_exe(const myc_request *req, const char *exe,
         res->err = MYC_ERR_FILC_VIOLATION;
         /* Isi witness dari Fil-C (Fase 1). */
         if (!res->witness) {
-            res->witness = (myc_witness *)malloc(sizeof(myc_witness));
+            res->witness = (myc_witness *)myc_malloc(sizeof(myc_witness));
             if (res->witness) {
                 myc_witness_init(res->witness);
                 res->witness->violation_kind =
@@ -477,7 +477,7 @@ static char *make_temp_dir(void)
     while (n < 100) {
         char   buf[32];
         size_t need = bl + 1 + strlen("myc_filc_") + strlen(buf) + 1;
-        dir = (char *)malloc(need);
+        dir = (char *)myc_malloc(need);
         if (!dir)
             return NULL;
         snprintf(buf, sizeof(buf), "myc_filc_%lu_%d",
@@ -485,7 +485,7 @@ static char *make_temp_dir(void)
         snprintf(dir, need, "%s/%s", base, buf);
         if (myc_mkdir(dir) == 0)
             return dir;
-        free(dir);
+        myc_free(dir);
         n++;
     }
     return NULL;
@@ -496,7 +496,7 @@ static char *join_path(const char *dir, const char *name)
 {
     size_t dl = strlen(dir);
     size_t nl = strlen(name);
-    char  *out = (char *)malloc(dl + 1 + nl + 1);
+    char  *out = (char *)myc_malloc(dl + 1 + nl + 1);
     if (!out)
         return NULL;
     memcpy(out, dir, dl);
@@ -539,7 +539,7 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
         tmp_dir = make_temp_dir();
         if (!tmp_dir) {
             res->err = MYC_ERR_INTERNAL;
-            free(filc_path);
+            myc_free(filc_path);
             myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INFRA_FAILED,
                                 "gagal membuat direktori temp");
             myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
@@ -661,7 +661,7 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
                 res->err = MYC_ERR_TIMEOUT;
                 res->duration_ms += pres.duration_ms;
                 myc_proc_result_free(&pres);
-                free(wsl_path);
+                myc_free(wsl_path);
                 myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INCONCLUSIVE,
                                     "WSL detect timeout");
                 myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
@@ -675,7 +675,7 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
             myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
                                     "filc WSL detect infra failed");
             myc_proc_result_free(&pres);
-            free(wsl_path);
+            myc_free(wsl_path);
             return 0;
         }
         res->duration_ms += pres.duration_ms;
@@ -683,7 +683,7 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
             res->verdict = MC_TIMEOUT;
             res->err = MYC_ERR_TIMEOUT;
             myc_proc_result_free(&pres);
-            free(wsl_path);
+            myc_free(wsl_path);
             myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INCONCLUSIVE,
                                 "WSL detect timeout");
             myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
@@ -701,7 +701,7 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
             myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_SKIP,
                                     "Fil-C di-skip: filc-clang hilang di WSL");
             myc_proc_result_free(&pres);
-            free(wsl_path);
+            myc_free(wsl_path);
             return 0;
         }
         myc_proc_result_free(&pres);
@@ -732,7 +732,7 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
             while (n < 100) {
                 char   buf[32];
                 size_t need = bl + 1 + strlen("myc_filc_stdin_") + strlen(buf) + 1;
-                stdin_file = (char *)malloc(need);
+                stdin_file = (char *)myc_malloc(need);
                 if (!stdin_file)
                     break;
                 snprintf(buf, sizeof(buf), "myc_filc_stdin_%lu_%d",
@@ -746,7 +746,7 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
                         stdin_file_env = myc_strdup("MYC_FILC_STDIN=");
                         if (stdin_file_env) {
                             size_t elen = strlen(stdin_file_env);
-                            char *tmp = (char *)realloc((void*)stdin_file_env,
+                            char *tmp = (char *)myc_realloc((void*)stdin_file_env,
                                                              elen + strlen(stdin_file) + 1);
                             if (tmp) {
                                 stdin_file_env = tmp;
@@ -756,7 +756,7 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
                         break;
                     }
                 }
-                free(stdin_file);
+                myc_free(stdin_file);
                 stdin_file = NULL;
                 n++;
             }
@@ -792,7 +792,7 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
                 size_t k = 0;
                 if (pl > 0 && par[pl - 1] == ':')
                     par_ends_colon = 1;
-                w = (char *)malloc(sizeof("WSLENV=") + pl +
+                w = (char *)myc_malloc(sizeof("WSLENV=") + pl +
                                    (par_ends_colon ? 0 : 1) +
                                    sizeof("MYC_FILC_STDIN/p") + 1);
                 if (w) {
@@ -820,13 +820,13 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
                 res->err = MYC_ERR_TIMEOUT;
                 res->duration_ms += pres.duration_ms;
                 myc_proc_result_free(&pres);
-                free(wsl_path);
+                myc_free(wsl_path);
                 if (stdin_file) {
                     remove(stdin_file);
-                    free(stdin_file);
+                    myc_free(stdin_file);
                 }
-                free(stdin_file_env);
-                free(wslenv_env);
+                myc_free(stdin_file_env);
+                myc_free(wslenv_env);
                 myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INCONCLUSIVE,
                                     "WSL filc timeout");
                 myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
@@ -840,13 +840,13 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
             myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
                                     "filc WSL run exec failed");
             myc_proc_result_free(&pres);
-            free(wsl_path);
+            myc_free(wsl_path);
             if (stdin_file) {
                 remove(stdin_file);
-                free(stdin_file);
+                myc_free(stdin_file);
             }
-            free(stdin_file_env);
-            free(wslenv_env);
+            myc_free(stdin_file_env);
+            myc_free(wslenv_env);
             return 0;
         }
         res->duration_ms += pres.duration_ms;
@@ -854,13 +854,13 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
             res->verdict = MC_TIMEOUT;
             res->err = MYC_ERR_TIMEOUT;
             myc_proc_result_free(&pres);
-            free(wsl_path);
+            myc_free(wsl_path);
             if (stdin_file) {
                 remove(stdin_file);
-                free(stdin_file);
+                myc_free(stdin_file);
             }
-            free(stdin_file_env);
-            free(wslenv_env);
+            myc_free(stdin_file_env);
+            myc_free(wslenv_env);
             myc_gate_set_status(res, MYC_GATE_FILC, MYC_GATE_INCONCLUSIVE,
                                 "WSL filc timeout");
             myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
@@ -932,26 +932,26 @@ int myc_filc_gate(const myc_request *req, const char *source, size_t source_len,
     }
 
 out_wsl:
-    free(wsl_path);
+    myc_free(wsl_path);
     /* MYC-AUDIT-021: hapus file stdin temp Windows (template WSL sudah
      * tidak lagi bertanggung jawab; path Windows tak bisa di-rm dari WSL). */
     if (stdin_file) {
         remove(stdin_file);
-        free(stdin_file);
+        myc_free(stdin_file);
     }
-    free(stdin_file_env);
-    free(wslenv_env);
+    myc_free(stdin_file_env);
+    myc_free(wslenv_env);
     return ret;
 
 out:
     if (exe_path) {
         remove(exe_path);
-        free(exe_path);
+        myc_free(exe_path);
     }
     if (tmp_dir) {
         myc_rmdir(tmp_dir);
-        free(tmp_dir);
+        myc_free(tmp_dir);
     }
-    free(filc_path);
+    myc_free(filc_path);
     return ret;
 }

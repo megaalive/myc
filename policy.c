@@ -20,6 +20,7 @@
  */
 #include "policy.h"
 
+#include "alloc.h"
 #include <string.h>
 
 #include "sha256.h"

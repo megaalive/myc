@@ -103,13 +103,13 @@ static int calib_load(myc_calib_entry *entries, int *count)
         fclose(f);
         return 0;
     }
-    buf = (char *)malloc((size_t)fsize + 1);
+    buf = (char *)myc_malloc((size_t)fsize + 1);
     if (!buf) {
         fclose(f);
         return 0;
     }
     if (fread(buf, 1, (size_t)fsize, f) != (size_t)fsize) {
-        free(buf);
+        myc_free(buf);
         fclose(f);
         return 0;
     }
@@ -117,7 +117,7 @@ static int calib_load(myc_calib_entry *entries, int *count)
     fclose(f);
 
     if (!json_parse_cstr(buf, &root) || !root) {
-        free(buf);
+        myc_free(buf);
         return 0;
     }
     arr = json_get(root, "entries");
@@ -144,7 +144,7 @@ static int calib_load(myc_calib_entry *entries, int *count)
         }
     }
     json_free(root);
-    free(buf);
+    myc_free(buf);
     *count = n;
     return n > 0 ? 1 : 0;
 }
@@ -195,7 +195,7 @@ static void calib_save(const myc_calib_entry *entries, int count)
      * rename). Crash kapan pun -> calibration.json OLD valid ATAU NEW
      * valid, tidak pernah setengah. NON-blocking: gagal diabaikan. */
     (void)myc_persist_atomic_write_str(path, js);
-    free(js);
+    myc_free(js);
     json_free(root);
 }
 

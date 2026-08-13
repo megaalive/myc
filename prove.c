@@ -278,7 +278,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
             res->err = MYC_ERR_TIMEOUT;
             res->duration_ms += pres.duration_ms;
             myc_proc_result_free(&pres);
-            free(wsl_path);
+            myc_free(wsl_path);
             myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_INCONCLUSIVE,
                                 "detect frama-c timeout");
             myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
@@ -291,7 +291,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
         myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
                                 "Eva detect infra failed");
         myc_proc_result_free(&pres);
-        free(wsl_path);
+        myc_free(wsl_path);
         return 0;
     }
     res->duration_ms += pres.duration_ms;
@@ -299,7 +299,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
         res->verdict = MC_TIMEOUT;
         res->err = MYC_ERR_TIMEOUT;
         myc_proc_result_free(&pres);
-        free(wsl_path);
+        myc_free(wsl_path);
         myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_INCONCLUSIVE,
                             "detect frama-c timeout");
         myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
@@ -315,7 +315,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
         myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_SKIP,
                                 "Eva di-skip: frama-c hilang");
         myc_proc_result_free(&pres);
-        free(wsl_path);
+        myc_free(wsl_path);
         return 0;
     }
     parse_detect_version(res, pres.stdout_data);
@@ -330,7 +330,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
             res->err = MYC_ERR_TIMEOUT;
             res->duration_ms += pres.duration_ms;
             myc_proc_result_free(&pres);
-            free(wsl_path);
+            myc_free(wsl_path);
             myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_INCONCLUSIVE,
                                 "frama-c -eva timeout");
             myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
@@ -343,7 +343,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
         myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
                                 "Eva exec failed");
         myc_proc_result_free(&pres);
-        free(wsl_path);
+        myc_free(wsl_path);
         return 0;
     }
     res->duration_ms += pres.duration_ms;
@@ -351,7 +351,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
         res->verdict = MC_TIMEOUT;
         res->err = MYC_ERR_TIMEOUT;
         myc_proc_result_free(&pres);
-        free(wsl_path);
+        myc_free(wsl_path);
         myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_INCONCLUSIVE,
                             "frama-c -eva timeout");
         myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
@@ -360,8 +360,8 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
     }
     {
         int eva_exit = pres.exit_code;
-        free(res->prove_stdout_text);
-        free(res->prove_stderr_text);
+        myc_free(res->prove_stdout_text);
+        myc_free(res->prove_stderr_text);
         res->prove_stdout_text = pres.stdout_data; pres.stdout_data = NULL;
         res->prove_stderr_text = pres.stderr_data; pres.stderr_data = NULL;
         myc_proc_result_free(&pres);
@@ -379,7 +379,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
             add_diag_prove(res, note);
             myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_INCONCLUSIVE, note);
             myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_SKIP, note);
-            free(wsl_path);
+            myc_free(wsl_path);
             return 0;
         }
         alarms = count_eva_alarms(res, res->prove_stdout_text);
@@ -401,7 +401,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
             myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_FINDING, note);
             /* Isi witness dari Eva (Fase 1). */
             if (!res->witness) {
-                res->witness = (myc_witness *)malloc(sizeof(myc_witness));
+                res->witness = (myc_witness *)myc_malloc(sizeof(myc_witness));
                 if (res->witness) {
                     myc_witness_init(res->witness);
                     res->witness->violation_kind =
@@ -416,7 +416,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
                         myc_result_arena_dup(res, "Eva precondition check", 0);
                 }
             }
-            free(wsl_path);
+            myc_free(wsl_path);
             return 0;
         }
         if (!(res->prove_stdout_text &&
@@ -427,7 +427,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
                                 "Eva tidak menganalisis (no summary)");
             myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_SKIP,
                                     "Eva di-skip: tidak ada ANALYSIS SUMMARY");
-            free(wsl_path);
+            myc_free(wsl_path);
             return 0;
         }
         add_diag_prove(res, "prove: Eva 0 alarm RTE (abstract interpretation, "
@@ -436,7 +436,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
                             "Eva 0 alarm + summary");
         myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_GATE_END,
                                 "Frama-C Eva clean");
-        free(wsl_path);
+        myc_free(wsl_path);
         return 1;
     }
 #else
@@ -452,7 +452,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
                 res->err = MYC_ERR_TIMEOUT;
                 res->duration_ms += pres.duration_ms;
                 myc_proc_result_free(&pres);
-                free(frama_path);
+                myc_free(frama_path);
                 myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_INCONCLUSIVE,
                                     "frama-c version timeout");
                 myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
@@ -465,7 +465,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
             myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
                                     "frama-c version exec failed");
             myc_proc_result_free(&pres);
-            free(frama_path);
+            myc_free(frama_path);
             return 0;
         }
         res->duration_ms += pres.duration_ms;
@@ -478,7 +478,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
             myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_SKIP,
                                     "Eva di-skip: frama-c hilang");
             myc_proc_result_free(&pres);
-            free(frama_path);
+            myc_free(frama_path);
             return 0;
         }
         parse_detect_version(res, pres.stdout_data);
@@ -496,7 +496,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
                 res->err = MYC_ERR_TIMEOUT;
                 res->duration_ms += pres.duration_ms;
                 myc_proc_result_free(&pres);
-                free(frama_path);
+                myc_free(frama_path);
                 myc_gate_set_status(res, MYC_GATE_PROVE, MYC_GATE_INCONCLUSIVE,
                                     "frama-c -eva timeout");
                 myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
@@ -509,7 +509,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
             myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
                                     "Eva exec failed");
             myc_proc_result_free(&pres);
-            free(frama_path);
+            myc_free(frama_path);
             return 0;
         }
         res->duration_ms += pres.duration_ms;
@@ -584,7 +584,7 @@ int myc_prove_gate(const myc_request *req, const char *source, size_t source_len
                                         "Eva alarm RTE terdeteksi");
             }
         }
-        free(frama_path);
+        myc_free(frama_path);
         return 1;
     }
 #endif

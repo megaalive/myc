@@ -128,14 +128,14 @@ static int regress_run_one(const char *path, const char *kind,
         snprintf(status_out, status_cap, "UKURAN TIDAK VALID");
         return -1;
     }
-    src = (char *)malloc((size_t)sz + 1);
+    src = (char *)myc_malloc((size_t)sz + 1);
     if (!src) {
         fclose(f);
         snprintf(status_out, status_cap, "OOM");
         return -1;
     }
     if (fread(src, 1, (size_t)sz, f) != (size_t)sz) {
-        free(src);
+        myc_free(src);
         fclose(f);
         snprintf(status_out, status_cap, "BACA GAGAL");
         return -1;
@@ -174,7 +174,7 @@ static int regress_run_one(const char *path, const char *kind,
         snprintf(status_out, status_cap, "OTHER (%d)", (int)res.verdict);
 
     myc_result_free(&res);
-    free(src);
+    myc_free(src);
     return violation ? 1 : 0;
 }
 

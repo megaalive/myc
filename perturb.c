@@ -76,11 +76,11 @@ int myc_perturb_gate(const myc_request *req, myc_result *res,
         for (j = 0; v->kvs[j]; j++)
             kv_count++;
         need = (size_t)nbase + kv_count + 1;
-        env = (const char **)malloc(sizeof(char *) * need);
-        run_argv = (const char **)malloc(sizeof(char *) * 2);
+        env = (const char **)myc_malloc(sizeof(char *) * need);
+        run_argv = (const char **)myc_malloc(sizeof(char *) * 2);
         if (!env || !run_argv) {
-            free(env);
-            free(run_argv);
+            myc_free(env);
+            myc_free(run_argv);
             break;
         }
         for (j = 0; j < nbase; j++)
@@ -119,8 +119,8 @@ int myc_perturb_gate(const myc_request *req, myc_result *res,
             }
             myc_proc_result_free(&pres);
         }
-        free(env);
-        free(run_argv);
+        myc_free(env);
+        myc_free(run_argv);
     }
 
     res->perturb_ran = 1;

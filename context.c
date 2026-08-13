@@ -44,7 +44,7 @@ static int sb_reserve(ctx_sb *b, size_t extra)
     cap = b->cap ? b->cap * 2 : 256;
     while (cap < need)
         cap *= 2;
-    np = (char *)realloc(b->p, cap);
+    np = (char *)myc_realloc(b->p, cap);
     if (!np)
         return -1;
     b->p = np;
@@ -311,7 +311,7 @@ static int ctx_build_lines(const char *src, size_t n, ctx_lines *L)
     int cap = 64;
     size_t i;
 
-    L->starts = (int *)malloc((size_t)cap * sizeof(int));
+    L->starts = (int *)myc_malloc((size_t)cap * sizeof(int));
     if (!L->starts)
         return -1;
     L->starts[0] = 0;
@@ -321,9 +321,9 @@ static int ctx_build_lines(const char *src, size_t n, ctx_lines *L)
             int *np;
             if (L->count >= cap) {
                 cap *= 2;
-                np = (int *)realloc(L->starts, (size_t)cap * sizeof(int));
+                np = (int *)myc_realloc(L->starts, (size_t)cap * sizeof(int));
                 if (!np) {
-                    free(L->starts);
+                    myc_free(L->starts);
                     L->starts = NULL;
                     return -1;
                 }
@@ -856,7 +856,7 @@ char *myc_context_build(const myc_result *res,
     sb_puts(&header, "verify: ");
     ctx_verify_command(req, path, &header);
     sb_puts(&header, "\n");
-    free(scen);
+    myc_free(scen);
 
     /* Deliver: header + section berprioritas sampai budget. */
     sb_puts(&deliver, header.p ? header.p : "");
@@ -909,8 +909,8 @@ char *myc_context_build(const myc_result *res,
                   deliver.len, budget_tokens, body.len, omitted);
     }
 
-    free(body.p);
-    free(header.p);
-    free(lines.starts);
+    myc_free(body.p);
+    myc_free(header.p);
+    myc_free(lines.starts);
     return deliver.p;
 }

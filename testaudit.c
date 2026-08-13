@@ -6,6 +6,7 @@
  */
 #include "testaudit.h"
 
+#include "alloc.h"
 #include <ctype.h>
 #include <dirent.h>
 #include <stdio.h>
@@ -123,13 +124,13 @@ static char *ta_read_lower(const char *path)
         fclose(f);
         return NULL;
     }
-    buf = (char *)malloc((size_t)sz + 1);
+    buf = (char *)myc_malloc((size_t)sz + 1);
     if (!buf) {
         fclose(f);
         return NULL;
     }
     if (fread(buf, 1, (size_t)sz, f) != (size_t)sz) {
-        free(buf);
+        myc_free(buf);
         fclose(f);
         return NULL;
     }
@@ -196,7 +197,7 @@ static void ta_scan_dir(const char *dir, int *haz_hit, int *back_hit,
                 back_hit[i] = 1;
             }
         }
-        free(content);
+        myc_free(content);
     }
     closedir(d);
 }

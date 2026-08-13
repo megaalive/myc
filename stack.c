@@ -391,7 +391,7 @@ int myc_stack_gate(const myc_request *req, const char *source,
         tmp_dir = myc_strdup(buf);
         if (!tmp_dir) {
             res->err = MYC_ERR_INTERNAL;
-            free(gcc_path);
+            myc_free(gcc_path);
             return 0;
         }
         stk_mkdir(tmp_dir);
@@ -606,23 +606,23 @@ out_ok:
 out:
     if (fsrc)
         fclose(fsrc);
-    free(dirbuf);
-    free(gcc_path);
+    myc_free(dirbuf);
+    myc_free(gcc_path);
     if (src_path) {
         remove(src_path);
-        free(src_path);
+        myc_free(src_path);
     }
     if (su_path) {
         remove(su_path);
-        free(su_path);
+        myc_free(su_path);
     }
     if (obj_path) {
         remove(obj_path);
-        free(obj_path);
+        myc_free(obj_path);
     }
     if (tmp_dir) {
         stk_rmdir(tmp_dir);
-        free(tmp_dir);
+        myc_free(tmp_dir);
     }
     return res->ran_stack ? 1 : 0;
 }

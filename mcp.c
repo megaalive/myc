@@ -61,7 +61,7 @@ static char *g_exe_dir;           /* dirname mcp.exe (untuk checked_header_dir) 
 static char *read_line(void)
 {
     size_t cap = 4096, len = 0;
-    char  *buf = (char *)malloc(cap);
+    char  *buf = (char *)myc_malloc(cap);
     int    c;
     int    overflow = 0;
     if (!buf)
@@ -82,9 +82,9 @@ static char *read_line(void)
             size_t ncap = cap * 2;
             if (ncap > MCP_MAX_LINE)
                 ncap = MCP_MAX_LINE;
-            char  *nb = (char *)realloc(buf, ncap);
+            char  *nb = (char *)myc_realloc(buf, ncap);
             if (!nb) {
-                free(buf);
+                myc_free(buf);
                 return NULL;
             }
             buf = nb;
@@ -94,14 +94,14 @@ static char *read_line(void)
             buf[len++] = (char)c;
     }
     if (len == 0 && c == EOF) {
-        free(buf);
+        myc_free(buf);
         return NULL;
     }
     buf[len] = '\0';
     if (overflow) {
         /* penanda: json_parse akan gagal -> respons Parse error */
-        free(buf);
-        buf = (char *)malloc(1);
+        myc_free(buf);
+        buf = (char *)myc_malloc(1);
         if (!buf)
             return NULL;
         buf[0] = '\0';
@@ -131,7 +131,7 @@ static void send_response(json_value *id, json_value *body, int is_error)
     json_obj_set(msg, is_error ? "error" : "result", body);
     if (json_serialize(msg, &s) && s)
         send_raw(s);
-    free(s);
+    myc_free(s);
     json_free(msg);
 }
 
@@ -289,7 +289,7 @@ static void tool_check(json_value *id, json_value *args)
 
     send_result(id, result);
 
-    free(text);
+    myc_free(text);
     myc_result_free(&res);
 }
 
@@ -331,8 +331,8 @@ static void tool_version(json_value *id)
     json_obj_set(result, "isError", json_new_bool(0));
     send_result(id, result);
 
-    free(gcc);
-    free(clang);
+    myc_free(gcc);
+    myc_free(clang);
     json_sb_free(&b);
 }
 
@@ -387,11 +387,11 @@ static void tool_contracts(json_value *id, json_value *args)
 
 out:
     for (i = 0; i < nreqs; i++)
-        free(reqs[i]);
-    free(reqs);
+        myc_free(reqs[i]);
+    myc_free(reqs);
     for (i = 0; i < nens; i++)
-        free(ensures[i]);
-    free(ensures);
+        myc_free(ensures[i]);
+    myc_free(ensures);
 }
 
 /* ------------------------- tool: lint ------------------------------- */
@@ -558,7 +558,7 @@ static void tool_agent_check(json_value *id, json_value *args)
          * di sini (double-free). Hanya res + pinfo yang perlu dibersihkan. */
         send_error(id, -32603, "Internal error: gagal build agent result");
         if (pinfo_loaded)
-            free(pinfo.prompt_text);
+            myc_free(pinfo.prompt_text);
         myc_result_free(&res);
         return;
     }
@@ -597,10 +597,10 @@ static void tool_agent_check(json_value *id, json_value *args)
     json_obj_set(result, "isError", json_new_bool(0));
     send_result(id, result);
 
-    if (js) free((void *)js);
+    if (js) myc_free((void *)js);
     myc_agent_result_free(&ar);
     if (pinfo_loaded)
-        free(pinfo.prompt_text);
+        myc_free(pinfo.prompt_text);
     myc_result_free(&res);
 }
 
@@ -690,7 +690,7 @@ static void tool_repair(json_value *id, json_value *args)
     json_obj_set(result, "isError", json_new_bool(0));
     send_result(id, result);
 
-    free(patch);
+    myc_free(patch);
     myc_result_free(&res);
 }
 
@@ -1094,9 +1094,9 @@ int main(int argc, char **argv)
             handle_message(msg);
             json_free(msg);
         }
-        free(line);
+        myc_free(line);
     }
 
-    free(g_exe_dir);
+    myc_free(g_exe_dir);
     return 0;
 }

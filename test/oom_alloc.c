@@ -1,27 +1,28 @@
 /*
- * oom_alloc.c -- Regression MYC-AUDIT-018: injeksi kegagalan alokasi (OOM).
+ * oom_alloc.c -- Regression MYC-AUDIT-018/PR-019: injeksi kegagalan alokasi.
  *
- * Memakai allocator injection GNU ld (--wrap) sehingga SEMUA panggilan
- * malloc/calloc/realloc dari source myc bisa dibuat gagal secara
- * terkendali: g_fail_after = N berarti N alokasi pertama sukses, lalu
- * alokasi berikutnya mengembalikan NULL. Myc RUN diulang untuk setiap
- * titik kegagalan 0..N; test menegaskan:
+ * PR-019 (P7-T02): memakai allocator wrapper FORMAL myc_malloc/calloc/realloc
+ * (alloc.c) yang dikompilasi dengan -DMYC_ALLOC_TEST sehingga alokasi ke-N
+ * dapat dibuat gagal via myc_alloc_set_fail_after(N). Loop titik kegagalan
+ * 0..N menutup SEMUA situs alokasi myc. Test menegaskan:
  *   - tidak crash (proses selesai normal),
  *   - tidak hang (runner timeout menangkap),
  *   - verdict selalu nilai enum yang valid,
  *   - result dapat dibebaskan utuh (myc_result_free),
  *   - injeksi benar-benar aktif (setidaknya satu alokasi ditolak),
- *   - kontrol tanpa OOM -> MC_OK.
+ *   - kontrol tanpa OOM -> MC_OK,
+ *   - persistent state (ledger via myc_persist_atomic_write) TIDAK korup
+ *     saat alokasi gagal di tengah penulisan (P7-T02: no corrupted state).
  *
- * PENTING: selama loop OOM, TIDAK BOLEH memanggil printf (stdio dapat
- * mengalokasi) -- hasil dicetak setelah g_fail_after di-reset.
+ * Tidak lagi memakai --wrap (allocator injection GNU ld): wrapper formal
+ * lebih portabel (tidak butuh flag linker) dan lintas platform.
  *
- * Build (MinGW & glibc GNU ld):
- *   gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN \
- *       -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc \
- *       -o oom_alloc oom_alloc.c myc.c proc.c scanner.c policy.c \
+ * Build:
+ *   gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -DMYC_ALLOC_TEST \
+ *       -o oom_alloc oom_alloc.c alloc.c myc.c proc.c scanner.c policy.c \
  *       compile.c report.c sha256.c lint.c run.c contract.c prove.c \
- *       filc.c driver.c json.c gate.c negative.c
+ *       filc.c driver.c json.c gate.c negative.c persist.c
+ *   (alloc.c WAJIB dibangun dengan -DMYC_ALLOC_TEST agar hook aktif.)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,54 +30,8 @@
 
 #include "myc.h"
 #include "json.h"
-
-/* --- allocator injection (di-link via --wrap) --- */
-void *__real_malloc(size_t n);
-void *__real_calloc(size_t n, size_t sz);
-void *__real_realloc(void *p, size_t n);
-
-static long g_fail_after = -1;   /* <0 = passthrough; >=0 = hitung mundur */
-static long g_null_returned = 0; /* jumlah alokasi yang ditolak */
-static long g_total_calls = 0;   /* total panggilan ter-wrap */
-
-void *__wrap_malloc(size_t n)
-{
-    g_total_calls++;
-    if (g_fail_after >= 0) {
-        if (g_fail_after == 0) {
-            g_null_returned++;
-            return NULL;
-        }
-        g_fail_after--;
-    }
-    return __real_malloc(n);
-}
-
-void *__wrap_calloc(size_t n, size_t sz)
-{
-    g_total_calls++;
-    if (g_fail_after >= 0) {
-        if (g_fail_after == 0) {
-            g_null_returned++;
-            return NULL;
-        }
-        g_fail_after--;
-    }
-    return __real_calloc(n, sz);
-}
-
-void *__wrap_realloc(void *p, size_t n)
-{
-    g_total_calls++;
-    if (g_fail_after >= 0) {
-        if (g_fail_after == 0) {
-            g_null_returned++;
-            return NULL;
-        }
-        g_fail_after--;
-    }
-    return __real_realloc(p, n);
-}
+#include "alloc.h"
+#include "persist.h"
 
 /* --- fixture --- */
 
@@ -88,7 +43,7 @@ static const char SMALL_SRC[] =
 static long oom_points(void)
 {
     const char *e = getenv("MYC_OOM_POINTS");
-    long n = e ? atol(e) : 48;
+    long n = e ? atol(e) : 64;
     return n > 200 ? 200 : (n < 1 ? 1 : n);
 }
 
@@ -103,7 +58,6 @@ int main(void)
     npoints = oom_points();
 
     /* kontrol: tanpa OOM, fixture valid harus MC_OK. */
-    g_fail_after = -1;
     myc_request_init(&req);
     req.input.kind = MYC_SOURCE_MEMORY;
     req.input.data = SMALL_SRC;
@@ -116,7 +70,7 @@ int main(void)
 
     /* loop titik kegagalan 0..N (semua alokasi myc bisa gagal). */
     for (i = 0; i <= npoints; i++) {
-        g_fail_after = i;
+        myc_alloc_set_fail_after(i);
         myc_request_init(&req);
         req.input.kind = MYC_SOURCE_MEMORY;
         req.input.data = SMALL_SRC;
@@ -128,19 +82,20 @@ int main(void)
             bad_verdict++;
         myc_result_free(&res);
     }
+    myc_alloc_set_fail_after(-1);
 
     /* --- fase JSON (MYC-AUDIT-009): OOM di konstruksi objek/array +
      * serialisasi. guard sb_reserve/json_obj_set/json_arr_push harus
-     * mengembalikan NULL/free val tanpa crash. Semua alokasi json ter-wrap,
-     * jadi loop fail point sama seperti myc_run. PENTING: TIDAK boleh printf
-     * selama g_fail_after aktif (stdio bisa mengalokasi). */
+     * mengembalikan NULL/free val tanpa crash. Semua alokasi json memakai
+     * myc_malloc (ter-wrap wrapper), jadi fail point sama seperti myc_run.
+     * PENTING: TIDAK boleh printf selama g_fail_after aktif (stdio bisa
+     * mengalokasi). */
     {
         long j;
-        int  json_ok = 1;
         for (j = 0; j <= npoints; j++) {
             json_value *obj;
             int k;
-            g_fail_after = j;
+            myc_alloc_set_fail_after(j);
             obj = json_new_obj();
             if (obj) {
                 for (k = 0; k < 8; k++) {
@@ -152,26 +107,104 @@ int main(void)
                 {
                     char *s = NULL;
                     json_serialize(obj, &s);
-                    free(s);
+                    myc_free(s);
                 }
             }
             json_free(obj);
         }
-        g_fail_after = -1;
+        myc_alloc_set_fail_after(-1);
         /* json_new_obj di fail point 0 bisa NULL (bukan kegagalan) --
          * yang kita uji adalah "tidak crash & json_free(NULL) aman". */
-        (void)json_ok;
     }
-    g_fail_after = -1;
+
+    /* --- fase persistent state (P7-T02: no corrupted persistent state):
+     * myc_persist_atomic_write dipaksa gagal di tengah (fail point di
+     * antara tulis-temp dan rename). Karena penulisan temp + flush terjadi
+     * SEBELUM rename atomik, file target yang ada (atau tidak ada) harus
+     * tetap utuh. Verifikasi: untuk tiap fail point, target yang tersisa
+     * adalah baseline LAMA atau nilai BARU UTUH (tidak pernah setengah). */
+    {
+        const char *target = "test/.oom_alloc_persist.tmp";
+        static const char OLD[] = "old-valid-state";
+        static const char NEW[] = "new-valid-state";
+        long p;
+
+        /* baseline: tulis OLD tanpa OOM (harus sukses + utuh). */
+        {
+            FILE *fp = NULL;
+            myc_alloc_set_fail_after(-1);
+            if (!myc_persist_atomic_write(target, OLD, strlen(OLD))) {
+                fprintf(stderr, "[FAIL] oom_alloc: baseline persist gagal "
+                                "(tanpa OOM)\n");
+                return 1;
+            }
+            fp = fopen(target, "r");
+            if (!fp) {
+                fprintf(stderr, "[FAIL] oom_alloc: baseline target tak ada\n");
+                return 1;
+            }
+            fclose(fp);
+        }
+
+        /* loop fail point 0..12: tulis NEW dengan injeksi. Target yang
+         * tersisa harus OLD utuh (temp gagal sebelum rename) ATAU NEW utuh
+         * (rename sukses) -- tidak ada campuran/setengah. */
+        for (p = 0; p <= 12; p++) {
+            FILE *ck;
+            char buf[96] = {0};
+            size_t r;
+            int ok_old = 0, ok_new = 0;
+
+            myc_alloc_set_fail_after(p);
+            myc_persist_atomic_write(target, NEW, strlen(NEW));
+            myc_alloc_set_fail_after(-1);
+
+            ck = fopen(target, "r");
+            if (!ck) {
+                fprintf(stderr, "[FAIL] oom_alloc: persist target hilang di "
+                                "fail point %ld\n", p);
+                return 1;
+            }
+            r = fread(buf, 1, sizeof(buf) - 1, ck);
+            fclose(ck);
+            ok_old = (r == strlen(OLD) && memcmp(buf, OLD, strlen(OLD)) == 0);
+            ok_new = (r == strlen(NEW) && memcmp(buf, NEW, strlen(NEW)) == 0);
+            if (!ok_old && !ok_new) {
+                fprintf(stderr, "[FAIL] oom_alloc: persistent state korup "
+                                "(bukan OLD juga bukan NEW) di fail point %ld "
+                                "-> len %zu\n", p, r);
+                return 1;
+            }
+        }
+
+        /* final: tulis NEW tanpa OOM harus NEW utuh (file kembali hidup). */
+        myc_alloc_set_fail_after(-1);
+        if (myc_persist_atomic_write(target, NEW, strlen(NEW))) {
+            FILE *ck;
+            char buf[96] = {0};
+            ck = fopen(target, "r");
+            if (ck) {
+                fread(buf, 1, sizeof(buf) - 1, ck);
+                fclose(ck);
+                if (strcmp(buf, NEW) != 0) {
+                    fprintf(stderr, "[FAIL] oom_alloc: persist kembali gagal "
+                                    "setelah pemulihan\n");
+                    return 1;
+                }
+            }
+            myc_free(NULL); /* myc_free(NULL) aman (idiom gratis) */
+        }
+        remove(target);
+    }
 
     /* cetak hasil HANYA setelah reset (printf bisa mengalokasi). */
     if (!control_ok) {
         fprintf(stderr, "[FAIL] oom_alloc: kontrol tanpa OOM bukan MC_OK\n");
         return 1;
     }
-    if (g_null_returned == 0) {
+    if (myc_alloc_fail_count() == 0) {
         fprintf(stderr, "[FAIL] oom_alloc: injeksi tidak pernah menolak alokasi "
-                        "(--wrap tidak aktif?)\n");
+                        "(MYC_ALLOC_TEST tidak aktif?)\n");
         return 1;
     }
     if (bad_verdict) {
@@ -180,7 +213,8 @@ int main(void)
         return 1;
     }
     printf("[OK] oom_alloc: %ld titik OOM (fail 0..%ld) tanpa crash; "
-           "%ld alokasi ditolak; kontrol OK\n",
-           npoints + 1, npoints, g_null_returned);
+           "%ld alokasi ditolak (%ld total panggilan); kontrol OK\n",
+           npoints + 1, npoints, myc_alloc_fail_count(),
+           myc_alloc_call_count());
     return 0;
 }

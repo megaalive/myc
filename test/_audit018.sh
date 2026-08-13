@@ -8,7 +8,9 @@
 #   1. proc_flood    -- deadlock stdin/stdout, flood 100MiB prefix+tail,
 #                      env override (MYC-AUDIT-002/017 + bounded capture).
 #   2. oom_guards    -- guard overflow arena + input ekstrem.
-#   3. oom_alloc     -- injeksi kegagalan malloc/calloc/realloc (--wrap),
+#   3. oom_alloc     -- injeksi kegagalan malloc/calloc/realloc via allocator
+#                      wrapper FORMAL (PR-019/P7-T02: alloc.c + MYC_ALLOC_TEST
+#                      -> myc_alloc_set_fail_after Nth; TIDAK lagi --wrap),
 #                      incl. fase JSON (MYC-AUDIT-009 sb_reserve/obj_set).
 #   4. stress_threads-- concurrency myc_run paralel (Fase 5, juga Windows).
 #   5. audit_lampiran-- lampiran A: exec-vs-127, temp path, contract panjang,
@@ -164,6 +166,17 @@
 #                      muncul sambil verdict TETAP OK (NON-blocking);
 #                      `--require-complete` menaikkan ke INCONCLUSIVE (9.10).
 #                      NON-blocking: limits hanyalah laporan.
+# 22. allocator        -- PR-019 (P7-T02): allocator wrapper FORMAL
+#                      myc_malloc/myc_calloc/myc_realloc/myc_free (alloc.c/h).
+#                      Produksi = passthrough libc (nol overhead); test build
+#                      (MYC_ALLOC_TEST) menggagalkan alokasi ke-N via
+#                      myc_alloc_set_fail_after -- TIDAK lagi butuh GNU ld
+#                      --wrap. Diverifikasi: (a) TIDAK ada panggilan mentah
+#                      malloc/calloc/realloc/free tersisa di source myc
+#                      (semua lewat wrapper; oom_alloc dibangun dengan
+#                      MYC_ALLOC_TEST dan menutup 0..N titik alokasi tanpa
+#                      crash + persistent state tidak korup), (b) alloc.c
+#                      menyediakan hook nth-failure.
 #
 # Dijalankan dari _regress_run.bat (bila bash tersedia) atau langsung di
 # POSIX/CI Linux. CWD harus root proyek.
@@ -171,7 +184,7 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-SRCS="myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c"
+SRCS="myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c"
 CC="${CC:-gcc}"
 # POSIX/Windows butuh -pthread untuk stress_threads (pthread_create/join).
 # Deteksi apakah kompiler menerima flag; aman untuk MinGW juga.
@@ -226,7 +239,7 @@ run_built() {
 }
 
 # --- 1. proc_flood: deadlock + flood + env override ---
-if $CC -O2 -std=c11 -Wall -Wextra -I. $PTHREAD -o test/proc_flood test/proc_flood.c proc.c 2>/dev/null; then
+if $CC -O2 -std=c11 -Wall -Wextra -I. $PTHREAD -o test/proc_flood test/proc_flood.c proc.c alloc.c 2>/dev/null; then
     run_built "audit018 proc_flood (deadlock/flood/env)" test/proc_flood
 else
     echo "[FAIL] audit018 proc_flood gagal dibangun"
@@ -242,13 +255,16 @@ else
     FAIL=1
 fi
 
-# --- 3. oom_alloc: injeksi kegagalan alokasi (butuh GNU ld --wrap) ---
-if $CC -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN \
-       -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc \
+# --- 3. oom_alloc: injeksi kegagalan alokasi via allocator wrapper FORMAL ---
+# PR-019 (P7-T02): alloc.c dibangun dengan -DMYC_ALLOC_TEST sehingga hook
+# nth-allocation failure aktif (myc_alloc_set_fail_after). Tidak lagi butuh
+# GNU ld --wrap. alloc.c sudah termuat di $SRCS; flag -DMYC_ALLOC_TEST
+# hanya dibaca alloc.c, aman untuk seluruh translation unit.
+if $CC -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -DMYC_ALLOC_TEST \
        -o test/oom_alloc test/oom_alloc.c $SRCS 2>/dev/null; then
-    run_built "audit018 oom_alloc (OOM injection)" test/oom_alloc
+    run_built "audit018 oom_alloc (OOM injection via myc_alloc hook)" test/oom_alloc
 else
-    echo "[FAIL] audit018 oom_alloc gagal dibangun (butuh GNU ld --wrap)"
+    echo "[FAIL] audit018 oom_alloc gagal dibangun (MYC_ALLOC_TEST)"
     FAIL=1
 fi
 
@@ -270,7 +286,7 @@ case "$(uname -s 2>/dev/null)" in
         ;;
     *)
         if $CC -O2 -std=c11 -Wall -Wextra -I. -o test/verify_descendants \
-               test/verify_descendants.c proc.c 2>/dev/null; then
+               test/verify_descendants.c proc.c alloc.c 2>/dev/null; then
             run_built "audit018 verify_descendants (group kill mematikan descendant)" \
                       test/verify_descendants
         else
@@ -435,7 +451,7 @@ then
 fi
 if [ -x test/proc_fixture ] || [ -x test/proc_fixture.exe ]; then
     if $CC -O2 -std=c11 -Wall -Wextra -Werror -I. $PTHREAD $PSAPI \
-           -o test/proc_deadlock_matrix test/proc_deadlock_matrix.c proc.c 2>/dev/null; then
+           -o test/proc_deadlock_matrix test/proc_deadlock_matrix.c proc.c alloc.c 2>/dev/null; then
         PFX="test/proc_fixture"
         [ -x "test/proc_fixture.exe" ] && PFX="test/proc_fixture.exe"
         # Log matriks disimpan (bukan dibuang) agar kegagalan memuat
@@ -474,7 +490,7 @@ if [ -x test/proc_fixture ] || [ -x test/proc_fixture.exe ]; then
 # abadi = FAIL, bukan hang CI).
 if [ -x test/proc_fixture ] || [ -x test/proc_fixture.exe ]; then
     if $CC -O2 -std=c11 -Wall -Wextra -Werror -I. -o test/proc_tree_kill \
-           test/proc_tree_kill.c proc.c 2>/dev/null; then
+           test/proc_tree_kill.c proc.c alloc.c 2>/dev/null; then
         PFX="test/proc_fixture"
         [ -x "test/proc_fixture.exe" ] && PFX="test/proc_fixture.exe"
         LOG="test/proc_tree_kill.log"
@@ -957,7 +973,7 @@ fi
 # menjaga suite bila mcp regresi hang.
 if [ -x ./mcp ] || [ -x ./mcp.exe ]; then
     if $CC -O2 -std=c11 -Wall -Wextra -Werror -pedantic -I. $PTHREAD \
-           -o test/mcp_abuse test/mcp_abuse.c proc.c json.c 2>/dev/null; then
+           -o test/mcp_abuse test/mcp_abuse.c proc.c json.c alloc.c 2>/dev/null; then
         MCPB="./mcp"
         [ -x "./mcp.exe" ] && MCPB="./mcp.exe"
         LOG="test/mcp_abuse.log"
@@ -1114,6 +1130,30 @@ if [ -x ./myc ] || [ -x ./myc.exe ]; then
     fi
 else
     echo "[SKIP] limits (myc/myc.exe tidak ditemukan - jalankan build.sh/build.bat dulu)"
+fi
+
+# --- 22. allocator: PR-019 (P7-T02) wrapper formal myc_malloc/calloc/realloc/free ---
+# SEMUA alokasi source myc harus lewat wrapper formal (produksi map ke libc,
+# test build fail Nth via MYC_ALLOC_TEST). Sisa malloc/calloc/realloc/free
+# MENTAH hanya boleh ada di alloc.c (implementasi wrapper) dan komentar.
+# Cek: panggilan mentah yang dihapus komentar/string, dan file != alloc.c.
+if grep -nE '\b(malloc|calloc|realloc|free)[[:space:]]*\(' *.c 2>/dev/null | \
+       grep -vE '^alloc\.c:' | \
+       grep -vE ':[0-9]+:[[:space:]]*(\*|//|/\*)' | \
+       grep -vE ':[0-9]+:.*"(.*\b(free|malloc|calloc|realloc)\b.*)"' | \
+       grep -vE '\b(json_free|myc_[a-z_]*_free|min_free|sha256_free)\(' > /dev/null 2>&1; then
+    echo "[FAIL] allocator (PR-019: masih ada panggilan malloc/calloc/realloc/free mentah di source)"
+    FAIL=1
+else
+    echo "[OK] allocator (PR-019: seluruh alokasi source lewat myc_malloc/calloc/realloc/free)"
+fi
+# alloc.c dengan MYC_ALLOC_TEST harus menyediakan hook nth-failure
+# (myc_alloc_set_fail_after) dan passthrough produksi tanpa makro aneh.
+if grep -q "myc_alloc_set_fail_after" alloc.c && grep -q "MYC_ALLOC_TEST" alloc.c; then
+    echo "[OK] allocator (PR-019: alloc.c menyediakan hook nth-failure + produksi passthrough)"
+else
+    echo "[FAIL] allocator (PR-019: alloc.c hook/MYC_ALLOC_TEST tidak ada)"
+    FAIL=1
 fi
 
 rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \

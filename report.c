@@ -1876,7 +1876,7 @@ void myc_report_json(const myc_result *res)
     char *s = myc_result_to_json(res);
     if (s) {
         printf("%s\n", s);
-        free(s);
+        myc_free(s);
     }
 }
 
@@ -1895,7 +1895,7 @@ int myc_report_agent(const myc_result *res, const myc_pack_info *pack)
     js = myc_agent_result_json(&ar);
     if (js) {
         printf("%s\n", js);
-        free((void *)js);
+        myc_free((void *)js);
     }
 
     myc_agent_result_free(&ar);

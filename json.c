@@ -6,6 +6,7 @@
  */
 #include "json.h"
 
+#include "alloc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,7 +17,7 @@ int json_sb_init(json_sb *b)
 {
     memset(b, 0, sizeof(*b));
     b->cap = 256;
-    b->buf = (char *)malloc(b->cap);
+    b->buf = (char *)myc_malloc(b->cap);
     if (!b->buf) {
         b->cap = 0;
         return 0;
@@ -26,7 +27,7 @@ int json_sb_init(json_sb *b)
 
 void json_sb_free(json_sb *b)
 {
-    free(b->buf);
+    myc_free(b->buf);
     b->buf = NULL;
     b->len = b->cap = 0;
 }
@@ -52,7 +53,7 @@ static int sb_reserve(json_sb *b, size_t need)
             }
             ncap *= 2;
         }
-        nb = (char *)realloc(b->buf, ncap);
+        nb = (char *)myc_realloc(b->buf, ncap);
         if (!nb)
             return 0;
         b->buf = nb;
@@ -121,7 +122,7 @@ static void skip_ws(jp *j)
 
 static json_value *val_new(json_type t)
 {
-    json_value *v = (json_value *)calloc(1, sizeof(*v));
+    json_value *v = (json_value *)myc_calloc(1, sizeof(*v));
     if (v)
         v->type = t;
     return v;
@@ -651,24 +652,24 @@ void json_free(json_value *v)
         return;
     switch (v->type) {
     case JSON_STR:
-        free(v->str);
+        myc_free(v->str);
         break;
     case JSON_ARR:
         for (i = 0; i < v->len; i++)
             json_free(v->items[i]);
-        free(v->items);
+        myc_free(v->items);
         break;
     case JSON_OBJ:
         for (i = 0; i < v->mlen; i++) {
-            free(v->members[i].key);
+            myc_free(v->members[i].key);
             json_free(v->members[i].val);
         }
-        free(v->members);
+        myc_free(v->members);
         break;
     default:
         break;
     }
-    free(v);
+    myc_free(v);
 }
 
 /* ------------------------- akses ---------------------------- */
@@ -697,7 +698,7 @@ const char *json_get_str(const json_value *obj, const char *key)
 static char *dup_str(const char *s)
 {
     size_t n = strlen(s) + 1;
-    char  *d = (char *)malloc(n);
+    char  *d = (char *)myc_malloc(n);
     if (d)
         memcpy(d, s, n);
     return d;
@@ -741,7 +742,7 @@ json_value *json_new_str(const char *s)
         return NULL;
     v->str = dup_str(s ? s : "");
     if (!v->str) {
-        free(v);
+        myc_free(v);
         return NULL;
     }
     return v;
@@ -754,7 +755,7 @@ void json_obj_set(json_value *obj, const char *key, json_value *val)
         return;
     for (i = 0; i < obj->mlen; i++) {
         if (strcmp(obj->members[i].key, key) == 0) {
-            free(obj->members[i].key);
+            myc_free(obj->members[i].key);
             json_free(obj->members[i].val);
             obj->members[i].key = dup_str(key);
             obj->members[i].val = val;
@@ -769,7 +770,7 @@ void json_obj_set(json_value *obj, const char *key, json_value *val)
             return;
         }
         ncap *= 2;
-        nm = (json_member *)realloc(obj->members,
+        nm = (json_member *)myc_realloc(obj->members,
                                     ncap * sizeof(*nm));
         if (!nm) {
             json_free(val);
@@ -801,7 +802,7 @@ void json_arr_push(json_value *arr, json_value *v)
             return;
         }
         ncap *= 2;
-        ni = (json_value **)realloc(arr->items, ncap * sizeof(*ni));
+        ni = (json_value **)myc_realloc(arr->items, ncap * sizeof(*ni));
         if (!ni) {
             json_free(v);
             return;

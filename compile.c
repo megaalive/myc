@@ -202,7 +202,7 @@ static const char **merge_args(const char *const *lists[], size_t nlists,
         for (ai = 0; lists[li][ai]; ai++)
             total++;
     }
-    out = (const char **)malloc(sizeof(char *) * (total + 1));
+    out = (const char **)myc_malloc(sizeof(char *) * (total + 1));
     if (!out)
         return NULL;
     for (li = 0; li < nlists; li++) {
@@ -306,7 +306,7 @@ static void ingest_gcc_diagnostics(myc_result *res, const char *text)
         while (p && *p) {
             const char *nl = strchr(p, '\n');
             size_t      linelen = nl ? (size_t)(nl - p) : strlen(p);
-            char       *linebuf = (char *)malloc(linelen + 1);
+            char       *linebuf = (char *)myc_malloc(linelen + 1);
             int         line = 0, col = 0;
             const char *msg = NULL;
 
@@ -325,7 +325,7 @@ static void ingest_gcc_diagnostics(myc_result *res, const char *text)
                         }
                     }
                 }
-                free(linebuf);
+                myc_free(linebuf);
             }
             if (!nl)
                 break;
@@ -348,7 +348,7 @@ static void ingest_gcc_diagnostics(myc_result *res, const char *text)
             if (code) { d = &res->diags[di]; break; }
         }
         if (code) {
-            res->witness = (myc_witness *)malloc(sizeof(myc_witness));
+            res->witness = (myc_witness *)myc_malloc(sizeof(myc_witness));
             if (res->witness) {
                 myc_witness_init(res->witness);
                 res->witness->violation_kind = myc_result_arena_dup(res, code, 0);
@@ -390,7 +390,7 @@ static void run_gcc(const myc_request *req,
     while (extra_args[argc])
         argc++;
     total = 1 + argc + 3 + 1;
-    argv = (const char **)malloc(sizeof(char *) * (size_t)total);
+    argv = (const char **)myc_malloc(sizeof(char *) * (size_t)total);
     if (!argv) {
         memset(pr, 0, sizeof(*pr));
         pr->err = MYC_ERR_INTERNAL;
@@ -419,14 +419,14 @@ static void run_gcc(const myc_request *req,
      * tidak benar-benar berjalan dan bukan timeout. */
     if (!pr->ok && !pr->timed_out)
         pr->exit_code = 1;
-    free(argv);
+    myc_free(argv);
 }
 
 /* Pindahkan isi myc_proc_result ke res. */
 static void adopt_proc(myc_result *res, myc_proc_result *pr)
 {
-    free(res->stdout_text);
-    free(res->stderr_text);
+    myc_free(res->stdout_text);
+    myc_free(res->stderr_text);
     res->stdout_text = pr->stdout_data; pr->stdout_data = NULL;
     res->stderr_text = pr->stderr_data; pr->stderr_data = NULL;
     res->total_stdout_bytes = pr->stdout_total;
@@ -750,9 +750,9 @@ static void run_checked_gate(const myc_request *req, const char *gcc_path,
     argc = (int)nargs;
     total = 1 + argc + (req->checked_header_dir ? 2 : 0) + 3 + 1;
     /* 1(gcc) + argc + [-I dir] + "-x","c","-" + NULL */
-    argv = (const char **)malloc(sizeof(char *) * (size_t)total);
+    argv = (const char **)myc_malloc(sizeof(char *) * (size_t)total);
     if (!argv) {
-        free((void *)args);
+        myc_free((void *)args);
         res->err = MYC_ERR_INTERNAL;
         res->verdict = MC_ERROR;
         return;
@@ -768,7 +768,7 @@ static void run_checked_gate(const myc_request *req, const char *gcc_path,
     argv[n++] = "c";
     argv[n++] = "-";
     argv[n] = NULL;
-    free((void *)args);
+    myc_free((void *)args);
 
     memset(&preq, 0, sizeof(preq));
     preq.argv = argv;
@@ -779,7 +779,7 @@ static void run_checked_gate(const myc_request *req, const char *gcc_path,
     preq.max_output_bytes = max_out;
     if (!myc_proc_run(&preq, &pr)) {
         /* launch gagal: jangan salah klaim L4 (pr.exit_code=0 palsu) */
-        free((void *)argv);
+        myc_free((void *)argv);
         if (pr.timed_out) {
             res->verdict = MC_TIMEOUT;
             res->err = MYC_ERR_TIMEOUT;
@@ -792,7 +792,7 @@ static void run_checked_gate(const myc_request *req, const char *gcc_path,
         myc_proc_result_free(&pr);
         return;
     }
-    free((void *)argv);
+    myc_free((void *)argv);
 
     res->ran_checked = 1;
     res->checked_uses_buf = 1;
@@ -1015,7 +1015,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         res->verdict = MC_TIMEOUT;
         res->err = MYC_ERR_TIMEOUT;
         myc_proc_result_free(&pr);
-        free(gcc_path);
+        myc_free(gcc_path);
         myc_gate_set_status(res, MYC_GATE_PREPROCESS, MYC_GATE_INCONCLUSIVE,
                             "preprocess timeout");
         myc_result_add_evidence(res, MYC_GATE_PREPROCESS, MYC_EVIDENCE_ERROR,
@@ -1037,7 +1037,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                 "preprocess gagal");
         if (res->stderr_text)
             ingest_gcc_diagnostics(res, res->stderr_text);
-        free(gcc_path);
+        myc_free(gcc_path);
         myc_reduce_verdict(res);
         return;
     }
@@ -1079,11 +1079,11 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         if (!args) {
             res->verdict = MC_ERROR;
             res->err = MYC_ERR_INTERNAL;
-            free(gcc_path);
+            myc_free(gcc_path);
             return;
         }
         run_gcc(req, gcc_path, args, src, srclen, max_out, &pr);
-        free((void *)args);
+        myc_free((void *)args);
     }
     if (req->freestanding) {
         res->ran_freestanding = 1;
@@ -1113,7 +1113,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         res->verdict = MC_TIMEOUT;
         res->err = MYC_ERR_TIMEOUT;
         myc_proc_result_free(&pr);
-        free(gcc_path);
+        myc_free(gcc_path);
         myc_gate_set_status(res, MYC_GATE_COMPILE, MYC_GATE_INCONCLUSIVE,
                             "compile timeout");
         myc_result_add_evidence(res, MYC_GATE_COMPILE, MYC_EVIDENCE_ERROR,
@@ -1134,7 +1134,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                 "compile gagal");
         if (res->stderr_text)
             ingest_gcc_diagnostics(res, res->stderr_text);
-        free(gcc_path);
+        myc_free(gcc_path);
         myc_reduce_verdict(res);
         return;
     }
@@ -1156,16 +1156,16 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         if (!args) {
             res->verdict = MC_ERROR;
             res->err = MYC_ERR_INTERNAL;
-            free(gcc_path);
+            myc_free(gcc_path);
             return;
         }
         run_gcc(req, gcc_path, args, src, srclen, max_out, &pr);
-        free((void *)args);
+        myc_free((void *)args);
         if (pr.timed_out) {
             res->verdict = MC_TIMEOUT;
             res->err = MYC_ERR_TIMEOUT;
             myc_proc_result_free(&pr);
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_gate_set_status(res, MYC_GATE_ANALYZER, MYC_GATE_INCONCLUSIVE,
                                 "analyzer timeout");
             myc_result_add_evidence(res, MYC_GATE_ANALYZER, MYC_EVIDENCE_ERROR,
@@ -1185,7 +1185,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             if (res->stderr_text)
                 ingest_gcc_diagnostics(res, res->stderr_text);
             myc_proc_result_free(&pr);
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
         }
@@ -1217,7 +1217,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                         ? MYC_EVIDENCE_FINDING
                                         : MYC_EVIDENCE_ERROR,
                                     "checked build gagal/timeout");
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
         }
@@ -1234,7 +1234,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         }
         if (!req->run && !req->prove && !req->filc && !req->driver &&
             !req->metamorphic && !req->divergence) {
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
         }
@@ -1263,7 +1263,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                 myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
                                         "Frama-C Eva timeout");
             }
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
         }
@@ -1296,7 +1296,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         }
         if (!req->run && !req->filc && !req->driver && !req->metamorphic &&
             !req->divergence) {
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
         }
@@ -1324,7 +1324,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                 myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
                                         "Fil-C timeout");
             }
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
         }
@@ -1351,7 +1351,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         }
         if (!req->run && !req->driver && !req->metamorphic &&
             !req->divergence) {
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
         }
@@ -1376,7 +1376,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                 myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_ERROR,
                                         "verification run: infra failed");
             }
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
         }
@@ -1389,7 +1389,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                     "verification run di-skip");
         }
         if (!req->driver && !req->metamorphic && !req->divergence) {
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
         }
@@ -1426,7 +1426,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                         MYC_EVIDENCE_ERROR,
                                         "metamorphic: infra failed");
             }
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
         }
@@ -1441,7 +1441,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                     "metamorphic di-skip");
         }
         if (!req->driver && !req->divergence) {
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
         }
@@ -1482,7 +1482,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                         MYC_EVIDENCE_ERROR,
                                         "divergence: infra failed");
             }
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
         }
@@ -1497,7 +1497,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                     "divergence di-skip");
         }
         if (!req->driver) {
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
         }
@@ -1523,7 +1523,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                 myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_ERROR,
                                         "driver timeout");
             }
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
         }
@@ -1546,7 +1546,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             myc_result_add_evidence(res, MYC_GATE_DRIVER, MYC_EVIDENCE_SKIP,
                                     "driver unavailable (gap)");
         }
-        free(gcc_path);
+        myc_free(gcc_path);
         myc_reduce_verdict(res);
         return;
     }
@@ -1578,7 +1578,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                         MYC_EVIDENCE_ERROR,
                                         "exhaustive timeout");
             }
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
         }
@@ -1604,7 +1604,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                     MYC_EVIDENCE_SKIP,
                                     "exhaustive unavailable (gap)");
         }
-        free(gcc_path);
+        myc_free(gcc_path);
         myc_reduce_verdict(res);
         return;
     }
@@ -1675,7 +1675,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                         MYC_EVIDENCE_ERROR,
                                         "fuzz timeout");
             }
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
         }
@@ -1704,14 +1704,14 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             myc_result_add_evidence(res, MYC_GATE_MATRIX,
                                     MYC_EVIDENCE_ERROR,
                                     "matrix: infra failed");
-            free(gcc_path);
+            myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
         }
     }
 
     myc_reduce_verdict(res);
-    free(gcc_path);
+    myc_free(gcc_path);
 }
 
 /* Quorum analysis (#3): dijalankan di myc_run() setelah pipeline

@@ -66,9 +66,9 @@ static void hash_lines(const char *src, size_t len, uint64_t **out, int *n)
             if (cnt >= cap) {
                 int ncap = cap ? cap * 2 : 64;
                 uint64_t *na =
-                    (uint64_t *)realloc(arr, (size_t)ncap * sizeof(uint64_t));
+                    (uint64_t *)myc_realloc(arr, (size_t)ncap * sizeof(uint64_t));
                 if (!na) {
-                    free(arr);
+                    myc_free(arr);
                     return; /* *out tetap NULL = gagal */
                 }
                 arr = na;
@@ -126,7 +126,7 @@ static void line_delta(const uint64_t *base, int nb,
  * spasi, pertahankan struktur baris. Deterministik. Caller free(). */
 static char *strip_comments_strings(const char *src, size_t len)
 {
-    char *out = (char *)malloc(len + 1);
+    char *out = (char *)myc_malloc(len + 1);
     size_t i;
     int in_block = 0, in_line = 0, in_str = 0, in_char = 0;
     if (!out)
@@ -359,7 +359,7 @@ static void measure_file(const char *path, const char *checked_header_dir,
     if (res.verdict == MC_ERROR) {
         myc_result_free(&res);
         if (nf)
-            free((void *)buf);
+            myc_free((void *)buf);
         return;
     }
 
@@ -370,14 +370,14 @@ static void measure_file(const char *path, const char *checked_header_dir,
 
     clean = strip_comments_strings(buf, len);
     it->runtime_proxy = clean ? count_loops(clean) : 0;
-    free(clean);
+    myc_free(clean);
 
     it->portability = portability_score(buf, len);
     it->readability = readability_score(buf, len);
 
     myc_result_free(&res);
     if (nf)
-        free((void *)buf);
+        myc_free((void *)buf);
 }
 
 /* ---------- Pareto ---------- */
@@ -469,7 +469,7 @@ static void item_line(char *buf, size_t cap, int *off,
 
 static char *build_report(const myc_candidate_set *cs)
 {
-    char *buf = (char *)malloc(CAND_REPORT_CAP);
+    char *buf = (char *)myc_malloc(CAND_REPORT_CAP);
     int off = 0;
     int i;
     if (!buf)
@@ -607,13 +607,13 @@ int myc_candidate_tournament(const char *baseline_path,
             if (!ch) {
                 it->measured_ok = 0;
                 if (cfree)
-                    free((void *)cbuf);
+                    myc_free((void *)cbuf);
                 continue;
             }
             qsort(ch, (size_t)nch, sizeof(uint64_t), cmp_u64);
             line_delta(base_hash, base_nhash, ch, nch, &add, &rem);
             it->churn_lines = add + rem;
-            free(ch);
+            myc_free(ch);
         }
 
         if (it->measured_ok) {
@@ -629,9 +629,9 @@ int myc_candidate_tournament(const char *baseline_path,
             }
         }
         if (cfree)
-            free((void *)cbuf);
+            myc_free((void *)cbuf);
     }
-    free(base_hash);
+    myc_free(base_hash);
 
     /* Pareto frontier: items tidak terukur tidak ikut perbandingan. */
     for (i = 0; i < out->count; i++) {
@@ -659,7 +659,7 @@ int myc_candidate_tournament(const char *baseline_path,
 
     out->report = build_report(out);
     if (base_free)
-        free((void *)base_buf);
+        myc_free((void *)base_buf);
     return 0;
 }
 
@@ -743,6 +743,6 @@ void myc_candidate_free(myc_candidate_set *cs)
 {
     if (!cs)
         return;
-    free(cs->report);
+    myc_free(cs->report);
     memset(cs, 0, sizeof(*cs));
 }

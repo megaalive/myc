@@ -283,9 +283,9 @@ void myc_coach_build(myc_result *res)
                 char *nb;                                               \
                 while (ncap < replen + _l + 1)                          \
                     ncap *= 2;                                          \
-                nb = (char *)realloc(rep, ncap);                        \
+                nb = (char *)myc_realloc(rep, ncap);                        \
                 if (!nb) {                                              \
-                    free(rep);                                          \
+                    myc_free(rep);                                          \
                     rep = NULL;                                         \
                     replen = repcap = 0;                                \
                     goto done;                                          \
@@ -313,7 +313,7 @@ void myc_coach_build(myc_result *res)
 done:
         if (rep) {
             res->coaching_report = myc_result_arena_dup(res, rep, 0);
-            free(rep);
+            myc_free(rep);
         }
     }
 #undef TAPPEND

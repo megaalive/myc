@@ -301,6 +301,6 @@ void myc_causal_free(myc_causal_graph *g)
     if (!g)
         return;
     for (i = 0; i < g->count; i++)
-        free(g->nodes[i].symbols);
+        myc_free(g->nodes[i].symbols);
     memset(g, 0, sizeof(*g));
 }

@@ -44,23 +44,23 @@ char *myc_witness_write_repro(const myc_witness *w,
 
     /* Hitung panjang path: base_dir / .myc-witness / sha256 */
     len = strlen(base_dir) + 16 + 65;
-    dir = (char *)malloc(len);
+    dir = (char *)myc_malloc(len);
     if (!dir) return NULL;
     snprintf(dir, len, "%s/.myc-witness", base_dir);
     myc_mkdir(dir);
 
     /* Gunakan violation_kind sebagai sub-directory sederhana */
     len = strlen(dir) + 1 + (w->violation_kind ? strlen(w->violation_kind) : 8) + 1;
-    path = (char *)malloc(len);
-    if (!path) { free(dir); return NULL; }
+    path = (char *)myc_malloc(len);
+    if (!path) { myc_free(dir); return NULL; }
     snprintf(path, len, "%s/%s", dir,
              w->violation_kind ? w->violation_kind : "unknown");
     myc_mkdir(path);
-    free(dir);
+    myc_free(dir);
 
     /* Tulis source.c */
     {
-        char *src_path = (char *)malloc(strlen(path) + 12);
+        char *src_path = (char *)myc_malloc(strlen(path) + 12);
         if (src_path) {
             snprintf(src_path, strlen(path) + 12, "%s/source.c", path);
             f = fopen(src_path, "wb");
@@ -68,13 +68,13 @@ char *myc_witness_write_repro(const myc_witness *w,
                 fwrite(source, 1, source_len, f);
                 fclose(f);
             }
-            free(src_path);
+            myc_free(src_path);
         }
     }
 
     /* Tulis stdin.bin bila ada */
     if (w->stdin_data && w->stdin_len > 0) {
-        char *stdin_path = (char *)malloc(strlen(path) + 12);
+        char *stdin_path = (char *)myc_malloc(strlen(path) + 12);
         if (stdin_path) {
             snprintf(stdin_path, strlen(path) + 12, "%s/stdin.bin", path);
             f = fopen(stdin_path, "wb");
@@ -82,13 +82,13 @@ char *myc_witness_write_repro(const myc_witness *w,
                 fwrite(w->stdin_data, 1, w->stdin_len, f);
                 fclose(f);
             }
-            free(stdin_path);
+            myc_free(stdin_path);
         }
     }
 
     /* Tulis witness.json */
     {
-        char *json_path = (char *)malloc(strlen(path) + 15);
+        char *json_path = (char *)myc_malloc(strlen(path) + 15);
         json_value *root;
         char *js;
 
@@ -126,15 +126,15 @@ char *myc_witness_write_repro(const myc_witness *w,
                     fprintf(f, "%s\n", js);
                     fclose(f);
                 }
-                free(js);
+                myc_free(js);
             }
-            free(json_path);
+            myc_free(json_path);
         }
     }
 
     /* Tulis replay.sh (POSIX) */
     {
-        char *replay_path = (char *)malloc(strlen(path) + 12);
+        char *replay_path = (char *)myc_malloc(strlen(path) + 12);
         if (replay_path) {
             snprintf(replay_path, strlen(path) + 12, "%s/replay.sh", path);
             f = fopen(replay_path, "w");
@@ -150,13 +150,13 @@ char *myc_witness_write_repro(const myc_witness *w,
                     fprintf(f, "gcc -x c source.c -o /tmp/repro && /tmp/repro\n");
                 fclose(f);
             }
-            free(replay_path);
+            myc_free(replay_path);
         }
     }
 
     /* Tulis replay.bat (Windows) */
     {
-        char *replay_path = (char *)malloc(strlen(path) + 13);
+        char *replay_path = (char *)myc_malloc(strlen(path) + 13);
         if (replay_path) {
             snprintf(replay_path, strlen(path) + 13, "%s/replay.bat", path);
             f = fopen(replay_path, "w");
@@ -172,7 +172,7 @@ char *myc_witness_write_repro(const myc_witness *w,
                     fprintf(f, "gcc -x c source.c -o repro.exe && repro.exe\n");
                 fclose(f);
             }
-            free(replay_path);
+            myc_free(replay_path);
         }
     }
 
@@ -222,7 +222,7 @@ char *myc_witness_build_slice(const char *source, size_t source_len,
     }
 
     result_len = (size_t)(slice_end - slice_start);
-    result = (char *)malloc(result_len + 1);
+    result = (char *)myc_malloc(result_len + 1);
     if (result) {
         memcpy(result, slice_start, result_len);
         result[result_len] = '\0';
@@ -248,14 +248,14 @@ char *myc_witness_minimize_input(const char *data, size_t data_len,
     if (!data || data_len == 0 || !out_len) return NULL;
 
     /* Mulai dengan data penuh */
-    result = (char *)malloc(data_len);
+    result = (char *)myc_malloc(data_len);
     if (!result) return NULL;
     memcpy(result, data, data_len);
     result_len = data_len;
 
     /* Binary search: coba hapus setiap baris */
-    test_buf = (char *)malloc(data_len);
-    if (!test_buf) { free(result); return NULL; }
+    test_buf = (char *)myc_malloc(data_len);
+    if (!test_buf) { myc_free(result); return NULL; }
 
     i = 0;
     while (i < result_len) {
@@ -278,7 +278,7 @@ char *myc_witness_minimize_input(const char *data, size_t data_len,
         i = line_end;
     }
 
-    free(test_buf);
+    myc_free(test_buf);
     *out_len = result_len;
     return result;
 }
@@ -367,7 +367,7 @@ char *myc_witness_extract_function(const char *source, size_t source_len,
 
     /* Ekstrak fungsi */
     result_len = (size_t)(func_end - func_start);
-    result = (char *)malloc(result_len + 1);
+    result = (char *)myc_malloc(result_len + 1);
     if (result) {
         memcpy(result, func_start, result_len);
         result[result_len] = '\0';

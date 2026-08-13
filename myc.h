@@ -20,6 +20,8 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
+#include "alloc.h"
+
 #define MYC_MAX_CODE_BYTES  (1u << 20)        /* 1 MiB */
 #define MYC_MAX_OUTPUT_BYTES (1u << 20)       /* 1 MiB per channel */
 #define MYC_MAX_STDIN_BYTES  (8u << 20)       /* 8 MiB: run_stdin (Fase 2) */

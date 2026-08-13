@@ -49,7 +49,7 @@ void myc_budget_free(myc_budget_contract *bc)
 {
     if (!bc)
         return;
-    free(bc->raw);
+    myc_free(bc->raw);
     bc->raw = NULL;
     bc->active = 0;
 }
@@ -153,7 +153,7 @@ int myc_budget_parse(const char *json_text, size_t len,
             goto out;
     }
 
-    bc->raw = (char *)malloc(len + 1);
+    bc->raw = (char *)myc_malloc(len + 1);
     if (!bc->raw)
         goto out;
     memcpy(bc->raw, json_text, len);

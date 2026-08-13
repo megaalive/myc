@@ -124,12 +124,12 @@ void myc_sabotage_scan(myc_transaction *tx,
     while (p && *p) {
         const char *nl = strchr(p, '\n');
         size_t len = nl ? (size_t)(nl - p) : strlen(p);
-        char *line = (char *)malloc(len + 1);
+        char *line = (char *)myc_malloc(len + 1);
         if (line) {
             memcpy(line, p, len);
             line[len] = '\0';
             scan_line(tx, line, 1);
-            free(line);
+            myc_free(line);
         }
         if (!nl)
             break;
@@ -225,7 +225,7 @@ char *myc_transaction_new_id(void)
     sha256_hex(md, 32, hex);
     /* 16 hex chars prefix */
     {
-        char *out = (char *)malloc(24);
+        char *out = (char *)myc_malloc(24);
         if (out)
             snprintf(out, 24, "tx-%08x", *(uint32_t *)md);
         return out;
@@ -322,7 +322,7 @@ void myc_transaction_set_abi_before(myc_transaction *tx,
 {
     if (!tx)
         return;
-    free(tx->abi_before);
+    myc_free(tx->abi_before);
     tx->abi_before = NULL;
     if (snapshot_text)
         tx->abi_before = myc_strdup(snapshot_text);
@@ -333,20 +333,20 @@ void myc_transaction_free(myc_transaction *tx)
     size_t i;
     if (!tx)
         return;
-    free(tx->tx_id);
-    free(tx->initial_receipt_sha);
-    free(tx->initial_source_sha);
-    free(tx->finding_id);
-    free(tx->edit_region);
-    free(tx->preserve_region);
-    free(tx->abi_before);
-    free(tx->verdict_before);
-    free(tx->verdict_after);
-    free(tx->assurance_before);
-    free(tx->assurance_after);
+    myc_free(tx->tx_id);
+    myc_free(tx->initial_receipt_sha);
+    myc_free(tx->initial_source_sha);
+    myc_free(tx->finding_id);
+    myc_free(tx->edit_region);
+    myc_free(tx->preserve_region);
+    myc_free(tx->abi_before);
+    myc_free(tx->verdict_before);
+    myc_free(tx->verdict_after);
+    myc_free(tx->assurance_before);
+    myc_free(tx->assurance_after);
     for (i = 0; i < (size_t)tx->sabotage.count; i++) {
-        free(tx->sabotage.findings[i].line);
-        free(tx->sabotage.findings[i].description);
+        myc_free(tx->sabotage.findings[i].line);
+        myc_free(tx->sabotage.findings[i].description);
     }
     memset(tx, 0, sizeof(*tx));
 }

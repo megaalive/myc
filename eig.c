@@ -234,13 +234,13 @@ static void eig_profile_load(const char *id, eig_profile *pf)
         fclose(f);
         return;
     }
-    buf = (char *)malloc((size_t)fsize + 1);
+    buf = (char *)myc_malloc((size_t)fsize + 1);
     if (!buf) {
         fclose(f);
         return;
     }
     if (fread(buf, 1, (size_t)fsize, f) != (size_t)fsize) {
-        free(buf);
+        myc_free(buf);
         fclose(f);
         return;
     }
@@ -248,7 +248,7 @@ static void eig_profile_load(const char *id, eig_profile *pf)
     fclose(f);
 
     if (!json_parse_cstr(buf, &root) || !root) {
-        free(buf);
+        myc_free(buf);
         return;
     }
     v = json_get(root, "checks");
@@ -272,7 +272,7 @@ static void eig_profile_load(const char *id, eig_profile *pf)
         }
     }
     json_free(root);
-    free(buf);
+    myc_free(buf);
     pf->ok = 1;
 }
 
@@ -640,10 +640,10 @@ void myc_eig_free(myc_eig_set *eig)
     if (!eig)
         return;
     for (i = 0; i < eig->count; i++) {
-        free(eig->items[i].source_anchor);
-        free(eig->items[i].rationale);
-        free(eig->items[i].command);
+        myc_free(eig->items[i].source_anchor);
+        myc_free(eig->items[i].rationale);
+        myc_free(eig->items[i].command);
     }
-    free(eig->report);
+    myc_free(eig->report);
     memset(eig, 0, sizeof(*eig));
 }

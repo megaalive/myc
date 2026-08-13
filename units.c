@@ -38,7 +38,7 @@ static int ubuf_put(u_buf *b, char c)
 {
     if (b->len + 2 > b->cap) {
         size_t ncap = b->cap ? b->cap * 2 : 4096;
-        char  *nd = (char *)realloc(b->data, ncap);
+        char  *nd = (char *)myc_realloc(b->data, ncap);
         if (!nd)
             return 0;
         b->data = nd;
@@ -641,7 +641,7 @@ void myc_units_scan(const char *source, size_t len, myc_result *res)
 
     if (rep.data) {
         res->units_report = myc_result_arena_dup(res, rep.data, 0);
-        free(rep.data);
+        myc_free(rep.data);
     }
 
     res->units_annotations = s_nvars + s_nshapes;

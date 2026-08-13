@@ -21,6 +21,7 @@
  */
 #include "persist.h"
 
+#include "alloc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -195,7 +196,7 @@ int myc_persist_atomic_write(const char *path, const char *data, size_t len)
     /* bersihkan temp stale dari crash sebelumnya (termasuk PID lain). */
     persist_cleanup_stale(path);
 
-    tmp = (char *)malloc(plen + 64);
+    tmp = (char *)myc_malloc(plen + 64);
     if (!tmp)
         return 0;
     snprintf(tmp, plen + 64, "%s.tmp.%ld", path, (long)PERSIST_PID());
@@ -234,7 +235,7 @@ int myc_persist_atomic_write(const char *path, const char *data, size_t len)
     persist_fsync_parent(path);
 #endif
 
-    free(tmp);
+    myc_free(tmp);
     return 1;
 
 fail:
@@ -245,7 +246,7 @@ fail_remove:
     remove(tmp);
     goto cleanup;
 cleanup:
-    free(tmp);
+    myc_free(tmp);
     return 0;
 }
 

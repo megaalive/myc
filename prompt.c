@@ -133,9 +133,9 @@ char *myc_prompt_build(const char *source, size_t len)
             char *nb;                                                   \
             while (ncap < replen + _l + 1)                              \
                 ncap *= 2;                                              \
-            nb = (char *)realloc(rep, ncap);                            \
+            nb = (char *)myc_realloc(rep, ncap);                            \
             if (!nb) {                                                  \
-                free(rep);                                              \
+                myc_free(rep);                                              \
                 rep = NULL;                                             \
                 replen = repcap = 0;                                    \
                 goto done;                                              \
@@ -152,7 +152,7 @@ char *myc_prompt_build(const char *source, size_t len)
     gcc = myc_find_executable("gcc");
     if (gcc) {
         facts_ok = myc_assume_fetch_facts(gcc, &facts);
-        free(gcc);
+        myc_free(gcc);
     }
 
     ndenied = scan_denied_calls(source, len, denied, MYC_PROMPT_MAX_DENIED);
@@ -257,17 +257,17 @@ static int pack_read_file(const char *path, char **text, size_t *len,
     }
     if (le != MYC_ERR_NONE)
         return -2;
-    *text = (char *)malloc(blen + 1);
+    *text = (char *)myc_malloc(blen + 1);
     if (!*text) {
         if (needs_free)
-            free((void *)buf);
+            myc_free((void *)buf);
         return -2;
     }
     memcpy(*text, buf, blen);
     (*text)[blen] = '\0';
     *len = blen;
     if (needs_free)
-        free((void *)buf);
+        myc_free((void *)buf);
     *present = 1;
     return 0;
 }
@@ -376,9 +376,9 @@ int myc_pack_load(const char *pack_dir, int no_pack, myc_pack_info *info)
         info->prompt_total_len = plen;
         if (used > MYC_PACK_PROMPT_CAP)
             used = MYC_PACK_PROMPT_CAP;
-        info->prompt_text = (char *)malloc(used + 1);
+        info->prompt_text = (char *)myc_malloc(used + 1);
         if (!info->prompt_text) {
-            free(ptext);
+            myc_free(ptext);
             return -2;
         }
         memcpy(info->prompt_text, ptext, used);
@@ -387,7 +387,7 @@ int myc_pack_load(const char *pack_dir, int no_pack, myc_pack_info *info)
         info->prompt_present = 1;
         sha256_hex(info->prompt_text, used, info->prompt_sha256);
     }
-    free(ptext);
+    myc_free(ptext);
     ptext = NULL;
 
     /* myc.spec.json -- opsional; ADA tapi invalid = fail-fast (-1). */
@@ -395,21 +395,21 @@ int myc_pack_load(const char *pack_dir, int no_pack, myc_pack_info *info)
         return -2;
     present = 0;
     if (pack_read_file(path, &ptext, &plen, &present) != 0) {
-        free(info->prompt_text);
+        myc_free(info->prompt_text);
         info->prompt_text = NULL;
         return -2;
     }
     if (present) {
         sha256_hex(ptext, plen, info->spec_sha256);
         if (pack_parse_spec(ptext, plen, info) != 0) {
-            free(info->prompt_text);
+            myc_free(info->prompt_text);
             info->prompt_text = NULL;
-            free(ptext);
+            myc_free(ptext);
             return -1;
         }
         info->spec_present = 1;
     }
-    free(ptext);
+    myc_free(ptext);
     return 0;
 }
 
@@ -453,8 +453,8 @@ char *myc_prompt_build_packed(const char *source, size_t len,
             char *nb;                                                   \
             while (ncap < blen + _l + 1)                                \
                 ncap *= 2;                                              \
-            nb = (char *)realloc(blk, ncap);                            \
-            if (!nb) { free(blk); free(core); return NULL; }            \
+            nb = (char *)myc_realloc(blk, ncap);                            \
+            if (!nb) { myc_free(blk); myc_free(core); return NULL; }            \
             blk = nb;                                                   \
             bcap = ncap;                                                \
         }                                                               \
@@ -508,16 +508,16 @@ char *myc_prompt_build_packed(const char *source, size_t len,
     }
     PK_APPEND("- Pack TIDAK memengaruhi verdict myc (observasi NON-blocking)\n");
 
-    out = (char *)malloc(core_len + blen + 1);
+    out = (char *)myc_malloc(core_len + blen + 1);
     if (!out) {
-        free(blk);
-        free(core);
+        myc_free(blk);
+        myc_free(core);
         return NULL;
     }
     memcpy(out, core, core_len);
     memcpy(out + core_len, blk, blen + 1);
-    free(blk);
-    free(core);
+    myc_free(blk);
+    myc_free(core);
     return out;
 #undef PK_APPEND
 }

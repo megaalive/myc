@@ -199,8 +199,8 @@ void myc_frontier_free(myc_frontier_set *fs)
     if (!fs)
         return;
     for (i = 0; i < fs->count; i++) {
-        free(fs->items[i].reason);
-        free(fs->items[i].next_action);
+        myc_free(fs->items[i].reason);
+        myc_free(fs->items[i].next_action);
     }
     memset(fs, 0, sizeof(*fs));
 }

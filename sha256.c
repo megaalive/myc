@@ -4,6 +4,7 @@
  */
 #include "sha256.h"
 
+#include "alloc.h"
 #include <string.h>
 
 static const uint32_t K[64] = {

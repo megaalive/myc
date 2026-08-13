@@ -343,7 +343,7 @@ int myc_backend_probe_run(const char *backend, myc_backend_probe **out,
             n++;
     if (n == 0)
         return 0;
-    arr = (myc_backend_probe *)calloc((size_t)n, sizeof(*arr));
+    arr = (myc_backend_probe *)myc_calloc((size_t)n, sizeof(*arr));
     if (!arr)
         return 0;
     {
@@ -373,7 +373,7 @@ int myc_backend_probe_run(const char *backend, myc_backend_probe **out,
                         char *wsl = myc_find_executable("wsl.exe");
                         if (wsl) {
                             arr[k].found = 2;
-                            free(wsl);
+                            myc_free(wsl);
                         }
                     }
 #endif
@@ -393,10 +393,10 @@ void myc_backend_probe_free(myc_backend_probe *p, int count)
     if (!p)
         return;
     for (i = 0; i < count; i++) {
-        free(p[i].path);
-        free(p[i].version);
+        myc_free(p[i].path);
+        myc_free(p[i].version);
     }
-    free(p);
+    myc_free(p);
 }
 
 /* Hitung jumlah canary yang tersedia untuk backend [backend]. */

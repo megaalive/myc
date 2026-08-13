@@ -33,7 +33,7 @@ static int buf_put(buf *b, char c)
 {
     if (b->len + 2 > b->cap) {
         size_t ncap = b->cap ? b->cap * 2 : 4096;
-        char  *nd = (char *)realloc(b->data, ncap);
+        char  *nd = (char *)myc_realloc(b->data, ncap);
         if (!nd)
             return 0;
         b->data = nd;
@@ -696,7 +696,7 @@ skip_line:
                    "event/trans untuk mendeklarasikan)\n");
     if (rep.data) {
         res->sm_report = myc_result_arena_dup(res, rep.data, 0);
-        free(rep.data);
+        myc_free(rep.data);
     }
 
     /* salin findings ke hasil (arena) */

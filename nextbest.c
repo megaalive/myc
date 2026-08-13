@@ -311,9 +311,9 @@ void myc_nextbest_free(myc_nextbest_set *nb)
     if (!nb)
         return;
     for (i = 0; i < nb->count; i++) {
-        free(nb->items[i].source_anchor);
-        free(nb->items[i].rationale);
-        free(nb->items[i].command);
+        myc_free(nb->items[i].source_anchor);
+        myc_free(nb->items[i].rationale);
+        myc_free(nb->items[i].command);
     }
     memset(nb, 0, sizeof(*nb));
 }

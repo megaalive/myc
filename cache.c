@@ -64,10 +64,10 @@ static void cache_tool_key(const myc_request *req, char *out, size_t cap)
              gcc_ver ? gcc_ver : (gcc ? gcc : "?"),
              clang_ver ? clang_ver : (clang ? clang : "?"));
 
-    free(gcc);
-    free(gcc_ver);
-    free(clang);
-    free(clang_ver);
+    myc_free(gcc);
+    myc_free(gcc_ver);
+    myc_free(clang);
+    myc_free(clang_ver);
 }
 
 /* PR-011 (MYC-AUDIT-043): hash deterministik flag gate Fase 5/6 yang
@@ -130,7 +130,7 @@ static void cache_build_key(const myc_request *req,
     scen_full = myc_ledger_build_scenario_hash(req, NULL);
     if (scen_full) {
         snprintf(scenario, sizeof(scenario), "%s", scen_full);
-        free(scen_full);
+        myc_free(scen_full);
     } else {
         snprintf(scenario, sizeof(scenario), "?");
     }
@@ -345,13 +345,13 @@ static int cache_read_all(myc_cache_entry *out, int cap)
         fclose(f);
         return 0;
     }
-    buf = (char *)malloc((size_t)sz + 1);
+    buf = (char *)myc_malloc((size_t)sz + 1);
     if (!buf) {
         fclose(f);
         return 0;
     }
     if (fread(buf, 1, (size_t)sz, f) != (size_t)sz) {
-        free(buf);
+        myc_free(buf);
         fclose(f);
         return 0;
     }
@@ -367,7 +367,7 @@ static int cache_read_all(myc_cache_entry *out, int cap)
         char fhex[65];
         sha256_hex(buf, (size_t)sz, hex);
         if (!cache_sidecar_read(fhex) || strcmp(hex, fhex) != 0) {
-            free(buf);
+            myc_free(buf);
             fprintf(stderr,
                     "myc: cache: %s corrupt (integrity sha256 mismatch) - "
                     "ignored; evidence recomputed\n", MYC_CACHE_FILE);
@@ -379,7 +379,7 @@ static int cache_read_all(myc_cache_entry *out, int cap)
         root->type != JSON_OBJ) {
         if (root)
             json_free(root);
-        free(buf);
+        myc_free(buf);
         fprintf(stderr,
                 "myc: cache: %s corrupt (JSON parse failed) - ignored; "
                 "evidence recomputed\n", MYC_CACHE_FILE);
@@ -389,7 +389,7 @@ static int cache_read_all(myc_cache_entry *out, int cap)
     if (!arr || arr->type != JSON_ARR) {
         /* Schema korup: file cache tanpa array entries (fail-closed). */
         json_free(root);
-        free(buf);
+        myc_free(buf);
         fprintf(stderr,
                 "myc: cache: %s corrupt (entries schema) - ignored; "
                 "evidence recomputed\n", MYC_CACHE_FILE);
@@ -770,7 +770,7 @@ static int cache_read_all(myc_cache_entry *out, int cap)
             n++;
         }
     json_free(root);
-    free(buf);
+    myc_free(buf);
     if (qbad > 0) {
         /* Karantina + self-heal: tulis ulang file TANPA entry korup agar
          * korupsi tidak dibaca berulang. Entry tersisa tetap valid (hash
@@ -1129,7 +1129,7 @@ static void cache_write_all(const myc_cache_entry *entries, int count)
         sha256_hex(out, strlen(out), hex);
         (void)myc_persist_atomic_write_str(MYC_CACHE_SHA_FILE, hex);
     }
-    free(out);
+    myc_free(out);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1675,7 +1675,7 @@ int myc_cache_try_replay(const myc_request *req, myc_result *res,
     if (req->require_assumptions_closed || req->assumption_acks)
         return 0;
 
-    entries = (myc_cache_entry *)calloc(MYC_CACHE_MAX_ENTRIES,
+    entries = (myc_cache_entry *)myc_calloc(MYC_CACHE_MAX_ENTRIES,
                                         sizeof(*entries));
     if (!entries)
         return 0;
@@ -1687,7 +1687,7 @@ int myc_cache_try_replay(const myc_request *req, myc_result *res,
     scen_full = myc_ledger_build_scenario_hash(req, NULL);
     if (scen_full) {
         snprintf(scenario, sizeof(scenario), "%s", scen_full);
-        free(scen_full);
+        myc_free(scen_full);
     } else {
         snprintf(scenario, sizeof(scenario), "?");
     }
@@ -1716,7 +1716,7 @@ int myc_cache_try_replay(const myc_request *req, myc_result *res,
     }
 
 done:
-    free(entries);
+    myc_free(entries);
     return ret;
 }
 
@@ -1753,12 +1753,12 @@ void myc_cache_store(const myc_request *req, const myc_result *res,
         res->err == MYC_ERR_INTERNAL)
         return;
 
-    entries = (myc_cache_entry *)calloc(MYC_CACHE_MAX_ENTRIES,
+    entries = (myc_cache_entry *)myc_calloc(MYC_CACHE_MAX_ENTRIES,
                                         sizeof(*entries));
-    ne = (myc_cache_entry *)calloc(1, sizeof(*ne));
+    ne = (myc_cache_entry *)myc_calloc(1, sizeof(*ne));
     if (!entries || !ne) {
-        free(entries);
-        free(ne);
+        myc_free(entries);
+        myc_free(ne);
         return;
     }
     cache_tool_key(req, tool, sizeof(tool));
@@ -1769,7 +1769,7 @@ void myc_cache_store(const myc_request *req, const myc_result *res,
         char *scen = myc_ledger_build_scenario_hash(req, NULL);
         snprintf(ne->scenario_hash, sizeof(ne->scenario_hash), "%s",
                  scen ? scen : "?");
-        free(scen);
+        myc_free(scen);
     }
     snprintf(ne->tool_key, sizeof(ne->tool_key), "%s", tool);
     snprintf(ne->cwd, sizeof(ne->cwd), "%s", req->cwd ? req->cwd : "");
@@ -2070,8 +2070,8 @@ void myc_cache_store(const myc_request *req, const myc_result *res,
         }
     }
     cache_write_all(entries, n);
-    free(ne);
-    free(entries);
+    myc_free(ne);
+    myc_free(entries);
 }
 
 void myc_cache_entry_free(myc_cache_entry *e)
@@ -2342,7 +2342,7 @@ char *myc_cache_delta_report(const char *src, size_t srclen,
     }
 
     {
-        char *out = (char *)malloc(3072);
+        char *out = (char *)myc_malloc(3072);
         if (!out)
             return NULL;
         snprintf(out, 3072,

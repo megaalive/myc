@@ -81,7 +81,7 @@ struct myc_arena {
  * kecil). Overflow dicek di pemanggil. */
 static struct myc_arena *arena_alloc(size_t payload)
 {
-    struct myc_arena *a = (struct myc_arena *)malloc(
+    struct myc_arena *a = (struct myc_arena *)myc_malloc(
         sizeof(struct myc_arena) + payload);
     if (!a)
         return NULL;
@@ -234,7 +234,7 @@ static int read_stdin_capped(size_t cap, char **out, size_t *out_len)
     int    ch;
     if (bufcap > cap)
         bufcap = cap < 1 ? 1 : cap;
-    buf = (char *)malloc(bufcap);
+    buf = (char *)myc_malloc(bufcap);
     if (!buf)
         return 0;
     while ((ch = getchar()) != EOF) {
@@ -245,9 +245,9 @@ static int read_stdin_capped(size_t cap, char **out, size_t *out_len)
             char  *nb;
             if (ncap > cap)
                 ncap = cap;
-            nb = (char *)realloc(buf, ncap);
+            nb = (char *)myc_realloc(buf, ncap);
             if (!nb) {
-                free(buf);
+                myc_free(buf);
                 return 0;
             }
             buf = nb;
@@ -260,7 +260,7 @@ static int read_stdin_capped(size_t cap, char **out, size_t *out_len)
     *out_len = len;
     return 1;
 too_large:
-    free(buf);
+    myc_free(buf);
     return 2;
 }
 
@@ -278,7 +278,7 @@ static int read_file_capped(const char *path, size_t cap, char **out,
         return 0;
     if (bufcap > cap)
         bufcap = cap < 1 ? 1 : cap;
-    buf = (char *)malloc(bufcap);
+    buf = (char *)myc_malloc(bufcap);
     if (!buf) {
         fclose(f);
         return 0;
@@ -294,9 +294,9 @@ static int read_file_capped(const char *path, size_t cap, char **out,
                 char  *nb;
                 if (ncap > cap)
                     ncap = cap;
-                nb = (char *)realloc(buf, ncap);
+                nb = (char *)myc_realloc(buf, ncap);
                 if (!nb) {
-                    free(buf);
+                    myc_free(buf);
                     fclose(f);
                     return 0;
                 }
@@ -309,7 +309,7 @@ static int read_file_capped(const char *path, size_t cap, char **out,
         len += got;
         if (got < chunk) {
             if (ferror(f)) {
-                free(buf);
+                myc_free(buf);
                 fclose(f);
                 return 0;
             }
@@ -324,7 +324,7 @@ static int read_file_capped(const char *path, size_t cap, char **out,
     *out_len = len;
     return 1;
 too_large:
-    free(buf);
+    myc_free(buf);
     fclose(f);
     return 2;
 }
@@ -435,7 +435,7 @@ static char *myc_absolutize(const char *path)
     blen = base ? strlen(base) : 0;
 
     cap = blen + 1 + plen + 1;
-    work = (char *)malloc(cap);
+    work = (char *)myc_malloc(cap);
     if (!work)
         return NULL;
     j = 0;
@@ -467,12 +467,12 @@ static char *myc_absolutize(const char *path)
         i++;
     }
 
-    starts = (size_t *)malloc((strlen(work) + 1) * sizeof(size_t));
-    lens   = (size_t *)malloc((strlen(work) + 1) * sizeof(size_t));
+    starts = (size_t *)myc_malloc((strlen(work) + 1) * sizeof(size_t));
+    lens   = (size_t *)myc_malloc((strlen(work) + 1) * sizeof(size_t));
     if (!starts || !lens) {
-        free(starts);
-        free(lens);
-        free(work);
+        myc_free(starts);
+        myc_free(lens);
+        myc_free(work);
         return NULL;
     }
 
@@ -504,11 +504,11 @@ static char *myc_absolutize(const char *path)
     for (k = 0; k < nseg; k++)
         outlen += lens[k] + (k ? 1 : 0);
     outlen += 1;                            /* NUL */
-    out = (char *)malloc(outlen);
+    out = (char *)myc_malloc(outlen);
     if (!out) {
-        free(starts);
-        free(lens);
-        free(work);
+        myc_free(starts);
+        myc_free(lens);
+        myc_free(work);
         return NULL;
     }
     o = 0;
@@ -526,9 +526,9 @@ static char *myc_absolutize(const char *path)
     }
     out[o] = '\0';
 
-    free(starts);
-    free(lens);
-    free(work);
+    myc_free(starts);
+    myc_free(lens);
+    myc_free(work);
     return out;
 }
 
@@ -538,38 +538,38 @@ void myc_result_free(myc_result *res)
     struct myc_arena *a;
     if (!res)
         return;
-    free(res->stdout_text);
-    free(res->stderr_text);
-    free(res->run_stdout_text);
-    free(res->run_stderr_text);
-    free(res->prove_stdout_text);
-    free(res->prove_stderr_text);
-    free(res->filc_stdout_text);
-    free(res->filc_stderr_text);
-    free(res->filc_version);
-    free(res->driver_stdout_text);
-    free(res->driver_stderr_text);
-    free(res->driver_harness_sha256);
+    myc_free(res->stdout_text);
+    myc_free(res->stderr_text);
+    myc_free(res->run_stdout_text);
+    myc_free(res->run_stderr_text);
+    myc_free(res->prove_stdout_text);
+    myc_free(res->prove_stderr_text);
+    myc_free(res->filc_stdout_text);
+    myc_free(res->filc_stderr_text);
+    myc_free(res->filc_version);
+    myc_free(res->driver_stdout_text);
+    myc_free(res->driver_stderr_text);
+    myc_free(res->driver_harness_sha256);
     res->driver_harness_sha256 = NULL;
-    free(res->exhaustive_stdout_text);
-    free(res->exhaustive_stderr_text);
-    free(res->exhaustive_harness_sha256);
+    myc_free(res->exhaustive_stdout_text);
+    myc_free(res->exhaustive_stderr_text);
+    myc_free(res->exhaustive_harness_sha256);
     res->exhaustive_stdout_text = NULL;
     res->exhaustive_stderr_text = NULL;
     res->exhaustive_harness_sha256 = NULL;
-    free(res->fuzz_stdout_text);
-    free(res->fuzz_stderr_text);
+    myc_free(res->fuzz_stdout_text);
+    myc_free(res->fuzz_stderr_text);
     res->fuzz_stdout_text = NULL;
     res->fuzz_stderr_text = NULL;
-    free(res->resolved_gcc);
-    free(res->gcc_version);
-    free(res->clang_version);
-    free(res->fingerprint);
-    free(res->source_sha256);
+    myc_free(res->resolved_gcc);
+    myc_free(res->gcc_version);
+    myc_free(res->clang_version);
+    myc_free(res->fingerprint);
+    myc_free(res->source_sha256);
     for (i = 0; i < res->gate_count; i++)
-        free(res->gates[i].output);
+        myc_free(res->gates[i].output);
     for (i = 0; i < res->evidence_count; i++)
-        free(res->evidence[i].message);
+        myc_free(res->evidence[i].message);
     res->stdout_text = NULL;
     res->stderr_text = NULL;
     res->run_stdout_text = NULL;
@@ -594,7 +594,7 @@ void myc_result_free(myc_result *res)
     a = res->arena;
     while (a) {
         struct myc_arena *nxt = a->next;
-        free(a);
+        myc_free(a);
         a = nxt;
     }
     res->arena = NULL;
@@ -602,34 +602,34 @@ void myc_result_free(myc_result *res)
     if (res->capsule) {
         myc_replay_capsule *cap = res->capsule;
         int ci;
-        free(cap->source_sha256);
-        free(cap->stdin_sha256);
-        free(cap->clang_path);
-        free(cap->gcc_path);
-        free(cap->cwd);
+        myc_free(cap->source_sha256);
+        myc_free(cap->stdin_sha256);
+        myc_free(cap->clang_path);
+        myc_free(cap->gcc_path);
+        myc_free(cap->cwd);
         /* Roadmap 7.5: per-case driver records di-strdup ke capsule. */
-        free(cap->driver_harness_sha256);
+        myc_free(cap->driver_harness_sha256);
         for (ci = 0; ci < cap->driver_case_count; ci++) {
-            free(cap->driver_case_records[ci].func);
-            free(cap->driver_case_records[ci].params);
+            myc_free(cap->driver_case_records[ci].func);
+            myc_free(cap->driver_case_records[ci].params);
         }
-        free(cap);
+        myc_free(cap);
         res->capsule = NULL;
     }
     /* bebaskan witness (Fase 1) */
     if (res->witness) {
         myc_witness_free(res->witness);
-        free(res->witness);
+        myc_free(res->witness);
         res->witness = NULL;
     }
     /* bebaskan ledger fields (Fase 2) */
-    free(res->receipt_parent);
+    myc_free(res->receipt_parent);
     /* bebaskan cache delta report (Fase 3, SOL-18) */
-    free(res->cache_delta_report);
+    myc_free(res->cache_delta_report);
     res->cache_delta_report = NULL;
     res->cache_hit = 0;
-    free(res->delta_kind);
-    free(res->delta_gate);
+    myc_free(res->delta_kind);
+    myc_free(res->delta_gate);
     /* quorum_report (#3) TIDAK di-free di sini: ia dialokasikan dari
      * arena milik hasil (myc_result_arena_dup) dan ikut dibebaskan utuh
      * oleh arena di atas. free() individual = invalid free (bug #3). */
@@ -651,7 +651,7 @@ static myc_replay_capsule *myc_build_capsule(const myc_request *req,
     myc_replay_capsule *cap;
     size_t i;
 
-    cap = (myc_replay_capsule *)calloc(1, sizeof(*cap));
+    cap = (myc_replay_capsule *)myc_calloc(1, sizeof(*cap));
     if (!cap)
         return NULL;
 
@@ -778,17 +778,17 @@ static myc_replay_capsule *myc_build_capsule(const myc_request *req,
     return cap;
 
 fail:
-    free(cap->source_sha256);
-    free(cap->stdin_sha256);
-    free(cap->clang_path);
-    free(cap->gcc_path);
-    free(cap->cwd);
-    free(cap->driver_harness_sha256);
+    myc_free(cap->source_sha256);
+    myc_free(cap->stdin_sha256);
+    myc_free(cap->clang_path);
+    myc_free(cap->gcc_path);
+    myc_free(cap->cwd);
+    myc_free(cap->driver_harness_sha256);
     for (i = 0; i < (size_t)MYC_MAX_DRIVER_RECORDS; i++) {
-        free(cap->driver_case_records[i].func);
-        free(cap->driver_case_records[i].params);
+        myc_free(cap->driver_case_records[i].func);
+        myc_free(cap->driver_case_records[i].params);
     }
-    free(cap);
+    myc_free(cap);
     return NULL;
 }
 
@@ -888,11 +888,11 @@ static void myc_ledger_integrate(const myc_request *req, myc_result *res)
 
     myc_ledger_write(&entry);
 
-    free(scenario_hash);
-    free(entry.timestamp);
-    free(entry.gate_status);
-    free(entry.verdict);
-    free(entry.finding);
+    myc_free(scenario_hash);
+    myc_free(entry.timestamp);
+    myc_free(entry.gate_status);
+    myc_free(entry.verdict);
+    myc_free(entry.finding);
     myc_ledger_free(&ledger);
 }
 
@@ -999,7 +999,7 @@ void myc_run(const myc_request *req, myc_result *res)
             if (le != MYC_ERR_NONE) {
                 res->verdict = MC_ERROR;
                 res->err = le;
-                free(canon_cwd);
+                myc_free(canon_cwd);
                 return;
             }
             {
@@ -1062,10 +1062,10 @@ void myc_run(const myc_request *req, myc_result *res)
                         myc_assume_enforce(&req2, res);
                 }
                  if (needs_free)
-                     free((void *)buf);
+                     myc_free((void *)buf);
                  res->capsule = myc_build_capsule(&req2, res);
              }
-             free(canon_cwd);
+             myc_free(canon_cwd);
              return;
          }
 
@@ -1102,7 +1102,7 @@ void myc_run(const myc_request *req, myc_result *res)
                 myc_assume_enforce(eff, res);
         }
         res->capsule = myc_build_capsule(eff, res);
-        free(canon_cwd);
+        myc_free(canon_cwd);
     }
 }
 
@@ -1125,7 +1125,7 @@ char *myc_exe_dirname(const char *argv0)
     if (last)
         *last = '\0';
     else {
-        free(self);
+        myc_free(self);
         return myc_strdup(".");
     }
     dir = self;
@@ -1285,9 +1285,9 @@ static int cmd_probe(const char *argv0)
     dir = self;
 
     dl = strlen(dir);
-    probe = (char *)malloc(dl + 16);
+    probe = (char *)myc_malloc(dl + 16);
     if (!probe) {
-        free(self);
+        myc_free(self);
         return 2;
     }
     snprintf(probe, dl + 16, "%s\\argv_probe.exe", dir);
@@ -1311,16 +1311,16 @@ static int cmd_probe(const char *argv0)
         printf("probe: gagal menjalankan argv_probe (error=%s)\n",
                myc_error_name(pres.err));
         myc_proc_result_free(&pres);
-        free(probe);
-        free(self);
+        myc_free(probe);
+        myc_free(self);
         return 1;
     }
     printf("probe exit=%d dur=%llums\n", pres.exit_code, pres.duration_ms);
     if (pres.stdout_data)
         printf("%s", pres.stdout_data);
     myc_proc_result_free(&pres);
-    free(probe);
-    free(self);
+    myc_free(probe);
+    myc_free(self);
     return 0;
 }
 
@@ -1338,8 +1338,8 @@ static int cmd_version(void)
         printf("gcc: %s\n", gcc);
         gv = myc_tool_version(gcc);
         printf("gcc version: %s\n", gv ? gv : "(tidak terbaca)");
-        free(gv);
-        free(gcc);
+        myc_free(gv);
+        myc_free(gcc);
     } else {
         printf("gcc: TIDAK DITEMUKAN\n");
     }
@@ -1347,8 +1347,8 @@ static int cmd_version(void)
         printf("clang: %s\n", clang);
         cv = myc_tool_version(clang);
         printf("clang version: %s\n", cv ? cv : "(tidak terbaca)");
-        free(cv);
-        free(clang);
+        myc_free(cv);
+        myc_free(clang);
     } else {
         printf("clang: TIDAK DITEMUKAN (verification run --run tidak tersedia)\n");
     }
@@ -1362,8 +1362,8 @@ static int cmd_version(void)
             printf("filc: %s\n", filc);
             fv = myc_tool_version(filc);
             printf("filc version: %s\n", fv ? fv : "(tidak terbaca)");
-            free(fv);
-            free(filc);
+            myc_free(fv);
+            myc_free(filc);
         } else {
             printf("filc: TIDAK DITEMUKAN (Fil-C hanya Linux; instal "
                    "filc-clang di PATH atau WSL)\n");
@@ -1413,7 +1413,7 @@ static int cmd_compare(const char *ref_path, const char *new_path,
         fprintf(stderr, "myc: compare: tidak dapat membaca %s (error=%s)\n",
                 new_path, myc_error_name(le));
         if (free_ref)
-            free((void *)buf_ref);
+            myc_free((void *)buf_ref);
         return 1;
     }
 
@@ -1434,9 +1434,9 @@ static int cmd_compare(const char *ref_path, const char *new_path,
 
     myc_result_free(&res);
     if (free_ref)
-        free((void *)buf_ref);
+        myc_free((void *)buf_ref);
     if (free_new)
-        free((void *)buf_new);
+        myc_free((void *)buf_new);
     return rc;
 }
 
@@ -1473,7 +1473,7 @@ static int cmd_contract_delta(const char *before_path, const char *after_path)
         fprintf(stderr, "myc: contract-delta: tidak dapat membaca %s (error=%s)\n",
                 after_path, myc_error_name(le));
         if (free_before)
-            free((void *)buf_before);
+            myc_free((void *)buf_before);
         return 2;
     }
 
@@ -1483,9 +1483,9 @@ static int cmd_contract_delta(const char *before_path, const char *after_path)
                 "myc: contract-delta: gagal membandingkan (OOM) -- "
                 "hasil TIDAK valid, jangan dipercaya\n");
         if (free_before)
-            free((void *)buf_before);
+            myc_free((void *)buf_before);
         if (free_after)
-            free((void *)buf_after);
+            myc_free((void *)buf_after);
         return 2;
     }
     printf("contract-delta: %s (before=%s after=%s)\n",
@@ -1504,9 +1504,9 @@ static int cmd_contract_delta(const char *before_path, const char *after_path)
     i = (d.kind == MYC_DELTA_NARROWED || d.kind == MYC_DELTA_WEAKENED) ? 1 : 0;
     myc_contract_delta_free(&d);
     if (free_before)
-        free((void *)buf_before);
+        myc_free((void *)buf_before);
     if (free_after)
-        free((void *)buf_after);
+        myc_free((void *)buf_after);
     return i;
 }
 
@@ -1540,7 +1540,7 @@ static int cmd_sm(const char *path)
                "%s\n", path);
     myc_result_free(&res);
     if (needs_free)
-        free((void *)buf);
+        myc_free((void *)buf);
     return 0;
 }
 
@@ -1575,7 +1575,7 @@ static int cmd_rsrc(const char *path)
                "tanpa temuan\n", path);
     myc_result_free(&res);
     if (needs_free)
-        free((void *)buf);
+        myc_free((void *)buf);
     return 0;
 }
 
@@ -1609,7 +1609,7 @@ static int cmd_units(const char *path)
         printf("units (SOL-11): annotation %s tanpa temuan\n", path);
     myc_result_free(&res);
     if (needs_free)
-        free((void *)buf);
+        myc_free((void *)buf);
     return 0;
 }
 
@@ -1644,7 +1644,7 @@ static int cmd_eig(const char *path, const char *profile_id,
 
     myc_result_init(&res);
     myc_run(&req, &res);
-    free(exe_dir);
+    myc_free(exe_dir);
     if (res.verdict == MC_ERROR) {
         fprintf(stderr, "myc: eig: gagal memeriksa %s (error=%s)\n",
                 path, myc_error_name(res.err));
@@ -1680,7 +1680,7 @@ static int cmd_eig(const char *path, const char *profile_id,
         js = myc_eig_json(&eig);
         if (js) {
             printf("%s\n", js);
-            free(js);
+            myc_free(js);
         }
     } else if (res.eig_report) {
         printf("%s", res.eig_report);
@@ -1717,11 +1717,11 @@ static int cmd_candidates(const char *baseline, const char *const *cands,
                                  &cs) != 0) {
         fprintf(stderr, "%s",
                 cs.report ? cs.report : "compare-candidates: gagal\n");
-        free(exe_dir);
+        myc_free(exe_dir);
         myc_candidate_free(&cs);
         return 2;
     }
-    free(exe_dir);
+    myc_free(exe_dir);
 
     /* Wire ringkasan ke myc_result (pola cmd_eig/cmd_sm/cmd_units: report
      * di arena + counts; dipakai replay cache di masa depan). */
@@ -1737,7 +1737,7 @@ static int cmd_candidates(const char *baseline, const char *const *cands,
         js = myc_candidate_json(&cs);
         if (js) {
             printf("%s\n", js);
-            free(js);
+            myc_free(js);
         }
     } else if (cs.report) {
         printf("%s", cs.report);
@@ -1786,7 +1786,7 @@ static int cmd_abi_snapshot(const char *path, const char *cc)
         printf("abi: tanpa snapshot (observasi non-blocking)\n");
     myc_result_free(&res);
     if (nf)
-        free((void *)buf);
+        myc_free((void *)buf);
     return 0;
 }
 
@@ -1802,7 +1802,7 @@ static int cmd_abi_diff(const char *old_path, const char *new_path)
         return 2;
     if (cmd_abi_load(new_path, &na, &nl, &nf) != 0) {
         if (of)
-            free((void *)oa);
+            myc_free((void *)oa);
         return 2;
     }
     myc_result_init(&res);
@@ -1815,9 +1815,9 @@ static int cmd_abi_diff(const char *old_path, const char *new_path)
     changed = res.abi_changed;
     myc_result_free(&res);
     if (of)
-        free((void *)oa);
+        myc_free((void *)oa);
     if (nf)
-        free((void *)na);
+        myc_free((void *)na);
     return changed ? 1 : 0;
 }
 
@@ -1833,7 +1833,7 @@ static int cmd_abi_pair(const char *a_path, const char *b_path)
         return 2;
     if (cmd_abi_load(b_path, &b, &bl, &bf) != 0) {
         if (af)
-            free((void *)a);
+            myc_free((void *)a);
         return 2;
     }
     myc_result_init(&ra);
@@ -1851,9 +1851,9 @@ static int cmd_abi_pair(const char *a_path, const char *b_path)
     myc_result_free(&rb);
     myc_result_free(&rd);
     if (af)
-        free((void *)a);
+        myc_free((void *)a);
     if (bf)
-        free((void *)b);
+        myc_free((void *)b);
     return changed ? 1 : 0;
 }
 
@@ -1887,25 +1887,25 @@ static int cmd_prompt(const char *path, const char *pack_dir, int no_pack)
                 "array string, batas jumlah/panjang sesuai prompt.h)\n",
                 MYC_PACK_SPEC_FILE);
         if (needs_free)
-            free((void *)buf);
+            myc_free((void *)buf);
         return 2;
     }
     if (prc == -2) {
         fprintf(stderr, "myc: prompt: gagal membaca pack proyek (OOM/IO)\n");
         if (needs_free)
-            free((void *)buf);
+            myc_free((void *)buf);
         return 1;
     }
     prompt = myc_prompt_build_packed(buf, len, &info);
-    free(info.prompt_text);
+    myc_free(info.prompt_text);
     if (needs_free)
-        free((void *)buf);
+        myc_free((void *)buf);
     if (!prompt) {
         fprintf(stderr, "myc: prompt: gagal membangun prompt (OOM)\n");
         return 1;
     }
     printf("%s", prompt);
-    free(prompt);
+    myc_free(prompt);
     return 0;
 }
 
@@ -2578,7 +2578,7 @@ int main(int argc, char **argv)
                     myc_result_free(&res);
                     return 2;
                 }
-                free(req.pack_dir);
+                myc_free(req.pack_dir);
                 req.pack_dir = myc_strdup(argv[i + 1]);
                 i++; known = 1;
             } else if (strcmp(argv[i], "--no-pack") == 0) {
@@ -2899,7 +2899,7 @@ int main(int argc, char **argv)
                                                       req.cwd ? req.cwd : ".");
             if (repro_dir) {
                 fprintf(stderr, "[myc] witness repro written to %s\n", repro_dir);
-                free(repro_dir);
+                myc_free(repro_dir);
             }
         }
         /* Fase 7 (DS-15 wiring): pack proyek lokal utk output --agent
@@ -2916,7 +2916,7 @@ int main(int argc, char **argv)
                         "= array string, batas sesuai prompt.h)\n",
                         MYC_PACK_SPEC_FILE);
                 if (needs_free)
-                    free((void *)src);
+                    myc_free((void *)src);
                 myc_result_free(&res);
                 return 2;
             }
@@ -2924,7 +2924,7 @@ int main(int argc, char **argv)
                 fprintf(stderr,
                         "myc: gagal membaca pack proyek (OOM/IO)\n");
                 if (needs_free)
-                    free((void *)src);
+                    myc_free((void *)src);
                 myc_result_free(&res);
                 return 1;
             }
@@ -2943,13 +2943,13 @@ int main(int argc, char **argv)
                                           ctx_hash);
             if (pkg) {
                 printf("%s", pkg);
-                free(pkg);
+                myc_free(pkg);
             } else {
                 fprintf(stderr, "myc: gagal membangun context paket\n");
                 if (needs_free)
-                    free((void *)src);
+                    myc_free((void *)src);
                 if (pinfo_loaded) {
-                    free(pinfo.prompt_text);
+                    myc_free(pinfo.prompt_text);
                     pinfo_loaded = 0;
                 }
                 myc_result_free(&res);
@@ -2957,7 +2957,7 @@ int main(int argc, char **argv)
             }
         }
         if (needs_free)
-            free((void *)src);
+            myc_free((void *)src);
     }
 
     if (is_context) {
@@ -2973,14 +2973,14 @@ int main(int argc, char **argv)
 
     myc_result_free(&res);
     if (pinfo_loaded)
-        free(pinfo.prompt_text);
-    free(req.tx_finding_id);
+        myc_free(pinfo.prompt_text);
+    myc_free(req.tx_finding_id);
     myc_budget_free(&req.budget);
-    free(req.assumption_acks);
-    free(req.tx_edit_region);
-    free(req.pack_dir);
+    myc_free(req.assumption_acks);
+    myc_free(req.tx_edit_region);
+    myc_free(req.pack_dir);
     if (req.run_stdin)
-        free((void *)req.run_stdin);
+        myc_free((void *)req.run_stdin);
     return res.verdict == MC_OK ? 0 : 1;
 }
 

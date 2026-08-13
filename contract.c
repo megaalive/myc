@@ -40,7 +40,7 @@ static int buf_put(buf *b, char c)
 {
     if (b->len + 2 > b->cap) {
         size_t ncap = b->cap ? b->cap * 2 : 4096;
-        char  *nd = (char *)realloc(b->data, ncap);
+        char  *nd = (char *)myc_realloc(b->data, ncap);
         if (!nd)
             return 0;
         b->data = nd;
@@ -586,9 +586,9 @@ static int collect_expr(char ***out, int *n, const char *expr)
     char  *s = myc_strdup(expr);
     if (!s)
         return 0;
-    na = (char **)realloc(*out, sizeof(char *) * (size_t)(*n + 1));
+    na = (char **)myc_realloc(*out, sizeof(char *) * (size_t)(*n + 1));
     if (!na) {
-        free(s);
+        myc_free(s);
         return 0;
     }
     *out = na;
@@ -664,11 +664,11 @@ static void delta_free_lists(char **r0, int nr0, char **e0, int ne0,
                              char **r1, int nr1, char **e1, int ne1)
 {
     int i;
-    for (i = 0; i < nr0; i++) free(r0[i]);
-    for (i = 0; i < ne0; i++) free(e0[i]);
-    for (i = 0; i < nr1; i++) free(r1[i]);
-    for (i = 0; i < ne1; i++) free(e1[i]);
-    free(r0); free(e0); free(r1); free(e1);
+    for (i = 0; i < nr0; i++) myc_free(r0[i]);
+    for (i = 0; i < ne0; i++) myc_free(e0[i]);
+    for (i = 0; i < nr1; i++) myc_free(r1[i]);
+    for (i = 0; i < ne1; i++) myc_free(e1[i]);
+    myc_free(r0); myc_free(e0); myc_free(r1); myc_free(e1);
 }
 
 int myc_contract_delta_compare(const char *before, size_t before_len,
@@ -724,14 +724,14 @@ void myc_contract_delta_free(myc_contract_delta *out)
     int i;
     if (!out)
         return;
-    for (i = 0; i < out->n_added_requires; i++) free(out->added_requires[i]);
-    for (i = 0; i < out->n_removed_requires; i++) free(out->removed_requires[i]);
-    for (i = 0; i < out->n_added_ensures; i++) free(out->added_ensures[i]);
-    for (i = 0; i < out->n_removed_ensures; i++) free(out->removed_ensures[i]);
-    free(out->added_requires);
-    free(out->removed_requires);
-    free(out->added_ensures);
-    free(out->removed_ensures);
+    for (i = 0; i < out->n_added_requires; i++) myc_free(out->added_requires[i]);
+    for (i = 0; i < out->n_removed_requires; i++) myc_free(out->removed_requires[i]);
+    for (i = 0; i < out->n_added_ensures; i++) myc_free(out->added_ensures[i]);
+    for (i = 0; i < out->n_removed_ensures; i++) myc_free(out->removed_ensures[i]);
+    myc_free(out->added_requires);
+    myc_free(out->removed_requires);
+    myc_free(out->added_ensures);
+    myc_free(out->removed_ensures);
     memset(out, 0, sizeof(*out));
 }
 
@@ -1019,7 +1019,7 @@ char *myc_contract_inject(const char *source, size_t len, size_t *out_len)
     }
 
     if (!injected_any) {
-        free(out.data);
+        myc_free(out.data);
         /* Jangan sentuh *out_len: return NULL berarti caller memakai
          * source asli dengan panjang aslinya. */
         return NULL;
@@ -1442,7 +1442,7 @@ int myc_contract_harvest(const char *source, size_t len, myc_result *res)
                  "dipromosikan ke kontrak nyata)\n");
         if (rep.data) {
             res->harvest_report = myc_result_arena_dup(res, rep.data, 0);
-            free(rep.data);
+            myc_free(rep.data);
         }
     }
     return 1;
@@ -1854,7 +1854,7 @@ int myc_contract_relational(const char *source, size_t len, myc_result *res)
                    "typo atau global tak terdeklarasi)\n");
     if (rep.data) {
         res->rel_report = myc_result_arena_dup(res, rep.data, 0);
-        free(rep.data);
+        myc_free(rep.data);
     }
     return 1;
 }

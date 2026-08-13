@@ -47,7 +47,7 @@ void myc_gate_set_status(myc_result *res,
     g->status = status;
     if (output && !g->output) {
         size_t n = strlen(output);
-        g->output = (char *)malloc(n + 1);
+        g->output = (char *)myc_malloc(n + 1);
         if (g->output) {
             memcpy(g->output, output, n);
             g->output[n] = '\0';
@@ -89,7 +89,7 @@ void myc_result_add_evidence(myc_result *res,
 
     {
         size_t n = strlen(message);
-        ev->message = (char *)malloc(n + 1);
+        ev->message = (char *)myc_malloc(n + 1);
         if (ev->message) {
             memcpy(ev->message, message, n);
             ev->message[n] = '\0';

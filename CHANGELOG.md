@@ -7,6 +7,22 @@ semantik per tag rilis (`vX.Y.Z`).
 Sejarah implementasi & audit terperinci (MYC-AUDIT-001..039, fase
 pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 
+## [v2026-08-13] — PR-019: Allocator wrapper formal (P7-T02) - 2026-08-13
+
+### Added
+
+- **Allocator wrapper FORMAL (`alloc.c/h`) — MYC-AUDIT-051 (PR-019/P7-T02).**
+  Semua alokasi source myc kini lewat `myc_malloc/calloc/realloc/free`:
+  produksi = passthrough ke libc. Build `-DMYC_ALLOC_TEST` mengaktifkan hook
+  `myc_alloc_set_fail_after(N)` (N alokasi pertama sukses, sisanya NULL) +
+  `myc_alloc_fail_count`/`myc_alloc_call_count` untuk OOM injection tanpa GNU
+  `ld --wrap`. Migrasi penuh 853 situs di seluruh `.c` pipeline via
+  `test/_migrate_alloc.py` (tokenizer C-aware; member access `x->free`/
+  `x.free` dan string literal/komentar tak tersentuh). Block 22 di
+  `test/_audit018.sh` memverifikasi tak ada panggilan `malloc/calloc/realloc/
+  free` mentah di source selain implementasi wrapper. `test/oom_alloc.c`
+  ditulis ulang memakai hook `myc_alloc` (tanpa `--wrap` build).
+
 ## [v2026-08-11] — Hotfix MYC-AUDIT-042 - 2026-08-11
 
 ### Fixed

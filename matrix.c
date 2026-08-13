@@ -135,7 +135,7 @@ int myc_matrix_gate(const myc_request *req, const char *source,
             snprintf(dirbuf, sizeof(dirbuf), ".myc_mtx_%d", mtx_getpid());
             tmp_dir = myc_strdup(dirbuf);
             if (!tmp_dir) {
-                free(cc);
+                myc_free(cc);
                 res->err = MYC_ERR_INTERNAL;
                 goto out;
             }
@@ -147,13 +147,13 @@ int myc_matrix_gate(const myc_request *req, const char *source,
             if (r > 0)
                 obj_path = myc_strdup(dirbuf);
             if (!src_path || !obj_path) {
-                free(cc);
+                myc_free(cc);
                 res->err = MYC_ERR_INTERNAL;
                 goto out;
             }
             fsrc = fopen(src_path, "wb");
             if (!fsrc) {
-                free(cc);
+                myc_free(cc);
                 res->err = MYC_ERR_INTERNAL;
                 goto out;
             }
@@ -182,11 +182,11 @@ int myc_matrix_gate(const myc_request *req, const char *source,
                 res->duration_ms += pres.duration_ms;
                 myc_proc_result_free(&pres);
             }
-            free(src_path);
+            myc_free(src_path);
             src_path = NULL;
-            free(obj_path);
+            myc_free(obj_path);
             obj_path = NULL;
-            free(tmp_dir);
+            myc_free(tmp_dir);
             tmp_dir = NULL;
             if (c) {
                 c->built = built;
@@ -241,7 +241,7 @@ int myc_matrix_gate(const myc_request *req, const char *source,
             c->deltas = cd;
             deltas += cd;
         }
-        free(cc);
+        myc_free(cc);
     }
     res->matrix_deltas = deltas;
 
@@ -267,19 +267,19 @@ int myc_matrix_gate(const myc_request *req, const char *source,
                             "matrix: portability matrix (observasi)");
 
     res->matrix_report = myc_result_arena_dup(res, rep, 0);
-    free(gcc_path);
+    myc_free(gcc_path);
     return 0;
 
 out:
     if (fsrc)
         fclose(fsrc);
     if (src_path)
-        free(src_path);
+        myc_free(src_path);
     if (obj_path)
-        free(obj_path);
+        myc_free(obj_path);
     if (tmp_dir)
-        free(tmp_dir);
-    free(gcc_path);
+        myc_free(tmp_dir);
+    myc_free(gcc_path);
     myc_gate_set_status(res, MYC_GATE_MATRIX, MYC_GATE_INFRA_FAILED, NULL);
     return 0;
 }

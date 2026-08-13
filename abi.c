@@ -61,7 +61,7 @@ static void abuf_putc(abuf *b, char c)
 {
     if (b->len + 2 > b->cap) {
         size_t ncap = b->cap ? b->cap * 2 : 8192;
-        char  *nd = (char *)realloc(b->data, ncap);
+        char  *nd = (char *)myc_realloc(b->data, ncap);
         if (!nd)
             return;
         b->data = nd;
@@ -96,7 +96,7 @@ static void abuf_printf(abuf *b, const char *fmt, ...)
 
 static void abuf_free(abuf *b)
 {
-    free(b->data);
+    myc_free(b->data);
     b->data = NULL;
     b->len = b->cap = 0;
 }
@@ -160,7 +160,7 @@ static size_t a_match_brace(const char *s, size_t len, size_t open)
  * (caller free); NULL bila OOM (scan tetap aman). */
 static unsigned char *a_comment_mask(const char *s, size_t len)
 {
-    unsigned char *m = (unsigned char *)malloc(len ? len : 1);
+    unsigned char *m = (unsigned char *)myc_malloc(len ? len : 1);
     size_t         i = 0;
     if (!m)
         return NULL;
@@ -960,7 +960,7 @@ static char *a_make_tmp_dir(void)
     while (n < 100) {
         char   buf[40];
         size_t need;
-        dir = (char *)malloc(bl + 1 + sizeof(buf) + 1);
+        dir = (char *)myc_malloc(bl + 1 + sizeof(buf) + 1);
         if (!dir)
             return NULL;
         snprintf(buf, sizeof(buf), "myc_abi_%lu_%d",
@@ -969,7 +969,7 @@ static char *a_make_tmp_dir(void)
         snprintf(dir, need, "%s/%s", base, buf);
         if (a_mkdir(dir) == 0)
             return dir;
-        free(dir);
+        myc_free(dir);
         n++;
     }
     return NULL;
@@ -979,7 +979,7 @@ static char *a_join(const char *dir, const char *name)
 {
     size_t dl = strlen(dir);
     size_t nl = strlen(name);
-    char  *out = (char *)malloc(dl + 1 + nl + 1);
+    char  *out = (char *)myc_malloc(dl + 1 + nl + 1);
     if (!out)
         return NULL;
     memcpy(out, dir, dl);
@@ -1038,7 +1038,7 @@ void myc_abi_snapshot(const char *src, size_t len, const char *cc_arg,
         nst = a_scan_structs(src, len, cm, st, MYC_ABI_MAX_STRUCTS);
         nen = a_scan_enums(src, len, cm, en, MYC_ABI_MAX_ENUMS);
         nsy = a_scan_symbols(src, len, cm, sy, MYC_ABI_MAX_SYMBOLS);
-        free(cm);
+        myc_free(cm);
     }
     res->abi_n_structs = nst;
     res->abi_n_enums = nen;
@@ -1139,10 +1139,10 @@ void myc_abi_snapshot(const char *src, size_t len, const char *cc_arg,
                         remove(hexe);
                     }
                 }
-                free(hsrc);
-                free(hexe);
+                myc_free(hsrc);
+                myc_free(hexe);
                 a_rmdir(tmpdir);
-                free(tmpdir);
+                myc_free(tmpdir);
             }
         }
         abuf_free(&helper);
@@ -1161,7 +1161,7 @@ void myc_abi_snapshot(const char *src, size_t len, const char *cc_arg,
     res->abi_snapshot = myc_result_arena_dup(res, snap.data ? snap.data : "", 0);
     abuf_free(&snap);
     abuf_free(&layout);
-    free(cc);
+    myc_free(cc);
     res->abi_ran = 1;
 }
 

@@ -222,7 +222,7 @@ static char *mut_build(const char *src, size_t srclen, size_t pos,
                        size_t len, const char *to, size_t *out_len)
 {
     size_t tlen = strlen(to);
-    char  *out = (char *)malloc(srclen - len + tlen + 1);
+    char  *out = (char *)myc_malloc(srclen - len + tlen + 1);
     if (!out)
         return NULL;
     memcpy(out, src, pos);
@@ -367,7 +367,7 @@ int myc_mutate_gate(const myc_request *req, const char *source,
                 snprintf(ops[oi].gate, sizeof(ops[oi].gate), "compile/run");
         }
         myc_result_free(&res2);
-        free(mutant);
+        myc_free(mutant);
     }
     /* report */
     roff += (size_t)snprintf(rep + roff, sizeof(rep) - roff,

@@ -161,7 +161,7 @@ static int concur_mutex_id(concur_state *st, const char *name)
  * `void f(void) { lock(&a); lock(&b); ... }` terbuka sebagai region. */
 static void concur_collect(const char *source, concur_state *st)
 {
-    char *work = (char *)malloc(strlen(source) + 1);
+    char *work = (char *)myc_malloc(strlen(source) + 1);
     char *cur;
     int depth = 0;
     char pending_func[64] = "";
@@ -233,7 +233,7 @@ static void concur_collect(const char *source, concur_state *st)
         }
         cur = nl ? nl + 1 : cur + strlen(cur);
     }
-    free(work);
+    myc_free(work);
 }
 
 /* Pass 2: cari lock-order inversion antar region. */
@@ -308,7 +308,7 @@ static int concur_tsan(const myc_request *req, const char *source,
         if (!fsrc || fwrite(source, 1, source_len, fsrc) != source_len) {
             if (fsrc)
                 fclose(fsrc);
-            free(clang);
+            myc_free(clang);
             snprintf(note, note_cap,
                      "  TSan runtime: gagal menulis source temp");
             return 0;
@@ -335,7 +335,7 @@ static int concur_tsan(const myc_request *req, const char *source,
                             req->max_output_bytes : 65536;
     if (!myc_proc_run(&preq, &pres)) {
         myc_proc_result_free(&pres);
-        free(clang);
+        myc_free(clang);
         remove(tmp_src);
         snprintf(note, note_cap,
                  "  TSan runtime: clang tidak mendukung -fsanitize=thread "
@@ -345,7 +345,7 @@ static int concur_tsan(const myc_request *req, const char *source,
     b = pres.exit_code;
     myc_proc_result_free(&pres);
     if (b != 0) {
-        free(clang);
+        myc_free(clang);
         remove(tmp_src);
         snprintf(note, note_cap,
                  "  TSan runtime: build -fsanitize=thread gagal (exit %d) "
@@ -371,7 +371,7 @@ static int concur_tsan(const myc_request *req, const char *source,
         }
         myc_proc_result_free(&pres);
     }
-    free(clang);
+    myc_free(clang);
     remove(tmp_src);
     remove(tmp_exe);
     if (race)

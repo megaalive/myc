@@ -767,13 +767,13 @@ static void asm_state_load(asm_state *st)
         fclose(f);
         return;
     }
-    buf = (char *)malloc((size_t)fsize + 1);
+    buf = (char *)myc_malloc((size_t)fsize + 1);
     if (!buf) {
         fclose(f);
         return;
     }
     if (fread(buf, 1, (size_t)fsize, f) != (size_t)fsize) {
-        free(buf);
+        myc_free(buf);
         fclose(f);
         return;
     }
@@ -781,7 +781,7 @@ static void asm_state_load(asm_state *st)
     fclose(f);
 
     if (!json_parse_cstr(buf, &root) || !root) {
-        free(buf);
+        myc_free(buf);
         return;
     }
     arr = json_get(root, "assumptions");
@@ -815,7 +815,7 @@ static void asm_state_load(asm_state *st)
         }
     }
     json_free(root);
-    free(buf);
+    myc_free(buf);
 }
 
 static void asm_state_save(const asm_state *st)
@@ -859,7 +859,7 @@ static void asm_state_save(const asm_state *st)
      * rename). Crash kapan pun -> assumptions.json OLD valid ATAU NEW
      * valid, tidak pernah setengah. NON-blocking: gagal diabaikan. */
     (void)myc_persist_atomic_write_str(MYC_ASSUME_FILE, js);
-    free(js);
+    myc_free(js);
 }
 
 /* ------------------------------------------------------------------ */
@@ -975,7 +975,7 @@ void myc_assume_run(const myc_request *req, myc_result *res,
     facts = &res->host_facts;
 
     /* 1. Deteksi (tokenize + 5 pola). */
-    toks = (asm_tok *)malloc(sizeof(asm_tok) * (size_t)ASM_MAX_TOK);
+    toks = (asm_tok *)myc_malloc(sizeof(asm_tok) * (size_t)ASM_MAX_TOK);
     if (!toks)
         return;   /* OOM: non-blocking, lewati asumsi */
     {
@@ -991,7 +991,7 @@ void myc_assume_run(const myc_request *req, myc_result *res,
         asm_detect_sizeof(toks, ntok, facts, det,
                           MYC_MAX_ASSUMPTIONS, &count);
     }
-    free(toks);
+    myc_free(toks);
 
     /* 2. Materialisasi ke res (arena) + status awal observed. */
     sha256_hex(src, srclen, src_hash);
@@ -1011,7 +1011,7 @@ void myc_assume_run(const myc_request *req, myc_result *res,
         a->next_action = myc_result_arena_dup(res, det[i].next_action, 0);
         a->status = MYC_ASM_OBSERVED;
         a->confidence = det[i].confidence;
-        free(anchor);
+        myc_free(anchor);
     }
     res->assumption_detected = count;
     res->assumption_count = count;

@@ -4071,3 +4071,62 @@ enforcement baru, hanya mendokumentasikan. (2) entri arena dicantumkan
 dari makro arena; bukan pemanggilan api arena. (3) 29 entri adalah snapshot
 makro saat rilis; bila makro kapasitas baru ditambah di rilis mendatang,
 tabel + cek 21 harus diperbarui bersamaan (freeze pola golden).
+
+### MYC-AUDIT-051 (Batch PR-019) — Allocator wrapper formal (P7-T02)
+
+**Gap.** Uji OOM sebelumnya bergantung pada GNU `ld --wrap` untuk
+menyuntikkan kegagalan alokasi di seluruh pipeline; itu (a) tidak portabel
+ke semua toolchain (MSVC/MinGW tanpa `--wrap`), dan (b) menyuntik pada
+level libc sehingga hook tidak bisa dikontrol per-proses secara eksplisit.
+Selain itu alokasi mentah `malloc/calloc/realloc/free` tersebar di ~850
+situs source tanpa jalur butir verifikasi yang menunjukkan SEMUA alokasi
+pakai pembungkus konsisten (agenda memory-safety: semua alokasi harus
+dilewatkan ke satu tempat untuk OOM injection deterministik tanpa
+dependensi linker).
+
+**Deliverable.**
+
+- `alloc.h/alloc.c`: wrapper FORMAL `myc_malloc/calloc/realloc/free`.
+  Produksi = passthrough libc (`#ifndef MYC_ALLOC_TEST`). Build
+  `-DMYC_ALLOC_TEST` mengaktifkan hook: `myc_alloc_set_fail_after(N)` —
+  N alokasi pertama sukses, sisanya NULL; `myc_alloc_fail_count` /
+  `myc_alloc_call_count` untuk observasi. OOM injection deterministik tanpa
+  GNU `ld --wrap`.
+- `test/_migrate_alloc.py`: tokenizer C-aware (string/char/line/block
+  comment di-parse; penggantian hanya di CODE context bila identifier
+  langsung diikuti `(`; ~~dilindungi~~ member access `x->free` / `x.free`
+  via scan-back `.`/`->`). Migrasi penuh 853 situs (alokasi + free) di
+  semua `.c` pipeline; `json_free(`, `myc_result_free`, `.free(`/`->free(`
+  dan string literal & komentar TIDAK tersentuh.
+- `myc.h`: `#include "alloc.h"` (setelah `<stdint.h>`);
+  `json.c`/`persist.c`/`policy.c`/`sha256.c`/`testaudit.c` menambah
+  `#include "alloc.h"` (5 file tanpa jalur transitif ke alloc.h).
+- Wiring `alloc.c`: build.sh/build.bat PIPELINE; `_ci_linux.sh`;
+  `_regress_run.bat` (8× `persist.c limit.c` → `+alloc.c` +
+  `taxonomy.c` stress via python); `_audit018.sh` SRCS + build
+  proc_flood/verify_descendants/proc_deadlock_matrix/proc_tree_kill/
+  mcp_abuse.
+- Blok 22 di `test/_audit018.sh`: grep bebas-komentar/string/file
+  `alloc.c` memverifikasi tak ada panggilan `malloc/calloc/realloc/free`
+  mentah di source selain implementasi wrapper + `alloc.c` menyediakan
+  `myc_alloc_set_fail_after` dan `MYC_ALLOC_TEST`.
+- `test/oom_alloc.c` ditulis ulang memakai hook `myc_alloc` (skor 0):
+  fail_after ∈ {1,2,3} + injeksi lewat `--test-build` tidak lagi butuh
+  `--wrap`.
+
+**Verifikasi (Windows).** `build.bat` sukses (myc.exe/mcp.exe/argv_probe).
+Self-dogfooding: 46 source pipeline `myc check` → verdict OK.
+`test/oom_alloc` (MYC_ALLOC_TEST) lulus 65 titik OOM (fail_after dari
+ sebelum aman ke rawan, tak ada crash/corruption). `test/proc_flood`
+ (deadlock/flood/env) OK. Block 22 grep bersih; `git diff --check` bersih;
+ LF-kanonik dipertahankan (migrasi + normalisasi LF seluruh file yang
+termigrasi — CRLF yang tak sengaja masuk selama migrasi di-strip).
+
+Batas jujur: (1) wrapper adalah passthrough produksi; perilaku
+memory-safety tetap milik libc allocator — formalisasi adalah jalur injeksi
+dan konsistensi, BUKAN garant allocator baru. (2) `myc_alloc_set_fail_after`
+memakai counter global non-thread-safe (satu proses tes satu thread);
+test concurrency OOM belum (hanya alokasi normal). (3) migrasi 853 situs
+otomatis memakai tokenizer heuristik — telah diverifikasi sampel + audit
+compile seluruh source (build + dogfooding OK), tapi ideal audit sintaksis
+penuh bila ada callback/function-pointer alokasi yang lolos tokenizer.

@@ -17,7 +17,7 @@ static char *agent_strdup(const char *s)
     char *out;
     if (!s) return NULL;
     len = strlen(s);
-    out = malloc(len + 1);
+    out = myc_malloc(len + 1);
     if (!out) return NULL;
     memcpy(out, s, len + 1);
     return out;
@@ -35,7 +35,7 @@ static char *agent_printf(const char *fmt, ...)
     len = vsnprintf(NULL, 0, fmt, ap);
     va_end(ap);
     if (len < 0) { va_end(ap2); return NULL; }
-    out = malloc((size_t)len + 1);
+    out = myc_malloc((size_t)len + 1);
     if (!out) { va_end(ap2); return NULL; }
     vsnprintf(out, (size_t)len + 1, fmt, ap2);
     va_end(ap2);
@@ -51,41 +51,41 @@ void myc_agent_result_init(myc_agent_result *ar)
 void myc_agent_result_free(myc_agent_result *ar)
 {
     size_t i;
-    free(ar->intent_hash);
-    free(ar->scenario_hash);
-    free(ar->source_sha256);
-    free(ar->receipt_sha256);
-    free(ar->primary_finding.finding_id);
-    free(ar->primary_finding.anchor);
-    free(ar->primary_finding.diagnostic_class);
-    free(ar->primary_finding.message);
-    free(ar->primary_finding.repro);
-    free(ar->primary_finding.witness_hash);
-    free(ar->witness_text);
-    free(ar->witness_repro);
-    free(ar->witness_slice);
+    myc_free(ar->intent_hash);
+    myc_free(ar->scenario_hash);
+    myc_free(ar->source_sha256);
+    myc_free(ar->receipt_sha256);
+    myc_free(ar->primary_finding.finding_id);
+    myc_free(ar->primary_finding.anchor);
+    myc_free(ar->primary_finding.diagnostic_class);
+    myc_free(ar->primary_finding.message);
+    myc_free(ar->primary_finding.repro);
+    myc_free(ar->primary_finding.witness_hash);
+    myc_free(ar->witness_text);
+    myc_free(ar->witness_repro);
+    myc_free(ar->witness_slice);
     for (i = 0; i < (size_t)ar->allowed_edit_count; i++) {
-        free(ar->allowed_edits[i].region);
-        free(ar->allowed_edits[i].description);
+        myc_free(ar->allowed_edits[i].region);
+        myc_free(ar->allowed_edits[i].description);
     }
     for (i = 0; i < (size_t)ar->preserve_count; i++) {
-        free(ar->preserve[i].symbol);
-        free(ar->preserve[i].reason);
+        myc_free(ar->preserve[i].symbol);
+        myc_free(ar->preserve[i].reason);
     }
     for (i = 0; i < (size_t)ar->forbidden_count; i++) {
-        free(ar->forbidden[i].region);
-        free(ar->forbidden[i].reason);
+        myc_free(ar->forbidden[i].region);
+        myc_free(ar->forbidden[i].reason);
     }
-    free(ar->next_check.finding_id);
-    free(ar->next_check.command);
+    myc_free(ar->next_check.finding_id);
+    myc_free(ar->next_check.command);
     for (i = 0; i < (size_t)ar->frontier_count; i++) {
-        free(ar->frontier[i]);
+        myc_free(ar->frontier[i]);
     }
-    free(ar->experiments_json);
-    free(ar->causal_json);
-    free(ar->next_best_json);
-    free(ar->delta_receipt_sha);
-    free(ar->pack_json);
+    myc_free(ar->experiments_json);
+    myc_free(ar->causal_json);
+    myc_free(ar->next_best_json);
+    myc_free(ar->delta_receipt_sha);
+    myc_free(ar->pack_json);
 }
 
 static void agent_add_str(json_value *obj, const char *key, const char *val)
@@ -501,37 +501,37 @@ int myc_build_agent_result(const myc_result *res,
      * protokol inti pun melebihi cap baru gagal total (-1). */
     js = myc_agent_result_json(ar);
     ar->payload_size = js ? strlen(js) : 0;
-    free((void *)js);
+    myc_free((void *)js);
     if (ar->payload_size > ar->payload_cap && ar->experiments_json) {
-        free(ar->experiments_json);
+        myc_free(ar->experiments_json);
         ar->experiments_json = NULL;
         js = myc_agent_result_json(ar);
         ar->payload_size = js ? strlen(js) : 0;
-        free((void *)js);
+        myc_free((void *)js);
     }
     if (ar->payload_size > ar->payload_cap && ar->causal_json) {
-        free(ar->causal_json);
+        myc_free(ar->causal_json);
         ar->causal_json = NULL;
         js = myc_agent_result_json(ar);
         ar->payload_size = js ? strlen(js) : 0;
-        free((void *)js);
+        myc_free((void *)js);
     }
     if (ar->payload_size > ar->payload_cap && ar->next_best_json) {
-        free(ar->next_best_json);
+        myc_free(ar->next_best_json);
         ar->next_best_json = NULL;
         js = myc_agent_result_json(ar);
         ar->payload_size = js ? strlen(js) : 0;
-        free((void *)js);
+        myc_free((void *)js);
     }
     /* Pack = enrichment TERAKHIR yang dibuang: konten proyek yang user
      * sengaja sediakan (version-controllable), lebih berharga daripada
      * eksperimen otomatis; hanya dikorbankan bila benar-benar perlu. */
     if (ar->payload_size > ar->payload_cap && ar->pack_json) {
-        free(ar->pack_json);
+        myc_free(ar->pack_json);
         ar->pack_json = NULL;
         js = myc_agent_result_json(ar);
         ar->payload_size = js ? strlen(js) : 0;
-        free((void *)js);
+        myc_free((void *)js);
     }
 
     if (ar->payload_size > ar->payload_cap) {

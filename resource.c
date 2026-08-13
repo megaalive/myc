@@ -38,7 +38,7 @@ static int buffer_put(buffer_t *b, char c)
 {
     if (b->len + 2 > b->cap) {
         size_t ncap = b->cap ? b->cap * 2 : 4096;
-        char  *nd = (char *)realloc(b->data, ncap);
+        char  *nd = (char *)myc_realloc(b->data, ncap);
         if (!nd)
             return 0;
         b->data = nd;
@@ -589,7 +589,7 @@ static void scan_body(const char *src, size_t bs, size_t be,
         size_t cap = nbytes;
         if (cap > (size_t)TK_TOKENS_MAX)
             cap = (size_t)TK_TOKENS_MAX;
-        toks = (rtok *)malloc(cap * sizeof(rtok));
+        toks = (rtok *)myc_malloc(cap * sizeof(rtok));
         if (!toks)
             return;
         ntok = tokenize(src, bs, be, toks, (int)cap);
@@ -694,7 +694,7 @@ snprintf(tb, sizeof(tb),
             }
         }
     }
-    free(toks);
+    myc_free(toks);
 }
 
 /* resource yang masih acquired pada akhir fungsi => LEAKED. */
@@ -837,7 +837,7 @@ void myc_resource_scan(const char *source, size_t len, myc_result *res)
 
     if (rep.data) {
         res->rsrc_report = myc_result_arena_dup(res, rep.data, 0);
-        free(rep.data);
+        myc_free(rep.data);
     }
 
     res->rsrc_acquires = tot.acquires;

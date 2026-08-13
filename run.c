@@ -177,13 +177,13 @@ static char *make_temp_dir(void)
         snprintf(buf, sizeof(buf), "myc_run_%lu_%d",
                  (unsigned long)myc_getpid(), n);
         need = bl + 1 + strlen(buf) + 1;
-        dir = (char *)malloc(need);
+        dir = (char *)myc_malloc(need);
         if (!dir)
             return NULL;
         snprintf(dir, need, "%s/%s", base, buf);
         if (myc_mkdir(dir) == 0)
             return dir;
-        free(dir);
+        myc_free(dir);
         n++;
     }
     return NULL;
@@ -194,7 +194,7 @@ static char *join_path(const char *dir, const char *name)
 {
     size_t dl = strlen(dir);
     size_t nl = strlen(name);
-    char  *out = (char *)malloc(dl + 1 + nl + 1);
+    char  *out = (char *)myc_malloc(dl + 1 + nl + 1);
     if (!out)
         return NULL;
     memcpy(out, dir, dl);
@@ -332,8 +332,8 @@ static int myc_runtime_canary(const char *clang_path, const char *tmp_dir,
         while (base_flags[bfl++]) total++;
         total += extra + 2 + 1;
         bfl = 0;
-        bargv = (const char **)malloc(sizeof(char *) * (size_t)total);
-        if (!bargv) { free(can_exe); return -1; }
+        bargv = (const char **)myc_malloc(sizeof(char *) * (size_t)total);
+        if (!bargv) { myc_free(can_exe); return -1; }
         bargv[n++] = clang_path;
         for (bfl = 0; base_flags[bfl]; bfl++) bargv[n++] = base_flags[bfl];
         if (checked) {
@@ -355,25 +355,25 @@ static int myc_runtime_canary(const char *clang_path, const char *tmp_dir,
     preq.max_output_bytes = max_out;
     if (!myc_proc_run(&preq, &pres)) {
         myc_proc_result_free(&pres);
-        free(bargv);
-        free(can_exe);
+        myc_free(bargv);
+        myc_free(can_exe);
         return -1;
     }
     {
         int ec = pres.exit_code;
         int to = pres.timed_out;
         myc_proc_result_free(&pres);
-        free(bargv);
+        myc_free(bargv);
         if (to || ec != 0) {
             /* build/run canary gagal -> backend tak teruji. */
-            free(can_exe);
+            myc_free(can_exe);
             return -1;
         }
     }
 
     /* Jalankan canary; harus ada marker sanitizer (atau exit non-zero). */
-    rargv = (const char **)malloc(sizeof(char *) * 2);
-    if (!rargv) { free(can_exe); return -1; }
+    rargv = (const char **)myc_malloc(sizeof(char *) * 2);
+    if (!rargv) { myc_free(can_exe); return -1; }
     rargv[0] = can_exe;
     rargv[1] = NULL;
 
@@ -387,8 +387,8 @@ static int myc_runtime_canary(const char *clang_path, const char *tmp_dir,
     preq.env = CANARY_RUN_ENV;
     if (!myc_proc_run(&preq, &pres)) {
         myc_proc_result_free(&pres);
-        free(rargv);
-        free(can_exe);
+        myc_free(rargv);
+        myc_free(can_exe);
         return -1;
     }
     {
@@ -402,13 +402,13 @@ static int myc_runtime_canary(const char *clang_path, const char *tmp_dir,
          * bukti backend-sehat bila exit != 0 (env abort_on_error=1).
          * Report + exit 0 = file mencurigakan -> backend TIDAK dipercaya. */
         ret = (((rpt != NULL || m != NULL) && ec != 0) || ec != 0) ? 1 : 0;
-        free(rpt);
+        myc_free(rpt);
         myc_remove_sanitizer_reports(tmp_dir, "myc_canary_asan_rpt");
         myc_remove_sanitizer_reports(tmp_dir, "myc_canary_ubsan_rpt");
         myc_proc_result_free(&pres);
     }
-    free(rargv);
-    free(can_exe);
+    myc_free(rargv);
+    myc_free(can_exe);
     return ret;
 }
 
@@ -471,7 +471,7 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
                             "gagal membuat direktori temp");
         myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_ERROR,
                                 "verification run di-skip: direktori temp gagal");
-        free(clang_path);
+        myc_free(clang_path);
         return 0;
     }
     exe_path = exe_path_for(tmp_dir, "myc_run.exe");
@@ -481,8 +481,8 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
                             "gagal membuat path executable");
         myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_ERROR,
                                 "verification run di-skip: path exe gagal");
-        free(clang_path);
-        free(tmp_dir);
+        myc_free(clang_path);
+        myc_free(tmp_dir);
         return 0;
     }
 
@@ -504,7 +504,7 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
             total++;
         total += extra + 2 + 1;         /* (+extra) "-o", exe_path, NULL */
         bfl = 0;
-        build_argv = (const char **)malloc(sizeof(char *) * (size_t)total);
+        build_argv = (const char **)myc_malloc(sizeof(char *) * (size_t)total);
         if (!build_argv) {
             res->err = MYC_ERR_INTERNAL;
             goto out;
@@ -535,7 +535,7 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
                 res->err = MYC_ERR_TIMEOUT;
                 res->duration_ms += pres.duration_ms;
                 myc_proc_result_free(&pres);
-                free(build_argv);
+                myc_free(build_argv);
                 myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_INCONCLUSIVE,
                                     "build timeout");
                 myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_ERROR,
@@ -547,7 +547,7 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
                                 "build launch gagal");
             myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_ERROR,
                                     "verification build launch gagal");
-            free(build_argv);
+            myc_free(build_argv);
             goto out;
         }
         res->duration_ms += pres.duration_ms;
@@ -555,7 +555,7 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
             res->verdict = MC_TIMEOUT;
             res->err = MYC_ERR_TIMEOUT;
             myc_proc_result_free(&pres);
-            free(build_argv);
+            myc_free(build_argv);
             myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_INCONCLUSIVE,
                                 "build timeout");
             myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_ERROR,
@@ -578,11 +578,11 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
             myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_SKIP,
                                     note);
             myc_proc_result_free(&pres);
-            free(build_argv);
+            myc_free(build_argv);
             goto out;
         }
         myc_proc_result_free(&pres);
-        free(build_argv);
+        myc_free(build_argv);
     }
 
     /* 4. Windows: salin runtime DLL ASan ke samping exe. */
@@ -600,7 +600,7 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
 #endif
 
     /* 5. Eksekusi terkendali. */
-    run_argv = (const char **)malloc(sizeof(char *) * 2);
+    run_argv = (const char **)myc_malloc(sizeof(char *) * 2);
     if (!run_argv) {
         res->err = MYC_ERR_INTERNAL;
         goto out;
@@ -622,7 +622,7 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
             res->err = MYC_ERR_TIMEOUT;
             res->duration_ms += pres.duration_ms;
             myc_proc_result_free(&pres);
-            free(run_argv);
+            myc_free(run_argv);
             myc_gate_set_status(res, MYC_GATE_RUNTIME, MYC_GATE_INCONCLUSIVE,
                                 "exec timeout");
             myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_ERROR,
@@ -634,7 +634,7 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
                             "exec gagal");
         myc_result_add_evidence(res, MYC_GATE_RUNTIME, MYC_EVIDENCE_ERROR,
                                 "verification run exec gagal");
-        free(run_argv);
+        myc_free(run_argv);
         goto out;
     }
     res->duration_ms += pres.duration_ms;
@@ -643,8 +643,8 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
     res->exit_code = pres.exit_code;
 
     /* Adopsi output run ke res. */
-    free(res->run_stdout_text);
-    free(res->run_stderr_text);
+    myc_free(res->run_stdout_text);
+    myc_free(res->run_stderr_text);
     res->run_stdout_text = pres.stdout_data; pres.stdout_data = NULL;
     res->run_stderr_text = pres.stderr_data; pres.stderr_data = NULL;
     res->run_total_stdout_bytes = pres.stdout_total;
@@ -657,7 +657,7 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
             sizeof(res->run_sanitizer_marker) - 1);
     res->run_sanitizer_marker[sizeof(res->run_sanitizer_marker) - 1] = '\0';
     myc_proc_result_free(&pres);
-    free(run_argv);
+    myc_free(run_argv);
 
     if (res->run_timed_out) {
         res->verdict = MC_TIMEOUT;
@@ -715,7 +715,7 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
             /* Isi witness dari sanitizer (Fase 1). Sanitizer punya
              * prioritas tertinggi karena bukti non-spoofable. */
             if (!res->witness && ev) {
-                res->witness = (myc_witness *)malloc(sizeof(myc_witness));
+                res->witness = (myc_witness *)myc_malloc(sizeof(myc_witness));
                 if (res->witness) {
                     myc_witness_init(res->witness);
                     /* Map sanitizer marker ke violation kind */
@@ -747,14 +747,14 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
                     res->witness->pre_state = myc_result_arena_dup(res, note, 0);
                 }
             }
-            free(asan_rpt);
-            free(ubsan_rpt);
+            myc_free(asan_rpt);
+            myc_free(ubsan_rpt);
             myc_remove_sanitizer_reports(tmp_dir, "myc_run_asan_rpt");
             myc_remove_sanitizer_reports(tmp_dir, "myc_run_ubsan_rpt");
             goto out;
         }
-        free(asan_rpt);
-        free(ubsan_rpt);
+        myc_free(asan_rpt);
+        myc_free(ubsan_rpt);
         myc_remove_sanitizer_reports(tmp_dir, "myc_run_asan_rpt");
         myc_remove_sanitizer_reports(tmp_dir, "myc_run_ubsan_rpt");
         if (omarker) {
@@ -830,12 +830,12 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
     goto out;
 
 out:
-    if (injected) free(injected);
-    if (dll_dst) free(dll_dst);
-    if (dll_src) free(dll_src);
+    if (injected) myc_free(injected);
+    if (dll_dst) myc_free(dll_dst);
+    if (dll_src) myc_free(dll_src);
     if (exe_path) {
         remove(exe_path);
-        free(exe_path);
+        myc_free(exe_path);
     }
     if (tmp_dir) {
         /* clang -g menghasilkan <exe>.pdb (dan DLL di Windows): hapus semua
@@ -849,13 +849,13 @@ out:
             char *p = join_path(tmp_dir, artifacts[ai]);
             if (p) {
                 remove(p);
-                free(p);
+                myc_free(p);
             }
         }
         myc_rmdir(tmp_dir);
-        free(tmp_dir);
+        myc_free(tmp_dir);
     }
-    free(clang_path);
+    myc_free(clang_path);
     return ret;
 }
 
@@ -946,7 +946,7 @@ int myc_metamorphic_gate(const myc_request *req, const char *source,
                             "gagal membuat direktori temp");
         myc_result_add_evidence(res, MYC_GATE_METAMORPHIC, MYC_EVIDENCE_ERROR,
                                 "metamorphic di-skip: direktori temp gagal");
-        free(clang_path);
+        myc_free(clang_path);
         return 0;
     }
     exe0 = exe_path_for(tmp_dir, "meta_o0.exe");
@@ -972,7 +972,7 @@ int myc_metamorphic_gate(const myc_request *req, const char *source,
             total++;
         total += 1 + extra + 2 + 1;   /* opt + extra + "-o" exe NULL */
         bfl = 0;
-        argv_b = (const char **)malloc(sizeof(char *) * (size_t)total);
+        argv_b = (const char **)myc_malloc(sizeof(char *) * (size_t)total);
         if (!argv_b) {
             res->err = MYC_ERR_INTERNAL;
             goto out;
@@ -1000,7 +1000,7 @@ int myc_metamorphic_gate(const myc_request *req, const char *source,
         preq.max_output_bytes = max_out;
         if (!myc_proc_run(&preq, &pres)) {
             myc_proc_result_free(&pres);
-            free(argv_b);
+            myc_free(argv_b);
             argv_b = NULL;
             res->err = MYC_ERR_EXECUTE_FAILED;
             myc_gate_set_status(res, MYC_GATE_METAMORPHIC, MYC_GATE_INFRA_FAILED,
@@ -1028,12 +1028,12 @@ int myc_metamorphic_gate(const myc_request *req, const char *source,
             myc_result_add_evidence(res, MYC_GATE_METAMORPHIC,
                                     MYC_EVIDENCE_SKIP, note);
             myc_proc_result_free(&pres);
-            free(argv_b);
+            myc_free(argv_b);
             argv_b = NULL;
             goto out;
         }
         myc_proc_result_free(&pres);
-        free(argv_b);
+        myc_free(argv_b);
         argv_b = NULL;
     }
 
@@ -1058,7 +1058,7 @@ int myc_metamorphic_gate(const myc_request *req, const char *source,
         int  *findp = step == 0 ? &res->meta_o0_finding : &res->meta_o2_finding;
         const char *marker;
 
-        argv_r = (const char **)malloc(sizeof(char *) * 2);
+        argv_r = (const char **)myc_malloc(sizeof(char *) * 2);
         if (!argv_r) {
             res->err = MYC_ERR_INTERNAL;
             goto out;
@@ -1088,7 +1088,7 @@ int myc_metamorphic_gate(const myc_request *req, const char *source,
         preq.env = meta_env[step];
         if (!myc_proc_run(&preq, &pres)) {
             myc_proc_result_free(&pres);
-            free(argv_r);
+            myc_free(argv_r);
             argv_r = NULL;
             res->err = MYC_ERR_EXECUTE_FAILED;
             myc_gate_set_status(res, MYC_GATE_METAMORPHIC, MYC_GATE_INFRA_FAILED,
@@ -1128,12 +1128,12 @@ int myc_metamorphic_gate(const myc_request *req, const char *source,
                          step == 0 ? "-O0" : "-O2", marker);
                 add_diag_run(res, note);
             }
-            free(rpt);
+            myc_free(rpt);
             myc_remove_sanitizer_reports(tmp_dir, base_asan);
             myc_remove_sanitizer_reports(tmp_dir, base_ubsan);
         }
         myc_proc_result_free(&pres);
-        free(argv_r);
+        myc_free(argv_r);
         argv_r = NULL;
     }
     res->ran_metamorphic = 1;
@@ -1223,16 +1223,16 @@ int myc_metamorphic_gate(const myc_request *req, const char *source,
     goto out;
 
 out:
-    if (injected) free(injected);
-    if (dll_dst) free(dll_dst);
-    if (dll_src) free(dll_src);
+    if (injected) myc_free(injected);
+    if (dll_dst) myc_free(dll_dst);
+    if (dll_src) myc_free(dll_src);
     if (exe0) {
         remove(exe0);
-        free(exe0);
+        myc_free(exe0);
     }
     if (exe2) {
         remove(exe2);
-        free(exe2);
+        myc_free(exe2);
     }
     if (tmp_dir) {
         static const char *const artifacts[] = {
@@ -1244,13 +1244,13 @@ out:
             char *p = join_path(tmp_dir, artifacts[ai]);
             if (p) {
                 remove(p);
-                free(p);
+                myc_free(p);
             }
         }
         myc_rmdir(tmp_dir);
-        free(tmp_dir);
+        myc_free(tmp_dir);
     }
-    free(clang_path);
+    myc_free(clang_path);
     return ret;
 }
 
@@ -1339,9 +1339,9 @@ int myc_divergence_gate(const myc_request *req, const char *source,
                             note);
         myc_result_add_evidence(res, MYC_GATE_DIVERGENCE, MYC_EVIDENCE_SKIP,
                                 note);
-        free(gcc_path);
-        free(clang_path);
-        free(tcc_path);
+        myc_free(gcc_path);
+        myc_free(clang_path);
+        myc_free(tcc_path);
         return 0;
     }
     if (!res->clang_version)
@@ -1363,10 +1363,10 @@ int myc_divergence_gate(const myc_request *req, const char *source,
                             "gagal membuat direktori temp");
         myc_result_add_evidence(res, MYC_GATE_DIVERGENCE, MYC_EVIDENCE_ERROR,
                                 "divergence di-skip: direktori temp gagal");
-        free(gcc_path);
-        free(clang_path);
-        free(tcc_path);
-        free(injected);
+        myc_free(gcc_path);
+        myc_free(clang_path);
+        myc_free(tcc_path);
+        myc_free(injected);
         return 0;
     }
 
@@ -1424,10 +1424,10 @@ int myc_divergence_gate(const myc_request *req, const char *source,
                  * NBASE konstanta: jumlah base flags TIDAK dihitung ulang
                  * per iterasi (fallback aman tanpa reset index). */
                 total = 1 + NBASE + 1 + extra + 2 + 1;
-                argv_b = (const char **)malloc(sizeof(char *) * (size_t)total);
+                argv_b = (const char **)myc_malloc(sizeof(char *) * (size_t)total);
                 if (!argv_b) {
                     res->err = MYC_ERR_INTERNAL;
-                    free(exe);
+                    myc_free(exe);
                     goto out;
                 }
                 n = 0;      /* reset: iterasi kedua (fallback) menulis ulang */
@@ -1452,8 +1452,8 @@ int myc_divergence_gate(const myc_request *req, const char *source,
                 preq.max_output_bytes = max_out;
                 if (!myc_proc_run(&preq, &pres)) {
                     myc_proc_result_free(&pres);
-                    free(argv_b);
-                    free(exe);
+                    myc_free(argv_b);
+                    myc_free(exe);
                     res->err = MYC_ERR_EXECUTE_FAILED;
                     myc_gate_set_status(res, MYC_GATE_DIVERGENCE,
                                         MYC_GATE_INFRA_FAILED,
@@ -1468,8 +1468,8 @@ int myc_divergence_gate(const myc_request *req, const char *source,
                     res->verdict = MC_TIMEOUT;
                     res->err = MYC_ERR_TIMEOUT;
                     myc_proc_result_free(&pres);
-                    free(argv_b);
-                    free(exe);
+                    myc_free(argv_b);
+                    myc_free(exe);
                     myc_gate_set_status(res, MYC_GATE_DIVERGENCE,
                                         MYC_GATE_INCONCLUSIVE,
                                         "build timeout");
@@ -1504,7 +1504,7 @@ int myc_divergence_gate(const myc_request *req, const char *source,
                         add_diag_run(res, note);
                         cell->san = 0;
                         myc_proc_result_free(&pres);
-                        free(argv_b);
+                        myc_free(argv_b);
                         argv_b = NULL;
                         bfl = 0;
                         continue;
@@ -1530,8 +1530,8 @@ int myc_divergence_gate(const myc_request *req, const char *source,
                                                 MYC_EVIDENCE_SKIP, note);
                     }
                     myc_proc_result_free(&pres);
-                    free(argv_b);
-                    free(exe);
+                    myc_free(argv_b);
+                    myc_free(exe);
                     cell_idx++;
                     break;
                 }
@@ -1547,7 +1547,7 @@ int myc_divergence_gate(const myc_request *req, const char *source,
                 else if (tool_idx == 2 && warn_tcc < 0)
                     warn_tcc = cell->diag_warn;
                 myc_proc_result_free(&pres);
-                free(argv_b);
+                myc_free(argv_b);
                 break;
             }
             if (!cell->built)
@@ -1567,16 +1567,16 @@ int myc_divergence_gate(const myc_request *req, const char *source,
                     add_diag_run(res,
                                  "divergence: runtime ASan DLL tidak ditemukan");
                 }
-                free(dll_dst);
-                free(dll_src);
+                myc_free(dll_dst);
+                myc_free(dll_src);
             }
 #endif
 
             /* --- run sel --- */
-            argv_r = (const char **)malloc(sizeof(char *) * 2);
+            argv_r = (const char **)myc_malloc(sizeof(char *) * 2);
             if (!argv_r) {
                 res->err = MYC_ERR_INTERNAL;
-                free(exe);
+                myc_free(exe);
                 goto out;
             }
             argv_r[0] = exe;
@@ -1603,8 +1603,8 @@ int myc_divergence_gate(const myc_request *req, const char *source,
             preq.env = cell_env[cell_idx];
             if (!myc_proc_run(&preq, &pres)) {
                 myc_proc_result_free(&pres);
-                free(argv_r);
-                free(exe);
+                myc_free(argv_r);
+                myc_free(exe);
                 res->err = MYC_ERR_EXECUTE_FAILED;
                 myc_gate_set_status(res, MYC_GATE_DIVERGENCE,
                                     MYC_GATE_INFRA_FAILED,
@@ -1650,7 +1650,7 @@ int myc_divergence_gate(const myc_request *req, const char *source,
                              "%s", omarker);
                     add_diag_run(res, "divergence finding (marker)");
                 }
-                free(rpt);
+                myc_free(rpt);
                 myc_remove_sanitizer_reports(tmp_dir, base_asan);
                 myc_remove_sanitizer_reports(tmp_dir, base_ubsan);
             }
@@ -1661,8 +1661,8 @@ int myc_divergence_gate(const myc_request *req, const char *source,
                          "%s", hex);
             }
             myc_proc_result_free(&pres);
-            free(argv_r);
-            free(exe);
+            myc_free(argv_r);
+            myc_free(exe);
             cell_idx++;
         }
     }
@@ -1832,7 +1832,7 @@ int myc_divergence_gate(const myc_request *req, const char *source,
     goto out;
 
 out:
-    if (injected) free(injected);
+    if (injected) myc_free(injected);
     if (tmp_dir) {
         static const char *const artifacts[] = {
             ASAN_DLL_NAME, "myc_canary.exe", "myc_canary.pdb", NULL
@@ -1842,7 +1842,7 @@ out:
             char *p = join_path(tmp_dir, artifacts[ai]);
             if (p) {
                 remove(p);
-                free(p);
+                myc_free(p);
             }
         }
         /* hapus exe sel yang masih ada */
@@ -1857,14 +1857,14 @@ out:
             p = exe_path_for(tmp_dir, exname);
             if (p) {
                 remove(p);
-                free(p);
+                myc_free(p);
             }
         }
         myc_rmdir(tmp_dir);
-        free(tmp_dir);
+        myc_free(tmp_dir);
     }
-    free(gcc_path);
-    free(clang_path);
-    free(tcc_path);
+    myc_free(gcc_path);
+    myc_free(clang_path);
+    myc_free(tcc_path);
     return ret;
 }

@@ -149,16 +149,16 @@ static int prof_load(my_profile *pf, const char *id)
     fsize = ftell(f);
     fseek(f, 0, SEEK_SET);
     if (fsize <= 0 || fsize > (long)(4u << 20)) { fclose(f); return 0; }
-    buf = (char *)malloc((size_t)fsize + 1);
+    buf = (char *)myc_malloc((size_t)fsize + 1);
     if (!buf) { fclose(f); return 0; }
     if (fread(buf, 1, (size_t)fsize, f) != (size_t)fsize) {
-        free(buf); fclose(f); return 0;
+        myc_free(buf); fclose(f); return 0;
     }
     buf[fsize] = '\0';
     fclose(f);
 
     if (!json_parse_cstr(buf, &root) || !root) {
-        free(buf);
+        myc_free(buf);
         return 0;
     }
     v = json_get(root, "checks");
@@ -210,7 +210,7 @@ static int prof_load(my_profile *pf, const char *id)
         }
     }
     json_free(root);
-    free(buf);
+    myc_free(buf);
     return 1;
 }
 
@@ -272,7 +272,7 @@ static void save_profile(const my_profile *pf)
      * tulis profile sukses (seperti dulu). NON-blocking: gagal diabaikan. */
     if (myc_persist_atomic_write_str(path, js))
         prof_index_add(pf->id);
-    free(js);
+    myc_free(js);
 }
 
 static void prof_bump_class(my_profile *pf, const char *name)
