@@ -25,6 +25,9 @@ sebagai server dan memanggil pipeline verifikasi `myc` sebagai tool.
 - `source` (string, **wajib**): kode C yang akan diperiksa.
 - `flags` (array string, opsional): `--run --prove --checked --filc
   --driver --analyze --strict --no-lint` (lihat README untuk arti tiap flag).
+  **Wajib array string** (PR-016 / MYC-AUDIT-048): `"flags":"--run"`
+  (string) atau entry non-string → error -32602 fail-fast — tipe salah
+  TIDAK pernah di-abaikan diam-diam (bisa mematikan gate tanpa pesan).
 - `run_stdin` (string, opsional): stdin untuk program verification. Efektif
   bila `--run` (verification build clang) atau `--filc` (verification build
   Fil-C) diminta — konten ini dikirim ke stdin program yang dijalankan gate
@@ -178,8 +181,14 @@ Contoh:
   backend hilang atau kode bukan executable, verdict tetap statis (L1) dengan
   diagnostic — jangan anggap skip sebagai kegagalan.
 - Untuk program yang memakai `MYC_BUF`, gunakan `--checked` untuk L4 SPATIAL.
-- Debug interop resmi: `test/_mcp_sdk_interop.py` (memakai SDK MCP Python
-  resmi, bukan client buatan sendiri). Cakupan: **25 cek** — handshake +
+-Suite abuse & soak: `test/mcp_abuse.c` (blok 19 `_audit018.sh`,
+PR-016/P4-T04) — 39 kasus protokol malformed + huge payload (> cap
+8 MiB) + duplicate id + notification vs request + EOF + soak 1.090
+request; invariant: stdout TETAP protocol-clean (tiap baris respons
+JSON-RPC 2.0 sah), mcp tidak pernah crash/hang, stderr kosong.
+
+Debug interop resmi: `test/_mcp_sdk_interop.py` (memakai SDK MCP Python
+resmi, bukan client buatan sendiri). Cakupan: **25 cek** — handshake +
   `tools/list`, kelima tool, verdict OK + VIOLATION, isError transport
   (ERROR `1MiB+` / TIMEOUT, plus PROVE_VIOLATION/DRIVER_VIOLATION),
   dan seluruh gate opsional: `--run`

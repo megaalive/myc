@@ -1,7 +1,7 @@
 ﻿# AGENTS.md â€” Aturan proyek myc
 
 Dokumen ini hanya memuat **aturan stabil**. Sejarah implementasi dan audit
-(MYC-AUDIT-001..030 dan fase pengembangan) ada di
+(MYC-AUDIT-001..049 dan fase pengembangan) ada di
 [`docs/audit-history.md`](docs/audit-history.md).
 
 ## Tujuan & filosofi (keputusan 2026-08-01)
@@ -74,29 +74,31 @@ scan includes (whitelist, non-blocking) â†’ lint heuristik ber-confidence
 | `units.c` / `units.h` | Units / Shape / Provenance Contracts: annotation ringan `//@ unit|shape|provenance|endian` ditelusuri deterministik (assignment mismatch, shape-dim, unbound identifier, annotation bertentangan); observasi teks NON-blocking, verdict TIDAK pernah turun (Fase 5, SOL-11, `myc units`) |
 | `negative.c` | Negative-space: mining "pola yang hilang" |
 | `lint.c` | Heuristik memory-safety ber-confidence (non-blocking) + `why`/`fix` |
- | `gate.c` | Status gate bertipe, evidence, claim compiler, debt, receipt |
+ | `gate.c` | Status gate bertipe, evidence, claim compiler, debt, receipt, canonical receipt string (`myc_receipt_canonical`, PR-014/MYC-AUDIT-046, spec `docs/receipt-canonical.md`) |
  | `ledger.c` | Temporal ledger (receipt chain, delta detection) |
  | `transaction.c` | Repair transaction, preservation obligations, sabotage detector |
  | `frontier.c` | Verification frontier map per hazard class (Fase 3, SOL-02) |
  | `observation.c` | Observation-to-Experiment Compiler (Fase 3, SOL-17) |
  | `causal.c` | Causal Finding Graph: root cause dulu, dependent ditahan (Fase 3, SOL-09) |
  | `nextbest.c` | Next-Best Experiment Rule Table: eksperimen termurah untuk maju dari frontier (Fase 3, SOL-03) |
- | `cache.c` | Incremental Evidence Cache: replay hasil bila input+scenario+tool sama, delta fungsi+dependents (Fase 3, SOL-18) |
+ | `cache.c` | Incremental Evidence Cache: replay hasil bila input+scenario+tool+eksekusi+resep gate sama; key kanonik v2 (spesifikasi per dimensi: `docs/cache-key.md`, PR-011/MYC-AUDIT-043); delta fungsi+dependents (Fase 3, SOL-18); corruption recovery (PR-013/MYC-AUDIT-045, P3-T04): integritas sidecar sha256 byte-mentah (`.myc/evidence_cache.sha256`) + validasi semantik fail-closed (enum out-of-range TIDAK di-clamp) + karantina/self-heal/diagnostic `myc: cache:` + recompute — NEVER replay hasil korup |
+ | `persist.c` | Atomic .myc state writes (Batch PR-012, P3-T03): helper bersama `myc_persist_atomic_write` — tulis temp `<path>.tmp.<pid>` + flush + fsync/_commit + rename/replace atomik (MoveFileExA Windows) + parent-dir fsync POSIX + cleanup temp stale; crash kapan pun = OLD valid ATAU NEW valid (tidak pernah setengah); dipakai semua penulis state .myc (cache/ledger/assumptions/calibration/exhaustive/profiles/regression seed); NON-blocking penuh |
  | `context.c` | Agent Context Compiler: paket konteks minimal per finding (SOL-22) |
  | `budget.c` | Assurance Budget Contract: target assurance eksplisit per gate + budget waktu/output, tak tercapai = INCONCLUSIVE + report (SOL-30) |
  | `assume.c` | Assumption Closure: ledger taruhan fakta implementation-defined vs macro dump toolchain (`gcc -dM -E`), lifecycle observed..accepted-risk, ack + require-assumptions-closed (Fase 4, A1/DS-01) |
  | `proc.c` | Exec program+argv eksplisit tanpa shell, env deterministik, WSLENV |
- | `mcp.c` | MCP server (JSON-RPC 2.0 ketat) |
+ | `mcp.c` | MCP server (JSON-RPC 2.0 ketat; flags tool check wajib array string — tipe salah = -32602 fail-fast, MYC-AUDIT-016/048) |
  | `report.c` / `json.c` | Laporan teks/JSON, capsule, parser JSON ketat |
  | `policy.c` | Profil header/fungsi (non-blocking) |
  | `scanner.c` | Scanner leksikal source |
 | `prompt.c` | D4 (DS-15) System-Prompt Contract Generator + project-local prompt/spec pack (Fase 7, item terakhir + MYC-AUDIT-038): `myc.prompt.md` teks bebas + `myc.spec.json` spec terstruktur (version:1, name wajib; rules/allow_headers/deny_functions) dicari di direktori proyek (--pack-dir, --no-pack), sha256 dilaporkan, NON-blocking (verdict tak pernah berubah), spec invalid = fail-fast; pack di-wire ke `myc check --agent` (objek `pack` di agent JSON, dibuang terakhir saat cap) dan `myc context` (section `project pack` prioritas terendah) |
 | `test/_schema_golden.sh` | Golden schema + malformed-input tests (Fase 0): myc.result.v1 field wajib + enum verdict + corpus korup |
+| `test/schema_compat.c` + `test/golden/` | PR-015 (MYC-AUDIT-047): golden freeze SEMUA skema JSON mesin (registry: `docs/schema-registry.md`) — golden ter-parse, field/tipe/enum beku, konsumen (calib/scenario/pack/cache) menerima golden, fail-closed versi tak dikenal (INV-011), additive-only, produsen memancarkan semua field |
 | `bench/` | Baseline benchmark 20 task (Fase -1, SOL-24): detection + false-positive + binary/latency/payload; report deterministik di bench/reports/ |
 | `docs/result-schema.md` | Truth freeze myc.result.v1 + myc.agent.v2 (Fase -1, SOL-24) |
 | `witness.c` | Witness pipeline: repro, minimizer, slice |
 | `agent.c` | Agent Evidence Protocol (myc.agent.v2) |
-| `canary.c` | Canary Swarm (Fase 6): tiap backend yang bisa klaim memory-safety dibuktikan hidup via canary positif/negatif; `myc canary list | run [backend]`; canary gagal = backend UNRELIABLE |
+| `canary.c` | Canary Swarm (Fase 6) + Backend Qualification Registry (PR-017/P5-T01): tiap backend yang bisa klaim memory-safety dibuktikan hidup via canary positif/negatif; `myc canary list | run [backend]`; `myc backends [--canary]` = registry tier A/B/C + path + versi exact per backend + kualifikasi canary; canary gagal = backend UNRELIABLE; kebijakan resmi di `docs/backends.md` |
 | `testaudit.c` | Test-Quality Audit (Fase 6): cakupan corpus test per hazard class + backend; `myc audit-tests`; gap eksplisit, NON-blocking |
 | `perturb.c` | Environment Perturbation (Fase 6): run ulang dgn env diubah (TZ/locale/PATH/HOME), bandingkan stdout+exit+sanitizer; ENV-SENSITIVE vs DETERMINISTIK, NON-blocking |
 | `concur.c` | Concurrency Probe (Fase 6): lock-order statis (inversi urutan mutex = potensi deadlock) + TSan runtime best-effort (data race); NON-blocking observasi |
@@ -156,7 +158,9 @@ Setiap perubahan ke kode inti myc **wajib** melewati checklist ini:
 | Dokumen | Isi |
 |---|---|
 | [`CHANGELOG.md`](CHANGELOG.md) | Release notes per rilis (Keep a Changelog) |
-| [`docs/audit-history.md`](docs/audit-history.md) | Sejarah MYC-AUDIT-001..039, fase pengembangan, catatan bug lama |
+| [`docs/audit-history.md`](docs/audit-history.md) | Sejarah MYC-AUDIT-001..049, fase pengembangan, catatan bug lama |
+| [`docs/backends.md`](docs/backends.md) | Kebijakan backend resmi: tier A/B/C, OS, versi minimum, evidence, failure semantics (PR-017, MYC-AUDIT-049) |
+| [`docs/schema-registry.md`](docs/schema-registry.md) | Registry beku semua skema JSON mesin + golden files (PR-015, MYC-AUDIT-047) |
 | [`README.md`](README.md) | Penggunaan publik |
 | [`docs/capabilities.md`](docs/capabilities.md) | Kapabilitas gate/flag |
 | [`docs/quickstart.md`](docs/quickstart.md) | Memulai cepat |

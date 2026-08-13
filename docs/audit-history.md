@@ -24,6 +24,493 @@
 
 ---
 
+## PR-003, 2026-08-12 (verdict reducer fails-closed + test exhaustif)
+
+Batch PR-003 dari `myc-production-readiness-plan.md`: reducer sentral sudah
+ada (`myc_reduce_verdict`, gate.c, MYC-AUDIT-006) — langkah yang benar =
+**test exhaustif**, bukan refactor. Test baru `test/reducer_exhaustive.c`
+memanggil reducer langsung dengan kombinasi typed gate status (49 + 343
+kombinasi + kasus invariant) dan meng-encode INV-001/002/003/011; di-wire
+ke `test/_audit018.sh` dan `test/_regress_run.bat`.
+
+**BUG TRUST-CORE ditemukan test:** status gate di luar enum
+(`(myc_gate_status)99`) jatuh diam-diam ke `MC_OK` — switch reducer tidak
+punya `default:` sehingga status tak dikenal direinterpretasi sebagai
+clean (false-OK, melanggar INV-011). Fix minimal (hardening, sesuai P0-T01):
+`default: has_incomplete = 1` di `myc_reduce_verdict()` + `default:`
+menambah debt `MYC-INCOMPLETE-GATE-INCONCLUSIVE` di `myc_build_debt()`.
+Perilaku untuk status valid TIDAK berubah (receipt golden utuh); hanya
+input korup/tak dikenal yang kini gagal tertutup.
+
+Dokumen baru (batch PR-001/002): `docs/production-readiness.md`
+(level PR-0..PR-4), `docs/production-invariants.md` + registry
+`docs/production-invariants.json` (INV-001..015, tiap invariant menunjuk
+modul + test), `docs/verdict-state-inventory.md` (inventaris semua mutasi
+verdict/gate/assurance/debt/err). Closure audit PR-004:
+`docs/audit-closure/MYC-AUDIT-001..005.md` (root cause/trigger/impact/
+fix/regresi/residual; fix commit `7be12b5` utk 001/002/003-partial/005,
+`71d297c` utk 004, `7aae6df` utk 003-driver). Verifikasi: reducer test
+lolos, `_audit018.sh` SELESAI OK.
+
+---
+
+## PR-005, 2026-08-12 (hostile child process fixture)
+
+Batch PR-005 dari `myc-production-readiness-plan.md` (P1-T02): binary
+pembantu **standalone** `test/proc_fixture.c` (tanpa dependensi myc,
+portabel Windows MinGW + POSIX, `-Werror -pedantic` clean) dengan mode
+child bermusuhan DETERMINISTIK untuk menguji process runner `proc.c`
+pada batch PR-006 (deadlock matrix) dan PR-007 (timeout/process-tree
+kill): `--exit N`, `--sleep MS`, `--stdout N` (byte 'A'), `--stderr N`
+('B'), `--both N` (dua pipe penuh selang-seling), `--read-stdin N`,
+`--never-read-stdin`, `--close-stdout`/`--close-stderr` (tutup descriptor
+level OS), `--spawn-child`/`--spawn-grandchild` (re-invoke diri sendiri +
+wait, cetak `spawned_child=<pid>` SEBELUM menunggu — baris pid selalu
+tertangkap walau parent dibunuh), `--crash` (SIGSEGV), `--hang-after-
+output`, `--output-after-stdin`/`--stdin-after-output` (ordering
+stdin/stdout), `--unicode-output` (UTF-8 multibyte), `--binary-output`
+(NUL + 0xFF siklik), `--self-pid`, `--help`. Pada Windows stream dipaksa
+mode BINER (`_setmode`) agar byte count eksak di pipe (tanpa CRLF
+/Ctrl-Z) — prasyarat deadlock matrix. Wire: build + smoke test 19 mode
+di `test/_audit018.sh` (guard `timeout(1)` untuk hang). Verifikasi:
+`-Werror -pedantic` bersih; smoke semua mode lulus (exit code, byte
+count, chain 3 level `--spawn-grandchild --spawn-child --exit 5` → 5,
+crash → 139, hang → 124).
+
+## PR-006, 2026-08-12 (deadlock matrix + fix hang stdin write)
+
+Batch PR-006 dari `myc-production-readiness-plan.md` (P1-T03): matriks
+deadlock `test/proc_deadlock_matrix.c` yang memakai `proc_fixture` (PR-005)
+via `myc_proc_run`. Fixture mendapat mode baru `--matrix S O E ORDER`
+(PR-006): kendali penuh ukuran stdin/stdout/stderr (0/4K/256K/8M) +
+urutan I/O `read-first`/`write-first`/`interleave`, tanpa byte tambahan di
+payload (byte count eksak untuk asersi harness).
+
+Dimensi & cakupan (P1-T03): **T1** full Cartesian 4×4×4 ukuran I/O (64
+kombinasi, order interleave, cap default); **T2** dimensi order × 3 combo;
+**T3** timeout — hang + stdin 8M (regresi fix di bawah), tree-kill
+`--spawn-child --sleep 60000` + orphan check via `spawned_child=<pid>`
+(poll `kill(pid,0)`/`GetExitCodeProcess` s.d. 5 s), child normal (timeout
+tidak terpicu); **T4** output cap — hit 64K, miss, `cap=0`→default 1M,
+ring biner `--binary-output` (prefix 0x00, tail 0xFF); **T5** EPIPE — child
+tak pernah baca stdin (`--never-read-stdin` + `--exit 0`, stdin 8M); **T6**
+`--close-stdout`/`--close-stderr`; **T7** stress loop (`--stress N`, default
+100; orphan spot-check tiap 25 iterasi; bounded memory via
+`getrusage`/`GetProcessMemoryInfo`). Setiap kegagalan memuat konfigurasi
+lengkap (seed/config untuk reproduce, sesuai batch PR-006).
+
+**BUG TRUST-CORE ditemukan (hang abadi):** tulis stdin di `proc.c`
+blocking sinkron SEBELUM loop timeout — child yang tidak membaca stdin dan
+tidak pernah exit (mis. `--sleep 60000`) membuat `myc_proc_run`
+menggantung abadi walau `timeout_ms` diset. Dikonfirmasi probe: dur=8157
+ms dengan timeout_ms=1500 ms, proses hanya berhenti karena kill eksternal.
+Fix (hardening, P0-T01): stdin ditulis dari **thread terpisah**
+(`stdin_writer_thread`; Windows `_beginthreadex` + POSIX
+`pthread_create`) sehingga loop tunggu utama berjalan bersamaan; pada
+timeout kill pohon memutus pipe → writer berhenti (EPIPE / broken pipe)
+dan di-join (bounded 2000 ms di Windows). POSIX: cek execvp dipindah
+sebelum writer; SIGPIPE diabaikan selama writer hidup dan dipulihkan
+setelah join; sisi tulis stdin ditutup pada timeout agar EPIPE pasti.
+Perilaku kasus normal TIDAK berubah (receipt utuh).
+
+**Regresi ditemukan saat wire (lalu diperbaiki):** versi awal writer tidak
+menutup sisi tulis stdin setelah selesai — child yang membaca stdin
+sampai EOF (mis. drain_stdin di proc_flood T1 / `--stdin-after-output`)
+memblok selamanya menunggu EOF → timeout 60 s (proc_flood T1 gagal di
+suite). Fix: writer thread MENUTUP sisi tulis stdin sendiri saat selesai
+(seluruh byte terkirim atau EPIPE) sehingga EOF mengalir ke child;
+pemanggil men-set `stdin_wr=NULL`/`in_pipe[1]=-1` setelah join agar tidak
+double-close. Verifikasi: proc_flood T1 selesai 63 ms, `--stdin-after-
+output` drained=1048576 dalam 47 ms; hang probe tetap `timed_out=1
+dur=1500`; matriks penuh 0 gagal.
+
+Verifikasi (foreground, Windows): matriks penuh OK (114 cek, 0 gagal,
+~30 s); `--stress 2000` → **6.080 eksekusi myc_proc_run, 0 deadlock, 0
+orphan, memori stabil (16840→16840 KB)**; hammer 200× kasus terberat
+8M/8M interleave OK tanpa kebocoran child. Exit criteria P1-T03 penuh
+(10.000 eksekusi berulang per OS) = `proc_deadlock_matrix <fixture>
+--stress 10000`; catatan: percobaan via `nohup` background tidak valid
+(proses ter-orphan saat shell runner dibunuh → melambat drastis lalu
+macet — artefak lingkungan, TIDAK dapat direproduksi foreground).
+Wire blok 9 di `test/_audit018.sh` (guard `timeout 300` eksternal agar
+deadlock = FAIL, bukan hang CI; probe `-lpsapi` untuk Windows; log
+matriks di-tee ke `test/proc_deadlock_matrix.log` agar kegagalan memuat
+konfigurasi lengkap). Hardening review: matriks punya deadline internal
+10 menit (anti-hang standalone), timeout tree-kill 1500→2500 ms (anti
+false-fail di CI lambat), dan close redundan sisi tulis stdin pada
+branch timeout POSIX dihapus (kill → EPIPE sudah membuka blokir writer;
+close ganda rapuh).
+
+Observasi (bukan fix, ditunda PR-007): ketidakkonsistenan `timeout_ms=0`
+— POSIX = tanpa batas (sesuai header), Windows = fallback
+`MYC_DEFAULT_TIMEOUT_MS` (30 s).
+
+---
+
+## PR-007, 2026-08-12 (process-tree cleanup: Job Object + kill group)
+
+Batch PR-007 dari `myc-production-readiness-plan.md` (P1-T04): mengunci
+perilaku **cleanup pohon proses pada timeout** — timeout `myc_proc_run`
+harus membunuh SELURUH pohon (child + grandchild + job nested), bukan
+hanya child langsung. Test baru `test/proc_tree_kill.c` memakai
+`proc_fixture` (PR-005) via `myc_proc_run` dengan mode spawn baru:
+
+- **T1** chain 3-level `--spawn-grandchild --sleep 60000`: timeout →
+  child + grandchild (C1, C2) ikut mati. Verifikasi zero-orphan via
+  (a) parse `spawned_child=<pid>` + poll `kill(pid,0)`/
+  `GetExitCodeProcess` s.d. 2500 ms, (b) **Toolhelp scan** (Windows)
+  `Process32First/Next` untuk membuktikan TIDAK ada `proc_fixture.exe`
+  tersisa — bukti nol-stray lebih kuat daripada cek pid (lihat temuan
+  handle di bawah).
+- **T2** breakaway attempt `--spawn-breakaway`: child meminta
+  `CREATE_BREAKAWAY_FROM_JOB` (dan `CREATE_NEW_PROCESS_GROUP` POSIX) —
+  asersi: assignment ke job myc DITOLAK → pohon tetap terikat → semua
+  ikut mati pada timeout. Ini membuktikan job myc tidak bisa "dikaburkan"
+  oleh child yang meminta breakaway.
+- **T3** nested job `--spawn-jobchild`: child membuat job sendiri
+  (`CreateJobObject` + assign grandchild) — asersi: grandchild di job
+  fixture TETAP ikut mati (kill pohon menembus nested job karena
+  `KILL_ON_JOB_CLOSE` myc).
+- **T4** inherited handles `--spawn-detach`: child menutup pipe stdout
+  level OS lalu exit cepat — asersi: myc TIDAK menunggu grandchild
+  (dur < 1500 ms; handle pipe tidak bocor ke generasi jauh sehingga
+  drain tidak menggantung). Platform-split: Windows grandchild ikut
+  mati saat myc menutup handle job pada normal completion
+  (`KILL_ON_JOB_CLOSE` membersihkan stray — crash-safe); POSIX tidak
+  (tidak ada job).
+- **T5** normal chain `--spawn-grandchild --spawn-child --exit 7` tanpa
+  timeout: chain exit normal (7) tanpa kill.
+
+**Hardening proc.c (Windows):** (1) hasil `AssignProcessToJobObject`
+kini dicek dan disimpan (`job_assigned`) — bila assignment gagal (job
+sudah penuh / child menolak / sistem tanpa job), fallback jujur ke
+`TerminateProcess(child)` + cleanup sisa via Toolhelp scan; (2) kegagalan
+`_beginthreadex` untuk drain thread kini fail-fast (`MYC_ERR_INTERNAL`)
+— sebelumnya handle NULL di-`WaitForSingleObject` (hang). POSIX: kill
+process group (setpgid) sudah ada; perilaku tidak berubah.
+
+**Temuan platform penting (dokumentasi perilaku, bukan bug):**
+`proc_fixture` memakai `bInheritHandles=FALSE` (hygiene handle) → C1/C2
+tidak mewarisi pipe stdout → baris pid grandchild TIDAK pernah sampai ke
+myc (bukan kegagalan kill). Karena itu T1 memakai Toolhelp scan sebagai
+bukti utama zero-orphan (lebih kuat). Kedua: `KILL_ON_JOB_CLOSE` pada
+Windows berarti stray process (termasuk yang di-detach lewat pipe) mati
+saat myc menutup handle job pada NORMAL completion — perilaku
+platform yang di-encode sebagai asersi platform-split di T4.
+
+Wire blok 10 di `test/_audit018.sh` (guard `timeout 180` eksternal;
+log di-tee ke `test/proc_tree_kill.log`). Verifikasi (Windows):
+T1–T5 semua hijau (chain 3-level zero orphan via Toolhelp, breakaway
+ditolak, nested job ikut mati, detach 31 ms tanpa menunggu, chain exit
+7), nol proc_fixture tersisa setelah run; `-Werror` bersih; diff check
+bersih.
+
+Observasi (bukan fix): field `myc_proc_result.cancelled` (proc.h) dan
+error `MYC_ERR_CANCELLED` (myc.h) tidak pernah di-set/dihasilkan di
+seluruh codebase — vestigial sejak awal; tidak ada mekanisme cancel
+async untuk `myc_proc_run` saat ini. Sisa observasi `timeout_ms=0` dari
+PR-006 (POSIX tanpa batas vs Windows fallback 30 s) tetap terbuka.
+
+### Review fixes (code-reviewer, 2026-08-12)
+
+Code review menemukan celah verifikasi: branch POSIX fixture (PR-005/006/
+007) **tidak pernah di-compile** — clang/gcc Windows hanya meng-compile
+branch `_WIN32`, jadi bug POSIX lolos 3 batch. Verifikasi via WSL
+(`gcc -fsyntax-only` di Ubuntu-24.04) menemukan 3 bug nyata di
+`test/proc_fixture.c` dan 1 di `test/proc_tree_kill.c`, SEMUA diperbaiki:
+
+1. `fcntl.h` tidak di-include di branch POSIX fixture → `F_GETFD`/
+   `F_SETFD`/`FD_CLOEXEC` undeclared (mode `--spawn-detach` gagal
+   compile Linux).
+2. `child_argv` dibangun di luar `#ifdef _WIN32` tapi hanya dipakai
+   branch Windows → `-Werror=unused-but-set-variable` di POSIX
+   (`mode_spawn_breakaway`/`mode_spawn_jobchild`; build dipindah ke
+   dalam branch `_WIN32`).
+3. `nanosleep`/`fileno` butuh `_POSIX_C_SOURCE` (glibc meng-cache
+   feature test macro di include guard → define wajib SEBELUM semua
+   include) di fixture DAN `kill` butuh `<signal.h>` + `_POSIX_C_SOURCE`
+   di proc_tree_kill.c.
+
+Setelah fix: compile POSIX `-Werror -pedantic` bersih untuk ketiga file
+(proc.c, proc_fixture.c, proc_tree_kill.c), dan **run penuh T1–T5 di
+Linux (WSL) hijau** — T1 melihat 2 pid (exec mewarisi fds, beda dari
+Windows bInheritHandles=FALSE yang hanya 1), T2/T3 status=2 N/A,
+T4 POSIX branch grandchild hidup + self-clean, T5 exit 7. Label pesan
+T2 Windows juga dirapikan agar jujur ("TIDAK ada breakaway_status=1 =
+lubang job, wajib FAIL" — sebelumnya mencetak "breakaway SUKSES"
+sebagai [OK] saat penolakan berhasil, menyesatkan).
+
+---
+
+## PR-008, 2026-08-12 (semantic evidence spoof corpus)
+
+Batch PR-008 dari `myc-production-readiness-plan.md` (P2-T02 / INV-006):
+korpus spoof bukti semantik — teks yang MENIRU bukti (ASan/UBSan/GCC/
+Frama-C/Fil-C/marker internal MYC) melalui stdout, stderr, file report,
+komentar source, nama file, dan argumen program TIDAK boleh menjadi hard
+evidence (zero false violation; verdict tetap OK).
+
+**GAP SPOOF NYATA ditemukan (file report palsu):** program yang diuji
+berjalan dengan `cwd = tmp_dir` (run.c step 5), dan
+`myc_read_sanitizer_report` membaca file wildcard `<dir>/<base>.*` — jadi
+program BERSIH bisa menulis file `myc_run_asan_rpt.<pid>` / `myc_run_
+ubsan_rpt.<pid>` (nama persis log_path ASan) berisi teks spoof di cwd-nya
+sendiri, lalu exit 0, dan report palsu itu DIBACA sebagai bukti
+non-spoofable → `RUNTIME_VIOLATION` PALSU. Dikonfirmasi empiris dengan
+`myc.exe` PRA-hardening: source bersih yang hanya menulis dua file report
+palsu + mencetak satu marker lalu exit 0 → `verdict: RUNTIME_VIOLATION`
+("sanitizer runtime: ERROR: AddressSanitizer (report: log_path di tmp
+dir)"). Ini jalur spoof yang TIDAK tercakup MYC-AUDIT-017 (yang hanya
+menutup marker teks stdout/stderr).
+
+**Hardening (INV-006, 6 titik):** report sanitizer kini HANYA bukti bila
+`exit code != 0` — konsisten dengan aturan marker teks. Karena env memakai
+`abort_on_error=1`/`halt_on_error=1`, bug memori nyata SELALU berakhir
+non-zero (abort/SIGABRT); report yang muncul bersama exit 0 = file buatan
+program → DITOLAK + dibersihkan. Titik yang di-fix: gate run,
+`--metamorphic`, `--divergence` (run.c); gate `--driver`, exhaustive,
+fuzz (driver.c). Deteksi bug nyata TIDAK berubah (ASan abort → exit != 0
+→ report tetap bukti). Canary tidak disentuh (bukan verdict).
+
+Audit saluran lain: **filc.c sudah aman** — `panics > 0 && exit_code !=
+0` baru jadi `MC_FILC_VIOLATION`; baris kanonik `[pid] filc panic:`
+palsu + exit 0 diabaikan (di-reset `filc_panics=0`). **prove.c aman
+struktural** — gate menjalankan `frama-c` (backend) yang mem-PARSE source;
+program yang diuji TIDAK pernah dijalankan, jadi tidak bisa mencetak
+`[eva:alarm]`; string literal/komentar berisi marker tidak menghasilkan
+alarm Eva. `--driver`/exhaustive/fuzz memakai env log_path sendiri
+(`myc_drv_*`/`myc_exh_*`/`myc_fuz_*`) dan kini menerapkan aturan yang sama.
+
+**Deliverable:**
+
+- `tests/evidence_spoof.c` — fixture program BERSIH yang mencetak SEMUA
+  marker P2-T02 + marker internal ke stdout+stderr, mode
+  `--fake-report` (tulis `<base>.<pid>` palsu di cwd), `--exit N`,
+  `--echo-argv` (marker via argumen), `--help`. `-Werror -pedantic`
+  bersih; `myc check` pada fixture → OK.
+- `test/evidence_spoof.c` — unit test (gaya audit_lampiran,
+  `myc_run()` end-to-end): **T1** fixture marker di stdout/stderr + exit
+  0 → run gate OK + `sanitizer_detected=0` + diagnostic "diabaikan";
+  **T2** source yang menulis file report palsu `myc_run_asan_rpt.<pid>`
+  + `myc_run_ubsan_rpt.<pid>` + marker + exit 0 → run gate OK (REGRESSION
+  hardening: sebelumnya RUNTIME_VIOLATION); **T3** baris kanonik panic
+  Fil-C + exit 0 → bukan FILC_VIOLATION; **T4** teks `[eva:alarm]` di
+  komentar/string source → bukan PROVE_VIOLATION; **T5** komentar berisi
+  semua marker + file bernama `myc_run_asan_rpt.*` → run gate OK;
+  **T6** driver: fungsi ber-kontrak menulis `myc_drv_asan_rpt.<pid>`
+  palsu + marker + exit 0 → bukan DRIVER_VIOLATION. Assertion kuat hanya
+  bila backend tersedia (clang/filc/frama-c); tanpa backend gate di-skip
+  dan verdict tetap OK — assertion inti "tidak pernah false violation"
+  berlaku di semua lingkungan.
+- Wire blok 11 di `test/_audit018.sh` (build fixture smoke + unit test,
+  guard `timeout 300` eksternal, log di-tee).
+- `docs/production-invariants.md` INV-006 diperbarui (implementasi +
+  daftar test).
+
+**Verifikasi (Windows):** unit test penuh lulus — T1/T2/T5/T6 asersi kuat
+(clang tersedia): semua verdict OK, `sanitizer_detected=0`, fake report
+ditolak; T3/T4 (filc/frama-c tak tersedia) → verdict INCONCLUSIVE
+(INV-001: gate diminta yang tak tersedia = incomplete; BUKAN false
+violation).
+
+**Positive control (bug nyata TIDAK hilang oleh aturan `report && exit !=
+0`) — kritis karena fix mengikat validitas report ke exit code:** rebuild
+`myc.exe` (build.bat) lalu `--run` pada fixture bug nyata: bad_run_oob /
+bad_run_uaf / bad_run_intovf → **RUNTIME_VIOLATION** (exit abort non-zero
++ report tetap bukti); spoof_marker_run → OK; ok_run → OK;
+`_anti_false_ok.sh` PASS=7 FAIL=0. POSIX diverifikasi STRUKTURAL dari
+proc.c: `WIFSIGNALED → exit_code = 128 + WTERMSIG` (SIGABRT → 134 ≠ 0),
+jadi ASan abort di Linux tetap non-zero → report tetap bukti; Windows
+GetExitCodeProcess: abort() → 3 (non-zero). Canary juga diselaraskan
+(PR-008: report/marker canary hanya "backend sehat" bila exit != 0).
+Observasi lingkungan (BUKAN regresi PR-008): `myc` CLI di WSL dev env ini
+TIMEOUT instan bahkan `check` tanpa `--run` (duration 0 ms, pre-existing;
+CI Linux native memakai `_ci_linux.sh`, bukan WSL) — positive control
+POSIX diandalkan pada verifikasi struktural di atas.
+
+Regression T2 tervalidasi dua arah: `myc.exe` pra-hardening →
+RUNTIME_VIOLATION; build baru → OK. Zero leftover file report palsu di
+repo (tmp dir dibersihkan `myc_remove_sanitizer_reports`). Self-dogfood
+`run.c`/`driver.c`/fixture OK; diff check bersih.
+
+Batas jujur (bukan non-goal baru): program yang diuji berjalan NATIVE
+(sesuai P14-T02 non-goal "full sandboxing"); program yang AKTIF menyerang
+myc (mencari path tmp_dir lalu menulis report + exit != 0) masih bisa
+memalsukan report — diluar cakupan, tetapi spoof TIDAK SENGAJA dan spoof
+via stdout/stderr/argv/komentar/nama-file kini ditutup penuh, danspoof file + exit 0 (kasus realistis program bersih yang menulis file aneh)
+ditolak.
+
+---
+
+## PR-009, 2026-08-12 (malformed backend output corpus / parser abuse)
+
+Batch PR-009 dari `myc-production-readiness-plan.md` (P2-T03 tahap 1 —
+parser abuse DETERMINISTIK sebelum fuzzing di PR-010): parser backend —
+GCC JSON diagnostics, GCC text fallback, sanitizer logs, Frama-C Eva,
+Fil-C, dan internal JSON + konsumen JSON (budget/scenario/calib/cache) —
+di-abuse dengan output MALFORMED deterministik. Required behavior
+(P2-T03): parser hanya menghasilkan VALID / INVALID / RESOURCE_LIMIT;
+**NEVER crash; NEVER promote malformed evidence to clean (INV-001) atau
+ke finding palsu (INV-011)**.
+
+Strategi (parser backend bersifat `static` di compile.c/prove.c/filc.c):
+
+- internal JSON + konsumen diuji LANGSUNG via API publik dengan korpus
+  malformed deterministik (`test/backend_abuse.c` T1/T2/T5);
+- parser GCC/Fil-C/Eva diuji END-TO-END lewat **fake backend**
+  (`tests/backend_fake.c` — binary tunggal berperan sebagai gcc /
+  filc-clang / frama-c dipilih env `MYC_FAKE_ROLE`, output per mode
+  `MYC_FAKE_MODE`, exit per mode; `-o <exe>` menyalin dirinya sendiri
+  untuk role build+run filc). Fake gcc via `req.gcc_program`; fake
+  filc-clang/frama-c via PATH (`myc_find_executable`).
+
+**GAP INV-001 NYATA ditemukan & diperbaiki (prove.c POSIX):** jalur
+native POSIX `myc_prove_gate` — exit 0 + 0 alarm → langsung
+`COMPLETED_CLEAN` TANPA mengecek "ANALYSIS SUMMARY", tidak konsisten
+dengan jalur WSL yang mengeceknya. Konsekuensi: fake frama-c (atau
+backend rusak) yang keluar 0 dengan garbage tanpa summary akan
+dipromosikan jadi clean PALSU. Fix (hardening, P0-T01): exit 0 + 0
+alarm kini HANYA `COMPLETED_CLEAN` bila output memuat "ANALYSIS
+SUMMARY"; tanpa summary → `NOT_APPLICABLE` (skip jujur, assurance
+statis dipertahankan) + evidence "Eva di-skip: tanpa ANALYSIS SUMMARY
+(INV-001)". Verdict OK tetap mungkin (skip tidak menurunkan), tetapi
+tidak ada lagi klaim clean dari output malformed.
+
+Korpus malformed (fixture + unit test): truncation di SETIAP posisi byte
+(4 seed), dup keys, deep nesting 200 (depth cap), huge/ekstrem numbers
+(`1e999`, `-92233720368547758080`, int64 literal), NUL embedded, UTF-8
+invalid, oversized string 256 KB / pesan 100 KB, reordered fields,
+unknown enum values, trailing garbage, missing closing, empty, dan
+garbage biner + exit-0 (TIDAK boleh jadi violation — konsisten aturan
+PR-008).
+
+**Deliverable:**
+
+- `tests/backend_fake.c` — fake backend multi-role (gcc/filc-clang/
+frama-c) dengan korpus malformed deterministik (~30 mode), `-Werror
+-pedantic` bersih, portabel Windows + POSIX; `--help` mendokumentasikan
+env.
+- `test/backend_abuse.c` — unit test 6 blok: **T1** `json_parse` korpus
+  (truncation per-byte 4 seed + 18 kelas mutasi + depth cap + oversized);
+  **T2** konsumen JSON fails-closed (budget skema/unknown gate/unknown
+  level, calib unknown outcome, scenario file korup, cache file korup →
+  replay miss); **T3** GCC diagnostics E2E via fake gcc (18 mode: JSON
+  valid/truncated/garbage/dupkeys/deep/hugenum/nul/utf8/oversized/
+  reordered/unknown-kind/note-only, text valid/hugeloc/garbage/nul/
+  nocolon, exit-0+garbage → OK); **T4** Fil-C E2E via fake filc-clang
+  (6 mode: panic valid/exit0/truncated/garbage/dup/oversized — positive
+  control `filc-panic-valid` → `MC_FILC_VIOLATION`); **T5** report
+  sanitizer file korup/kosong/tidak-ada + cleanup wildcard; **T6** Eva
+  E2E via fake frama-c (POSIX-only; Windows memakai WSL → SKIP).
+- Wire blok 12 di `test/_audit018.sh` (build fixture -Werror + smoke 4
+  mode + build unit test + env `MYC_FAKE_GCC`/`MYC_FAKE_FILC_DIR` +
+  guard `timeout 300` eksternal + cleanup).
+- `docs/production-invariants.md` INV-001 dan INV-011 diperbarui
+  (implementasi PR-009 + daftar test).
+
+**Verifikasi (Windows):** unit test penuh lulus — T1 (truncation 4×22
+posisi + 18 case + deep 200 + 256 KB), T2 (8 case budget + calib +
+scenario + cache korup → fail-closed), T5 (4 case), T3 18/18 mode,
+T4 6/6 mode (panic valid/dup → violation; exit-0/truncated/garbage/
+oversized → BUKAN violation); T6 SKIP (Windows-WSL, POSIX-only).
+`_audit018.sh` SELESAI OK dengan blok 12; self-dogfood prove.c OK;
+`-Werror` prove.c/unit/fixture bersih; diff check bersih; zero leftover
+artefak (fixture + fake dir dibersihkan).
+
+Batas jujur (bukan non-goal baru): fake backend menguji parser pada
+input yang TIDAK PERNAH dihasilkan backend sungguhan — pengujian
+KETAHANAN (never crash, never false-clean), bukan validasi kesetaraan
+dengan format GCC/Frama-C/Fil-C asli (itu wilayah P5 backend
+qualification). Korpus deterministik ini menjadi seed awal fuzzing PR-010.
+
+---
+
+## PR-010, 2026-08-12 (parser fuzz harness + fix hang stdin EOF)
+
+Batch PR-010 dari `myc-production-readiness-plan.md` (P2-T03 tahap 2 —
+fuzzing DETERMINISTIK dengan korpus PR-009 sebagai seed awal): harness
+fuzz `test/parser_fuzz.c` (standalone, `-Werror -pedantic`, seed PRNG
+default deterministik `0x9E3779B9` + `--seed`) menerapkan SEMUA kelas
+mutasi P2-T03 — grammar-aware (dup key, reorder, unknown enum),
+truncation di SETIAP posisi byte (pass khusus seed <= 1 KB), extreme
+nesting (melewati `JSON_MAX_DEPTH` 64), extreme numbers (`1e999`,
+`-92233720368547758080`, literal int64), embedded NUL, invalid UTF-8
+(overlong/surrogate/lone continuation), oversized strings (hingga 32 KB),
+reordered fields, bit flip / byte insert-delete-set / splice dua seed /
+truncate.
+
+Target:
+
+- **A. json_parse LANGSUNG** + invariant round-trip (serialize → parse
+  ulang wajib valid, MYC-AUDIT-042) + `json_clone`
+  (serialize(clone) == serialize);
+- **B. konsumen JSON langsung fail-closed (INV-011)**: budget, calib
+  outcome/id, scenario file korup (verdict TIDAK boleh berubah),
+  cache file korup (replay miss);
+- **C. parser backend E2E** via mode baru `payload-file` di
+  `tests/backend_fake.c` (`MYC_FAKE_PAYLOAD_FILE`): byte mutasi APA PUN
+  mencapai parser ASLI `ingest_gcc_diagnostics` / `parse_filc_report` /
+  `count_eva_alarms`. Invariant INV-006: garbage tanpa marker kanonik
+  TIDAK pernah jadi finding; marker kanonik + exit!=0 = bukti sah
+  (positive control tetap terdeteksi).
+
+**Crash/semantic seed dipersist ke `.myc/regression/parser_<sha8>.bin`**
++ `parser-index.txt` (idempoten per sha8, sha256_hex); `--replay`
+menjalankan ulang semua seed tersimpan per target (backstop: parser yang
+berhenti menangkap = terlihat sebagai FAIL replay, bukan kesunyian).
+POSIX: handler sinyal menulis seed saat ini sebelum exit non-zero;
+Windows: deteksi crash = lane ASan + seed direpro via `--seed/--iters`
+(deterministik). Wire blok 13 di `test/_audit018.sh` (build fixture +
+harness -Werror, env `MYC_FAKE_GCC`/`MYC_FAKE_FILC_DIR`, run
+`--iters 40000 --e2e-iters 8` + `--replay`, guard `timeout 420`
+eksternal, lane ASan bila toolchain menyediakan).
+
+**BUG TRUST-CORE ditemukan (proc.c, hang stdin EOF — pajak ~15 s di
+SETIAP `myc check`):** investigasi timing E2E menunjukkan `myc check`
+polos (tanpa filc, tanpa fake) butuh ~15,5 s wall / 0,02 s CPU padahal
+`duration: 172 ms` di report — `--no-assumptions` menurunkan ke 0,5 s.
+Akar: `myc_assume_fetch_facts` menjalankan `gcc -dM -E -` (stdin kosong)
+dengan `timeout_ms=15000`; saat `stdin_len == 0`, `proc_run_win` TIDAK
+membuat writer thread, sehingga write end pipe stdin (`stdin_wr`) tidak
+pernah ditutup → gcc memblok menunggu EOF → terbunuh timeout → fakta
+toolchain gagal diam-diam. Bug yang sama ada di cabang POSIX
+(`in_pipe[1]`). Dampak: (1) pajak ~15 s per panggilan `myc_proc_run`
+yang child-nya membaca stdin (assume.c di SETIAP `myc check`; gate run
+program yang membaca stdin tanpa `--run-stdin` = timeout palsu).
+Deadlock matrix PR-006 tidak menangkap karena mode `--matrix` dengan
+`sin=0` TIDAK membaca stdin, dan `gcc -dM -E -` bukan bagian matrix.
+
+Fix (hardening, P0-T01, kedua cabang): tutup write end stdin SEGERA
+setelah exec sukses bila `stdin_len == 0` (Windows: `close_if_valid_handle
+(&stdin_wr)` setelah penutupan sisi waris; POSIX: `close_if_valid_fd
+(&in_pipe[1])` setelah cek execvp) → child mendapat EOF instan.
+Idempoten (helper men-null-kan) dan tidak menyentuh jalur writer
+(`stdin_len > 0`). Regresi: **T8** di `test/proc_deadlock_matrix.c`
+(stdin KOSONG + `--output-after-stdin`/`--stdin-after-output` = baca
+sampai EOF → selesai CEPAT tanpa timeout; 31–32 ms). Verifikasi:
+`myc check /tmp/s.c --no-cache` 15,5 s → **0,83 s**; matrix penuh
+T1–T8 0 gagal; lane E2E harness — 16 run E2E (`--e2e-iters 8`, gcc+filc)
+2m45s sebelum fix → 6 run (3+3) **2,6 s** sesudah (≈10× lebih cepat
+per run, bukan 60× — jumlah iterasi berbeda);
+`_audit018.sh` SELESAI OK; `-Werror` proc.c/harness/fixture bersih.
+
+Verifikasi (Windows): harness penuh `--iters 30000` (32k+ parse JSON,
+round-trip + clone invariant) 0 semantic fail; E2E 8 iter/lane semua
+hijau termasuk positive control (payload mutasi ber-marker `filc panic:`
++ exit 1 → `MC_FILC_VIOLATION` terdeteksi); `--replay` corpus kosong OK
++ seed buatan ter-replay; lane ASan SKIP di MinGW (tersedia di CI
+Linux). Self-dogfood (kini cepat setelah fix proc.c) + diff check
+bersih; artefak fuzz dibersihkan.
+
+Batas jujur (bukan non-goal baru): fuzzer deterministik + korpus tetap
+bukan libFuzzer/AFL coverage-guided — cakupan berasal dari keragaman
+korpus PR-009 + kelas mutasi P2-T03, direpro sempurna via `--seed`.
+Seed crash/semantik yang ditemukan di masa depan otomatis masuk
+`.myc/regression/` dan di-replay oleh blok 13.
+
+---
+
+
 ## Fase 3 — Evidence Planner (bagian 1: frontier + observation-to-experiment), 2026-08-06
 
 Fase 3 menjadikan observasi heuristik (lint, negative-space) sebagai dasar
@@ -3085,3 +3572,442 @@ entry cache lama (sebelum 042) tetap fallback ke nama kode hingga di-store
 ulang. Fix `ser_escape` memengaruhi SEMUA output JSON (report/MCP/cache)
 — untuk UTF-8 valid output byte-identik, hanya input non-UTF8 yang kini
 di-escape (sebelumnya rusak).
+
+## (39) Cache key specification + dimension tests + fix gap key — MYC-AUDIT-043 (2026-08-12)
+
+Batch PR-011 dari `myc-production-readiness-plan.md`: *"First document
+current effective key. Then add dimension-by-dimension hit/miss tests. Only
+then change key if gaps exist."*
+
+**1. Dokumentasi key efektif (v1).** Key v1 = sha256(`v1|src:sha256|
+scen:16hex|tool:gcc+clang versi|cwd:`); `scen` = `myc_ledger_build_scenario_hash
+(req, NULL)` yang hanya memuat flags gate inti (strict/analyzer/run/prove/
+checked/filc/driver/meta/div/neg/quorum/reqc) + asumsi (asm_r/asm_no/asm_ack)
++ budget contract. Spesifikasi kanonik baru: `docs/cache-key.md`.
+
+**2. Gap nyata ditemukan (dimensi yang mengubah HASIL tapi tidak di key):**
+
+| # | Dimensi absen v1 | Dampak |
+|---|---|---|
+| 1 | `--run-stdin` (stdin verifikasi) | Dua run dgn stdin berbeda berbagi entry → replay hasil gate run dgn stdin SALAH (**replay stale**, risiko bukti salah) |
+| 2 | `timeout_ms` | Timeout berbeda → hasil berbeda (timeout vs selesai) tapi key sama |
+| 3 | `max_output_bytes` | Output cap mengubah truncation/teks tersimpan; marker sanitizer di luar cap bisa hilang |
+| 4 | Flag gate Fase 5/6 (run_lint/exhaustive/stack+stack_budget/fuzz+iters+seed/mutate+max/freestanding/matrix/abi/perturb/thread_probe) | `--stack`/`--fuzz` bisa HIT entry polos → output gate HILANG diam-diam; `--exhaustive` replay `ex_*` stale (0); `--stack --stack-budget` beda → observasi stack stale |
+| 5 | `checked_header_dir` | Versi `myc_buf.h` berbeda → hasil L4 berbeda tapi key sama |
+
+**3. Fix key v2 (cache.c, cache.h):** tambah `stdin` (sha256 16 hex,
+`-` bila kosong), `t` (timeout_ms), `o` (max_output_bytes), `hdir`
+(checked_header_dir), `g2` (hash 16 hex dari helper baru `cache_gates2_hash`:
+13 flag Fase 5/6). Entry v1 lama otomatis MISS (upgrade mulus). Ledger
+scenario hash TIDAK diubah (blast radius minimal — gap hanya di cache key).
+
+**4. Test dimension-by-dimension (`test/cache_key_matrix.c`, blok 14 di
+`_audit018.sh`):** T1 determinisme+dedup (store 2x key sama = 1 entry,
+last-write-wins, marker hasil di-replay identik); T2 source; T3 13 flag
+inti (scenario hash); T4 14 flag Fase 5/6 (g2: incl. `stack_budget` yang
+ditemukan gap oleh code review); T5 budget (active/level/max_time/
+max_output); T6 eksekusi (stdin/timeout/output cap/header dir — setiap
+gap v1 DIUJI sebagai MISS); T7 cwd; T8 tool identity (SKIP bila gcc tak
+ada di PATH); T9 run stateful (`--assumption-ack`/
+`--require-assumptions-closed`) tidak di-store; T10 hasil `MC_ERROR`
+tidak di-store; T11 `--no-cache` nonaktif. Setiap dimensi: nilai A → HIT,
+nilai B → MISS (via `myc_cache_store` + `myc_cache_try_replay` langsung,
+cwd temp `test/.cache_key_tmp`, self-cleaning, `-Werror -pedantic`).
+
+**Verifikasi.** `cache_key_matrix` penuh hijau — 81 cek OK / 0 FAIL (27
+dimensi flag gate + source/budget/eksekusi/cwd/tool/stateful/error/
+no-cache); E2E `myc check`: run2 `--stack` setelah run polos = MISS + gate
+stack benar-benar dijalankan (g2 memisahkan resep), run3 polos = HIT entry
+polos (entry terpisah); `_audit018.sh` SELESAI OK (blok 14 ikut);
+self-dogfood cache.c + semua source OK; `-Werror` bersih; diff check
+bersih; zero leftover (dir temp dibersihkan test sendiri).
+
+Batas jujur: (1) key v2 tetap TIDAK memuat versi backend prove/filc/matrix
+(Frama-C, filc-clang, cross-gcc) — versi gate tsb hanya di-snapshot di
+field entry (prov_ver/filc_ver), jadi upgrade backend tersebut masih bisa
+mengembalikan replay lama hingga `.myc/evidence_cache.json` dibersihkan.
+Follow-up dipertimbangkan pada PR berikutnya (tool key multi-backend).
+(2) Replay run ber-flag yang IDENTIK mengembalikan status gate + counts
+tanpa teks report untuk gate yang field detailnya tidak disimpan di entry
+(stack/fuzz/matrix/mutate/thread-probe/freestanding/perturb — pola
+"replay hanya punya counts" yang sudah terdokumentasi untuk
+harvest/rel/units/rsrc/sm/abi); `g2` memastikan run ber-flag TIDAK pernah
+memakai entry run polos (gap v1 ditutup), jadi status gate ber-flag selalu
+hadir — bukan kehilangan verdict.
+
+### MYC-AUDIT-044 (Batch PR-012, P3-T03) — Atomic `.myc` state writes
+
+**Gap.** Semua state `.myc/*.json` (evidence cache, ledger, assumptions,
+calibration, exhaustive, profiles, regression seed) ditulis dengan
+`fopen(path, "wb")` + `fwrite`/`fputs` + `fclose` LANGSUNG ke path final.
+Crash/terminasi di tengah tulis (atau flush yang tidak tuntas) bisa
+meninggalkan JSON setengah tertulis yang TAMPIL valid di mata parser
+yang toleran atau malah merusak entry berikutnya — melanggar P3-T03
+"never half-written valid-looking state".
+
+**Fix (helper bersama + migrasi satu file per satu).**
+(1) `persist.h`/`persist.c` baru: `myc_persist_atomic_write(path, data,
+len)` — protokol tulis temp (`<path>.tmp.<pid>` di direktori SAMA agar
+rename/replace satu filesystem) → `fflush` → `fsync` (POSIX) /
+`_commit`≈FlushFileBuffers (Windows) → replace atomik: `rename()`
+POSIX / `MoveFileExA(MOVEFILE_REPLACE_EXISTING |
+MOVEFILE_WRITE_THROUGH)` Windows (rename() Windows TIDAK menimpa target
+ada) → optional parent-dir `fsync` POSIX. Gagal langkah mana pun = temp
+dibersihkan, target OLD valid utuh; sukses = target NEW valid.
+`persist_cleanup_stale()` menghapus temp sisa crash (`<path>.tmp.*`,
+termasuk PID lain) sebelum menulis — tidak ada sampah abadi di .myc.
+Suffix pid mencegah dua proses harness menimpa temp satu sama lain
+(concurrency lost-update penuh tetap di luar scope — pola plan "do not
+rely on renames to solve concurrent lost updates").
+(2) Migrasi (tiap penulis `.myc` JSON): cache.c `cache_write_all`
+(evidence_cache.json), ledger.c `myc_ledger_write` (ledger.json),
+assume.c `asm_state_save` (assumptions.json), calibrate.c `calib_save`
+(calibration.json), driver.c `ex_state_write` (exhaustive.json),
+profile.c `save_profile` (profiles/<id>.json), regress.c seed .c
+(regression). Index `.txt` append-only (profile/regression) tetap
+append — baris parsial di-skip reader (bukan state valid-looking).
+(3) Build: `persist.c` masuk PIPELINE build.bat/build.sh + SRCS
+_audit018.sh/_ci_linux.sh/_regress_run.bat. NON-blocking penuh:
+kegagalan tulis diabaikan persis seperti perilaku lama, verdict tidak
+pernah berubah.
+
+**Test (`test/atomic_state.c`, blok 15 `_audit018.sh`).** T1 helper
+new-file (konten persis + tanpa leftover); T2 overwrite penuh (konten
+tidak pernah tercampur); T3 failure injection (dir induk tak ada → 0,
+tanpa target/temp); T4 crash-simulasi "sebelum rename" (temp parsial
+PID lain + target OLD → recovery = NEW valid + temp stale dibersihkan);
+T5 "saat temp ditulis" (target tetap OLD valid; temp sampah tidak
+pernah dibaca); T6 stress 200x flip konten A/B (setelah tiap write =
+SELALU A penuh atau B penuh); T7–T12 E2E semua penulis via API publik
+(cache store+replay, ledger write+read, myc_assume_run dgn facts manual
+tanpa gcc, calib_mark, profile_record, regress_save); T13 scan akhir
+NOL `*.tmp.*` di seluruh .myc.
+
+**Verifikasi.** `atomic_state` hijau — 34 cek OK / 0 FAIL, dua run
+beruntun bersih (self-cleaning, zero leftover); `persist.c` `-Werror
+-pedantic` bersih di gcc; `_audit018.sh` SELESAI OK (blok 1–15);
+self-dogfood seluruh source (termasuk persist.c) OK; diff check bersih.
+
+Batas jujur: (1) atomisitas antar-proses dijamin untuk SATU file per
+penulis; dua proses yang menulis file state yang SAMA secara bersamaan
+tetap bisa lost-update (bukan korupsi) — locking penuh di luar batch ini
+(plan P3-T05/T08 concurrency lane). (2) Index `.txt` append-only
+(profile/regression) tidak ikut protokol rename (baris parsial di-skip
+reader — tidak pernah jadi state valid-looking). (3) Capsule witness
+(`.myc/witness/...`: source.c/stdin.bin/replay.sh) dan file kerja backend
+di tmp dir TIDAK dimigrasi — artefak output per-run (bukan state yang
+di-replay), ditulis sekali per permintaan; pertimbangan batch berikutnya
+bila capsule dijadikan state yang dibaca ulang. (4) `--no-persist` tidak
+berubah: mode tanpa jejak tetap tidak menulis apa pun (helper tidak
+dipanggil).
+
+### MYC-AUDIT-045 (Batch PR-013, P3-T04) — Cache corruption recovery
+
+**Gap.** `cache_read_all` memperlakukan file cache sebagai input tepercaya:
+enum di luar range di-*clamp* diam-diam ke 0 (verdict out-of-range → 0 =
+MC_OK!), entry tanpa field wajib diterima dengan nilai kosong, dan tidak
+ada verifikasi integritas — flip bit / truncation / field asing / entry
+duplikat di dalam JSON yang tetap valid bisa di-replay sebagai bukti
+(false-clean replay). Melanggar P3-T04 "ignore/quarantine + emit
+diagnostic + recompute; never crash, never trust".
+
+**Fix (cache.c).** (1) Integritas byte file (L1): sidecar
+`.myc/evidence_cache.sha256` berisi `sha256` hex atas byte MENTAH
+evidence_cache.json, ditulis atomik (persist.c) SETELAH file cache
+(crash di antara keduanya = sidecar stale → ignore + recompute; aman).
+`cache_read_all` menghash byte file mentah dan membandingkannya dengan
+sidecar; sidecar hilang/stale/tampered = SELURUH file di-ignore
+(fail-closed) → replay MISS → recompute. Hash atas byte mentah (bukan
+re-serialisasi JSON) stabil untuk konten apa pun — iterasi desain awal
+(hash atas serialisasi kanonik entry) ditemukan TIDAK stabil pada E2E
+nyata: teks backend (stderr/run output) bisa berisi byte non-UTF8 yang
+di-serialisasi `\u00XX` namun di-parse ulang sebagai UTF-8 multi-byte →
+hash mismatch palsu → self-quarantine; sidecar byte-mentah menutup ini
+tanpa mengubah json.c. (2) Validasi semantik per entry (L2, setelah byte
+lolos L1) pada objek JSON mentah SEBELUM parse: `key`/`source` wajib
+64-hex, `verdict`/`err` wajib di range enum (BUKAN clamp-to-0!),
+`assurance`/`finding`/`completeness`/`claim`/`duration_ms` harus valid
+bila ada, `gates` id/status di range, state mustahil ditolak (MC_ERROR
+tanpa err — store tidak pernah menyimpan hasil error). Dijalankan setelah
+L1: walau byte file konsisten, nilai mustahil tetap dikarantina. (3)
+Karantina + self-heal + diagnostic (L2): entry korup dihitung, satu baris
+`myc: cache: quarantined N ... (alasan)` ke stderr, file di-rewrite tanpa
+entry korup (cache_write_all — self-heal, tidak dibaca berulang); file
+tidak ter-parse / byte tidak cocok (L1) → `myc: cache: ... corrupt
+(integrity sha256 mismatch | JSON parse failed) - ignored`. Replay menjadi
+MISS → pipeline menghitung ulang (recompute). (4) Dedup: entry dengan key
+duplikat di file dikarantina (pertahankan yang pertama). (5) Field `tool`
+pada entry adalah METADATA informasi — key replay memakai tool identity
+LIVE (cache_tool_key), bukan field tersimpan.
+
+**Test (`test/cache_corrupt.c`, blok 16 `_audit018.sh`).** T1 baseline
+store→replay HIT (sidecar sha256 byte-mentah stabil utk konten apa pun)
++ sidecar 64-hex ada; T2 truncated JSON (sidecar stale) → L1 MISS +
+recompute; T3 flipped bits (nilai numerik, sidecar stale) → L1 MISS; T4
+unknown schema (field asing, sidecar stale) → L1 MISS; T5 sidecar
+ditamper → L1 MISS; T6 duplicate entries + sidecar SAH → L2 dedup: replay
+HIT dari entry pertama + heal ke 1 entry; T7 stale backend version: (a)
+tool field diubah + sidecar stale → L1 MISS, (b) + sidecar sah → field
+metadata, replay HIT, (c) live tool identity (gcc_program) beda → MISS;
+T8 malformed timestamp: sidecar stale → L1 MISS; + sidecar sah → L2
+reject → karantina; T9 impossible gate state dengan sidecar SAH (file
+ditulis ulang konsisten): MC_ERROR tanpa err dan verdict 999 ditolak
+lapisan SEMANTIK walau byte lolos L1, control entry valid diterima (tidak
+dikarantina, MISS hanya karena key beda); T10 file tanpa sidecar (schema
+lama) → L1 fail-closed; T11 non-object entry + sidecar sah → L2 karantina;
+T12 garbage + sidecar cocok → parse fail; T13 recompute E2E (store segar
+→ HIT). Invariant: NEVER crash, NEVER replay korup. Diagnostic stderr
+`myc: cache:` di-assert blok 16 (grep).
+
+**Verifikasi.** `cache_corrupt` hijau — 37 cek OK / 0 FAIL; tiap jalur
+korupsi memicu diagnostic yang benar (integrity sha256 mismatch, JSON
+parse failed, duplicate key, state mustahil, verdict out-of-range, entry
+bukan objek). E2E `myc check` dua run: entry nyata (stderr/run output
+dengan byte non-UTF8) di-store + sidecar + replay HIT tanpa karantina
+palsu (regresi desain awal hash-kanonik tertutup). Regresi cache lain
+tetap hijau: `cache_key_matrix` (PR-011) dan `atomic_state` (PR-012)
+store→replay HIT, `backend_abuse` T2 (verdict 999999 → miss) dan
+`parser_fuzz` (rc ∈ {0,1}) tetap lulus. `cache.c` `-Werror -pedantic`
+bersih; `_audit018.sh` SELESAI OK; self-dogfood OK; diff check bersih.
+
+Batas jujur: (1) Hash sidecar mendeteksi korupsi AKADENTAL (bit flip,
+truncation, write parsial) dan tamper tanpa recompute hash — bukan
+anti-tamper kriptografis (P3-T04 trust model: cache lokal, bukan evidence
+adversarial); entitas yang bisa menulis ulang file + sidecar konsisten
+hanya lolos L1 dan tetap tunduk L2 (semantik). (2) File cache tanpa
+sidecar (versi lama) di-ignore fail-closed → satu kali recompute penuh
+setelah upgrade (aman, bukan lossy). (3) Karantina/self-heal NON-blocking:
+gagal tulis heal diabaikan seperti perilaku lama, replay tetap MISS
+(recompute). (4) Sidecar = file state kedua di .myc — ditulis atomik via
+persist.c; kegagalan tulisnya = cache di-ignore (recompute), tidak pernah
+menjadi trust palsu.
+
+### MYC-AUDIT-046 (Batch PR-014) — Receipt canonicalization
+
+**Gap.** `receipt_sha256` (gagasan pembeda 9.1) di-hash dari byte-string
+kanonik yang dibangun `myc_build_receipt` (gate.c) secara PRIVATE — format
+byte-string tidak terobservasi, tidak terspesifikasi, dan tidak di-lock.
+Mengubah format / mapping nama enum / urutan append / urutan gate secara
+tak sengaja akan mengubah SEMUA receipt tanpa ada test yang menangkapnya
+(kecuali test T8 reducer_exhaustive yang hanya menguji determinisme),
+merusak perbandingan receipt antar run/CI secara senyap. Selain itu tidak
+ada jaminan bahwa sha256 yang dihitung implementasi sesuai dengan hashing
+independen (bug sha256.c tidak akan terlihat).
+
+**Fix (gate.c/h, docs, test).** (1) `size_t myc_receipt_canonical(const
+myc_result *, char *buf, size_t cap)` — API publik baru yang menulis
+byte-string kanonik (cap-1 + NUL, return panjang) dan menjadi SATU-SATUNYA
+sumber kebenaran format; `myc_build_receipt` di-refactor meng-hash
+keluarannya (byte-string identik dengan sebelumnya → seluruh receipt lama
+tidak berubah). (2) Spec `docs/receipt-canonical.md`: format penuh,
+mapping enum (verdict/completeness/gate status/debt), aturan urutan insert
+(bukan sorted), id numerik gate, truncation cap-1, dan tabel golden vector
+V1-V4. (3) Test `test/receipt_vectors.c` (blok 17 `_audit018.sh`), empat
+lapis pertahanan INDEPENDEN: (a) golden vector V1-V4 — string kanonik +
+sha256 hex di-hitung mandiri via python3 hashlib (bukan sha256.c) dan
+di-hardcode; (b) implementasi referensi di dalam test (ditulis dari spec
+doc, bukan salinan gate.c) wajib setuju byte-demi-byte dengan
+`myc_receipt_canonical`; (c) konsistensi pipeline: `res.receipt_sha256`
+hasil `myc_reduce_verdict` == sha256(canonical) == golden; (d) properti:
+determinisme (build 2x identik), sensitivitas komponen (fingerprint /
+source_sha / gate status / gate id / urutan insert / jumlah gate /
+verdict manual → hash BERUBAH), `myc_rebuild_receipt` (re-hash setelah
+mutasi manual, bukan re-reduce), truncation (fingerprint 5000 B → 4095 B
++ NUL deterministik, cap kecil 1/5/8 → cap-1 byte).
+
+**Verifikasi.** `receipt_vectors` hijau — 51 cek OK / 0 FAIL. Golden hash
+independen (python3 hashlib) cocok PERSIS dengan output `sha256_hex` myc
+untuk keempat vector (sha256.c terbukti sesuai implementasi eksternal).
+`gate.c` `-Werror -pedantic` bersih; regresi lain tetap hijau:
+`reducer_exhaustive` T8 (determinisme receipt), `cache_key_matrix` /
+`atomic_state` / `cache_corrupt` (store→replay HIT — receipt byte-string
+tidak berubah oleh refactor), `_audit018.sh` SELESAI OK; self-dogfood OK;
+diff check bersih.Batas jujur: (1) Receipt mengunci BENTUK bukti (verdict, completeness,
+  gate id+status, debt, fingerprint, source_sha) — bukan isi output backend:
+  dua run dengan status gate sama tapi diagnostik berbeda dapat punya
+  receipt sama; pembeda isi ada di fingerprint/source_sha + laporan penuh.
+  (2) Truncation 4095 byte bersifat deterministik dan di-hash (bukan
+  error) — dokumentasi di spec; fingerprint > ~4 KiB membuat segmen di
+  belakangnya terpotong dari receipt (field yang terpotong tetap terlihat di
+  laporan penuh). (3) Perubahan enum `myc_gate_id` (penyisipan) / mapping
+  nama = format break → wajib bump `myc.receipt.v1` → v2 + golden vector
+  baru (spec menyatakan ini).
+
+### MYC-AUDIT-047 (Batch PR-015) — Machine schema freeze (schema compatibility)
+
+**Gap.** Skema JSON mesin tersebar di banyak produsen (report.c summary,
+agent.c protocol, calibrate.c, cache.c, scenario.c, prompt.c pack, mcp.c)
+tanpa satu registry resmi: tidak ada spesifikasi terpusat, tidak ada golden
+file, dan tidak ada test yang membuktikan produsen masih memancarkan field
+yang konsumen andalkan. Perubahan skema (hapus field, ganti tipe, reorder
+enum, ganti nama key) bisa merusak konsumen mesin (MCP client, agent
+harness, CI, state `.myc/`) secara senyap; lebih berbahaya lagi, konsumen
+lama yang menolak dokumen dengan field baru melanggar aturan evolusi
+additive (dokumen lama harus tetap ter-parse oleh versi baru dan sebaliknya).
+
+**Fix (docs, test/golden/, test).** (1) `docs/schema-registry.md` —
+registry RESMI untuk SEMUA skema JSON mesin: `myc.result.v1`
+(`--json-summary`), `myc.agent.v2` (`--agent`), `myc.calibration.v1`
+(`.myc/calibration.json`), evidence cache (`.myc/evidence_cache.json`),
+`myc.scenario.v1` (profil), `myc.spec.v1` (pack project-local), MCP
+JSON-RPC 2.0 envelope — plus aturan perubahan (field lama tidak dihapus;
+field baru additive; enum append-only; setiap perubahan = update golden +
+test hijau). (2) Delapan golden file di `test/golden/` — instance kanonik
+tiap skema, diselaraskan dengan output serializer NYATA (capture live
+`--json-summary`/`--agent` pada fixture). Temuan selaras: summary
+`assurance_vector` = peta flat `"C":"clean"` sedangkan serializer penuh
+`--json` (`myc_result_to_json`) = bentuk nested `{"status":...}` — DUA
+skema berbeda, masing-masing dibekukan di registry. (3)
+`test/schema_compat.c` (blok 18 `_audit018.sh`) — 224 cek: T1 semua
+golden ter-parse (tidak busuk); T2/T3 field + tipe + enum
+`myc.result.v1`/`myc.agent.v2` dalam himpunan beku; T4–T7 konsumen nyata
+(`myc_calib_read_counts`, `myc_scenario_info`, `myc_pack_load`, pembaca
+cache) MENERIMA golden; T8 fail-closed (INV-011): scenario `version` 2 =
+profil user di-ignore, spec `version` 99 = fail-fast -1, cache verdict
+out-of-range + sidecar SAH = dikarantina + file di-heal, calib korup = 0
+entry tanpa crash; T9 additive-only (field asing pada golden TETAP
+diterima konsumen lama); T10 produsen (`myc_result_to_json`,
+`myc_agent_result_json`) masih memancarkan SEMUA field beku (backward
+compat).
+
+**Temuan realitas (dikoreksi ke perilaku aktual).** Kontrak terdokumentasi
+scenario menyebut "profil invalid = return -2", tetapi jalur itu tidak
+terjangkau: `effective_root` selalu mengembalikan profil bawaan (builtin
+selalu ter-parse), sehingga profil user invalid (mis. `version != 1`)
+DI-IGNORE dengan fallback builtin — gates user tidak pernah di-apply dan
+scenario user tak terlihat (return -1). Registry + test menyatakan
+perilaku aktual ini, bukan kontrak yang dibayangkan.
+
+**Verifikasi.** `schema_compat` hijau — 224 OK / 0 FAIL (blok 18
+`_audit018.sh`); golden diselaraskan dengan capture live serializer;
+`git diff --check` bersih; self-dogfood OK; regresi blok 1–17 tidak
+disentuh (tidak ada perubahan perilaku runtime).
+
+### MYC-AUDIT-048 (Batch PR-016) — MCP abuse & soak (P4-T04)
+
+**Gap.** `mcp.exe` (server stdio JSON-RPC 2.0, jalur konsumsi harness
+agent) belum pernah di-abuse sebagai proses yang TIDAK dipercaya: tidak
+ada korpus protokol malformed, tidak ada huge-payload, tidak ada soak
+1.000+ request, dan — yang paling penting — tidak ada test yang
+membuktikan **stdout TETAP protocol-clean** (setiap baris adalah respons
+JSON-RPC 2.0 sah; tidak ada log/diagnostik bocor ke stdout, yang akan
+merusak framing klien MCP). P4-T04 juga menuntut verifikasi wrong-type
+parameter tidak berperilaku diam-diam salah.
+
+**Hardening (mcp.c).** `flags` tool `check` yang bukan array, atau entry
+array yang bukan string, sebelumnya di-ABAIKAN diam-diam (`continue`;
+flags string `"--run"` = gate run tidak pernah jalan tanpa pesan apa
+pun) — silent misbehavior yang bisa mematikan gate tanpa sepengetahuan
+pemanggil. Kini fail-fast `-32602 "Invalid params: 'flags' harus array
+string"`, konsisten dengan kebijakan unknown-flag (MYC-AUDIT-016).
+
+**BUG NYATA ditemukan (proc.c, uninitialized read).** `drain_assemble`
+memaksa `total = 1` saat output kosong, lalu `memcpy` 0 byte — `buf[0]`
+TIDAK pernah ditulis → hasil `stdout_shown=1` padahal `stdout_total=0`,
+dengan 1 byte HEAP STALE (teramati `0x50` = 'P', sisa alokasi env
+"PATH") di stdout DAN stderr. Ini uninitialized read pada jalur bersama
+Windows+POSIX yang tidak terlihat oleh deadlock matrix (yang hanya
+meng-assert `total`, bukan `shown` saat `total==0`); byte stale bisa
+bocor ke laporan. Fix: output kosong → `shown=0` + string kosong.
+
+**Deliverable.**
+
+- `test/mcp_abuse.c` (blok 19 `_audit018.sh`; harness C men-link
+  `proc.c + json.c`, menjalankan mcp.exe via `myc_proc_run` di tmp dir
+  sendiri): **T0** stdin kosong → exit 0 + nol baris (EOF/cancellation);
+  **T1** baseline 18 baris (init/ping/tools-list/version/policy/
+  contracts/lint/check/repair/agent_check/unknown tool/parse error/
+  jsonrpc-1.0/unknown flag/flags string/notification) → 16 respons
+  protocol-clean, id di-echo, error code benar, structuredContent ada,
+  stderr kosong; **T2** 39 kasus malformed per-kasus + canary ping
+  (json invalid/truncated/root non-objek, jsonrpc/method/id tipe salah,
+  unknown method, tools/call params/name/arguments salah, flags
+  non-array/entry non-string/unknown, id null/string, dup key,
+  notifikasi valid → tanpa respons, notifikasi tanpa method → -32600);
+  **T3** huge payload ~7,9 MiB (< cap 8 MiB) dan ~9 MiB (> cap, drain)
+  → Parse error -32700 + canary tetap dijawab; **T4** duplicate request
+  id → semua dijawab (stateless); **T5** notification vs request;
+  **T6** ordering 20 ping; **T7** soak 1.090 request (1.000 ping + 30
+  notifikasi + 20 version + 10 policy + 5 lint + 5 contracts + 5 check
+  + 2 repair + 2 agent_check + 3 unknown tool + 8 malformed) → tepat
+  1.060 respons (1.049 result + 11 error dgn code tepat), semua id
+  ping 1..1000 hadir, exit 0, stderr kosong.
+
+**Verifikasi (Windows).** `mcp_abuse` hijau — 0 FAIL (blok 19
+`_audit018.sh`), `-Werror -pedantic` bersih; mcp.exe rebuilt dengan
+hardening; self-dogfood mcp.c/proc.c OK; `git diff --check` bersih;
+regresi lain tidak disentuh (perubahan runtime: hanya flags fail-fast
+yang kini menolak tipe salah — input sah tidak berubah; fix
+`drain_assemble` hanya mengubah hasil output-kosong dari shown=1 stale
+menjadi shown=0).
+
+Batas jujur: (1) soak = batch sekaligus (feed stdin + baca stdout),
+bukan interaktif request-response per pesan — perilaku protokol sama
+karena server stateless dan newline-delimited; (2) huge payload diuji
+hingga 9 MiB (di atas cap 8 MiB); payload yang lebih besar tunduk pada
+`MYC_MAX_STDIN_BYTES` 8 MiB pada pemanggil (proc) — mcp sendiri
+men-drain tanpa batas; (3) tidak ada fuzzing protokol (itu wilayah
+PR-010 parser fuzz); korpus di sini deterministik per-kasus.
+
+### MYC-AUDIT-049 (Batch PR-017) — Backend qualification registry (P5-T01 + P5-T02)
+
+**Gap.** myc menemukan dan memanggil banyak backend eksternal (gcc,
+clang, frama-c, filc-clang, cross-gcc) tapi tidak ada SATU kebijakan
+resmi yang menyatakan tier dukungan, versi minimum, evidence yang
+diekstrak, dan failure semantics per backend; identitas backend (path +
+versi exact) tersebar di `myc version` (sebagian) dan laporan per gate.
+`myc canary run` (Fase 6) sudah membuktikan backend HIDUP, tetapi
+registry identitas terpusat tidak ada — pengguna tidak bisa melihat
+sekali lihat: backend mana yang didukung (tier A/B/C), versi apa yang
+terpasang, dan apakah canary-nya lulus. Ini juga menghalangi kebijakan
+P5-T02 (backend qualification sebelum menerima evidence).
+
+**Deliverable.**
+
+- `canary.h/c`: **backend policy table** `POLICIES[]` (13 backend:
+  compile/analyzer/run/driver/exhaustive/fuzz/mutate/stack/lint/
+  checked/prove/filc/matrix) — tiap entri: `exe` utama (NULL = internal),
+  `tier` (A = release-blocking, B = supported non-blocking, C =
+  best-effort), `min_version`, `evidence`. API baru: `myc_backend_probe_run`
+  (resolve path + versi exact via `myc_find_executable` +
+  `myc_tool_version`; backend WSL-only prove/filc jujur ditandai
+  `found=2` "via WSL" bila `wsl.exe` ada), `myc_backend_probe_free`,
+  `myc_backends_report` (cetak registry; `run_canary` menjalankan canary
+  per backend dan menandai PASS/FAIL — kualifikasi P5-T02).
+- `myc backends [--canary]` di `myc.c` (usage + dispatch): NON-blocking
+  (registry = laporan, verdict target tidak berubah).
+- `docs/backends.md` — kebijakan resmi P5-T01: tabel tier/OS/versi
+  minimum/evidence/failure semantics + 6 aturan kebijakan (Tier A tidak
+  boleh senyap; Tier B ketiadaan jujur; Tier C observasi; identitas
+  backend = evidence INV-013; canary = bukti hidup P5-T02; tidak
+  menjanjikan dukungan universal) + host-vs-target distinction (P6-T01).
+- Wire blok 20 di `test/_audit018.sh` (header + blok): `myc backends`
+  mencantumkan compile/run tier A + versi exact + "13 backend
+  terdaftar", dan `myc backends --canary` → compile PASS (kualifikasi
+  canary per backend cepat; swarm 11/11 penuh tetap diuji di
+  `_ci_linux.sh`/`_regress_run.bat` Fase 6).
+- Docs: capabilities.md row `backends`, AGENTS.md (rentang audit
+  001..049 + row canary.c + pointer docs/backends.md).
+
+**Verifikasi (Windows).** `myc backends` mencantumkan 13 backend:
+compile/analyzer/driver/exhaustive/fuzz/mutate/stack → tier A/B + path
+`gcc.exe` + versi exact `15.2.0`; run → tier A + `clang 22.1.6`;
+lint/checked internal (tanpa binary eksternal); prove/filc → "via WSL
+(wsl.exe tersedia)" (jujur, bukan "tidak ditemukan" yang menyesatkan
+pengguna WSL); matrix → executable tidak ditemukan (honest).
+`myc backends --canary` → compile PASS + canary qualification: SEMUA
+backend terverifikasi hidup. Blok 20 `_audit018.sh` hijau (3 cek
+terisolasi lulus); `-Werror` myc.c/canary.c bersih; self-dogfood OK;
+`git diff --check` bersih.
+
+Batas jujur: (1) versi minimum di tabel kebijakan adalah DEKLARASI
+kebijakan (belum di-enforce sebagai gate pemilih tool — bila gcc < 9
+terpasang, gate compile tetap jalan dengan perilaku lama; enforcement
+versi minimum = wilayah PR-027 `--production` + P5-T03 version-drift
+lane). (2) `found=2` (via WSL) hanya membuktikan `wsl.exe` ADA — backend
+sebenarnya (frama-c/filc-clang di dalam WSL) diverifikasi hidup oleh
+canary/`--prove`/`--filc` saat gate dijalankan, bukan oleh probe. (3)
+`myc backends --canary` menjalankan canary per backend yang PUNYA canary
+(compile..lint); prove/filc/matrix/checked tidak punya canary (backend
+opsional, diuji lewat fixture gate) — tercantum jujur tanpa status
+canary.

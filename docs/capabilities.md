@@ -41,6 +41,7 @@ Driver / Filc; `0` = n/a, `1` = clean, `2` = findings, `3` = inconclusive).
 | perturb            | `--perturb` | env perturbation (Fase 6) | reruns the verified program with perturbed env (TZ=UTC+14, LC_ALL=tr_TR.UTF-8, PATH=nonexistent, HOME/TERM=nonexistent) and compares stdout-hash + exit code + sanitizer vs baseline — program whose behavior changes = **ENV-SENSITIVE** (verification results could differ on other machines); stable = DETERMINISTIC | NON-blocking observation, verdict never changes; tested with `test/fixtures/pert_tz.c` (localtime/TZ-sensitive) which must be flagged ENV-SENSITIVE |
 | audit-tests        | `myc audit-tests` | corpus analysis (Fase 6) | **test-quality audit**: scans `test/`, `test/fixtures/`, `tests/` and maps coverage per hazard class (spatial/temporal/integer/runtime/proof/boundary/capability) and per backend (run/driver/exhaustive/fuzz/mutate/stack/prove/checked/filc/matrix); a hazard class or backend WITHOUT fixture = visible GAP (never silence) | NON-blocking; currently 7/7 hazard classes and 10/10 backends covered; report lists GAP lines explicitly |
 | canary             | `myc canary list \| run [backend]` | self-check (Fase 6) | **canary swarm**: every backend that can claim memory-safety must PROVE it is alive via minimal sources that MUST be caught (positive) or MUST stay clean (negative) — compile, analyzer, run, driver, exhaustive, fuzz, mutate, stack, lint (11 canaries); a failed canary means the backend is **UNRELIABLE** (its clean claim cannot be trusted), closing the silent false-clean gap | fully self-contained (ingress MEMORY, no fixture files); non-blocking infrastructure audit — `myc canary run` = 11/11 PASS when all backends verified alive; text evidence per gate checked in `evidence[]` + per-gate reports |
+| backends           | `myc backends [--canary]` | backend qualification registry (PR-017, P5-T01/P5-T02) | **backend policy registry**: 13 backend (compile/analyzer/run/driver/exhaustive/fuzz/mutate/stack/lint/checked/prove/filc/matrix) dengan tier kebijakan A (release-blocking) / B (supported non-blocking) / C (best-effort), executable utama, path resolv + versi EXACT (`<exe> --version`, INV-013: identitas backend = evidence), dan jumlah canary per backend; prove/filc jujur ditandai "via WSL" bila `wsl.exe` ada (backend di dalam WSL); `--canary` menjalankan canary per backend (kualifikasi hidup P5-T02: backend HARUS terbukti hidup sebelum klaim bersihnya dipercaya) | **NON-blocking** (registry = laporan, verdict target tidak pernah berubah); `myc backends` cepat (tanpa canary), `--canary` mahal (menjalankan canary per backend); kebijakan lengkap di `docs/backends.md`; flag tak dikenal = fail-fast exit 2 |
 | scenario            | `--scenario NAME [--scenario-file PATH]` | JSON profile (strict-validated) | **resep verifikasi per domain** (C5): one command activates the right gate recipe — `cli-daily` (run+analyzer), `library` (driver+exhaustive), `parser` (fuzz+run), `firmware` (freestanding+stack+divergence); `myc scenario list` / `info`; user profiles via `scenarios.json` | `--scenario auto` (D3) infers the smallest sufficient recipe from source structure (main / `//@` contract / firmware patterns) and reports **why**; **DS-12 env contract** (`stack_budget`, `no_heap`, `no_recursion`, …) recorded in the report; never changes the verdict (all gates stay optional) |
 | matrix              | `--matrix` | cross-gcc (`arm-none-eabi-gcc`, `riscv32/64-unknown-elf-gcc`) | **portability matrix** (C4): cross-compiles the same source per available target + macro dumps (`__CHAR_UNSIGNED__`, `__SIZEOF_POINTER__`, endianness) compared to host ⇒ shows which **portability bets change** (`char signed → unsigned` kills `c < 0`, pointer size, endianness) + per-target warning set | **observation, non-blocking**; cross-compiler absent = cells skipped with an honest “targets not tested (host-only)” note; never lowers the verdict |
 | prove               | `--prove`  | Frama-C (Eva)       | abstract interpretation ⇒ **L2 EVA**               | optional; non-blocking if Frama-C absent (typically Linux)                   |
@@ -54,6 +55,170 @@ Driver / Filc; `0` = n/a, `1` = clean, `2` = findings, `3` = inconclusive).
 > Registry: daftar kanonik gate/flag/tool ada di `capabilities.json` (single
 > source of truth). `test/_cap_sync.sh` memverifikasi doc ini sinkron dengan
 > registry dan implementasi.
+
+## Incremental Evidence Cache (SOL-18)
+
+| Flag | Persistence | Behavior | Notes |
+| --- | --- | --- | --- |
+| (default ON) | `.myc/evidence_cache.json` | **Incremental evidence cache**: run dengan (source, scenario, tool, cwd, stdin, timeout, output cap, header dir, resep gate Fase 5/6) yang sama dengan run sebelumnya di-**REPLAY** tanpa menjalankan backend (verdict/gates/debt/diags/counts/receipt identik SOL-18); miss + source berubah → **delta report** (fungsi berubah + dependents) | **NON-blocking**: `.myc/` tak terbaca = miss, jalur normal; replay TIDAK pernah mengubah verdict; key v2 (spesifikasi per dimensi: `docs/cache-key.md`, PR-011) |
+| `--no-cache` | — | matikan cache penuh (replay + store) | deterministik: selalu pipeline penuh |
+| `--no-persist` | — | mode privasi: cache (dan ledger/profil/assumsi) TIDAK ditulis | verdict/hasil TIDAK berubah (NON-blocking penuh) |
+
+**Key v2** = `sha256("v2|src|scen|tool|cwd|stdin|t|o|hdir|g2|")` — lihat
+`docs/cache-key.md` untuk spesifikasi lengkap per dimensi dan gap v1→v2
+yang diperbaiki (PR-011 / MYC-AUDIT-043: `--run-stdin`, `timeout_ms`,
+`max_output_bytes`, `checked_header_dir`, flag gate Fase 5/6 kini wajib
+memisahkan entry — sebelumnya berbagi key = replay stale/lossy).
+
+## Atomic .myc state writes (PR-012 / P3-T03)
+
+Semua state `.myc` (*.json) ditulis lewat helper bersama `persist.c`
+(`myc_persist_atomic_write`) dengan protokol crash-consistent:
+
+```text
+tulis temp (<path>.tmp.<pid>, direktori sama) → flush →
+fsync (POSIX) / FlushFileBuffers·_commit (Windows) →
+rename/replace atomik (POSIX rename / Windows MoveFileExA
+MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH) →
+optional parent-dir fsync (POSIX)
+```
+
+Invariant P3-T03: pada crash di langkah mana pun, file state setelah
+restart selalu **OLD valid ATAU NEW valid** — tidak pernah setengah
+tertulis yang tampak valid. Temp stale dari crash dibersihkan pada write
+berikutnya (termasuk milik PID lain). NON-blocking penuh: gagal tulis
+diabaikan, verdict tidak pernah berubah.
+
+File yang dimigrasi: `.myc/evidence_cache.json` (cache.c),
+`.myc/ledger.json` (ledger.c), `.myc/assumptions.json` (assume.c),
+`.myc/calibration.json` (calibrate.c), `.myc/exhaustive.json` (driver.c),
+`.myc/profiles/<id>.json` (profile.c), seed `.myc/regression/*.c`
+(regress.c). Teruji oleh `test/atomic_state.c` (PR-012 / MYC-AUDIT-044,
+blok 15 di `_audit018.sh`): helper new/overwrite/failure-injection,
+crash-simulasi temp stale, stress flip konten, E2E semua penulis +  scan akhir NOL leftover `*.tmp.*`.
+
+## Cache corruption recovery (PR-013 / P3-T04)
+
+File cache `.myc/evidence_cache.json` = input eksternal: TIDAK pernah
+ dipercaya mentah-mentah.
+
+- **Integritas byte file (L1)**: sidecar `.myc/evidence_cache.sha256`
+  berisi `sha256` hex atas byte MENTAH evidence_cache.json. Hash atas byte
+  mentah (bukan re-serialisasi JSON) stabil untuk konten apa pun — teks
+  backend bisa berisi byte non-UTF8 yang tidak round-trip stabil.
+  Sidecar hilang/stale/tampered = seluruh file di-ignore (fail-closed) →
+  replay MISS → recompute.
+- **Validasi semantik per entry (L2, setelah byte lolos L1)**: `key`/
+  `source` wajib 64-hex, `verdict`/`err` wajib di range enum (verdict
+  out-of-range TIDAK di-clamp ke OK — ditolak), enum lain + `duration_ms`
+  valid bila ada, gate id/status di range, state mustahil (MC_ERROR tanpa
+  err) ditolak.
+- **Karantina + self-heal + recompute**: entry korup (L2) di-lewati,
+  diagnostic `myc: cache: ...` ke stderr, file di-rewrite tanpa entry
+  korup; file tidak ter-parse / byte tidak cocok (L1) di-ignore. Replay
+  MISS → pipeline menghitung ulang. Entry duplikat (key sama) didedup
+  (pertahankan yang pertama).
+- L1 bersifat file-level: SATU byte korup di entry mana pun = seluruh file
+  di-ignore → recompute penuh; store berikutnya menulis ulang dari nol
+  (entry yang valid ikut dihitung ulang — aman, bukan hilang). L2
+  (semantik) bekerja per-entry hanya bila byte file konsisten dengan
+  sidecar.
+- File cache dari versi lama (tanpa sidecar) ditolak fail-closed (sekali
+  recompute; tidak pernah di-replay tanpa verifikasi).
+
+Teruji oleh `test/cache_corrupt.c` (PR-013 / MYC-AUDIT-045, blok 16 di
+`_audit018.sh`): truncated JSON, flipped bits, unknown schema, mismatched
+hash, duplicate entries, stale backend version, malformed timestamp,
+impossible gate state (hash sah pun ditolak), schema lama, non-object
+entry, garbage — NEVER crash, NEVER replay korup.
+
+## Receipt canonicalization (PR-014 / MYC-AUDIT-046)
+
+Byte-string yang di-hash untuk `receipt_sha256` dibekukan oleh canonical
+test vectors — spec di `docs/receipt-canonical.md`, test
+`test/receipt_vectors.c` (blok 17 di `_audit018.sh`):
+
+```text
+myc.receipt.v1|verdict|completeness|<id>:<status>|...|debt=<nama>|...|fp=<fingerprint>|sha=<source_sha256>|
+```
+
+- `myc_receipt_canonical(res, buf, cap)` (gate.h) = satu-satunya sumber
+  kebenaran format (OBSERVABLE); `myc_build_receipt` meng-hash
+  keluarannya. Urutan gate/debt = urutan insert (bukan sorted).
+- Golden vector V1-V4: string kanonik + sha256 hex dihitung INDEPENDEN
+  (python3 hashlib), di-hardcode — mengubah format / enum mapping /
+  urutan append mana pun = FAIL langsung.
+- Empat lapis: golden hash, implementasi referensi independen di dalam
+  test, konsistensi pipeline (`receipt_sha256` hasil reduce == golden),
+  properti (determinisme, sensitivitas komponen, urutan, rebuild,
+  truncation buffer cap-1 + NUL deterministik).
+
+## Schema registry (PR-015 / MYC-AUDIT-047)
+
+SEMUA skema JSON mesin dibekukan di `docs/schema-registry.md` dengan golden
+file di `test/golden/` (8 file) dan test `test/schema_compat.c` (blok 18
+`_audit018.sh`):
+
+- `myc.result.v1` (`--json-summary`) — 38 field wajib; `assurance_vector`
+  peta FLAT `{"C":"clean",...}` (catatan: serializer penuh `--json`
+  `myc_result_to_json` memakai bentuk nested `{"status":...}` — dua skema
+  berbeda, masing-masing beku).
+- `myc.agent.v2` (`--agent`) — `schema`, `source_sha256`,
+  `receipt_sha256`, `payload_cap`, `finding`, `verdict`,
+  `assurance_vector`, `witness_text`, `allowed_edits`, `preserve`,
+  `forbidden_changes`, `next_check`, `frontier` (+ kondisional
+  `primary_finding`, `witness_repro`, `witness_slice`, `experiments`,
+  `causal`, `next_best`, `delta_receipt_sha`, `pack`).
+- `myc.calibration.v1` (`.myc/calibration.json`) — 6 counter outcome beku
+  (`accepted`…`harmful_fix`, urutan `myc_calib_outcome`).
+- Evidence cache (`.myc/evidence_cache.json`) — `key`/`source` hex64,
+  enum dalam range, sidecar sha256 byte-mentah (PR-013 L1/L2).
+- `myc.scenario.v1` (profil user + builtin) — `version:1`, `scenarios[]`.
+- `myc.spec.v1` (`myc.spec.json` pack) — `version:1`, `name`, `domain`,
+  `rules`, `allow_headers`, `deny_functions`.
+- MCP JSON-RPC 2.0 envelope (request `{jsonrpc,id,method,params}` /
+  response `{jsonrpc,id,result|error}` + `structuredContent`).
+
+Aturan: additive-only (field asing TETAP diterima konsumen lama — diuji
+T9), enum append-only, produsen wajib memancarkan semua field beku (T10),
+fail-closed versi tak dikenal (INV-011, T8), perubahan skema = update
+registry + golden + test hijau.
+
+## MCP abuse & soak (PR-016 / P4-T04)
+
+`mcp.exe` (server stdio JSON-RPC 2.0) diuji sebagai proses yang TIDAK
+dipercaya oleh `test/mcp_abuse.c` (blok 19 `_audit018.sh`):
+
+- **Protocol-clean stdout**: setiap baris yang dicetak mcp adalah respons
+  JSON-RPC 2.0 sah (`jsonrpc:"2.0"`, id di-echo, tepat satu
+  `result`/`error`) — tidak ada log/diagnostik bocor ke stdout
+  (merusak framing klien MCP).
+- **Korpus malformed deterministik** (39 kasus, tiap kasus + canary ping):
+  json invalid/truncated, root non-objek, jsonrpc/method/id tipe salah,
+  unknown method, `tools/call` params/name/arguments tipe salah, flags
+  non-array / entry non-string / unknown flag, id null/string (sah),
+  dup key, notifikasi valid → tanpa respons, notifikasi tanpa method →
+  -32600.
+- **Huge payload**: baris ~7,9 MiB (< cap) dan ~9 MiB (> cap 8 MiB
+  `MCP_MAX_LINE`, read_line drain) → Parse error -32700 + canary tetap
+  dijawab; tidak hang, tidak crash.
+- **Duplicate id** → semua dijawab (server stateless). **Notification vs
+  request** → notifikasi tanpa respons. **EOF/cancellation** → stdin
+  kosong = exit 0 bersih tanpa baris. **Ordering** → respons urut sesuai
+  request.
+- **Soak 1.090 request** (1.000 ping + light tools + malformed) → tepat
+  1.060 respons valid, semua id ping 1..1000 hadir, exit 0, stderr
+  kosong.
+
+**Hardening (mcp.c, MYC-AUDIT-048):** flags tool `check` wajib **array
+string** — `"flags":"--run"` (string) atau entry non-string kini
+ditolak `-32602` fail-fast (sebelumnya di-abaikan diam-diam = gate bisa
+mati tanpa pesan).
+
+**Bug proc.c ditemukan suite ini (MYC-AUDIT-048):** `drain_assemble`
+untuk output kosong memaksa panjang 1 tapi tidak menulis byte pertama —
+`stdout_shown=1` dengan 1 byte heap stale (uninitialized read) di stdout
+DAN stderr. Kini output kosong → `shown=0` + string kosong.
 
 ## Honest limitations
 
