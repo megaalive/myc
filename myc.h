@@ -299,6 +299,13 @@ typedef enum {
      * --require-assumptions-closed diminta. Kode:
      * MYC-INCOMPLETE-ASSUMPTIONS-OPEN. */
     MYC_DEBT_ASSUMPTION,
+    /* PR-018, P7-T01: batas resource lunak dilewati (cap + debt TERTYPE,
+     * bukan crash / kesunyian). Terpicu saat counter scope mencapai
+     * batasnya: evidence/finding/driver-cases/contract-clauses/diag,
+     * atau output terpotong oleh cap. Kode: MYC-INCOMPLETE-RESOURCE-LIMIT.
+     * NON-blocking: verdict TIDAK pernah turun hanya karena limit lunak;
+     * --require-complete menaikkannya (pola 9.10). */
+    MYC_DEBT_RESOURCE_LIMIT,
     MYC_DEBT_COUNT
 } myc_debt_type;
 

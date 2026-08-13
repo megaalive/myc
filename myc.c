@@ -62,6 +62,7 @@
 #include "canary.h"
 #include "testaudit.h"
 #include "regress.h"
+#include "limit.h"
 
 /* ------------------------------------------------------------------ */
 /* Implementasi kontrak inti myc                                       */
@@ -1225,6 +1226,11 @@ static void usage(void)
          "                        -- tier kebijakan A/B/C + path + versi exact\n"
          "                        tiap backend; --canary jalankan canary per\n"
          "                        backend (kualifikasi hidup; mahal). NON-blocking)\n"
+         "  myc limits [--json]\n"
+         "                        (PR-018/P7-T01: resource limits -- tabel batas\n"
+         "                        resource yang diberlakukan + kelas enforcement\n"
+         "                        HARD=ingress fail-fast, soft=cap+debt; --json\n"
+         "                        objek myc.limits.v1. NON-blocking, laporan)\n"
          "  myc version\n");
 }
 
@@ -2293,6 +2299,27 @@ int main(int argc, char **argv)
             }
         }
         return myc_backends_report(stdout, run_canary);
+    }
+
+    /* PR-018 (P7-T01): myc limits [--json] — resource limits (tabel
+     * kebenaran + kelas enforcement HARD/soft). NON-blocking: laporan
+     * observasi, verdict target tidak terpengaruh. Flag tak dikenal
+     * fail-fast exit 2 (pola backends/scenario). */
+    if (strcmp(argv[1], "limits") == 0) {
+        int want_json = 0;
+        int li;
+        for (li = 2; li < argc; li++) {
+            if (strcmp(argv[li], "--json") == 0)
+                want_json = 1;
+            else {
+                fprintf(stderr, "myc: limits: flag tak dikenal: %s\n",
+                        argv[li]);
+                return 2;
+            }
+        }
+        if (want_json)
+            return myc_limits_report_json(stdout);
+        return myc_limits_report(stdout);
     }
 
     /* C5 (DS-12): myc scenario list | info <name>. */

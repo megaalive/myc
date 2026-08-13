@@ -153,6 +153,17 @@
 #                      dijalankan per backend cepat (compile) + seluruh
 #                      swarm via `myc canary run` (11/11 di CI
 #                      _ci_linux.sh / _regress_run.bat Fase 6).
+# 21. limits          -- PR-018 (P7-T01): resource ceilings. `myc limits`
+#                      mencantumkan SEMUA batas resource (tabel kebenaran)
+#                      + kelas enforcement (HARD = ingress fail-fast,
+#                      soft = cap + debt MYC-INCOMPLETE-RESOURCE-LIMIT);
+#                      `--json` = objek myc.limits.v1 (29 entri beku).
+#                      Debt tipe resource_limit TERTYPE diuji JALUR NYATA:
+#                      `ok_driver_bounded.c --driver` (budget kombinatorial
+#                      memotong kasus) -> MYC-INCOMPLETE-RESOURCE-LIMIT
+#                      muncul sambil verdict TETAP OK (NON-blocking);
+#                      `--require-complete` menaikkan ke INCONCLUSIVE (9.10).
+#                      NON-blocking: limits hanyalah laporan.
 #
 # Dijalankan dari _regress_run.bat (bila bash tersedia) atau langsung di
 # POSIX/CI Linux. CWD harus root proyek.
@@ -160,7 +171,7 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-SRCS="myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c"
+SRCS="myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c"
 CC="${CC:-gcc}"
 # POSIX/Windows butuh -pthread untuk stress_threads (pthread_create/join).
 # Deteksi apakah kompiler menerima flag; aman untuk MinGW juga.
@@ -1029,6 +1040,80 @@ if [ -x ./myc ] || [ -x ./myc.exe ]; then
     rm -f "$BLOG"
 else
     echo "[SKIP] backends (myc/myc.exe tidak ditemukan - jalankan build.sh/build.bat dulu)"
+fi
+
+# --- 21. limits: PR-018 (P7-T01) resource ceilings ---
+# `myc limits` mencantumkan tabel kebenaran resource limit + kelas
+# enforcement (HARD = ingress fail-fast, soft = cap + debt). Jumlah "29"
+# adalah FREEZE registry (pola golden backends blok 20): menambah/
+# mengurangi baris di LIMITS[] (limit.c) WAJIB memperbarui cek ini.
+# Debt tipe resource_limit diuji lewat jalur NYATA driver_bounded
+# (ok_driver_bounded.c --driver): NON-blocking (verdict OK) lalu
+# --require-complete menaikkan ke INCONCLUSIVE (pola 9.10).
+if [ -x ./myc ] || [ -x ./myc.exe ]; then
+    MYCB="./myc"
+    [ -x "./myc.exe" ] && MYCB="./myc.exe"
+    if "$MYCB" limits 2>/dev/null | grep -qE "\[HARD\] +max_source_bytes +1048576"; then
+        echo "[OK] limits (PR-018: max_source_bytes HARD 1 MiB)"
+    else
+        echo "[FAIL] limits (PR-018: max_source_bytes HARD tidak terlihat)"
+        FAIL=1
+    fi
+    if "$MYCB" limits 2>/dev/null | grep -qE "\[soft\] +max_driver_records"; then
+        echo "[OK] limits (PR-018: max_driver_records soft)"
+    else
+        echo "[FAIL] limits (PR-018: max_driver_records soft tidak terlihat)"
+        FAIL=1
+    fi
+    if "$MYCB" limits 2>/dev/null | grep -q "29 resource limit terdefinisi"; then
+        echo "[OK] limits (PR-018: 29 resource limit terdefinisi)"
+    else
+        echo "[FAIL] limits (PR-018: jumlah resource limit menyimpang)"
+        FAIL=1
+    fi
+    # JSON schema myc.limits.v1: schema + count + id pertama.
+    if "$MYCB" limits --json 2>/dev/null | grep -q '"schema": "myc.limits.v1"' &&
+       "$MYCB" limits --json 2>/dev/null | grep -q '"id": "max_source_bytes"'; then
+        echo "[OK] limits --json (PR-018: schema myc.limits.v1 + id)"
+    else
+        echo "[FAIL] limits --json (PR-018: schema/id tidak terlihat)"
+        FAIL=1
+    fi
+    # Flag tak dikenal fail-fast exit 2 (pola backends).
+    "$MYCB" limits --bogus > /dev/null 2>&1
+    if [ $? -eq 2 ]; then
+        echo "[OK] limits (PR-018: flag tak dikenal fail-fast exit 2)"
+    else
+        echo "[FAIL] limits (PR-018: flag tak dikenal tidak fail-fast)"
+        FAIL=1
+    fi
+    # Debt TERTYPE MYC-INCOMPLETE-RESOURCE-LIMIT di jalur NYATA
+    # driver_bounded (ok_driver_bounded.c --driver): NON-blocking
+    # (verdict TETAP OK tanpa --require-complete).
+    if "$MYCB" check test/fixtures/ok_driver_bounded.c --driver 2>&1 |
+           grep -q "MYC-INCOMPLETE-RESOURCE-LIMIT"; then
+        echo "[OK] limits (PR-018: debt resource_limit via driver_bounded)"
+    else
+        echo "[FAIL] limits (PR-018: debt resource_limit tidak muncul)"
+        FAIL=1
+    fi
+    if "$MYCB" check test/fixtures/ok_driver_bounded.c --driver 2>&1 |
+           grep -q "verdict:   OK"; then
+        echo "[OK] limits (PR-018: debt NON-blocking, verdict OK)"
+    else
+        echo "[FAIL] limits (PR-018: debt NON-blocking dilanggar)"
+        FAIL=1
+    fi
+    # --require-complete menaikkan ke INCONCLUSIVE (pola 9.10).
+    if "$MYCB" check test/fixtures/ok_driver_bounded.c --driver --require-complete 2>&1 |
+           grep -q "verdict:   INCONCLUSIVE"; then
+        echo "[OK] limits (PR-018: --require-complete menaikkan ke INCONCLUSIVE)"
+    else
+        echo "[FAIL] limits (PR-018: require-complete tidak menaikkan verdict)"
+        FAIL=1
+    fi
+else
+    echo "[SKIP] limits (myc/myc.exe tidak ditemukan - jalankan build.sh/build.bat dulu)"
 fi
 
 rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \

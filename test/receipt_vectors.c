@@ -121,6 +121,7 @@ static const char *ref_debt_name(myc_debt_type t)
     case MYC_DEBT_OUTPUT_TRUNCATED: return "output_truncated";
     case MYC_DEBT_BUDGET: return "budget_unmet";
     case MYC_DEBT_ASSUMPTION: return "assumption_open";
+    case MYC_DEBT_RESOURCE_LIMIT: return "resource_limit";
     case MYC_DEBT_COUNT: return "count";
     }
     return "unknown";

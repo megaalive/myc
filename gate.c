@@ -114,6 +114,7 @@ const char *myc_debt_type_name(myc_debt_type t)
     case MYC_DEBT_OUTPUT_TRUNCATED:   return "output_truncated";
     case MYC_DEBT_BUDGET:             return "budget_unmet";
     case MYC_DEBT_ASSUMPTION:         return "assumption_open";
+    case MYC_DEBT_RESOURCE_LIMIT:     return "resource_limit";
     case MYC_DEBT_COUNT:              return "count";
     }
     return "unknown";
@@ -135,6 +136,7 @@ const char *myc_debt_code(myc_debt_type t)
     case MYC_DEBT_OUTPUT_TRUNCATED:  return "MYC-INCOMPLETE-OUTPUT-TRUNCATED";
     case MYC_DEBT_BUDGET:            return "MYC-INCOMPLETE-BUDGET-UNMET";
     case MYC_DEBT_ASSUMPTION:        return "MYC-INCOMPLETE-ASSUMPTIONS-OPEN";
+    case MYC_DEBT_RESOURCE_LIMIT:    return "MYC-INCOMPLETE-RESOURCE-LIMIT";
     case MYC_DEBT_NONE:              return "MYC-INCOMPLETE-NONE";
     case MYC_DEBT_COUNT:             return "MYC-INCOMPLETE-COUNT";
     }
@@ -389,6 +391,44 @@ static void myc_build_debt(myc_result *res)
         !myc_debt_present(res, MYC_DEBT_OUTPUT_TRUNCATED))
         myc_debt_add(res, MYC_DEBT_OUTPUT_TRUNCATED,
                      "output backend terpotong (bukti berakhir lebih awal)");
+
+    /* PR-018 (P7-T01): batas resource lunak dilewati => debt TERTYPE
+     * MYC-INCOMPLETE-RESOURCE-LIMIT. NON-blocking: verdict TIDAK pernah
+     * turun hanya karena limit (cap + debt jujur, bukan crash/kesunyian);
+     * --require-complete menaikkannya (pola 9.10). Trigger JARAK NYATA
+     * yang bisa dicapai pipeline, bukan angka mati:
+     *   - driver_bounded: budget kombinatorial memotong (driver.c set).
+     *   - driver_case_count == MYC_MAX_DRIVER_RECORDS: case records penuh.
+     *   - evidence_count == MYC_MAX_EVIDENCE: slot evidence penuh.
+     *   - contract_clause_count == MYC_MAX_CONTRACT_CLAUSES: klausa penuh.
+     * HANYA ditambahkan bila scope gate yang relevan memang berjalan
+     * (ran_driver / gate COMPLETED_*) sehingga tidak menjadi debt di
+     * jalur yang tidak pernah memakai scope itu. */
+    if (!myc_debt_present(res, MYC_DEBT_RESOURCE_LIMIT)) {
+        const myc_gate_result *dg = myc_gate_get(res, MYC_GATE_DRIVER);
+        const myc_gate_result *cg = myc_gate_get(res, MYC_GATE_COMPILE);
+        int have_driver = res->ran_driver ||
+                          (dg && (dg->status == MYC_GATE_COMPLETED_FINDINGS ||
+                                  dg->status == MYC_GATE_COMPLETED_CLEAN));
+        int have_compile = cg && (cg->status == MYC_GATE_COMPLETED_FINDINGS ||
+                                  cg->status == MYC_GATE_COMPLETED_CLEAN);
+        const char *why = NULL;
+
+        if (have_driver && res->driver_bounded)
+            why = "driver combinatorial budget memotong kasus (cap)";
+        else if (have_driver && res->driver_case_count >= MYC_MAX_DRIVER_RECORDS)
+            why = "driver case records mencapai MYC_MAX_DRIVER_RECORDS";
+        else if (res->evidence_count >= MYC_MAX_EVIDENCE)
+            why = "evidence mencapai MYC_MAX_EVIDENCE";
+        else if (have_compile && res->contract_clause_count >=
+                                 MYC_MAX_CONTRACT_CLAUSES)
+            why = "contract clauses mencapai MYC_MAX_CONTRACT_CLAUSES";
+        else if (have_compile && res->diag_count >= MYC_MAX_DIAGNOSTICS)
+            why = "diagnostik mencapai MYC_MAX_DIAGNOSTICS";
+
+        if (why)
+            myc_debt_add(res, MYC_DEBT_RESOURCE_LIMIT, why);
+    }
 }
 
 /* ------------------------------------------------------------------ */

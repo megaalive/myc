@@ -4011,3 +4011,63 @@ canary/`--prove`/`--filc` saat gate dijalankan, bukan oleh probe. (3)
 (compile..lint); prove/filc/matrix/checked tidak punya canary (backend
 opsional, diuji lewat fixture gate) — tercantum jujur tanpa status
 canary.
+
+### MYC-AUDIT-050 (Batch PR-018) — Resource ceilings (P7-T01)
+
+**Gap.** myc menerima input eksternal dan memproses work secara
+kombinatorial/algoritmik, tetapi kapasitas internal (panjang source,
+stdin, output, timeout, jumlah evidence/debt/contract/driver record,
+arena, dst.) adalah makro `MYC_MAX_*` yang tersebar di source tanpa
+tabel kebenaran tunggal yang bisa diaudit pengguna atau diuji CI.
+Debt domain terbatas (driver combinatorial budget, dsb.) sudah TERTYPE
+tetapi belum ada satu sumber yang mendokumentasikan semua batas + kelas
+enforcement (HARD = ingress fail-fast vs soft = cap + debt) dan belum
+diuji deterministik sebagai jalur NYATA.
+
+**Deliverable.**
+
+- `limit.h/limit.c`: tabel `LIMITS[]` 29 entri (max_source/stdin/
+  output/cap/timeout/diagnostics/gates/evidence/debt/contract/rel/
+  driver/filc/assumptions/sm/rsrc/units/coaching/witness/divergence/
+  matrix/arena) + `myc_limits_table` / `myc_limits_report` /
+  `myc_limits_report_json`. API baru `myc limits [--json]`.
+- `myc.h`: enum `MYC_DEBT_RESOURCE_LIMIT` (tipe debt baru, sinkron
+  additive — `unverified_debt` array, golden PR-015 tidak pecah).
+- `gate.c`: nama "resource_limit" + kode "MYC-INCOMPLETE-RESOURCE-LIMIT"
+  + trigger `myc_build_debt` (driver_bounded, driver_case_count ==
+  MYC_MAX_DRIVER_RECORDS, evidence == MYC_MAX_EVIDENCE,
+  contract_clauses == MYC_MAX_CONTRACT_CLAUSES, diag == MYC_MAX_DIAGNOSTICS)
+  hanya saat gate relevan berjalan.
+- `myc.c`: usage `myc limits [--json]` + dispatch setelah blok backends
+  (flag tak dikenal → exit 2).
+- `test/receipt_vectors.c`: case `MYC_DEBT_RESOURCE_LIMIT` di
+  `ref_debt_name` (sinkronisasi enum debt 3 titik).
+- Wiring `limit.c` di build.sh/build.bat/_ci_linux.sh/_regress_run.bat/
+  _audit018.sh.
+- Blok 21 di `test/_audit018.sh`: `myc limits` HARD max_source_bytes
+  1 MiB + soft max_driver_records + "29 resource limit terdefinisi"
+  (FREEZE jumlah tabel — menambah/mengurangi entri LIMITS[] WAJIB update
+  cek ini, pola golden "13 backend" blok 20) + `--json` schema
+  myc.limits.v1 + id pertama + flag tak dikenal exit 2.
+- Debt TERTYPE diuji JALUR NYATA driver_bounded
+  (`ok_driver_bounded.c --driver`): MYC-INCOMPLETE-RESOURCE-LIMIT muncul
+  sambil verdict TETAP OK (NON-blocking, trust rule 1); `--require-complete`
+  menaikkan ke INCONCLUSIVE (pola 9.10).
+
+**Verifikasi (Windows).** `myc limits` → 29 baris HARD/soft;
+`myc limits --json` → schema myc.limits.v1 count=29; `--bogus` → exit 2.
+`myc check test/fixtures/ok_driver_bounded.c --driver` → verdict OK +
+debt MYC-INCOMPLETE-RESOURCE-LIMIT (NON-blocking); dengan
+`--require-complete` → INCONCLUSIVE. Receipt deterministik
+(`receipt_sha256: 823efef9ce57efe0b2d95f9451461cab3cf7130c7ec8b3716ece62881a056829`)
+stabil 3 run termasuk cache replay. Blok 21 `_audit018.sh` hijau (8 cek
+lulus); `bash -n` kedua script CI bersih; bat/_ci_linux diff hanya
++limit.c; `git diff --check` bersih; self-dogfood OK; `-Werror` bersih.
+
+Batas jujur: (1) `myc limits` adalah TABEL KEBENARAN (deklarasi kebijakan)
+— enforcement aktual terjadi di kode gate masing-masing (HARD = ingress
+fail-fast di myc.c, soft = cap + debt di gate.c), tabel tidak menambah
+enforcement baru, hanya mendokumentasikan. (2) entri arena dicantumkan
+dari makro arena; bukan pemanggilan api arena. (3) 29 entri adalah snapshot
+makro saat rilis; bila makro kapasitas baru ditambah di rilis mendatang,
+tabel + cek 21 harus diperbarui bersamaan (freeze pola golden).
