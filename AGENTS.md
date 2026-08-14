@@ -142,7 +142,22 @@ Setiap perubahan ke kode inti myc **wajib** melewati checklist ini:
       `observation.c`, `causal.c`, `nextbest.c`, `cache.c`, `context.c`,
       `budget.c`, `assume.c`).
 6. **Git hygiene**: `git diff --check` â€” tidak ada whitespace/CRLF issue.
-7. **Release process** (wajib untuk setiap release):
+7. **Commit attribution (hard rule, MYC-AUDIT-052/contributors incident)**:
+   - Setiap commit WAJIB ber-author identitas pemilik repo
+     (`megaalive <mega.yanuardi@windowslive.com>`); jangan pernah commit
+     dengan author/committer tool lain.
+   - DILARANG menambahkan trailer `Co-Authored-By:` / `Co-authored-by:` /
+     `Generated with <tool>` di pesan commit. GitHub menghitung co-author
+     dari trailer tersebut sebagai contributor terpisah di halaman repo,
+     dan stats-nya PERSISTEN (tidak hilang walau commit di-rewrite/
+     force-push; pernah terjadi: `codebuff-team/Codebuff` tampil sebagai
+     contributor kedua berbulan-bulan, repo harus dihapus untuk
+     membersihkannya).
+   - Pesan commit hanya: subject + body penjelasan. Tanpa footer apa pun.
+   - Verifikasi sebelum push: `git log --format='%an <%ae>' -3` (harus
+     identitas pemilik) dan `git log --format='%B' -3 | grep -i
+     'co-authored\|generated with'` (harus kosong).
+8. **Release process** (wajib untuk setiap release):
    - Jalankan `bash release-guard.sh` â€” verifikasi `master` sudah di-push,
      CI hijau untuk `master`, workflow release siap.
    - Buat tag hanya setelah semua cek di atas lolos: `git tag vX.Y.Z` +
