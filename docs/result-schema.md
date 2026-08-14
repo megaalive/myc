@@ -28,6 +28,7 @@ Output `myc check <file> [flags] --json-summary` adalah satu objek JSON:
 | `finding` | string | ringkasan finding (mis. `clean`, `out-of-bounds`, `use-after-free`) |
 | `assurance_vector` | string | `C<S> R<..> B<..> P<..> D<..> F<..>` per dimensi gate |
 | `diagnostics` | list | diagnosa compiler/sanitizer terstruktur (witness) |
+| `sanitizer_location` | obj/null | **IDE-1** lokasi pelanggaran runtime terstruktur (hadir hanya saat RUNTIME_VIOLATION dengan report sanitizer terbaca): `{violation_kind, location:{line,function}, allocation?:{line,function}, snippet}` — ekstraksi dari bukti non-spoofable (log_path), ADDITIVE (tidak mengubah verdict) |
 | `exit_code` | int | exit code run (bila `--run`) |
 | `duration_ms` | int | durasi run (tidak deterministik) |
 | `receipt_sha256` | string | receipt bukti (chain parent) |

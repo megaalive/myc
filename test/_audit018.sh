@@ -184,7 +184,7 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-SRCS="myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c"
+SRCS="myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c"
 CC="${CC:-gcc}"
 # POSIX/Windows butuh -pthread untuk stress_threads (pthread_create/join).
 # Deteksi apakah kompiler menerima flag; aman untuk MinGW juga.
@@ -219,6 +219,8 @@ rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \
       test/cache_corrupt.log \
       test/receipt_vectors test/receipt_vectors.exe \
       test/receipt_vectors.log \
+      test/sanloc_test test/sanloc_test.exe \
+      test/sanloc_test.log \
       test/schema_compat test/schema_compat.exe \
       test/schema_compat.log \
       test/mcp_abuse test/mcp_abuse.exe \
@@ -935,6 +937,34 @@ else
     FAIL=1
 fi
 
+# --- 17b. sanloc_test: IDE-1 (qwen-review) Sanitizer Location Extractor ---
+# Ekstraksi lokasi pelanggaran runtime (kind/line/fungsi/allocation/snippet)
+# dari report sanitizer diuji dengan FIXTURE deterministik (tanpa clang):
+# stack/heap/UAF/UBSan + skip frame runtime + remap line inject + anti-
+# overclaim. Field sanitizer_location di JSON adalah ADDITIVE (verdict tidak
+# pernah berubah).
+if $CC -O2 -std=c11 -Wall -Wextra -Werror -pedantic -I. -DMYC_NO_MAIN \
+       -o test/sanloc_test test/sanloc_test.c $SRCS 2>/dev/null; then
+    LOG="test/sanloc_test.log"
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 120 test/sanloc_test >"$LOG" 2>&1
+        SLC=$?
+    else
+        test/sanloc_test >"$LOG" 2>&1
+        SLC=$?
+    fi
+    if [ $SLC -eq 0 ]; then
+        echo "[OK] sanloc_test (IDE-1 sanitizer location extractor: semua cek lulus)"
+    else
+        echo "[FAIL] sanloc_test (IDE-1 sanitizer location extractor, exit $SLC)"
+        grep -E '^\[FAIL\]' "$LOG" | head -10
+        FAIL=1
+    fi
+else
+    echo "[FAIL] sanloc_test gagal dibangun (-Werror -pedantic)"
+    FAIL=1
+fi
+
 # --- 18. schema_compat: PR-015 (MYC-AUDIT-047) machine schema freeze ---
 # Golden file untuk SEMUA skema JSON mesin dibekukan di
 # docs/schema-registry.md + test/golden/ (result.v1, agent.v2,
@@ -1184,6 +1214,8 @@ rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \
       test/cache_corrupt.log \
       test/receipt_vectors test/receipt_vectors.exe \
       test/receipt_vectors.log \
+      test/sanloc_test test/sanloc_test.exe \
+      test/sanloc_test.log \
       test/schema_compat test/schema_compat.exe \
       test/schema_compat.log \
       test/mcp_abuse test/mcp_abuse.exe \

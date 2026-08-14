@@ -627,6 +627,9 @@ static int ctx_build_section(const myc_result *res, const char *src,
             const myc_witness *w = res->witness;
             sb_printf(out, "kind: %s\n",
                       w->violation_kind ? w->violation_kind : "?");
+            if (w->violation_line > 0)
+                sb_printf(out, "line: %d%s\n", w->violation_line,
+                          w->violation_col > 0 ? " (col)" : "");
             if (w->violation_msg)
                 sb_printf(out, "msg: %s\n", w->violation_msg);
             if (w->backend)

@@ -4201,3 +4201,61 @@ pernah dieksekusi sukses di CI Linux):
   proc_deadlock_matrix, backend_fake/abuse, parser_fuzz, receipt_vectors,
   schema_compat, mcp_abuse, limits, allocator); 7 fixture build OK dengan
   flag persis script di Windows juga; `git diff --check` bersih.
+
+### MYC-AUDIT-053 (qwen-review IDE-1, T1) — Sanitizer Location Extractor
+
+**Celah (qwen-review §3.2, KRITIS).** Gate runtime — satu-satunya gate yang
+pasti menangkap bug heap/UB — MEMBUANG informasi lokasi. Report ASan/UBSan
+(log_path, non-spoofable) dibaca lengkap (`proc.c myc_read_sanitizer_report`),
+tapi isinya hanya di-`strstr` untuk marker (`run.c report_marker_of`);
+sisanya dihapus. Agent menerima `RUNTIME_VIOLATION` tanpa file/baris/fungsi
+→ repair loop jadi tebakan. Baseline: 0% lokasi benar.
+
+**Fix.** Modul baru `sanloc.c`/`sanloc.h` (`myc_sanloc_extract`): parse
+report sanitizer murni string scan (deterministik, tanpa subproses):
+- `violation_kind` presisi dari `==NN==ERROR: AddressSanitizer: <kind>`
+  (fallback `SUMMARY:`; UBSan → `undefined-behavior`).
+- `location` = frame `#N ... in FN FILE:LINE` PERTAMA yang file-nya milik
+  target (skip frame runtime: dll/vctools/KERNEL32/ntdll/compiler-rt).
+- `allocation` = frame target pertama pada blok `freed by` /
+  `previously allocated by` / `allocated by` (heap/UAF); stack-buffer
+  overflow TIDAK mengisi allocation (bukan heap — anti-overclaim).
+- UBSan `FILE:LINE:COL: runtime error:` → line + col langsung.
+- Remap line bila kontrak requires di-inject (`build_src != source`):
+  hitung jumlah baris tambahan (include assert + assert per fungsi)
+  sebelum baris laporan, kurangi — snippet diambil dari source ASLI.
+- `target_file` default `"<stdin>"` (build via stdin; frame memuat
+  path absolut + `<stdin>`); fallback basename source.
+
+**Wire.** `run.c myc_run_gate` (blok finding) + `myc_metamorphic_gate`
+(simpan report build pertama yang menemukan, ekstrak saat verdict
+RUNTIME_VIOLATION). Field baru `sanloc_*` di `myc_result` (arena):
+`sanloc_have/kind/line/col/function/file/alloc_line/alloc_function/snippet`.
+Witness diisi: `violation_line`, `operation` (fungsi + baris), `pre_state`
+(baris free/allocation). JSON (`myc_report_json_summary` + `myc_result_to_json`)
+memancarkan `sanitizer_location` {violation_kind, location{line,col?,function},
+allocation{line,function}?, snippet} — ADDITIVE, verdict tidak pernah berubah.
+Context `SEC_WITNESS` menampilkan `line:`.
+
+**Anti-overclaim.** Report tanpa frame target → `sanloc_have=0`, line=0
+(tidak pernah menebak); kind tetap additive. Driver tidak di-wire: harness
+menggeser nomor baris source (bukan source asli) → lokasi menyesatkan.
+
+**Verifikasi.**
+- Unit `test/sanloc_test.c` (8 kasus × 33 CHECK, fixture deterministik tanpa
+  clang): stack/heap/UAF/UBSan, skip frame runtime, remap inject (5→3),
+  anti-overclaim, path Windows+`<stdin>`. Build `-Werror -pedantic` bersih
+  di Linux (WSL) dan Windows.
+- E2E: `myc check <strcpy> --run` → `sanitizer_location`
+  {kind: stack-buffer-overflow, location{line:3, fn:copy}, snippet
+  "strcpy(dst, src);"}; heap → allocation{line:7, fn:main}; UAF via fungsi →
+  location{line:8, fn:use} + allocation{line:5, fn:make}; UBSan → line+col;
+  stdin `-` dan kontrak inject remap benar. `_schema_golden.sh` PASS 14/14
+  (cek baru IDE-1 pada bad_run_oob → SANLOC_OK line=11).
+- `_audit018.sh` penuh SELESAI OK di WSL (sanloc_test hijau);
+  `_regress_run.bat` penuh Windows EXIT=0, 625 [OK] 0 [FAIL] — sekalian
+  memperbaiki bug batch cmd pra-ada: `)` di `echo ...(...)` menutup blok
+  `if (...)` lebih awal sehingga `else` ikut tereksekusi (pola sama di
+  reducer_exhaustive) → pesan echo tanpa kurung.
+- Self-dogfood: sanloc.c/run.c/report.c/context.c/myc.h → verdict OK;
+  `gcc -Werror -pedantic` sanloc.c bersih; `git diff --check` bersih.

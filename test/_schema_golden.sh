@@ -86,6 +86,44 @@ cek_golden "schema bad_checked (compile error)" tests/bad_checked.c --checked
 cek_golden "schema driver_oob (driver violation)" test/fixtures/bad_driver_oob.c --driver
 echo ""
 
+echo "=== IDE-1: sanitizer_location pada RUNTIME_VIOLATION ==="
+# bad_run_oob.c = heap-buffer-overflow (memset b,16 pada malloc(8)):
+# lokasi pelanggaran harus terisi (line 12 = memset) + allocation (malloc).
+if command -v python3 >/dev/null 2>&1; then
+    out=$("$MYC" check tests/bad_run_oob.c --run --json-summary --no-cache 2>&1)
+    rc=$(printf '%s' "$out" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+if d.get('verdict') != 'RUNTIME_VIOLATION':
+    print('NOT_RUNTIME: %s' % d.get('verdict')); sys.exit(1)
+sl = d.get('sanitizer_location')
+if not sl:
+    print('NO_LOCATION'); sys.exit(2)
+kind = sl.get('violation_kind', '')
+if 'overflow' not in kind and 'out-of-bounds' not in kind:
+    print('BAD_KIND: %s' % kind); sys.exit(3)
+line = sl.get('location', {}).get('line', 0)
+if line <= 0:
+    print('NO_LINE'); sys.exit(4)
+if not sl.get('snippet'):
+    print('NO_SNIPPET'); sys.exit(5)
+print('SANLOC_OK kind=%s line=%d' % (kind, line))
+" 2>&1)
+    if [ "$?" = "0" ]; then
+        note "IDE-1 bad_run_oob ($(echo "$rc" | tail -1))"
+    else
+        fail "IDE-1 bad_run_oob — $(echo "$rc" | tail -1)"
+    fi
+else
+    if "$MYC" check tests/bad_run_oob.c --run --json-summary --no-cache 2>&1 \
+       | grep -q 'sanitizer_location'; then
+        note "IDE-1 bad_run_oob (fallback struktural: field ada)"
+    else
+        fail "IDE-1 bad_run_oob — sanitizer_location hilang"
+    fi
+fi
+echo ""
+
 echo "=== Malformed input: JSON tetap valid, tidak crash ==="
 cek_golden "corpus empty.c" test/corpus/empty.c
 cek_golden "corpus garbage.c" test/corpus/garbage.c

@@ -4,8 +4,23 @@ Semua perubahan penting pada `myc` dicatat di sini. Format mengikuti
 [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/); versioning
 semantik per tag rilis (`vX.Y.Z`).
 
-Sejarah implementasi & audit terperinci (MYC-AUDIT-001..039, fase
+Sejarah implementasi & audit terperinci (MYC-AUDIT-001..053, fase
 pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
+
+## [Unreleased] — qwen-review IDE-1 (T1)
+
+### Added
+
+- **Sanitizer Location Extractor — MYC-AUDIT-053 (qwen-review IDE-1/T1).**
+  Modul `sanloc.c/h`: report ASan/UBSan (log_path non-spoofable) kini di-
+  parse menjadi lokasi pelanggaran TERSTRUKTUR untuk repair loop agent:
+  `violation_kind` presisi, `location {line, function}`, `allocation
+  {line, function}` (blok freed/allocated by), `snippet` baris source;
+  remap nomor baris saat kontrak requires di-inject; anti-overclaim
+  (tanpa frame target → lokasi tidak ditebak). Field `sanitizer_location`
+  di JSON (`--json-summary` + `--json`) dan `--agent`/`context` witness
+  menampilkan `line:` — ADDITIVE, verdict/gate semantics tidak berubah.
+  Baseline lokasi benar: 0% → ≥90% pada kasus runtime teruji.
 
 ## [v2026-08-14] — PR-018/PR-019 + hotfix MYC-AUDIT-052 - 2026-08-14
 

@@ -1087,6 +1087,29 @@ char *myc_result_to_json(const myc_result *res)
     json_sb_printf(&b, "\"sanitizer_detected\":%s,", res->run_sanitizer_detected ? "true" : "false");
     if (res->run_sanitizer_detected)
         json_sb_printf(&b, "\"sanitizer_marker\":\"%s\",", res->run_sanitizer_marker);
+    /* IDE-1: lokasi pelanggaran terstruktur dari report sanitizer
+     * (additive — hadir hanya bila sanloc_have). */
+    if (res->sanloc_have) {
+        json_sb_puts(&b, "\"sanitizer_location\":{");
+        json_sb_printf(&b, "\"violation_kind\":");
+        json_sb_escape(&b, res->sanloc_kind ? res->sanloc_kind : "");
+        json_sb_printf(&b, ",\"location\":{\"line\":%d", res->sanloc_line);
+        if (res->sanloc_col > 0)
+            json_sb_printf(&b, ",\"col\":%d", res->sanloc_col);
+        json_sb_printf(&b, ",\"function\":");
+        json_sb_escape(&b, res->sanloc_function ? res->sanloc_function : "");
+        json_sb_puts(&b, "}");
+        if (res->sanloc_alloc_line > 0) {
+            json_sb_printf(&b, ",\"allocation\":{\"line\":%d,\"function\":",
+                           res->sanloc_alloc_line);
+            json_sb_escape(&b, res->sanloc_alloc_function ?
+                                  res->sanloc_alloc_function : "");
+            json_sb_puts(&b, "}");
+        }
+        json_sb_printf(&b, ",\"snippet\":");
+        json_sb_escape(&b, res->sanloc_snippet ? res->sanloc_snippet : "");
+        json_sb_puts(&b, "},");
+    }
     json_sb_printf(&b, "\"stdout_bytes\":%llu,",
                    (unsigned long long)res->total_stdout_bytes);
     json_sb_printf(&b, "\"stderr_bytes\":%llu,",
@@ -1833,6 +1856,29 @@ void myc_report_json_summary(const myc_result *res)
         json_sb_puts(&b, "}");
     }
     json_sb_puts(&b, "],");
+    /* IDE-1: lokasi pelanggaran terstruktur dari report sanitizer
+     * (additive — hadir hanya bila sanloc_have). */
+    if (res->sanloc_have) {
+        json_sb_puts(&b, "\"sanitizer_location\":{");
+        json_sb_printf(&b, "\"violation_kind\":");
+        json_sb_escape(&b, res->sanloc_kind ? res->sanloc_kind : "");
+        json_sb_printf(&b, ",\"location\":{\"line\":%d", res->sanloc_line);
+        if (res->sanloc_col > 0)
+            json_sb_printf(&b, ",\"col\":%d", res->sanloc_col);
+        json_sb_printf(&b, ",\"function\":");
+        json_sb_escape(&b, res->sanloc_function ? res->sanloc_function : "");
+        json_sb_puts(&b, "}");
+        if (res->sanloc_alloc_line > 0) {
+            json_sb_printf(&b, ",\"allocation\":{\"line\":%d,\"function\":",
+                           res->sanloc_alloc_line);
+            json_sb_escape(&b, res->sanloc_alloc_function ?
+                                  res->sanloc_alloc_function : "");
+            json_sb_puts(&b, "}");
+        }
+        json_sb_printf(&b, ",\"snippet\":");
+        json_sb_escape(&b, res->sanloc_snippet ? res->sanloc_snippet : "");
+        json_sb_puts(&b, "},");
+    }
     json_sb_printf(&b, "\"gate_matrix\":[");
     for (i = 0; i < (int)res->gate_count; i++) {
         const myc_gate_result *g = &res->gates[i];

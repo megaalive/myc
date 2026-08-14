@@ -1010,6 +1010,22 @@ typedef struct {
     int         run_sanitizer_detected;
     char        run_sanitizer_marker[64];
 
+    /* --- hasil Sanitizer Location Extractor (IDE-1, qwen-review) ---
+     * Lokasi pelanggaran runtime yang diekstrak dari report sanitizer
+     * (log_path, non-spoofable) — untuk repair loop agent. sanloc_have=1
+     * bila lokasi berhasil dipastikan milik source target. String di
+     * arena milik hasil (myc_result_arena_dup). Additive terhadap
+     * verdict/gate semantics: lokasi TIDAK pernah mengubah verdict. */
+    int         sanloc_have;      /* 1 = lokasi pelanggaran diekstrak */
+    char       *sanloc_kind;      /* arena: "stack-buffer-overflow", dst */
+    int         sanloc_line;      /* baris pelanggaran (source asli) */
+    int         sanloc_col;       /* kolom (UBSan), 0 bila tak ada */
+    char       *sanloc_function;  /* arena: fungsi pelanggaran */
+    char       *sanloc_file;      /* arena: file pelanggaran */
+    int         sanloc_alloc_line;/* baris alokasi/free (0 bila tak ada) */
+    char       *sanloc_alloc_function; /* arena: fungsi alokasi/free */
+    char       *sanloc_snippet;   /* arena: baris source di lokasi */
+
     /* --- hasil gate prove (D3.1, --prove) --- */
     int         ran_prove;              /* 1 bila gate prove dijalankan */
     int         prove_alarms;           /* jumlah alarm Eva (RTE) */

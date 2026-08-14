@@ -46,6 +46,7 @@
 #include "gate.h"
 #include "perturb.h"
 #include "proc.h"
+#include "sanloc.h"
 #include "sha256.h"
 
 /* Nama runtime DLL ASan untuk target x86_64-windows-msvc. */
@@ -747,6 +748,13 @@ int myc_run_gate(const myc_request *req, const char *source, size_t source_len,
                     res->witness->pre_state = myc_result_arena_dup(res, note, 0);
                 }
             }
+            /* IDE-1: ekstrak lokasi pelanggaran dari report sanitizer
+             * (additive — tidak mengubah verdict/gate semantics). Frame
+             * build via stdin memakai nama "<stdin>"; remap line bila
+             * kontrak requires di-inject (build_src != source). */
+            if (rpt)
+                myc_sanloc_extract(res, rpt, source, source_len,
+                                   build_src, build_src_len, "<stdin>");
             myc_free(asan_rpt);
             myc_free(ubsan_rpt);
             myc_remove_sanitizer_reports(tmp_dir, "myc_run_asan_rpt");
@@ -907,6 +915,9 @@ int myc_metamorphic_gate(const myc_request *req, const char *source,
     char        meta_env_asan[2][160];
     char        meta_env_ubsan[2][160];
     const char *meta_env[2][4];
+    /* IDE-1: report sanitizer build pertama yang menemukan (untuk
+     * ekstraksi lokasi; build via stdin sama seperti run gate). */
+    char       *meta_rpt = NULL;
 
     static const char *const BASE_FLAGS[] = {
         "-x", "c", "-", "-std=c11", "-g",
@@ -1122,13 +1133,18 @@ int myc_metamorphic_gate(const myc_request *req, const char *source,
                          step == 0 ? "-O0" : "-O2",
                          rm ? rm : "(laporan sanitizer)");
                 add_diag_run(res, note);
+                /* IDE-1: simpan report pertama yang menemukan untuk
+                 * ekstraksi lokasi (additive). */
+                if (!meta_rpt)
+                    meta_rpt = rpt;
+                else
+                    myc_free(rpt);
             } else if (marker) {
                 char note[192];
                 snprintf(note, sizeof(note), "metamorphic (%s): sanitizer %s",
                          step == 0 ? "-O0" : "-O2", marker);
                 add_diag_run(res, note);
             }
-            myc_free(rpt);
             myc_remove_sanitizer_reports(tmp_dir, base_asan);
             myc_remove_sanitizer_reports(tmp_dir, base_ubsan);
         }
@@ -1198,6 +1214,10 @@ int myc_metamorphic_gate(const myc_request *req, const char *source,
         }
         res->verdict = MC_RUNTIME_VIOLATION;
         res->err = MYC_ERR_RUNTIME_VIOLATION;
+        /* IDE-1: lokasi pelanggaran dari report build yang menemukan. */
+        if (meta_rpt)
+            myc_sanloc_extract(res, meta_rpt, source, source_len,
+                               build_src, build_src_len, "<stdin>");
         goto out;
     }
 
@@ -1223,6 +1243,7 @@ int myc_metamorphic_gate(const myc_request *req, const char *source,
     goto out;
 
 out:
+    myc_free(meta_rpt);
     if (injected) myc_free(injected);
     if (dll_dst) myc_free(dll_dst);
     if (dll_src) myc_free(dll_src);
