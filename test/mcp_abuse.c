@@ -100,9 +100,13 @@ static void make_dir(const char *path)
 static void change_dir(const char *path)
 {
 #ifdef _WIN32
-    _chdir(path);
+    if (_chdir(path) != 0) {
+        /* non-critical di test */
+    }
 #else
-    chdir(path);
+    if (chdir(path) != 0) {
+        /* non-critical di test */
+    }
 #endif
 }
 

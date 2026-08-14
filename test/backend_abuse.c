@@ -28,6 +28,9 @@
  *   gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test/backend_abuse \
  *       test/backend_abuse.c <SRCS>
  */
+/* setenv(3)/strdup(3) butuh _POSIX_C_SOURCE di glibc dengan -std=c11
+ * (pola sama seperti proc_fixture.c); define sebelum include sistem. */
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +43,7 @@
 #else
 #include <sys/stat.h>
 #include <unistd.h>
+#define myc_getpid getpid
 #define mkdir_one(p) mkdir(p, 0700)
 #endif
 
@@ -433,9 +437,9 @@ static void t2_json_consumers(void)
             fclose(f);
         }
 #if defined(_WIN32)
-        _chdir(g_tmp);
+        if (_chdir(g_tmp) != 0) { /* non-critical di test */ }
 #else
-        chdir(g_tmp);
+        if (chdir(g_tmp) != 0) { /* non-critical di test */ }
 #endif
         myc_request_init(&req);
         myc_result_init(&res);
@@ -445,9 +449,9 @@ static void t2_json_consumers(void)
               "tidak crash", rc);
         myc_result_free(&res);
 #if defined(_WIN32)
-        _chdir(old_cwd);
+        if (_chdir(old_cwd) != 0) { /* non-critical di test */ }
 #else
-        chdir(old_cwd);
+        if (chdir(old_cwd) != 0) { /* non-critical di test */ }
 #endif
         remove(cache_path);
     }

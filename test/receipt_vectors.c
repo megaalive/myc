@@ -26,6 +26,9 @@
  *   gcc -O2 -std=c11 -Wall -Wextra -Werror -pedantic -I. -DMYC_NO_MAIN \
  *       -o receipt_vectors receipt_vectors.c $SRCS
  */
+/* strdup(3) butuh _POSIX_C_SOURCE di glibc dengan -std=c11 (pola sama
+ * seperti proc_fixture.c); define sebelum include sistem. */
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

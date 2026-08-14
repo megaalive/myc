@@ -4181,3 +4181,23 @@ persist.c (komentar referensi MYC-AUDIT-052).
   gates inti: ok_hello OK, ok_run --run OK, bad_run_oob --run
   RUNTIME_VIOLATION.
 - `git diff --check` bersih; file debug sementara (test/_dbg_*) dihapus.
+
+**Follow-up (CI Linux run #31778543792, commit 5f97389).** Fix hang membuat
+`_ci_linux.sh` jalan sampai selesai (`PASS=209 FAIL=1`) dan MENGEKSPOS bug
+build fixture yang pra-ada (tersembunyi selama hang; run CI hijau terakhir
+`aa9899d` TIDAK punya section fixture ini di `_audit018.sh` — grep=0, jadi
+section backend_fake/receipt_vectors/mcp_abuse/proc_deadlock_matrix belum
+pernah dieksekusi sukses di CI Linux):
+- `_POSIX_C_SOURCE 200809L` hilang di 5 fixture (pola sama spt proc.c /
+  proc_fixture.c): proc_deadlock_matrix.c (kill), backend_fake.c (readlink),
+  backend_abuse.c (setenv/strdup), parser_fuzz.c (setenv/strdup),
+  receipt_vectors.c (strdup).
+- `backend_abuse.c`: `myc_getpid` hanya di-define untuk _WIN32 — tambah
+  `#define myc_getpid getpid` di cabang POSIX.
+- glibc menandai `chdir` warn_unused_result (glibc 2.39/ubuntu-24.04):
+  schema_compat.c (restore cwd), mcp_abuse.c (change_dir), backend_abuse.c
+  (2 situs), parser_fuzz.c (chdir_one macro + write di crash_handler).
+- Verifikasi: `_audit018.sh` penuh SELESAI OK di WSL (semua section hijau:
+  proc_deadlock_matrix, backend_fake/abuse, parser_fuzz, receipt_vectors,
+  schema_compat, mcp_abuse, limits, allocator); 7 fixture build OK dengan
+  flag persis script di Windows juga; `git diff --check` bersih.

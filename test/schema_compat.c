@@ -1146,8 +1146,11 @@ int main(int argc, char **argv)
     test_additive();
     test_producers();
 
-    if (g_old_cwd[0])
-        T_CHDIR(g_old_cwd);
+    if (g_old_cwd[0]) {
+        if (T_CHDIR(g_old_cwd) != 0) {
+            /* restore cwd gagal: non-critical di test */
+        }
+    }
 
     remove("test/.schema_compat_tmp/.myc/evidence_cache.json");
     remove("test/.schema_compat_tmp/.myc/evidence_cache.sha256");

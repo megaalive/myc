@@ -48,6 +48,9 @@
  * Penggunaan:
  *   proc_deadlock_matrix <path-proc_fixture> [--stress N]
  */
+/* kill(2) butuh _POSIX_C_SOURCE di glibc dengan -std=c11 (pola sama
+ * seperti proc_fixture.c); define harus sebelum include sistem apa pun. */
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,6 +60,7 @@
 #include <psapi.h>
 #else
 #include <errno.h>
+#include <signal.h>
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <time.h>

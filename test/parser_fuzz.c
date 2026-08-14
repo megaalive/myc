@@ -46,6 +46,9 @@
  *       -fsanitize=address,undefined -fno-omit-frame-pointer \
  *       -o test/parser_fuzz_asan test/parser_fuzz.c <SRCS>
  */
+/* setenv(3)/strdup(3) butuh _POSIX_C_SOURCE di glibc dengan -std=c11
+ * (pola sama seperti proc_fixture.c); define sebelum include sistem. */
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,7 +66,7 @@
 #include <unistd.h>
 #define mkdir_one(p) mkdir(p, 0700)
 #define rmdir_one(p) rmdir(p)
-#define chdir_one(p) chdir(p)
+#define chdir_one(p) do { if (chdir(p) != 0) { /* non-critical */ } } while (0)
 #define getcwd_one(b, n) getcwd(b, n)
 #endif
 
@@ -415,8 +418,10 @@ static void crash_handler(int sig)
     (void)sig;
     fd = open(REG_CRASH, O_WRONLY | O_CREAT | O_TRUNC, 0600);
     if (fd >= 0) {
-        if (g_cur_len > 0)
-            (void)write(fd, g_cur_seed, g_cur_len);
+        if (g_cur_len > 0) {
+            ssize_t w = write(fd, g_cur_seed, g_cur_len);
+            (void)w;
+        }
         close(fd);
     }
     _Exit(128 + sig);
