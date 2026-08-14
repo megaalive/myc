@@ -933,7 +933,7 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
     int     proc_alive = 1;
     HANDLE  drain_threads[2] = { NULL, NULL };
     HANDLE  stdin_writer = NULL;
-    stdin_writer_arg warg;
+    stdin_writer_arg *warg = NULL;   /* heap: MYC-AUDIT-052 (sama spt POSIX) */
     BOOL    job_assigned = FALSE;
     size_t  max_out = req->max_output_bytes ? req->max_output_bytes : MYC_MAX_OUTPUT_BYTES;
     DWORD   timeout_ms = (DWORD)(req->timeout_ms > 0 ? req->timeout_ms : MYC_DEFAULT_TIMEOUT_MS);
@@ -1071,16 +1071,33 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
     /* Tulis stdin dari thread terpisah (PR-006): write blocking pada pipe
      * penuh harus tunduk pada timeout -- child yang tak membaca stdin dan
      * tak pernah exit = hang abadi bila ditulis sinkron. Bila child
-     * mati/dibunuh, pipe putus -> writer berhenti (broken pipe). */
-    warg.handle = stdin_wr;
-    warg.data = (const char *)req->stdin_data;
-    warg.len = req->stdin_len;
+     * mati/dibunuh, pipe putus -> writer berhenti (broken pipe).
+     * MYC-AUDIT-052: `warg` di HEAP (bukan stack) -- struktur yang di-pass
+     * ke thread lain tidak boleh hidup di slot stack yang bisa dipakai
+     * ulang kompiler setelah blok/scope selesai. */
     if (req->stdin_len > 0) {
+        warg = (stdin_writer_arg *)myc_malloc(sizeof(*warg));
+        if (!warg) {
+            res->err = MYC_ERR_INTERNAL;
+            res->ok = 0;
+            if (job && job_assigned)
+                TerminateJobObject(job, 1);
+            else
+                TerminateProcess(pi.hProcess, 1);
+            WaitForSingleObject(pi.hProcess, 5000);
+            close_if_valid_handle(&stdin_wr);
+            goto join_drain;
+        }
+        warg->handle = stdin_wr;
+        warg->data = (const char *)req->stdin_data;
+        warg->len = req->stdin_len;
         stdin_writer = (HANDLE)_beginthreadex(NULL, 0, stdin_writer_thread,
-                                              &warg, 0, NULL);
+                                              warg, 0, NULL);
         if (!stdin_writer) {
             /* Gagal membuat writer: bunuh child, tutup, join drain,
              * laporkan error internal (bukan hang tanpa batas). */
+            myc_free(warg);
+            warg = NULL;
             res->err = MYC_ERR_INTERNAL;
             res->ok = 0;
             if (job && job_assigned)
@@ -1150,6 +1167,8 @@ static int proc_run_win(const myc_proc_request *req, myc_proc_result *res)
         stdin_wr = NULL;
     }
     close_if_valid_handle(&stdin_wr);
+    myc_free(warg);   /* MYC-AUDIT-052: bebas setelah thread selesai baca */
+    warg = NULL;
 
 join_drain:
     /* Tunggu thread drain selesai (hasilnya sudah lengkap). */
@@ -1224,6 +1243,7 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
     pthread_t to = 0, te = 0, tw = 0;
     int     to_created = 0, te_created = 0, tw_created = 0;
     struct sigaction saved_sigpipe;
+    stdin_writer_arg *warg = NULL;   /* heap: lihat MYC-AUDIT-052 */
     size_t  max_out = req->max_output_bytes ? req->max_output_bytes : MYC_MAX_OUTPUT_BYTES;
     unsigned long long t0;
     int     status = 0;
@@ -1378,15 +1398,32 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
      * lama dipulihkan setelah join. */
     if (req->stdin_len > 0) {
         struct sigaction sa;
-        stdin_writer_arg warg;
-        warg.fd = in_pipe[1];
-        warg.data = (const char *)req->stdin_data;
-        warg.len = req->stdin_len;
+        /* MYC-AUDIT-052 (stack reuse): `warg` TIDAK boleh di stack fungsi
+         * ini. Dulu variabel lokal `warg` dialokasikan di stack; setelah
+         * blok if selesai, kompiler bebas memakai ulang slot-nya (di sini:
+         * `struct timespec ts = {0, 10 * 1000000}` di wait loop menimpa
+         * slot yang sama) sementara thread writer masih memegang pointer
+         * ke slot itu -> baca fd=0 (tv_sec) dan data=0x989680 (tv_nsec =
+         * 10.000.000) -> write ke fd 0 gagal EBADF -> stdin tak pernah
+         * ditulis/ditutup -> child menunggu EOF selamanya (TIMEOUT tiap
+         * `myc check` di Linux; bug laten yang baru terpicu setelah
+         * PR-019 menggeser layout stack). Alokasikan di HEAP; dibebaskan
+         * oleh parent setelah join writer. */
+        warg = (stdin_writer_arg *)myc_malloc(sizeof(*warg));
+        if (!warg) {
+            res->err = MYC_ERR_INTERNAL;
+            goto cleanup_kill;
+        }
+        warg->fd = in_pipe[1];
+        warg->data = (const char *)req->stdin_data;
+        warg->len = req->stdin_len;
         memset(&sa, 0, sizeof(sa));
         sa.sa_handler = SIG_IGN;
         sigaction(SIGPIPE, &sa, &saved_sigpipe);
-        if (pthread_create(&tw, NULL, stdin_writer_thread, &warg) != 0) {
+        if (pthread_create(&tw, NULL, stdin_writer_thread, warg) != 0) {
             sigaction(SIGPIPE, &saved_sigpipe, NULL);
+            myc_free(warg);
+            warg = NULL;
             res->err = MYC_ERR_INTERNAL;
             goto cleanup_kill;
         }
@@ -1433,6 +1470,8 @@ static int proc_run_posix(const myc_proc_request *req, myc_proc_result *res)
         in_pipe[1] = -1;
     }
     close_if_valid_fd(&in_pipe[1]);
+    myc_free(warg);   /* MYC-AUDIT-052: bebas setelah thread selesai baca */
+    warg = NULL;
 
     /* MYC-AUDIT-001: join kedua thread sebelum menyentuh buffer hasil.
      * Child sudah exit -> sisi write pipe sudah tertutup -> drain thread

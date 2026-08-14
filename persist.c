@@ -18,9 +18,12 @@
  *
  * NON-blocking: return 1 sukses / 0 gagal; caller boleh mengabaikan
  * (tidak pernah menurunkan verdict — pola state .myc yang lain).
- */
+ *//* MYC-AUDIT-052: glibc hanya mengekspos fileno() di bawah _POSIX_C_SOURCE;
+ * -std=c11 menonaktifkan extension (pola sama spt proc.c / proc_fixture.c).
+ * Tanpa ini `fsync(fileno(f))` = implicit declaration -> COMPILE_ERROR di
+ * Linux (CI self-dogfood persist.c FAIL). */
+#define _POSIX_C_SOURCE 200809L
 #include "persist.h"
-
 #include "alloc.h"
 #include <stdio.h>
 #include <stdlib.h>

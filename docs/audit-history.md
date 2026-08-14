@@ -4130,3 +4130,54 @@ test concurrency OOM belum (hanya alokasi normal). (3) migrasi 853 situs
 otomatis memakai tokenizer heuristik — telah diverifikasi sampel + audit
 compile seluruh source (build + dogfooding OK), tapi ideal audit sintaksis
 penuh bila ada callback/function-pointer alokasi yang lolos tokenizer.
+
+### MYC-AUDIT-052 — Fix stack-reuse bug di stdin writer proc.c + _POSIX_C_SOURCE persist.c
+
+**Gejala (CI Linux hang, reproduksi WSL).** CI Linux macet ~50 menit di step
+`_ci_linux.sh` "Build + trust-core POSIX" (baseline 4 menit; Windows job
+SUCCESS). Reproduksi WSL: `./myc check tests/ok_hello.c` → `verdict: TIMEOUT`
+seketika (`duration: 0 ms`, preprocess inconclusive "preprocess timeout"),
+padahal `gcc -E` langsung via pipe selesai 0.06s. Tes isolasi `myc_proc_run`
+(gcc -E stdin) hang menunggu timeout penuh (15s): child `cat`/`wc -c`/`gcc -E`
+tidak pernah menerima EOF stdin → writer stdin tidak menulis/menutup.
+
+**Akar masalah 1 — stack reuse `warg` (proc.c POSIX).** `warg`
+(`stdin_writer_arg`) dideklarasikan sebagai variabel STACK di dalam blok
+`if (req->stdin_len > 0)` di `proc_run_posix`, lalu pointer-nya di-pass ke
+`stdin_writer_thread` via `pthread_create`. Setelah blok `if` selesai, live
+range `warg` berakhir → kompiler bebas memakai ulang slot stack-nya; di
+proses ini GCC menaruh `struct timespec ts = {0, 10 * 1000000}` (wait loop)
+tepat di slot itu. Thread writer masih memegang pointer ke slot → membaca
+`w->fd = ts.tv_sec = 0` (write ke fd 0 → EBADF, data tidak pernah tertulis)
+dan `w->data = ts.tv_nsec = 10.000.000 = 0x989680` (hexdump membuktikan:
+parent melihat `fd=4, data=0x55f2c381f00c, len=26`, thread melihat
+`fd=0, data=0x989680, len=26` — hanya `len` yang selamat karena timespec
+16 byte < offset len 16). Akibat: `in_pipe[1]` tidak pernah ditutup → child
+menunggu EOF selamanya → timeout. Bug laten (sejak PR-006 memperkenalkan
+writer thread) yang baru TERPICU setelah PR-019 menggeser layout stack.
+Windows tidak kena: `warg` di scope fungsi `proc_run_win` (bukan blok if).
+
+**Fix 1.** `warg` dialokasikan di HEAP (`myc_malloc`) di kedua platform
+(POSIX + Windows, konsisten menghilangkan kelas bug ini), dibebaskan oleh
+parent SETELAH join writer (`myc_free(warg)` + null-kan). Jalur error
+`pthread_create`/`_beginthreadex` gagal ikut membebaskan.
+
+**Akar masalah 2 — `fileno` implicit declaration (persist.c Linux).**
+`persist.c:217` `fsync(fileno(f))` gagal compile di Linux dengan `-std=c11`
+(glibc mengekspos `fileno` hanya di bawah `_POSIX_C_SOURCE`). Di Windows
+MSVC tersedia default → hanya Linux kena: `myc check persist.c` =
+COMPILE_ERROR → self-dogfooding CI Linux FAIL. Pola sama seperti proc.c /
+proc_fixture.c yang sudah `#define _POSIX_C_SOURCE 200809L`.
+
+**Fix 2.** Tambah `#define _POSIX_C_SOURCE 200809L` di atas include
+persist.c (komentar referensi MYC-AUDIT-052).
+
+**Verifikasi.**
+- WSL (gcc 13.3): build.sh bersih; `myc check tests/ok_hello.c` → OK 31ms;
+  `myc check myc.c` → OK 549ms (sebelumnya TIMEOUT seketika); self-dogfooding
+  **48/48 source → verdict OK**; tes isolasi `cat` stdin → `ok=1 timed_out=0
+  dur=10ms` (sebelumnya hang 15s).
+- Windows: build.sh OK; `-Werror` prove.c OK; self-dogfooding 48/48 OK;
+  gates inti: ok_hello OK, ok_run --run OK, bad_run_oob --run
+  RUNTIME_VIOLATION.
+- `git diff --check` bersih; file debug sementara (test/_dbg_*) dihapus.
