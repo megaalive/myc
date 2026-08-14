@@ -7,9 +7,15 @@ semantik per tag rilis (`vX.Y.Z`).
 Sejarah implementasi & audit terperinci (MYC-AUDIT-001..039, fase
 pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 
-## [v2026-08-13] — PR-019: Allocator wrapper formal (P7-T02) - 2026-08-13
+## [v2026-08-14] — PR-018/PR-019 + hotfix MYC-AUDIT-052 - 2026-08-14
 
 ### Added
+
+- **Resource ceilings (`limit.c/h`) — MYC-AUDIT-050 (PR-018/P7-T01).**
+  Tabel `LIMITS[]` batas input/runtime deterministik (source/stdin/args/
+  duration/driver-combos/output/gates), `myc limits` (29 entri, schema
+  `myc.limits.v1`), audit `myc limits --require-complete`; kegagalan batas =
+  INCONCLUSIVE + debt; NON-blocking penuh.
 
 - **Allocator wrapper FORMAL (`alloc.c/h`) — MYC-AUDIT-051 (PR-019/P7-T02).**
   Semua alokasi source myc kini lewat `myc_malloc/calloc/realloc/free`:
@@ -22,6 +28,28 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   `test/_audit018.sh` memverifikasi tak ada panggilan `malloc/calloc/realloc/
   free` mentah di source selain implementasi wrapper. `test/oom_alloc.c`
   ditulis ulang memakai hook `myc_alloc` (tanpa `--wrap` build).
+
+### Fixed
+
+- **Stack-reuse bug stdin writer `proc.c` + `_POSIX_C_SOURCE` persist.c —
+  MYC-AUDIT-052.** `warg` (`stdin_writer_arg`) dulu variabel STACK di dalam
+  blok `if` di `proc_run_posix`; setelah blok selesai kompiler memakai ulang
+  slot-nya untuk `struct timespec ts` di wait loop, thread writer membaca
+  `fd=0` (EBADF) dan `data=0x989680` (= `ts.tv_nsec`) → stdin tak pernah
+  ditulis/ditutup → `gcc -E` menunggu EOF selamanya → tiap `myc check`
+  TIMEOUT di Linux (bug laten sejak PR-006, terpicu setelah PR-019 menggeser
+  layout stack). Fix: `warg` di-heap-allocate di kedua platform. Plus
+  `persist.c` butuh `#define _POSIX_C_SOURCE 200809L` untuk `fileno()` di
+  glibc `-std=c11` (pola sama spt proc.c).
+
+- **Build fixture di CI Linux (follow-up MYC-AUDIT-052).** Fix hang
+  mengekspos bug build fixture pra-ada (tersembunyi selama hang; run CI
+  hijau terakhir tidak punya section fixture tersebut): `_POSIX_C_SOURCE`
+  hilang di 5 fixture (proc_deadlock_matrix/backend_fake/backend_abuse/
+  parser_fuzz/receipt_vectors — kill/readlink/setenv/strdup),
+  `myc_getpid` hanya di-define untuk `_WIN32` di backend_abuse.c, dan
+  glibc 2.39 (ubuntu-24.04) menandai `chdir` `warn_unused_result` (4
+  situs). `_audit018.sh` penuh kini SELESAI OK di kedua platform.
 
 ## [v2026-08-11] — Hotfix MYC-AUDIT-042 - 2026-08-11
 
