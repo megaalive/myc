@@ -28,5 +28,8 @@ repro_filc.sh
 .myc/
 .myc-witness/
 .myc_mtx_*/
+
+# instruksi agent lokal - tidak perlu ter-push ke GitHub
+AGENTS.md
 bench/reports/baseline-*.txt
 !bench/reports/baseline-latest.txt
