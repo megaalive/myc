@@ -134,6 +134,7 @@ jobs:
           ./myc check test/fixtures/mmio_bad.c --freestanding --no-cache 2>&1 | grep -qF "MMIO deref alamat absolut tanpa volatile"
           echo "--- C5 scenario packs ---"
           ./myc check test/fixtures/scen_parser.c --scenario auto --no-cache 2>&1 | grep -qF "scenario (C5): library"
+          ./myc check test/fixtures/scen_input_parser.c --scenario auto --no-cache 2>&1 | grep -qF "scenario (C5): parser"
           ./myc check tests/ok_hello.c --scenario firmware --no-cache 2>&1 | grep -qF "scenario (C5): firmware"
           echo "--- C4 target matrix ---"
           ./myc check tests/ok_hello.c --matrix --no-cache 2>&1 | grep -qF "matrix (C4):"

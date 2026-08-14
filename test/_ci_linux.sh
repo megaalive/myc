@@ -598,6 +598,11 @@ if ./myc check test/fixtures/scen_parser.c --scenario auto --no-cache 2>&1 | gre
 else
     fail "C5 scenario: auto tidak menebak library"
 fi
+if ./myc check test/fixtures/scen_input_parser.c --scenario auto --no-cache 2>&1 | grep -qF "scenario (C5): parser"; then
+    note "C5 scenario: auto menebak parser (fgets+strtol loop, IDE-5)"
+else
+    fail "C5 scenario: auto tidak menebak parser"
+fi
 if ./myc check test/fixtures/mmio_bad.c --scenario auto --no-cache 2>&1 | grep -qF "scenario (C5): firmware"; then
     note "C5 scenario: auto menebak firmware (pola volatile/ISR)"
 else
@@ -696,6 +701,18 @@ if ./myc regression run test/fixtures/fuzz_div0_fixed.c 2>&1 | grep -qF "RESOLVE
 else
     fail "Fase 6 regression: fix tidak terdeteksi resolved"
 fi
+# --- 6f. IDE-4 (qwen-review): regression_replay di hasil repair MCP ---
+# repair dengan patched_source (kode baru setelah patch): bila verdict
+# berubah jadi OK, myc me-replay corpus terhadap kode baru dan melampirkan
+# regression_replay: K/N clean. Corpus masih berisi seed fuzz_div0 dari
+# blok di atas; patched_source = versi fixed -> harus 1/1 clean.
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"repair","arguments":{"source":"//@ requires n >= 0 && n <= 3; int fdiv(int n){ return 10 / (n - 2); }","patched_source":"//@ requires n >= 0 && n <= 3; int fdiv(int n){ return n == 2 ? 0 : 10 / (n - 2); }"}}}' | ./mcp > test/_tmp_ide4_repair.jsonl 2>&1
+if grep -qF "regression_replay" test/_tmp_ide4_repair.jsonl && grep -qF "1/1 clean" test/_tmp_ide4_repair.jsonl; then
+    note "Fase 6 regression: regression_replay di hasil repair (IDE-4)"
+else
+    fail "Fase 6 regression: regression_replay tidak muncul di repair"
+fi
+rm -f test/_tmp_ide4_repair.jsonl
 rm -rf .myc/regression
 
 # --- 6. dogfood tool ---

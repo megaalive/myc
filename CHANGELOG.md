@@ -4,10 +4,10 @@ Semua perubahan penting pada `myc` dicatat di sini. Format mengikuti
 [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/); versioning
 semantik per tag rilis (`vX.Y.Z`).
 
-Sejarah implementasi & audit terperinci (MYC-AUDIT-001..053, fase
+Sejarah implementasi & audit terperinci (MYC-AUDIT-001..054, fase
 pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 
-## [Unreleased] — qwen-review IDE-1 (T1)
+## [Unreleased] — qwen-review IDE-1+IDE-5+IDE-4 (T1+T2)
 
 ### Added
 
@@ -21,6 +21,20 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   di JSON (`--json-summary` + `--json`) dan `--agent`/`context` witness
   menampilkan `line:` — ADDITIVE, verdict/gate semantics tidak berubah.
   Baseline lokasi benar: 0% → ≥90% pada kasus runtime teruji.
+- **Fix `--scenario auto` — MYC-AUDIT-054 (qwen-review IDE-5/T2).**
+  Deteksi kelas parser: loop baca stdin (`fgets`/`fread`/`scanf`/
+  `getchar`/`read(`) + panggilan parsing (`strtol`/`strtod`/`sscanf`/
+  `isdigit`/`strchr`/`strtok`) → resep `parser` (fuzz+run), bukan lagi
+  `cli-daily` (sebelumnya salah tebak). Prioritas D3: firmware > parser
+  > library > cli-daily. NON-blocking; fixture `scen_input_parser.c`
+  terverifikasi di CI (Linux + Windows + GitHub Actions).
+- **Regression replay pasca-repair — MYC-AUDIT-054 (qwen-review IDE-4/T2).**
+  MCP `repair` menerima `patched_source` opsional: bila verdict kode baru
+  `OK`, myc me-replay corpus regression (`.myc/regression/`) terhadap kode
+  itu in-process (`myc_regress_replay_mem`) dan melampirkan
+  `regression_replay: K/N clean` di hasil — bila ada seed masih gagal,
+  debt eksplisit "bug lama hidup kembali". Mencegah pola klasik LLM:
+  memperbaiki bug A sambil menghidupkan kembali bug B. NON-blocking.
 
 ## [v2026-08-14] — PR-018/PR-019 + hotfix MYC-AUDIT-052 - 2026-08-14
 

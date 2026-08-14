@@ -30,6 +30,14 @@ void myc_regress_save(myc_result *res, const char *source, size_t len,
 /* `myc regression list`: cetak isi corpus. return 0. */
 int myc_regress_list(FILE *out);
 
+/* Replay seluruh corpus terhadap source IN-MEMORY (pasca-repair, IDE-4):
+ * tiap seed (kind + seed PRNG) dijalankan pada source yang diberikan.
+ * Mengisi *total, *resolved (OK), *failing; return jumlah seed yang
+ * masih gagal (bug lama hidup kembali). NON-blocking: tidak mengubah
+ * verdict run yang sedang berlangsung. */
+int myc_regress_replay_mem(const char *source, size_t len,
+                           int *total, int *resolved, int *failing);
+
 /* `myc regression run [file.c]`:
  * - tanpa file: replay setiap seed (source snapshot buggy) -> status
  *   deteksi (STILL_FAILING bila toolchain masih menangkapnya).

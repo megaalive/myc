@@ -45,6 +45,7 @@
 #include "contract.h"
 #include "lint.h"
 #include "agent.h"
+#include "regress.h"
 
 #define MCP_VERSION  "0.1.0"
 #define MCP_PROTOCOL "2024-11-05"
@@ -609,6 +610,7 @@ static void tool_agent_check(json_value *id, json_value *args)
 static void tool_repair(json_value *id, json_value *args)
 {
     const char *source = NULL;
+    const char *patched_source = NULL;
     myc_request req;
     myc_result  res;
     const char *finding_code = NULL;
@@ -629,6 +631,7 @@ static void tool_repair(json_value *id, json_value *args)
         send_error(id, -32602, "Invalid params: 'source' wajib (string kode C)");
         return;
     }
+    patched_source = json_get_str(args, "patched_source");
     finding_code = json_get_str(args, "finding_code");
 
     myc_request_init(&req);
@@ -657,34 +660,91 @@ static void tool_repair(json_value *id, json_value *args)
         }
     }
 
-    result = json_new_obj();
-    content = json_new_arr();
-    item = json_new_obj();
-    json_obj_set(item, "type", json_new_str("text"));
-    if (patch) {
-        char buf[512];
-        snprintf(buf, sizeof(buf),
-                 "repair: finding=%s\nconfidence=%d\napplied_verdict=%s\npatch:\n%s\n",
-                 finding_code ? finding_code : "unknown",
-                 confidence,
-                 applied_verdict,
-                 patch);
-        json_obj_set(item, "text", json_new_str(buf));
-    } else {
-        json_obj_set(item, "text", json_new_str(
-            "repair: patch tidak tersedia untuk finding ini"));
-    }
-    json_arr_push(content, item);
-    json_obj_set(result, "content", content);
-
+    /* IDE-4 (qwen-review): bila caller menyertakan patched_source (kode
+     * baru setelah patch diterapkan), re-check kode itu; bila verdict
+     * berubah jadi OK, replay corpus regression terhadap kode baru dan
+     * lampirkan regression_replay: K/N clean. Mencegah pola klasik LLM:
+     * memperbaiki bug A sambil menghidupkan kembali bug B. NON-blocking
+     * (replay tidak mengubah verdict). */
     {
-        json_value *structured = json_new_obj();
-        json_obj_set(structured, "finding", json_new_str(finding_code ? finding_code : "unknown"));
-        json_obj_set(structured, "applied_verdict", json_new_str(applied_verdict));
-        json_obj_set(structured, "confidence", json_new_num(confidence));
-        json_obj_set(structured, "patch", json_new_str(patch ? patch : "null"));
-        json_obj_set(structured, "schema", json_new_str("myc.repair.v1"));
-        json_obj_set(result, "structuredContent", structured);
+        const char *new_verdict = NULL;
+        int total = 0, resolved = 0, failing = 0;
+        char replay_buf[256] = "";
+        if (patched_source) {
+            myc_request preq;
+            myc_result  pres;
+            myc_request_init(&preq);
+            preq.input.kind = MYC_SOURCE_MEMORY;
+            preq.input.data = patched_source;
+            preq.input.len = strlen(patched_source);
+            preq.run_lint = 1;
+            myc_result_init(&pres);
+            myc_run(&preq, &pres);
+            new_verdict = myc_verdict_name(pres.verdict);
+            /* Replay corpus terhadap kode baru BILA kode baru verifikasi
+             * OK (repair berhasil). Catatan: check di sini compile-only
+             * (req.run_lint), jadi source runtime-buggy (mis. fuzz_div0)
+             * tetap punya res.verdict OK -- yang menentukan replay adalah
+             * verdict KODE BARU, bukan verdict source lama. */
+            if (pres.verdict == MC_OK) {
+                myc_regress_replay_mem(patched_source,
+                                       strlen(patched_source),
+                                       &total, &resolved, &failing);
+                if (failing > 0)
+                    snprintf(replay_buf, sizeof(replay_buf),
+                             "regression_replay: %d/%d clean, "
+                             "%d masih gagal (bug lama hidup kembali)",
+                             resolved, total, failing);
+                else if (total > 0)
+                    snprintf(replay_buf, sizeof(replay_buf),
+                             "regression_replay: %d/%d clean",
+                             resolved, total);
+                else
+                    snprintf(replay_buf, sizeof(replay_buf),
+                             "regression_replay: corpus kosong "
+                             "(0 seed)");
+            }
+            myc_result_free(&pres);
+        }
+
+        result = json_new_obj();
+        content = json_new_arr();
+        item = json_new_obj();
+        json_obj_set(item, "type", json_new_str("text"));
+        if (patch) {
+            char buf[768];
+            snprintf(buf, sizeof(buf),
+                     "repair: finding=%s\nconfidence=%d\napplied_verdict=%s\n"
+                     "%s%s\npatch:\n%s\n",
+                     finding_code ? finding_code : "unknown",
+                     confidence,
+                     applied_verdict,
+                     new_verdict ? "new_verdict_after_patch=" : "",
+                     new_verdict ? new_verdict : "",
+                     patch);
+            json_obj_set(item, "text", json_new_str(buf));
+        } else {
+            json_obj_set(item, "text", json_new_str(
+                "repair: patch tidak tersedia untuk finding ini"));
+        }
+        json_arr_push(content, item);
+        json_obj_set(result, "content", content);
+
+        {
+            json_value *structured = json_new_obj();
+            json_obj_set(structured, "finding", json_new_str(finding_code ? finding_code : "unknown"));
+            json_obj_set(structured, "applied_verdict", json_new_str(applied_verdict));
+            json_obj_set(structured, "confidence", json_new_num(confidence));
+            json_obj_set(structured, "patch", json_new_str(patch ? patch : "null"));
+            if (new_verdict)
+                json_obj_set(structured, "new_verdict_after_patch",
+                             json_new_str(new_verdict));
+            if (replay_buf[0])
+                json_obj_set(structured, "regression_replay",
+                             json_new_str(replay_buf));
+            json_obj_set(structured, "schema", json_new_str("myc.repair.v1"));
+            json_obj_set(result, "structuredContent", structured);
+        }
     }
 
     json_obj_set(result, "isError", json_new_bool(0));
@@ -812,7 +872,10 @@ static json_value *tools_list_body(void)
         "(gcc warning). source: kode C (string, wajib). "
         "finding_code: opsional, contoh gcc-use-after-free, "
         "gcc-null-dereference, gcc-array-bounds, gcc-stringop-overflow. "
-        "Jika tidak diisi, repair menggunakan diagnostic pertama dari check."));
+        "Jika tidak diisi, repair menggunakan diagnostic pertama dari check. "
+        "patched_source: opsional, kode baru setelah patch diterapkan -- "
+        "bila verdict berubah jadi OK, myc replay corpus regression dan "
+        "melampirkan regression_replay (IDE-4)."));
     {
         json_value *schema = json_new_obj();
         json_value *props = json_new_obj();
@@ -832,6 +895,14 @@ static json_value *tools_list_body(void)
             "gcc-null-dereference, gcc-array-bounds, gcc-stringop-overflow. "
             "Jika kosong, repair menggunakan diagnostic pertama."));
         json_obj_set(props, "finding_code", p);
+
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("string"));
+        json_obj_set(p, "description", json_new_str(
+            "Kode baru setelah patch diterapkan (opsional). Bila verdict "
+            "berubah jadi OK, myc me-replay corpus regression terhadap "
+            "kode ini dan melampirkan regression_replay (IDE-4)."));
+        json_obj_set(props, "patched_source", p);
 
         json_obj_set(schema, "properties", props);
         {

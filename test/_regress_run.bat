@@ -44,6 +44,18 @@ if exist test\sanloc_test.exe (
   echo [WARN] sanloc_test gagal dibangun
 )
 del test\sanloc_test.exe 2>nul
+echo --- IDE-4 regression replay pasca-repair (qwen-review): in-process replay corpus
+if exist test\.replay_tmp rmdir /s /q test\.replay_tmp
+if exist .myc\regression rmdir /s /q .myc\regression
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\regress_replay_test.exe test\regress_replay_test.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
+if exist test\regress_replay_test.exe (
+  test\regress_replay_test.exe | findstr "FAIL=0" >nul && echo [OK] regress_replay_test lulus IDE-4 replay pasca-repair || echo [FAIL] regress_replay_test menemukan kegagalan
+) else (
+  echo [WARN] regress_replay_test gagal dibangun
+)
+del test\regress_replay_test.exe 2>nul
+if exist test\.replay_tmp rmdir /s /q test\.replay_tmp
+if exist .myc\regression rmdir /s /q .myc\regression
 echo --- Fase 1 streaming evidence detector: sanitizer marker terdeteksi pada output streaming
 myc.exe check tests\bad_run_oob.c --run > %OUT%
 findstr /C:"sanitizer:" %OUT% >nul && echo [OK] streaming evidence detector mencatat sanitizer marker || echo [INFO] sanitizer tidak terdeteksi (bukan fixture sanitizer)
@@ -108,6 +120,15 @@ myc.exe regression list > %OUT% 2>&1
 findstr /C:"seed ada" %OUT% >nul && echo [OK] Fase 6 regression seed tersimpan || echo [WARN] Fase 6 regression seed tidak tersimpan
 myc.exe regression run test\fixtures\fuzz_div0_fixed.c > %OUT% 2>&1
 findstr /C:"RESOLVED" %OUT% >nul && echo [OK] Fase 6 regression fix tidak regress || echo [WARN] Fase 6 regression fix tidak resolved
+rem --- 6f. IDE-4 (qwen-review): regression_replay di hasil repair MCP ---
+rem C source bebas karakter khusus (< > &) karena `^` escape cmd TIDAK
+rem berlaku di dalam double-quote; e2e semantik penuh (kontrak fuzz_div0)
+rem ada di _ci_linux.sh. Yang diuji di sini: wiring regression_replay.
+echo {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"repair","arguments":{"source":"int main(void){return 0;}","patched_source":"int main(void){return 0;}"}}}> test\_tmp_ide4.jsonl
+mcp.exe < test\_tmp_ide4.jsonl > test\_tmp_ide4_out.jsonl 2>nul
+findstr /C:"regression_replay" test\_tmp_ide4_out.jsonl | findstr /C:"1/1 clean" >nul && echo [OK] Fase 6 regression_replay di hasil repair IDE-4 || echo [WARN] Fase 6 regression_replay tidak muncul di repair
+if exist test\_tmp_ide4.jsonl del test\_tmp_ide4.jsonl
+if exist test\_tmp_ide4_out.jsonl del test\_tmp_ide4_out.jsonl
 if exist .myc\regression rmdir /s /q .myc\regression
 del %OUT%
 rem --- Fase 6 Self-Challenge: Concurrency Probe (--thread-probe)
@@ -408,6 +429,8 @@ myc.exe scenario info firmware > %OUT% 2>&1
 findstr /C:"stack_budget=4096" %OUT% >nul && echo [OK] C5 env DS-12 terlihat || echo [WARN] C5 env DS-12 hilang
 myc.exe check test\fixtures\scen_parser.c --scenario auto --no-cache > %OUT% 2>&1
 findstr /C:"scenario (C5): library" %OUT% >nul && echo [OK] C5 auto -> library || echo [WARN] C5 auto bukan library
+myc.exe check test\fixtures\scen_input_parser.c --scenario auto --no-cache > %OUT% 2>&1
+findstr /C:"scenario (C5): parser" %OUT% >nul && echo [OK] C5 auto -> parser IDE-5 || echo [WARN] C5 auto bukan parser IDE-5
 myc.exe check test\fixtures\mmio_bad.c --scenario auto --no-cache > %OUT% 2>&1
 findstr /C:"scenario (C5): firmware" %OUT% >nul && echo [OK] C5 auto -> firmware || echo [WARN] C5 auto bukan firmware
 myc.exe check tests\ok_hello.c --scenario bogus --no-cache > %OUT% 2>&1

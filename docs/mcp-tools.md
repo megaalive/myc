@@ -133,9 +133,16 @@ di `lint.c`.
   `gcc-null-dereference`, `gcc-array-bounds`, `gcc-stringop-overflow`,
   `gcc-free-nonheap-object`. Bila kosong, repair memakai diagnostic pertama
   dari hasil `check` source yang sama.
+- `patched_source` (string, opsional, **IDE-4**): kode baru setelah patch
+  diterapkan. Bila verdict kode baru = `OK`, myc me-replay corpus regression
+  (`.myc/regression/`) terhadap kode baru secara in-process dan melampirkan
+  `regression_replay` (mis. `1/1 clean`; bila ada seed yang masih gagal,
+  debt eksplisit "N masih gagal (bug lama hidup kembali)"). Mencegah pola
+  klasik LLM: memperbaiki bug A sambil menghidupkan kembali bug B.
 - **Hasil** JSON: `finding`, `applied_verdict`, `confidence`, `patch`
-  (diff siap-apply, `null` bila tidak tersedia), dan objek
-  `structuredContent` (schema `myc.repair.v1`).
+  (diff siap-apply, `null` bila tidak tersedia), opsional
+  `new_verdict_after_patch` + `regression_replay` (bila `patched_source`
+  diberikan), dan objek `structuredContent` (schema `myc.repair.v1`).
 - **Batasan**: patch murni template deterministik (bukan AI-generated). Tidak
   semua finding punya template — bila tidak, `patch` bernilai `null` + alasan.
 

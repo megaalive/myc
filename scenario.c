@@ -285,28 +285,49 @@ static void build_report(json_value *sc, char *buf, size_t cap)
 /* --- D3: deteksi struktur source -> resep --- */
 
 static void detect_auto(const char *src, size_t len, int *is_fw,
-                        int *has_contract, int *has_main)
+                        int *is_parser, int *has_contract, int *has_main)
 {
     *is_fw = has_substr(src, len, "volatile") ||
              has_substr(src, len, "_isr") ||
              has_substr(src, len, "_irq") ||
              has_substr(src, len, "interrupt") ||
              has_substr(src, len, "packed");
+    /* IDE-5 (qwen-review): parser = loop baca stdin (fgets/fread/scanf/
+     * getchar/read) + panggilan parsing string (strtol/strtod/sscanf/
+     * isdigit/strchr/strtok). Sinyal murah via substring (deterministik),
+     * sama gaya dgn sinyal lain. */
+    *is_parser = (has_substr(src, len, "fgets") ||
+                  has_substr(src, len, "fread") ||
+                  has_substr(src, len, "scanf") ||
+                  has_substr(src, len, "getchar") ||
+                  has_substr(src, len, "read(")) &&
+                 (has_substr(src, len, "strtol") ||
+                  has_substr(src, len, "strtod") ||
+                  has_substr(src, len, "sscanf") ||
+                  has_substr(src, len, "isdigit") ||
+                  has_substr(src, len, "strchr") ||
+                  has_substr(src, len, "strtok"));
     *has_contract = has_substr(src, len, "//@");
     *has_main = has_substr(src, len, "main(") ||
                 has_substr(src, len, "main(void)");
 }
 
-/* Resep D3: firmware > library (contract) > cli-daily. */
+/* Resep D3: firmware > parser > library (contract) > cli-daily. */
 static const char *auto_target(const char *src, size_t len, char *why,
                                size_t whycap)
 {
-    int is_fw, has_contract, has_main;
-    detect_auto(src, len, &is_fw, &has_contract, &has_main);
+    int is_fw, is_parser, has_contract, has_main;
+    detect_auto(src, len, &is_fw, &is_parser, &has_contract, &has_main);
     if (is_fw) {
         snprintf(why, whycap,
                  "terdeteksi pola firmware (volatile/ISR/packed)");
         return "firmware";
+    }
+    if (is_parser) {
+        snprintf(why, whycap,
+                 "terdeteksi loop baca stdin + parsing string "
+                 "(parser input tak terduga)");
+        return "parser";
     }
     if (has_contract) {
         snprintf(why, whycap,

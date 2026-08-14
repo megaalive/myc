@@ -221,6 +221,8 @@ rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \
       test/receipt_vectors.log \
       test/sanloc_test test/sanloc_test.exe \
       test/sanloc_test.log \
+      test/regress_replay_test test/regress_replay_test.exe \
+      test/regress_replay_test.log \
       test/schema_compat test/schema_compat.exe \
       test/schema_compat.log \
       test/mcp_abuse test/mcp_abuse.exe \
@@ -228,7 +230,7 @@ rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \
       test/.parser_fuzz_payload.bin test/.parser_fuzz_scen.json
 rm -rf test/.backend_fake_filc test/.parser_fuzz_filc test/.parser_fuzz_frama
 rm -rf test/.cache_key_tmp test/.atomic_tmp test/.cache_corrupt_tmp
-rm -rf test/.schema_compat_tmp test/.mcp_abuse_tmp
+rm -rf test/.schema_compat_tmp test/.mcp_abuse_tmp test/.replay_tmp
 
 run_built() {
     local name="$1"; shift
@@ -965,6 +967,35 @@ else
     FAIL=1
 fi
 
+# --- 17c. regress_replay_test: IDE-4 (qwen-review) regression replay
+# pasca-repair (in-process). Replay seluruh corpus terhadap source
+# IN-MEMORY (kode baru) via myc_regress_replay_mem: fuzz crash -> seed
+# tersimpan otomatis -> replay source buggy = masih gagal, replay source
+# fixed = RESOLVED, corpus kosong = 0/0 (anti-overclaim). NON-blocking
+# (replay tidak mengubah verdict). Membutuhkan clang (gate fuzz/ASan),
+# sama seperti e2e `myc regression run` yang sudah berjalan di CI.
+if $CC -O2 -std=c11 -Wall -Wextra -Werror -pedantic -I. -DMYC_NO_MAIN \
+       -o test/regress_replay_test test/regress_replay_test.c $SRCS 2>/dev/null; then
+    LOG="test/regress_replay_test.log"
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 300 test/regress_replay_test >"$LOG" 2>&1
+        RPT=$?
+    else
+        test/regress_replay_test >"$LOG" 2>&1
+        RPT=$?
+    fi
+    if [ $RPT -eq 0 ]; then
+        echo "[OK] regress_replay_test (IDE-4 replay pasca-repair: semua cek lulus)"
+    else
+        echo "[FAIL] regress_replay_test (IDE-4 replay pasca-repair, exit $RPT)"
+        grep -E '^\[FAIL\]' "$LOG" | head -10
+        FAIL=1
+    fi
+else
+    echo "[FAIL] regress_replay_test gagal dibangun (-Werror -pedantic)"
+    FAIL=1
+fi
+
 # --- 18. schema_compat: PR-015 (MYC-AUDIT-047) machine schema freeze ---
 # Golden file untuk SEMUA skema JSON mesin dibekukan di
 # docs/schema-registry.md + test/golden/ (result.v1, agent.v2,
@@ -1216,6 +1247,8 @@ rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \
       test/receipt_vectors.log \
       test/sanloc_test test/sanloc_test.exe \
       test/sanloc_test.log \
+      test/regress_replay_test test/regress_replay_test.exe \
+      test/regress_replay_test.log \
       test/schema_compat test/schema_compat.exe \
       test/schema_compat.log \
       test/mcp_abuse test/mcp_abuse.exe \

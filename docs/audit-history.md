@@ -4259,3 +4259,56 @@ menggeser nomor baris source (bukan source asli) → lokasi menyesatkan.
   reducer_exhaustive) → pesan echo tanpa kurung.
 - Self-dogfood: sanloc.c/run.c/report.c/context.c/myc.h → verdict OK;
   `gcc -Werror -pedantic` sanloc.c bersih; `git diff --check` bersih.
+
+### MYC-AUDIT-054 (qwen-review IDE-5 + IDE-4, T2) — fix `--scenario auto` + replay regression pasca-repair
+
+**IDE-5 (celah §3.3, MEDIUM).** `--scenario auto` salah tebak kelas parser:
+file ber-`main` dengan loop `fgets`+`strtol` (pola parser klasik) diklasifikasi
+`cli-daily` (compile+run+analyzer), bukan `parser` (fuzz+run) — verifikasi
+kurang dalam pada hazard yang paling relevan untuk input tak terduga.
+
+**Fix.** `scenario.c detect_auto` menambah sinyal `is_parser`: loop baca stdin
+(`fgets`/`fread`/`scanf`/`getchar`/`read(`) DAN panggilan parsing
+(`strtol`/`strtod`/`sscanf`/`isdigit`/`strchr`/`strtok`). Prioritas resep D3:
+firmware > parser > library (kontrak) > cli-daily. Tetap substring
+(deterministik, murah), NON-blocking, `why` dilaporkan di scenario_report.
+
+**Verifikasi IDE-5.** Fixture baru `test/fixtures/scen_input_parser.c`
+(fgets+strtol+main) → `scenario (C5): parser`; `scen_parser.c` tetap
+`library`, `mmio_bad.c` tetap `firmware` (tidak regress). Cek ditambah di
+`test/_ci_linux.sh` (blok C5), `test/_regress_run.bat`, dan
+`.github/workflows/ci.yml`.
+
+**IDE-4 (celah §4, P1).** Mencegah pola klasik LLM: memperbaiki bug A sambil
+menghidupkan kembali bug B. Sebelumnya `repair` (MCP) hanya mengembalikan
+patch template + `applied_verdict`; tidak ada replay corpus pasca-repair.
+
+**Fix.**
+- `regress.c`: refactor `regress_run_one` → `regress_run_src` (jalankan gate
+  terhadap buffer memori) + API publik baru `myc_regress_replay_mem`:
+  replay seluruh corpus (kind + seed PRNG dari index) terhadap source
+  IN-MEMORY, mengisi `total/resolved/failing`. NON-blocking.
+- `mcp.c tool_repair`: param opsional `patched_source` (kode baru setelah
+  patch diterapkan). Bila verdict kode baru = `OK`, myc me-replay corpus
+  terhadap kode itu dan melampirkan `regression_replay` di
+  `structuredContent` (schema `myc.repair.v1`) + text: `1/1 clean`;
+  bila ada seed yang masih gagal → debt eksplisit `N masih gagal (bug
+  lama hidup kembali)`. Corpus kosong → `corpus kosong (0 seed)`
+  (anti-overclaim: tidak pernah "clean" palsu). Catatan: check di repair
+  compile-only (`run_lint`), jadi yang menentukan replay adalah verdict
+  KODE BARU (source runtime-buggy tetap punya verdict OK di check).
+
+**Verifikasi IDE-4.**
+- Unit `test/regress_replay_test.c` (5 kasus × 12 CHECK): seed fuzz_div0
+  tersimpan otomatis → replay source buggy = masih gagal → replay source
+  fixed = RESOLVED → corpus kosong 0/0 → deterministik (dua panggilan
+  identik = hasil sama). Build `-Werror -pedantic` bersih Linux (WSL)
+  + Windows; cleanup penuh (tanpa leftover `.myc`).
+- E2E MCP: repair dengan `patched_source` versi fixed →
+  `regression_replay: 1/1 clean`; versi masih-buggy → `2 masih gagal`.
+  Cek di `_ci_linux.sh` (6f, source semantik penuh) dan `_regress_run.bat`
+  (6f, source bebas karakter khusus `<>&` karena `^` escape cmd tidak
+  berlaku di dalam double-quote — catatan terdokumentasi).
+- `_audit018.sh` penuh SELESAI OK di WSL (sanloc_test + regress_replay_test
+  hijau); self-dogfood scenario.c/regress.c/mcp.c/regress.h → verdict OK;
+  `git diff --check` bersih.
