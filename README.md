@@ -206,7 +206,7 @@ unavailable, myc still reports the static result plus a diagnostic.
 tools: `check`, `version`, `policy`, `contracts`, `lint`, and `repair` (minimal
 template patch for a compile finding). Results use typed `structuredContent`
 schemas (`myc.result.v1`, `myc.repair.v1`) plus a text JSON payload. See
-`docs/mcp-tools.md`. A dependency-free example client is `mcp_client.py`.
+`docs/mcp-tools.md`. A dependency-free example client is `docs/mcp_client.py`.
 
 ## Learn more
 

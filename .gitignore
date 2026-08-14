@@ -14,10 +14,7 @@
 docs/myc-serious-review-and-roadmap.md
 
 # dokumen rencana kerja (tidak untuk di-commit)
-deepseek-plan.md
-gptsol_deepseek-plan.md
-next-plan.md
-myc-production-readiness-plan.md
+docs/plans/
 
 # scratch logs / repro (sesi dev, bukan deliverable)
 ci_linux_local.txt
