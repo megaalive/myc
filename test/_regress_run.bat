@@ -54,6 +54,13 @@ if exist test\regress_replay_test.exe (
   echo [WARN] regress_replay_test gagal dibangun
 )
 del test\regress_replay_test.exe 2>nul
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\runtime_repair_test.exe test\runtime_repair_test.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
+if exist test\runtime_repair_test.exe (
+  test\runtime_repair_test.exe | findstr "FAIL=0" >nul && echo [OK] runtime_repair_test lulus IDE-2 repair template runtime || echo [FAIL] runtime_repair_test menemukan kegagalan
+) else (
+  echo [WARN] runtime_repair_test gagal dibangun
+)
+del test\runtime_repair_test.exe 2>nul
 if exist test\.replay_tmp rmdir /s /q test\.replay_tmp
 if exist .myc\regression rmdir /s /q .myc\regression
 echo --- Fase 1 streaming evidence detector: sanitizer marker terdeteksi pada output streaming

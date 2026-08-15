@@ -4312,3 +4312,60 @@ patch template + `applied_verdict`; tidak ada replay corpus pasca-repair.
 - `_audit018.sh` penuh SELESAI OK di WSL (sanloc_test + regress_replay_test
   hijau); self-dogfood scenario.c/regress.c/mcp.c/regress.h → verdict OK;
   `git diff --check` bersih.
+
+### MYC-AUDIT-055 (qwen-review IDE-2, T3) — Repair template runtime + `new_verdict_after_patch`
+
+**IDE-2 (celah §3.2 + §4, P0).** Gate runtime — satu-satunya gate yang pasti
+menangkap bug heap/UB — sebelumnya hanya memberi `RUNTIME_VIOLATION` tanpa
+lokasi. IDE-1 (MYC-AUDIT-053) menambah `sanitizer_location`; IDE-2 memakai
+lokasi itu untuk **repair loop terverifikasi**: patch template deterministik
+(bukan AI) → re-run → `new_verdict_after_patch` (bukti, bukan klaim).
+
+**Template runtime di `compile.c` (baru):**
+- `rt_is_local_array` / `rt_is_heap_ptr` / `rt_buf_size` — deteksi target
+  buffer (array lokal vs malloc) dari source + `sanloc` (fragment ke-loc
+  sampai `;`).
+- `rt_replace_call_seg` — replace SEGMEN pemanggilan dalam baris sambil
+  mempertahankan prefix/suffix source (baris bisa berisi deklarasi lain;
+  replace seluruh baris menghilangkan deklarasi).
+- `myc_repair_runtime_patch` — API publik (compile.h):
+  - `strcpy/strcat` overflow → copy ber-batas + null-terminate
+    (`clamp+memcpy` + null eksplisit; `snprintf` TIDAK dipakai — butuh
+    `<stdio.h>` dan literal panjang memicu `-Werror=format-truncation`);
+  - `memset/memcpy` overflow → clamp `n` ke `sizeof`/kapasitas malloc
+    (nilai variabel — gcc tak bisa membuktikan overflow, compile-clean);
+  - UAF/double-free (frame `freed by`) → NULL-kan pointer setelah `free`;
+  - UBSan undefined-behavior → jujur `patch=NULL` + `why` (anti-overclaim);
+  - template tidak yakin → `patch=NULL` + `why` (jujur).
+
+**Wire MCP (`mcp.c tool_repair`):** argumen opsional `run` (1 = runtime
+mode). Urutan perbaiki bug MYC-AUDIT-054: `myc_request_init` me-reset
+struct, jadi `req.run` di-set SETELAH init. Alur: check run-only (bukan
+compile-only) → verdict `RUNTIME_VIOLATION` + `sanitizer_location` → template
+→ patch diterapkan in-memory → re-run `--no-cache` (cache replay TIDAK
+menyimpan sanloc — repair harus fresh evidence) → `new_verdict_after_patch`
++ `regression_replay` (IDE-4). Verdict/confidence konsisten: `finding`,
+`applied_verdict`, `confidence`, `patch`, schema `myc.repair.v1`.
+
+**Bug IDE-1 ditemukan & diperbaiki (Linux):** clang Linux menulis frame ASan
+`FILE:LINE:COL` (`<stdin>:11:5`) sedangkan Windows `FILE:LINE` saja.
+`parse_frame_line` mengambil digit setelah colon TERAKHIR → line=5 (col!)
+di Linux. Fix: lompati ':' terakhir, loop mundur menemukan ':' kedua,
+digit tengah = LINE, digit terakhir = COL; `colon` (file_len) dipetakan ke
+posisi ':' kedua. Bug debug: `colon2` sempat dideklarasikan `const char *`
+(index → pointer → segfault) — diperbaiki jadi `size_t`. Verifikasi Linux:
+`rt_strcpy_ovf.c` → `line 11, col 5` (sebelumnya line 5); Windows tetap
+`line 11`.
+
+**Verifikasi IDE-2.**
+- Unit `test/runtime_repair_test.c` (20 CHECK): fixture deterministik TANPA
+  clang — strcpy stack overflow, strcat, memset heap/stack clamp, memcpy,
+  UAF NULL-guard, UBSan jujur, template tidak-yakin jujur, replace segmen
+  mempertahankan deklarasi di baris sama, patched source compile-clean.
+  Build `-Werror -pedantic` bersih Linux + Windows, PASS 20/20.
+- E2E MCP `_ci_linux.sh` (6g): strcpy overflow source multi-baris →
+  `finding: stack-buffer-overflow` + `new_verdict_after_patch:"OK"` +
+  `regression_replay`; blok 6f IDE-4 tidak regress.
+- Fixture baru: `test/fixtures/rt_strcpy_ovf.c`, `test/fixtures/rt_ubsan_ovf.c`.
+- `_audit018.sh` (17d) + `_regress_run.bat` (17d): unit test runtime_repair
+  + cleanup; sanloc_test tetap 33/33 di kedua platform.

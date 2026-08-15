@@ -1896,3 +1896,448 @@ char *myc_repair_from_diagnostic(const char *message)
     const char *code = repair_find_code(message);
     return myc_repair_get_patch(code);
 }
+
+/* ==================================================================== */
+/* IDE-2 (qwen-review): repair template untuk RUNTIME_VIOLATION.        */
+/* Template deterministik (bukan AI) berbasis sanitizer_location        */
+/* (IDE-1, sanloc_* di myc_result): mengganti BARIS pelanggaran dengan  */
+/* versi aman, lalu caller MCP re-run -> new_verdict_after_patch       */
+/* (bukti, bukan klaim). Anti-churn: hanya menyentuh baris lokasi       */
+/* violation; bila template tidak yakin -> patched_source NULL + why.  */
+/* ==================================================================== */
+
+/* Ambil baris ke-line (1-based) dari src. Kembali pointer ke dalam src
+ * (bukan copy) + panjang baris tanpa newline. NULL bila di luar rentang. */
+static const char *rt_line_at(const char *src, size_t len, int line,
+                              size_t *out_len)
+{
+    size_t pos = 0;
+    int    cur = 1;
+    if (!src || line < 1)
+        return NULL;
+    while (pos < len) {
+        size_t e = pos;
+        while (e < len && src[e] != '\n')
+            e++;
+        if (cur == line) {
+            *out_len = e - pos;
+            return src + pos;
+        }
+        pos = e + 1; /* lewati '\n' */
+        cur++;
+    }
+    return NULL;
+}
+
+/* Ganti SEGMEN call dalam baris ke-line (1-based): dari posisi `from`
+ * (awal call, mis. "strcpy(") sampai akhir statement (titik koma
+ * pertama SETELAH `from` pada baris yang sama) diganti new_seg. Prefix
+ * dan suffix SOURCE LENGKAP dipertahankan (baris lain + sisa baris
+ * lokasi) — penting utk source single-line dari MCP (deklarasi di
+ * baris yang sama TIDAK hilang). Kembali string malloc'd; NULL bila
+ * baris/from tidak ditemukan. */
+static char *rt_replace_call_seg(const char *src, size_t len, int line,
+                                 const char *from, const char *new_seg)
+{
+    size_t pos = 0;
+    int    cur = 1;
+    size_t start = 0, end = 0;
+    size_t nl_len = 0;
+    size_t seg_b = 0, seg_e = 0;
+    size_t fl = strlen(from);
+    char  *out;
+    size_t o;
+    size_t nl = strlen(new_seg);
+
+    if (!src || line < 1)
+        return NULL;
+    while (pos < len) {
+        size_t e = pos;
+        while (e < len && src[e] != '\n')
+            e++;
+        if (cur == line) {
+            start = pos;
+            end = e;
+            nl_len = (e < len) ? 1 : 0; /* newline setelah baris */
+            break;
+        }
+        pos = e + 1;
+        cur++;
+    }
+    if (cur != line)
+        return NULL;
+    /* cari `from` di dalam baris */
+    {
+        size_t i = start;
+        while (i + fl <= end) {
+            if (memcmp(src + i, from, fl) == 0) {
+                seg_b = i;
+                break;
+            }
+            i++;
+        }
+    }
+    if (!seg_b)
+        return NULL;
+    /* akhir segmen: titik koma pertama setelah seg_b pada baris */
+    seg_e = seg_b;
+    while (seg_e < end && src[seg_e] != ';')
+        seg_e++;
+    if (seg_e >= end)
+        seg_e = end;
+    else
+        seg_e++; /* sertakan ';' */
+
+    out = (char *)myc_malloc(start + (seg_b - start) + nl +
+                             (end - seg_e) + nl_len +
+                             (len - end - nl_len) + 1);
+    if (!out)
+        return NULL;
+    o = 0;
+    memcpy(out + o, src, start);       /* baris 1..line-1 */
+    o += start;
+    memcpy(out + o, src + start, seg_b - start); /* prefix baris */
+    o += seg_b - start;
+    memcpy(out + o, new_seg, nl);      /* segmen baru */
+    o += nl;
+    memcpy(out + o, src + seg_e, end - seg_e);   /* suffix baris */
+    o += end - seg_e;
+    if (nl_len)
+        out[o++] = '\n';               /* newline baris lokasi */
+    memcpy(out + o, src + end + nl_len, len - end - nl_len); /* sisa */
+    o += len - end - nl_len;
+    out[o] = '\0';
+    return out;
+}
+
+/* Ekstrak argumen call `fn(` di snippet (dipisah koma top-level).
+ * Mengisi args[i].p/l utk argumen i (0-based), max nargs. Trim spasi.
+ * Kembali jumlah argumen yang terbaca. Deterministik string scan. */
+static int rt_call_args(const char *s, const char *fn,
+                        const char **ap, size_t *al, int nargs)
+{
+    const char *p;
+    const char *end;
+    int         n = 0;
+    size_t      fnl = strlen(fn);
+
+    if (!s)
+        return 0;
+    p = strstr(s, fn);
+    if (!p)
+        return 0;
+    p += fnl;
+    while (*p == ' ' || *p == '\t')
+        p++;
+    if (*p != '(')
+        return 0;
+    p++;
+    end = strchr(p, ')');
+    if (!end)
+        return 0;
+    while (p < end && n < nargs) {
+        const char *q = p;
+        while (q < end && *q != ',')
+            q++;
+        /* trim spasi kiri */
+        while (p < q && (*p == ' ' || *p == '\t'))
+            p++;
+        while (q > p && (q[-1] == ' ' || q[-1] == '\t'))
+            q--;
+        ap[n] = p;
+        al[n] = (size_t)(q - p);
+        n++;
+        p = q;
+        if (p < end)
+            p++; /* lewati ',' */
+    }
+    return n;
+}
+
+/* Apakah teks t (len tl) diawali string persis `prefix` (lolos ident)? */
+static int rt_starts_ident(const char *t, size_t tl, const char *ident,
+                           size_t il)
+{
+    size_t i;
+    if (tl < il)
+        return 0;
+    for (i = 0; i < il; i++) {
+        if (t[i] != ident[i])
+            return 0;
+    }
+    return 1;
+}
+
+/* Cari `char VAR[` di source pada baris <= `before_line` (baris lokasi
+ * violation ATAU sebelumnya — deklarasi bisa di baris yang sama utk
+ * source single-line dari MCP) — deteksi buffer array lokal (sizeof
+ * aman). Kembali 1 bila ditemukan. */
+static int rt_is_local_array(const char *src, size_t len, int before_line,
+                             const char *var, size_t vlen)
+{
+    size_t pos = 0;
+    int    cur = 1;
+    if (!src || !var || vlen == 0)
+        return 0;
+    while (pos < len && cur <= before_line) {
+        size_t e = pos;
+        while (e < len && src[e] != '\n')
+            e++;
+        /* cari "char <var>[" pada baris ini */
+        {
+            size_t i = pos;
+            while (i + 5 + vlen <= e) {
+                if (src[i] == 'c' && src[i + 1] == 'h' &&
+                    src[i + 2] == 'a' && src[i + 3] == 'r' &&
+                    (src[i + 4] == ' ' || src[i + 4] == '\t') &&
+                    rt_starts_ident(src + i + 5, e - i - 5, var, vlen)) {
+                    size_t j = i + 5 + vlen;
+                    while (j < e && (src[j] == ' ' || src[j] == '\t'))
+                        j++;
+                    if (j < e && src[j] == '[')
+                        return 1;
+                }
+                i++;
+            }
+        }
+        pos = e + 1;
+        cur++;
+    }
+    return 0;
+}
+
+/* Baca kapasitas alokasi dari baris alloc (mis. "char *b = malloc(8);"
+ * -> 8). Cari "malloc(" lalu angka pertama. -1 bila tidak terbaca. */
+static long rt_alloc_size_at(const char *src, size_t len, int line)
+{
+    size_t      ll;
+    const char *ln = rt_line_at(src, len, line, &ll);
+    const char *p;
+    long        v = 0;
+    if (!ln)
+        return -1;
+    p = strstr(ln, "malloc(");
+    if (!p)
+        return -1;
+    p += strlen("malloc(");
+    while (p < ln + ll && (*p == ' ' || *p == '\t'))
+        p++;
+    if (p >= ln + ll || *p < '0' || *p > '9')
+        return -1;
+    while (p < ln + ll && *p >= '0' && *p <= '9') {
+        v = v * 10 + (*p - '0');
+        p++;
+    }
+    return v;
+}
+
+myc_runtime_repair *myc_repair_runtime_patch(const myc_result *res,
+                                             const char *source,
+                                             size_t source_len)
+{
+    myc_runtime_repair *r;
+    const char *kind;
+    const char *snip;
+    int         loc_line;
+    int         alloc_line;
+
+    if (!res || !res->sanloc_have || !source)
+        return NULL;
+    r = (myc_runtime_repair *)myc_calloc(1, sizeof(*r));
+    if (!r)
+        return NULL;
+    kind = res->sanloc_kind ? res->sanloc_kind : "";
+    snip = res->sanloc_snippet ? res->sanloc_snippet : "";
+    loc_line = res->sanloc_line;
+    alloc_line = res->sanloc_alloc_line;
+
+    /* ---------- Template A: memset/memcpy overflow -> clamp n ---------- */
+    if (strstr(kind, "overflow") &&
+        (strstr(snip, "memset(") || strstr(snip, "memcpy("))) {
+        const char *fn = strstr(snip, "memset(") ? "memset" : "memcpy";
+        const char *ap[3];
+        size_t      al[3];
+        int         na = rt_call_args(snip, fn, ap, al, 3);
+        if (na >= 3) {
+            char *new_seg = NULL;
+            char  from[48];
+            if (rt_is_local_array(source, source_len, loc_line,
+                                  ap[0], al[0])) {
+                /* buffer array lokal: clamp ke sizeof */
+                size_t need = al[0] * 2 + al[1] + 64;
+                char  *buf = (char *)myc_malloc(need);
+                if (buf) {
+                    /* rt_replace_call_seg menghapus ';' asli — sertakan
+                     * ';' di new_seg agar statement tetap valid. */
+                    snprintf(buf, need,
+                             "%.*s(%.*s, %.*s, sizeof(%.*s));",
+                             (int)strlen(fn), fn,
+                             (int)al[0], ap[0],
+                             (int)al[1], ap[1],
+                             (int)al[0], ap[0]);
+                    new_seg = buf;
+                }
+            } else if (alloc_line > 0) {
+                long cap = rt_alloc_size_at(source, source_len, alloc_line);
+                if (cap > 0) {
+                    size_t need = al[0] + al[1] + 64;
+                    char  *buf = (char *)myc_malloc(need);
+                    if (buf) {
+                        snprintf(buf, need, "%.*s(%.*s, %.*s, %ld);",
+                                 (int)strlen(fn), fn,
+                                 (int)al[0], ap[0],
+                                 (int)al[1], ap[1],
+                                 cap);
+                        new_seg = buf;
+                    }
+                }
+            }
+            if (new_seg) {
+                snprintf(from, sizeof(from), "%.*s(", (int)strlen(fn), fn);
+                r->patched_source = rt_replace_call_seg(source, source_len,
+                                                        loc_line, from,
+                                                        new_seg);
+                if (r->patched_source) {
+                    size_t dlen = strlen(fn) + al[0] + al[1] + 96;
+                    char  *dbuf = (char *)myc_malloc(dlen);
+                    if (dbuf) {
+                        snprintf(dbuf, dlen,
+                                 "clamp %s(%.*s, %.*s, n) ke kapasitas "
+                                 "buffer (overflow runtime)",
+                                 fn, (int)al[0], ap[0],
+                                 (int)al[1], ap[1]);
+                        r->patch_text = dbuf;
+                    }
+                    r->confidence = 80;
+                }
+                myc_free(new_seg);
+            }
+        }
+    }
+    /* ---------- Template B: strcpy/strcat overflow -> memcpy clamp -----
+     * Ganti strcpy(DST,SRC) dengan versi ber-batas yang COMPILE-CLEAN
+     * tanpa <stdio.h> dan tanpa -Wformat-truncation (ukuran variabel):
+     *   { size_t _n = strlen(SRC); if (_n >= sizeof(DST))
+     *       _n = sizeof(DST) - 1; memcpy(DST, SRC, _n); DST[_n] = '\0'; }
+     * strcat memakai offset existing. Hanya untuk DST array lokal. */
+    else if (strstr(kind, "overflow") &&
+             (strstr(snip, "strcpy(") || strstr(snip, "strcat("))) {
+        const char *fn = strstr(snip, "strcpy(") ? "strcpy" : "strcat";
+        const char *ap[2];
+        size_t      al[2];
+        int         na = rt_call_args(snip, fn, ap, al, 2);
+        if (na >= 2 &&
+            rt_is_local_array(source, source_len, loc_line, ap[0], al[0])) {
+            char  from[48];
+            char *new_seg = NULL;
+            size_t need = al[0] * 4 + al[1] + 192;
+            char  *buf = (char *)myc_malloc(need);
+            if (buf) {
+                if (strcmp(fn, "strcpy") == 0) {
+                    snprintf(buf, need,
+                             "{ size_t _n = strlen(%.*s); "
+                             "if (_n >= sizeof(%.*s)) _n = sizeof(%.*s) - 1; "
+                             "memcpy(%.*s, %.*s, _n); %.*s[_n] = '\\0'; }",
+                             (int)al[1], ap[1],
+                             (int)al[0], ap[0],
+                             (int)al[0], ap[0],
+                             (int)al[0], ap[0],
+                             (int)al[1], ap[1],
+                             (int)al[0], ap[0]);
+                } else {
+                    snprintf(buf, need,
+                             "{ size_t _o = strlen(%.*s); "
+                             "size_t _n = strlen(%.*s); "
+                             "if (_o + _n >= sizeof(%.*s)) "
+                             "_n = sizeof(%.*s) - _o - 1; "
+                             "memcpy(%.*s + _o, %.*s, _n); "
+                             "%.*s[_o + _n] = '\\0'; }",
+                             (int)al[0], ap[0],
+                             (int)al[1], ap[1],
+                             (int)al[0], ap[0],
+                             (int)al[0], ap[0],
+                             (int)al[0], ap[0],
+                             (int)al[1], ap[1],
+                             (int)al[0], ap[0]);
+                }
+                new_seg = buf;
+            }
+            if (new_seg) {
+                snprintf(from, sizeof(from), "%.*s(", (int)strlen(fn), fn);
+                r->patched_source = rt_replace_call_seg(source, source_len,
+                                                        loc_line, from,
+                                                        new_seg);
+                if (r->patched_source) {
+                    size_t dlen = al[0] + al[1] + 96;
+                    char  *dbuf = (char *)myc_malloc(dlen);
+                    if (dbuf) {
+                        snprintf(dbuf, dlen,
+                                 "ganti %s(%.*s, %.*s) dengan copy "
+                                 "ber-batas + null-terminate (overflow "
+                                 "runtime)",
+                                 fn, (int)al[0], ap[0],
+                                 (int)al[1], ap[1]);
+                        r->patch_text = dbuf;
+                    }
+                    r->confidence = 80;
+                }
+                myc_free(new_seg);
+            }
+        }
+    }
+    /* ---------- Template C: use-after-free -> NULL-kan setelah free --- */
+    else if (strstr(kind, "use-after-free")) {
+        /* baris alloc menunjuk free() (blok "freed by") */
+        const char *ap[1];
+        size_t      al[1];
+        if (alloc_line > 0) {
+            size_t      ll;
+            const char *ln = rt_line_at(source, source_len, alloc_line, &ll);
+            if (ln && rt_call_args(ln, "free", ap, al, 1) == 1) {
+                size_t need = al[0] * 2 + 64;
+                char  *buf = (char *)myc_malloc(need);
+                if (buf) {
+                    snprintf(buf, need, "free(%.*s); %.*s = NULL;",
+                             (int)al[0], ap[0],
+                             (int)al[0], ap[0]);
+                    r->patched_source = rt_replace_call_seg(
+                        source, source_len, alloc_line, "free(", buf);
+                    if (r->patched_source) {
+                        size_t dlen = al[0] + 96;
+                        char  *dbuf = (char *)myc_malloc(dlen);
+                        if (dbuf) {
+                            snprintf(dbuf, dlen,
+                                     "NULL-kan %.*s setelah free() "
+                                     "(use-after-free runtime)",
+                                     (int)al[0], ap[0]);
+                            r->patch_text = dbuf;
+                        }
+                        r->confidence = 70;
+                    }
+                    myc_free(buf);
+                }
+            }
+        }
+    }
+
+    if (!r->patched_source) {
+        if (!r->why) {
+            r->why = myc_strdup(
+                "template runtime tidak yakin untuk kasus ini "
+                "(butuh analisis manual: kapasitas tidak statis / "
+                "polanya di luar strcpy-strcat-memset-memcpy-UAF)");
+        }
+        r->confidence = 5;
+    }
+    return r;
+}
+
+void myc_runtime_repair_free(myc_runtime_repair *r)
+{
+    if (!r)
+        return;
+    myc_free(r->patched_source);
+    myc_free(r->patch_text);
+    myc_free(r->why);
+    myc_free(r);
+}

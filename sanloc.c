@@ -136,7 +136,13 @@ static int parse_frame_line(const char *line, size_t len, sanloc_frame *f)
         file_start++;
     if (file_start >= len)
         return 0;
-    /* nomor baris = digit setelah ':' TERAKHIR pada bagian file */
+    /* nomor baris = digit setelah ':' TERAKHIR pada bagian file.
+     * Catatan MYC-AUDIT-055 (IDE-1, Linux): clang Linux menulis frame
+     * ASan dgn format `FILE:LINE:COL` (mis. "<stdin>:11:5") sedangkan
+     * Windows hanya `FILE:LINE`. Ambil digit terakhir sebagai kandidat;
+     * bila ada colon KEDUA sebelum digit itu yang juga diikuti digit,
+     * maka digit pertama = LINE dan digit terakhir = COL (jangan
+     * mengambil kolom sebagai baris). */
     colon = len;
     while (colon > file_start && line[colon - 1] != ':')
         colon--;
@@ -148,22 +154,65 @@ static int parse_frame_line(const char *line, size_t len, sanloc_frame *f)
     {
         long ln = 0;
         int  any = 0;
+        long col_ln = 0;
+        int  col_any = 0;
         const char *d = digits;
+        size_t      colon2 = 0;
+        int         have_col = 0;
         while (d < line + len && *d >= '0' && *d <= '9') {
-            ln = ln * 10 + (*d - '0');
-            if (ln > 100000000L) { ln = 0; any = 0; break; }
-            any = 1;
+            col_ln = col_ln * 10 + (*d - '0');
+            if (col_ln > 100000000L) { col_ln = 0; col_any = 0; break; }
+            col_any = 1;
             d++;
+        }
+        if (!col_any)
+            return 0;
+        /* cari ':' KEDUA sebelum digit terakhir (bagian FILE:LINE:COL).
+         * catatan: `colon` menunjuk ke DIGIT pertama col (posisi SETELAH
+         * ':' terakhir); loop mundur mencari ':' kedua. Bila ditemukan
+         * dan di antaranya ada digit (LINE), maka digit tengah = LINE
+         * dan digit terakhir = COL. */
+        colon2 = colon; /* mulai dari digit col */
+        /* lompati ':' terakhir (sebelum col) itu sendiri, agar loop
+         * mundur bisa menemukan ':' KEDUA (sebelum LINE). */
+        if (colon2 > file_start && line[colon2 - 1] == ':')
+            colon2--;
+        while (colon2 > file_start && line[colon2 - 1] != ':')
+            colon2--;
+        if (colon2 > file_start && colon2 < colon) {
+            /* colon2 = posisi SETELAH ':' kedua = digit LINE pertama */
+            const char *d2 = line + colon2; /* digit LINE pertama */
+            long        ln2 = 0;
+            int         any2 = 0;
+            while (d2 < line + colon - 1 && *d2 >= '0' && *d2 <= '9') {
+                ln2 = ln2 * 10 + (*d2 - '0');
+                if (ln2 > 100000000L) { ln2 = 0; any2 = 0; break; }
+                any2 = 1;
+                d2++;
+            }
+            /* d2 harus berhenti tepat di posisi ':' terakhir
+             * (= line + colon - 1); seluruh digit LINE terbaca. */
+            if (any2 && d2 == line + colon - 1) {
+                ln = ln2;
+                any = 1;
+                have_col = 1;
+                colon = colon2 - 1; /* file_len: posisi ':' kedua */
+            }
+        }
+        if (!have_col) {
+            ln = col_ln;
+            any = col_any;
         }
         if (!any)
             return 0;
         f->line = (int)ln;
+        if (have_col)
+            f->col = (int)col_ln;
     }
     f->func = line + fn_start;
     f->func_len = fn_end - fn_start;
     f->file = line + file_start;
     f->file_len = colon - file_start;
-    f->col = 0;
     return 1;
 }
 

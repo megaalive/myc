@@ -714,6 +714,25 @@ else
 fi
 rm -f test/_tmp_ide4_repair.jsonl
 rm -rf .myc/regression
+# --- 6g. IDE-2 (qwen-review): repair RUNTIME_VIOLATION di MCP ---
+# repair dengan run=1 pada source strcpy overflow: RUNTIME_VIOLATION +
+# sanitizer_location -> patch template deterministik (copy ber-batas) ->
+# re-run source yang di-patch -> new_verdict_after_patch=OK (BUKTI, bukan
+# klaim) + regression_replay. UBSan (rt_ubsan_ovf) -> jujur why tanpa
+# patch (anti-overclaim).
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"repair","arguments":{"source":"#include <string.h>\nint f(void){char b[6]; strcpy(b, \"abcdefghij\"); return b[0];}\nint main(void){(void)f(); return 0;}\n","run":1}}}' | ./mcp > test/_tmp_ide2_repair.jsonl 2>&1
+if grep -qF "new_verdict_after_patch":"OK" test/_tmp_ide2_repair.jsonl && \
+   grep -qF "stack-buffer-overflow" test/_tmp_ide2_repair.jsonl; then
+    note "IDE-2: repair runtime strcpy -> patch + new_verdict OK"
+else
+    fail "IDE-2: repair runtime strcpy tidak menghasilkan patch terverifikasi"
+fi
+if grep -qF "regression_replay" test/_tmp_ide2_repair.jsonl; then
+    note "IDE-2: regression_replay ikut pada patch runtime"
+else
+    fail "IDE-2: regression_replay tidak muncul pada patch runtime"
+fi
+rm -f test/_tmp_ide2_repair.jsonl
 
 # --- 6. dogfood tool ---
 for f in dogfood/dogfood_ring.c dogfood/dogfood_config.c dogfood/dogfood_tilemap.c; do

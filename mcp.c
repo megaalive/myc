@@ -639,6 +639,21 @@ static void tool_repair(json_value *id, json_value *args)
     req.input.data = source;
     req.input.len = strlen(source);
     req.run_lint = 1;
+    {
+        /* IDE-2 (qwen-review): repair RUNTIME_VIOLATION butuh gate run
+         * agar sanitizer_location (IDE-1) terisi. Arg opsional `run`
+         * (0/1); default 0 (perilaku lama, compile-only). Bila run=1,
+         * cache di-nonaktifkan (no_cache): cache replay SOL-18 TIDAK
+         * menyimpan sanloc_* (IDE-1), jadi cache-hit akan kehilangan
+         * lokasi pelanggaran — repair harus melihat bukti fresh. */
+        json_value *rv = json_get(args, "run");
+        if (rv && rv->type == JSON_NUM && rv->num == 1)
+            req.run = 1;
+        else if (rv && rv->type == JSON_BOOL && rv->num == 1)
+            req.run = 1;
+        if (req.run)
+            req.no_cache = 1;
+    }
     myc_result_init(&res);
     myc_run(&req, &res);
 
@@ -660,35 +675,68 @@ static void tool_repair(json_value *id, json_value *args)
         }
     }
 
-    /* IDE-4 (qwen-review): bila caller menyertakan patched_source (kode
-     * baru setelah patch diterapkan), re-check kode itu; bila verdict
-     * berubah jadi OK, replay corpus regression terhadap kode baru dan
-     * lampirkan regression_replay: K/N clean. Mencegah pola klasik LLM:
-     * memperbaiki bug A sambil menghidupkan kembali bug B. NON-blocking
-     * (replay tidak mengubah verdict). */
+    /* IDE-2/IDE-4 (qwen-review):
+     *  - IDE-2: bila verdict RUNTIME_VIOLATION + sanitizer_location
+     *    (IDE-1) tersedia, generate patch template DETERMINISTIK
+     *    (strcpy/strcat->snprintf, memset/memcpy->clamp, UAF->NULL-kan)
+     *    yang mengganti baris pelanggaran, lalu re-run source yang
+     *    di-patch -> new_verdict_after_patch (BUKTI, bukan klaim).
+     *  - IDE-4: bila caller menyertakan patched_source (kode baru setelah
+     *    patch diterapkan), re-check kode itu; bila verdict berubah jadi
+     *    OK, replay corpus regression -> regression_replay: K/N clean.
+     *    Mencegah pola klasik LLM: memperbaiki bug A sambil menghidupkan
+     *    kembali bug B. NON-blocking (replay tidak mengubah verdict). */
     {
-        const char *new_verdict = NULL;
-        int total = 0, resolved = 0, failing = 0;
-        char replay_buf[256] = "";
+        const char       *new_verdict = NULL;
+        const char       *why_runtime = NULL;
+        int               total = 0, resolved = 0, failing = 0;
+        char              replay_buf[256] = "";
+        myc_runtime_repair *rr = NULL;
+        char             *effective_patched = NULL; /* malloc'd: IDE-2 */
+        int               run_for_patched = 0;
+
+        /* IDE-2: template runtime patch dari lokasi sanitizer */
+        if (res.verdict == MC_RUNTIME_VIOLATION && res.sanloc_have) {
+            rr = myc_repair_runtime_patch(&res, source, strlen(source));
+            if (rr) {
+                if (rr->patched_source) {
+                    patch = myc_strdup(rr->patch_text ? rr->patch_text
+                                                      : "patch runtime");
+                    confidence = rr->confidence;
+                    if (!finding_code && res.sanloc_kind)
+                        finding_code = res.sanloc_kind;
+                    effective_patched = myc_strdup(rr->patched_source);
+                    run_for_patched = 1;
+                } else if (rr->why) {
+                    why_runtime = rr->why;
+                }
+            }
+        }
+
         if (patched_source) {
+            effective_patched = myc_strdup(patched_source);
+        }
+
+        if (effective_patched) {
             myc_request preq;
             myc_result  pres;
             myc_request_init(&preq);
             preq.input.kind = MYC_SOURCE_MEMORY;
-            preq.input.data = patched_source;
-            preq.input.len = strlen(patched_source);
+            preq.input.data = effective_patched;
+            preq.input.len = strlen(effective_patched);
             preq.run_lint = 1;
+            preq.run = run_for_patched; /* IDE-2 butuh gate run utk bukti */
             myc_result_init(&pres);
             myc_run(&preq, &pres);
             new_verdict = myc_verdict_name(pres.verdict);
             /* Replay corpus terhadap kode baru BILA kode baru verifikasi
              * OK (repair berhasil). Catatan: check di sini compile-only
-             * (req.run_lint), jadi source runtime-buggy (mis. fuzz_div0)
-             * tetap punya res.verdict OK -- yang menentukan replay adalah
+             * bila caller (bukan IDE-2), jadi source runtime-buggy tetap
+             * punya res.verdict OK -- yang menentukan replay adalah
              * verdict KODE BARU, bukan verdict source lama. */
             if (pres.verdict == MC_OK) {
-                myc_regress_replay_mem(patched_source,
-                                       strlen(patched_source),
+                myc_regress_replay_mem(effective_patched,
+                                       strlen(effective_patched),
                                        &total, &resolved, &failing);
                 if (failing > 0)
                     snprintf(replay_buf, sizeof(replay_buf),
@@ -712,20 +760,25 @@ static void tool_repair(json_value *id, json_value *args)
         item = json_new_obj();
         json_obj_set(item, "type", json_new_str("text"));
         if (patch) {
-            char buf[768];
+            char buf[1024];
             snprintf(buf, sizeof(buf),
                      "repair: finding=%s\nconfidence=%d\napplied_verdict=%s\n"
-                     "%s%s\npatch:\n%s\n",
+                     "%s%s\n%s\npatch:\n%s\n",
                      finding_code ? finding_code : "unknown",
                      confidence,
                      applied_verdict,
                      new_verdict ? "new_verdict_after_patch=" : "",
                      new_verdict ? new_verdict : "",
+                     why_runtime ? why_runtime : "",
                      patch);
             json_obj_set(item, "text", json_new_str(buf));
         } else {
-            json_obj_set(item, "text", json_new_str(
-                "repair: patch tidak tersedia untuk finding ini"));
+            char buf[512];
+            snprintf(buf, sizeof(buf),
+                     "repair: patch tidak tersedia%s%s\n",
+                     why_runtime ? " — " : "",
+                     why_runtime ? why_runtime : "");
+            json_obj_set(item, "text", json_new_str(buf));
         }
         json_arr_push(content, item);
         json_obj_set(result, "content", content);
@@ -739,12 +792,19 @@ static void tool_repair(json_value *id, json_value *args)
             if (new_verdict)
                 json_obj_set(structured, "new_verdict_after_patch",
                              json_new_str(new_verdict));
+            if (why_runtime)
+                json_obj_set(structured, "why",
+                             json_new_str(why_runtime));
             if (replay_buf[0])
                 json_obj_set(structured, "regression_replay",
                              json_new_str(replay_buf));
             json_obj_set(structured, "schema", json_new_str("myc.repair.v1"));
             json_obj_set(result, "structuredContent", structured);
         }
+
+        myc_free(effective_patched);
+        if (rr)
+            myc_runtime_repair_free(rr);
     }
 
     json_obj_set(result, "isError", json_new_bool(0));
@@ -868,11 +928,17 @@ static json_value *tools_list_body(void)
     t = json_new_obj();
     json_obj_set(t, "name", json_new_str("repair"));
     json_obj_set(t, "description", json_new_str(
-        "Kembalikan patch minimal untuk finding compile tertentu "
-        "(gcc warning). source: kode C (string, wajib). "
+        "Kembalikan patch minimal untuk finding (compile gcc ATAU runtime "
+        "sanitizer). source: kode C (string, wajib). "
         "finding_code: opsional, contoh gcc-use-after-free, "
         "gcc-null-dereference, gcc-array-bounds, gcc-stringop-overflow. "
         "Jika tidak diisi, repair menggunakan diagnostic pertama dari check. "
+        "run: opsional (0/1, default 0) -- jalankan gate runtime sehingga "
+        "RUNTIME_VIOLATION + sanitizer_location terisi; repair lalu "
+        "menghasilkan patch template deterministik (strcpy/strcat->snprintf "
+        "ber-batas, memset/memcpy->clamp n, UAF->NULL-kan setelah free), "
+        "menerapkannya ke source, dan me-re-run -> new_verdict_after_patch "
+        "(bukti, bukan klaim). "
         "patched_source: opsional, kode baru setelah patch diterapkan -- "
         "bila verdict berubah jadi OK, myc replay corpus regression dan "
         "melampirkan regression_replay (IDE-4)."));
@@ -895,6 +961,14 @@ static json_value *tools_list_body(void)
             "gcc-null-dereference, gcc-array-bounds, gcc-stringop-overflow. "
             "Jika kosong, repair menggunakan diagnostic pertama."));
         json_obj_set(props, "finding_code", p);
+
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("number"));
+        json_obj_set(p, "description", json_new_str(
+            "0/1 (default 0). Bila 1, repair menjalankan gate runtime "
+            "sehingga RUNTIME_VIOLATION terdeteksi dan patch template "
+            "runtime (IDE-2) dihasilkan + diverifikasi re-run."));
+        json_obj_set(props, "run", p);
 
         p = json_new_obj();
         json_obj_set(p, "type", json_new_str("string"));

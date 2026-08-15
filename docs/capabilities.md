@@ -221,6 +221,31 @@ untuk output kosong memaksa panjang 1 tapi tidak menulis byte pertama —
 `stdout_shown=1` dengan 1 byte heap stale (uninitialized read) di stdout
 DAN stderr. Kini output kosong → `shown=0` + string kosong.
 
+## Repair loop agent (qwen-review IDE-1/IDE-2/IDE-4)
+
+Tiga lapisan perbaikan loop agent yang saling melengkapi (MYC-AUDIT-053/054/055):
+
+- **IDE-1 — Sanitizer Location Extractor** (`sanloc.c`, MYC-AUDIT-053): report
+  ASan/UBSan (log_path non-spoofable) diparse menjadi `sanitizer_location`
+  terstruktur: `violation_kind`, `location {line,function}`, `allocation
+  {line,function}` (hanya heap/UAF — blok `freed by`/`allocated by`),
+  `snippet`. Murni string scan deterministik; ADDITIVE terhadap verdict
+  (tidak pernah mengubah gate). Baseline lokasi benar: 0% → ≥90% di corpus.
+- **IDE-2 — Repair template RUNTIME_VIOLATION** (MYC-AUDIT-055): MCP tool
+  `repair` dengan `run:1` menghasilkan patch DETERMINISTIK berbasis lokasi
+  dan MENERAPKANNYA (hanya baris pelanggaran, anti-churn):
+  `strcpy`/`strcat` → copy ber-batas + null-terminate (compile-clean tanpa
+  `<stdio.h>`/`-Wformat-truncation); `memset`/`memcpy` → clamp ke
+  `sizeof`/kapasitas `malloc`; `use-after-free` → NULL-kan setelah `free()`.
+  Wajib menyertakan `new_verdict_after_patch` = re-run source yang di-patch
+  (BUKTI, bukan klaim). Template tidak yakin (mis. UBSan undefined-behavior)
+  → `patch:null` + `why` jujur. `run:1` menonaktifkan cache (SOL-18 tidak
+  menyimpan `sanloc_*` — bukti harus fresh).
+- **IDE-4 — Regression replay pasca-repair** (MYC-AUDIT-054): setelah
+  patch/`patched_source` terverifikasi OK, seluruh corpus `.myc/regression`
+  di-replay in-process (`myc_regress_replay_mem`) → `regression_replay: K/N
+  clean`; seed yang masih gagal = debt eksplisit (bug lama hidup kembali).
+
 ## Honest limitations
 
 - **No formal proof.** A clean run means "no evidence of this class of bug

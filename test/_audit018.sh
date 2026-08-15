@@ -223,6 +223,8 @@ rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \
       test/sanloc_test.log \
       test/regress_replay_test test/regress_replay_test.exe \
       test/regress_replay_test.log \
+      test/runtime_repair_test test/runtime_repair_test.exe \
+      test/runtime_repair_test.log \
       test/schema_compat test/schema_compat.exe \
       test/schema_compat.log \
       test/mcp_abuse test/mcp_abuse.exe \
@@ -993,6 +995,35 @@ if $CC -O2 -std=c11 -Wall -Wextra -Werror -pedantic -I. -DMYC_NO_MAIN \
     fi
 else
     echo "[FAIL] regress_replay_test gagal dibangun (-Werror -pedantic)"
+    FAIL=1
+fi
+
+# --- 17d. runtime_repair_test: IDE-2 (qwen-review) repair template
+# RUNTIME_VIOLATION berbasis sanitizer_location. Template deterministik
+# (bukan AI): strcpy/strcat -> copy ber-batas + null-terminate (compile-
+# clean tanpa <stdio.h>, tanpa -Wformat-truncation), memset/memcpy ->
+# clamp ke sizeof/kapasitas malloc, UAF -> NULL-kan setelah free;
+# UBSan undefined-behavior -> jujur patched_source NULL + why (anti-
+# overclaim). Diuji dgn FIXTURE deterministik (tanpa clang).
+if $CC -O2 -std=c11 -Wall -Wextra -Werror -pedantic -I. -DMYC_NO_MAIN \
+       -o test/runtime_repair_test test/runtime_repair_test.c $SRCS 2>/dev/null; then
+    LOG="test/runtime_repair_test.log"
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 120 test/runtime_repair_test >"$LOG" 2>&1
+        RRT=$?
+    else
+        test/runtime_repair_test >"$LOG" 2>&1
+        RRT=$?
+    fi
+    if [ $RRT -eq 0 ]; then
+        echo "[OK] runtime_repair_test (IDE-2 repair template runtime: semua cek lulus)"
+    else
+        echo "[FAIL] runtime_repair_test (IDE-2 repair template runtime, exit $RRT)"
+        grep -E '^\[FAIL\]' "$LOG" | head -10
+        FAIL=1
+    fi
+else
+    echo "[FAIL] runtime_repair_test gagal dibangun (-Werror -pedantic)"
     FAIL=1
 fi
 

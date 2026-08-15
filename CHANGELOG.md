@@ -4,12 +4,23 @@ Semua perubahan penting pada `myc` dicatat di sini. Format mengikuti
 [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/); versioning
 semantik per tag rilis (`vX.Y.Z`).
 
-Sejarah implementasi & audit terperinci (MYC-AUDIT-001..054, fase
+Sejarah implementasi & audit terperinci (MYC-AUDIT-001..055, fase
 pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 
-## [Unreleased] — qwen-review IDE-1+IDE-5+IDE-4 (T1+T2)
+## [Unreleased] — qwen-review IDE-1+IDE-5+IDE-4+IDE-2 (T1+T2+T3)
 
 ### Added
+
+- **Repair template RUNTIME_VIOLATION — MYC-AUDIT-055 (qwen-review IDE-2/T3).**
+  MCP `repair` menerima `run:1`: verdict `RUNTIME_VIOLATION` + `sanitizer_location`
+  → patch template DETERMINISTIK (bukan AI): `strcpy/strcat` overflow → copy
+  ber-batas + null-terminate, `memset/memcpy` overflow → clamp ke
+  `sizeof`/kapasitas malloc, UAF → NULL-kan setelah free; UBSan/template
+  tidak-yakin → jujur `patch=null` + `why` (anti-overclaim). Patch diterapkan
+  in-memory, re-run `--no-cache` (fresh evidence), hasil `new_verdict_after_patch`
+  = BUKTI (bukan klaim) + `regression_replay` (IDE-4). Verdict/gate semantics
+  tidak berubah. Fix bug sanloc Linux: frame ASan `FILE:LINE:COL` (clang
+  Linux) kini di-parse benar (line 11, bukan kolom 5).
 
 - **Sanitizer Location Extractor — MYC-AUDIT-053 (qwen-review IDE-1/T1).**
   Modul `sanloc.c/h`: report ASan/UBSan (log_path non-spoofable) kini di-

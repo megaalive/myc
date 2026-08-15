@@ -126,13 +126,29 @@ di text output dan `structuredContent`: `why` = alasan pola berisiko, `fix` =
 saran perbaikan berbasis template. Fungsi `myc_lint_why()` / `myc_lint_fix()`
 di `lint.c`.
 
-### 6. `repair` — patch minimal untuk finding compile
+### 6. `repair` — patch minimal untuk finding (compile gcc ATAU runtime sanitizer)
 
 - `source` (string, **wajib**): kode C yang akan diperbaiki.
 - `finding_code` (string, opsional): salah satu dari `gcc-use-after-free`,
   `gcc-null-dereference`, `gcc-array-bounds`, `gcc-stringop-overflow`,
   `gcc-free-nonheap-object`. Bila kosong, repair memakai diagnostic pertama
   dari hasil `check` source yang sama.
+- `run` (number, opsional, **IDE-2**, default 0): bila 1, repair menjalankan
+  gate runtime (clang ASan/UBSan) sehingga `RUNTIME_VIOLATION` + lokasi
+  `sanitizer_location` terisi. Repair lalu menghasilkan patch template
+  deterministik berbasis lokasi dan **menerapkannya ke source** (hanya
+  menyentuh baris pelanggaran, anti-churn):
+  - `strcpy`/`strcat` overflow → copy ber-batas + null-terminate
+    (`memcpy` + ukuran variabel — compile-clean tanpa `<stdio.h>` dan
+    tanpa `-Wformat-truncation`);
+  - `memset`/`memcpy` overflow → clamp `n` ke `sizeof` (array lokal) atau
+    kapasitas alokasi `malloc` (baris alloc dari report);
+  - `use-after-free` → NULL-kan pointer setelah `free()` (baris free dari
+    blok `freed by`).
+  Bila template tidak yakin (mis. UBSan undefined-behavior), `patch` bernilai
+  `null` + `why` jujur — TIDAK pernah menebak. Karena cache replay (SOL-18)
+  tidak menyimpan `sanloc_*`, `run=1` menonaktifkan cache otomatis agar bukti
+  selalu fresh.
 - `patched_source` (string, opsional, **IDE-4**): kode baru setelah patch
   diterapkan. Bila verdict kode baru = `OK`, myc me-replay corpus regression
   (`.myc/regression/`) terhadap kode baru secara in-process dan melampirkan
@@ -141,17 +157,27 @@ di `lint.c`.
   klasik LLM: memperbaiki bug A sambil menghidupkan kembali bug B.
 - **Hasil** JSON: `finding`, `applied_verdict`, `confidence`, `patch`
   (diff siap-apply, `null` bila tidak tersedia), opsional
-  `new_verdict_after_patch` + `regression_replay` (bila `patched_source`
-  diberikan), dan objek `structuredContent` (schema `myc.repair.v1`).
+  `new_verdict_after_patch` (BUKTI re-run — dari patch runtime IDE-2 atau
+  `patched_source` IDE-4, bukan klaim) + `regression_replay`, opsional `why`
+  (alasan template tidak yakin), dan objek `structuredContent` (schema
+  `myc.repair.v1`).
 - **Batasan**: patch murni template deterministik (bukan AI-generated). Tidak
   semua finding punya template — bila tidak, `patch` bernilai `null` + alasan.
 
-Contoh:
+Contoh (compile):
 
 ```
 {"name":"repair","arguments":{
   "source":"int f(void){char*p=malloc(4);return p[4];free(p);}",
   "finding_code":"gcc-stringop-overflow"}}
+```
+
+Contoh (runtime, IDE-2):
+
+```
+{"name":"repair","arguments":{
+  "source":"#include <string.h>\nint f(void){char b[6]; strcpy(b, \"abcdefghij\"); return b[0];}\nint main(void){(void)f(); return 0;}",
+  "run":1}}
 ```
 
 ### 7. `agent_check` — verifikasi source C dengan protokol agent (myc.agent.v2)
