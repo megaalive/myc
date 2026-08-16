@@ -7,7 +7,28 @@ semantik per tag rilis (`vX.Y.Z`).
 Sejarah implementasi & audit terperinci (MYC-AUDIT-001..055, fase
 pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 
-## [Unreleased] — qwen-review IDE-1+IDE-5+IDE-4+IDE-2+IDE-3+IDE-6 (T1..T5)
+## [Unreleased] — qwen-review Fase 7 lengkap (T1..T6, MYC-AUDIT-053..058)
+
+### Added
+
+- **Roll-up ukuran sukses keseluruhan — MYC-AUDIT-058 (qwen-review §7/T6).**
+  `bench/run_success_metrics.sh` mengukur 5 metrik §7 pada corpus nyata:
+  M1 lokasi runtime benar 100% (≥90%, baseline 0%), M2 repair template
+  patch terverifikasi 83% (≥50%), M3 regression replay 100%, M4
+  `agent_check` konvergen ≤3 iterasi 66% (≥50%), M5 self-dogfood 25/25.
+  Report ke `bench/reports/success-metrics-latest.txt`; wired di
+  `_ci_linux.sh` (blok 7c) + `_regress_run.bat`.
+
+### Fixed
+
+- **Sanloc hilang saat cache replay (kritis):** cache hit membuang
+  `sanitizer_location` — repair loop agent jadi tebakan lagi di jalur
+  replay (paling sering dilalui). `myc_cache_entry` kini menyimpan +
+  me-replay field sanloc (arena dup), replay identik SOL-18.
+
+---
+
+## [Unreleased] — qwen-review IDE-1+IDE-5+IDE-4+IDE-2+IDE-6 (T1+T2+T3+T5)
 
 ### Added
 

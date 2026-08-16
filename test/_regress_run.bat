@@ -900,6 +900,19 @@ if errorlevel 1 (
     echo [OK] benchmark: 20 task PASS (baseline di bench\reports\)
   )
 )
+echo --- Fase 7: Success Metrics ukuran sukses qwen-review \u00a77 (T6)
+where bash >nul 2>&1
+if errorlevel 1 (
+  echo [WARN] bash tidak tersedia - success metrics dilewati
+) else (
+  bash bench/run_success_metrics.sh > %TEMP%\sm_regress.log 2>&1
+  if errorlevel 1 (
+    echo [FAIL] success metrics: lihat log %TEMP%\sm_regress.log - ada metrik gagal
+    type %TEMP%\sm_regress.log | findstr /C:"[FAIL]" /C:"result:"
+  ) else (
+    echo [OK] success metrics: 5 metrik \u00a77 PASS (bench\reports\success-metrics-latest.txt)
+  )
+)
 echo --- MYC-AUDIT-018: test portabel concurrency/deadlock/flood/OOM (via bash)
 if defined GITHUB_ACTIONS (
   echo [SKIP] audit018 portabel dilewati di CI - stress/audit soak test, non-blocking

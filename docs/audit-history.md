@@ -4530,3 +4530,58 @@ pipeline penuh fixture ~110-160 ms < 200 ms.
   diperbarui.
 
 ---
+
+### MYC-AUDIT-058 (qwen-review Fase 7, T6) — Roll-up ukuran sukses keseluruhan (§7)
+
+**Apa:** Fase 7 (T1–T5) sudah menyelesaikan seluruh tahapan qwen-review
+§6. Tahap T6 = mengukur 5 ukuran sukses keseluruhan (§7) sebagai satu
+validasi terukur, plus satu perbaikan bug yang ditemukan selama
+pengukuran.
+
+**Bug diperbaiki: sanloc hilang saat cache replay (kritis untuk M1).**
+
+Selama mengukur M1 (lokasi runtime benar), ditemukan: run pertama
+`--run` menghasilkan `sanitizer_location` lengkap, tapi run kedua
+(cache hit) kehilangan lokasi — `cache_replay_into` tidak pernah
+menyimpan/mereplay field sanloc. Padahal seluruh alasan IDE-1
+(MYC-AUDIT-053) adalah memberi agent lokasi bug runtime agar repair
+loop tidak jadi tebakan; cache hit membuang lokasi = bug yang sama
+hidup kembali di jalur replay (paling sering dilalui agent yang
+mengedit berulang). Perbaikan:
+
+- `myc_cache_entry` (cache.h): field `sanloc_have/line/col/alloc_line`
+  + `sanloc_kind/function/file/alloc_function/snippet` (flat).
+- `cache.c` store: snapshot sanloc ke entry; serialize (`san_have`,
+  `san_line`, `san_col`, `san_al`, `san_kind`, `san_fn`, `san_file`,
+  `san_afn`, `san_snip`) + parse; replay memakai `myc_result_arena_dup`
+  (arena-based seperti aslinya, bebas utuh oleh `myc_result_free`).
+- Verifikasi: `rt_strcpy_ovf.c --run` dua kali → run 1 dan run 2
+  (cache hit) sama-sama `sanitizer_location` `stack-buffer-overflow`
+  @copy_it:11. Entry cache lama tanpa field sanloc = miss aman
+  (recompute pipeline normal).
+
+**Skrip baru `bench/run_success_metrics.sh`** — roll-up deterministik
+5 metrik §7, report ke `bench/reports/success-metrics-latest.txt`:
+
+| Metrik | Target | Terukur |
+|---|---|---|
+| M1 lokasi runtime benar (kind+line+fungsi, 6 fixture) | ≥90% | **100%** (6/6) |
+| M2 repair template memproduksi patch terverifikasi | ≥50% | **83%** (5/6; T5 UBSan jujur NULL) |
+| M3 regression replay 100% pasca-repair | 100% | **100%** (regress_replay_test exit 0) |
+| M4 agent_check konvergen ≤3 iterasi | ≥50% | **66%** (2/3; kasus UBSan jujur why) |
+| M5 self-dogfood semua source myc OK | semua | **25/25 OK** |
+
+Baseline §7 sebelum Fase 7: M1 = 0% (lokasi dibuang). Semua metrik
+sekarang melewati ambang; hasil identik di Windows dan Linux (WSL).
+
+**Wire CI:** blok 7c di `_ci_linux.sh` + blok di `_regress_run.bat`
+(setelah Fase -1 benchmark) — suite gagal bila salah satu metrik §7
+turun di bawah ambang.
+
+**Verifikasi:**
+
+- `bench/run_success_metrics.sh` PASS=11 FAIL=0 di Windows (`myc.exe`)
+  dan Linux WSL (`./myc`) — hasil metrik identik (100/83/100/66/25).
+- `-Werror -pedantic` bersih (cache.c + seluruh source) dua platform.
+- `bash -n` bersih untuk `_ci_linux.sh` dan skrip baru; blok 6i dan
+  suite MCP tetap lulus setelah perubahan cache.

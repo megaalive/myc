@@ -189,6 +189,20 @@ typedef struct {
     int   host_char_bit;
 
     char  sanitizer_marker[64];
+    /* IDE-1 (qwen-review, MYC-AUDIT-053): lokasi pelanggaran runtime
+     * (sanloc) WAJIB ikut di-cache — replay cache membuang lokasi = repair
+     * loop jadi tebakan lagi (bug yang IDE-1 mau selesaikan). Field string
+     * disimpan flat (kapasitas cukup: nama fungsi/file pendek); replay
+     * memakai myc_result_arena_dup agar bebas utuh oleh myc_result_free
+     * (pola sama dgn debt_text/diag_msg). */
+    int   sanloc_have;
+    int   sanloc_line, sanloc_col;
+    int   sanloc_alloc_line;
+    char  sanloc_kind[64];
+    char  sanloc_function[128];
+    char  sanloc_file[256];
+    char  sanloc_alloc_function[128];
+    char  sanloc_snippet[256];
     char  prove_mode[64];
     char  prove_version[64];
     char  filc_version[64];

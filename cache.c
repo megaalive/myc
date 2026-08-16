@@ -584,6 +584,16 @@ static int cache_read_all(myc_cache_entry *out, int cap)
             v = json_get(e, "ex_l"); if (v && v->type == JSON_NUM) ce->ex_laund = (int)v->num;
             v = json_get(e, "ex_h"); if (v && v->type == JSON_STR) snprintf(ce->ex_dhash, sizeof(ce->ex_dhash), "%s", v->str);
             v = json_get(e, "san_marker"); if (v && v->type == JSON_STR) snprintf(ce->sanitizer_marker, sizeof(ce->sanitizer_marker), "%s", v->str);
+            /* IDE-1 (MYC-AUDIT-053): lokasi pelanggaran runtime (replay identik). */
+            v = json_get(e, "san_have"); if (v && v->type == JSON_NUM) ce->sanloc_have = (int)v->num;
+            v = json_get(e, "san_line"); if (v && v->type == JSON_NUM) ce->sanloc_line = (int)v->num;
+            v = json_get(e, "san_col"); if (v && v->type == JSON_NUM) ce->sanloc_col = (int)v->num;
+            v = json_get(e, "san_al"); if (v && v->type == JSON_NUM) ce->sanloc_alloc_line = (int)v->num;
+            v = json_get(e, "san_kind"); if (v && v->type == JSON_STR) snprintf(ce->sanloc_kind, sizeof(ce->sanloc_kind), "%s", v->str);
+            v = json_get(e, "san_fn"); if (v && v->type == JSON_STR) snprintf(ce->sanloc_function, sizeof(ce->sanloc_function), "%s", v->str);
+            v = json_get(e, "san_file"); if (v && v->type == JSON_STR) snprintf(ce->sanloc_file, sizeof(ce->sanloc_file), "%s", v->str);
+            v = json_get(e, "san_afn"); if (v && v->type == JSON_STR) snprintf(ce->sanloc_alloc_function, sizeof(ce->sanloc_alloc_function), "%s", v->str);
+            v = json_get(e, "san_snip"); if (v && v->type == JSON_STR) snprintf(ce->sanloc_snippet, sizeof(ce->sanloc_snippet), "%s", v->str);
             v = json_get(e, "prov_mode"); if (v && v->type == JSON_STR) snprintf(ce->prove_mode, sizeof(ce->prove_mode), "%s", v->str);
             v = json_get(e, "prov_ver"); if (v && v->type == JSON_STR) snprintf(ce->prove_version, sizeof(ce->prove_version), "%s", v->str);
             v = json_get(e, "filc_ver"); if (v && v->type == JSON_STR) snprintf(ce->filc_version, sizeof(ce->filc_version), "%s", v->str);
@@ -951,6 +961,16 @@ static void cache_write_all(const myc_cache_entry *entries, int count)
         json_obj_set(e, "ex_l", json_new_num((int64_t)ce->ex_laund));
         json_obj_set(e, "ex_h", json_new_str(ce->ex_dhash));
         json_obj_set(e, "san_marker", json_new_str(ce->sanitizer_marker));
+        /* IDE-1 (MYC-AUDIT-053): lokasi pelanggaran runtime (replay identik). */
+        json_obj_set(e, "san_have", json_new_num((int64_t)ce->sanloc_have));
+        json_obj_set(e, "san_line", json_new_num((int64_t)ce->sanloc_line));
+        json_obj_set(e, "san_col", json_new_num((int64_t)ce->sanloc_col));
+        json_obj_set(e, "san_al", json_new_num((int64_t)ce->sanloc_alloc_line));
+        json_obj_set(e, "san_kind", json_new_str(ce->sanloc_kind));
+        json_obj_set(e, "san_fn", json_new_str(ce->sanloc_function));
+        json_obj_set(e, "san_file", json_new_str(ce->sanloc_file));
+        json_obj_set(e, "san_afn", json_new_str(ce->sanloc_alloc_function));
+        json_obj_set(e, "san_snip", json_new_str(ce->sanloc_snippet));
         json_obj_set(e, "prov_mode", json_new_str(ce->prove_mode));
         json_obj_set(e, "prov_ver", json_new_str(ce->prove_version));
         json_obj_set(e, "filc_ver", json_new_str(ce->filc_version));
@@ -1531,6 +1551,25 @@ static void cache_replay_into(const myc_cache_entry *e, myc_result *res)
 
     snprintf(res->run_sanitizer_marker,
              sizeof(res->run_sanitizer_marker), "%s", e->sanitizer_marker);
+    /* IDE-1 (MYC-AUDIT-053): replay identik — lokasi pelanggaran runtime
+     * ikut di-replay (arena dup, pola sama dgn debt_text: dibebaskan
+     * utuh oleh myc_result_free). Cache hit TIDAK boleh membuang lokasi
+     * bug: itu mengubah repair loop agent jadi tebakan lagi. */
+    res->sanloc_have = e->sanloc_have;
+    res->sanloc_line = e->sanloc_line;
+    res->sanloc_col = e->sanloc_col;
+    res->sanloc_alloc_line = e->sanloc_alloc_line;
+    if (e->sanloc_kind[0])
+        res->sanloc_kind = myc_result_arena_dup(res, e->sanloc_kind, 0);
+    if (e->sanloc_function[0])
+        res->sanloc_function = myc_result_arena_dup(res, e->sanloc_function, 0);
+    if (e->sanloc_file[0])
+        res->sanloc_file = myc_result_arena_dup(res, e->sanloc_file, 0);
+    if (e->sanloc_alloc_function[0])
+        res->sanloc_alloc_function =
+            myc_result_arena_dup(res, e->sanloc_alloc_function, 0);
+    if (e->sanloc_snippet[0])
+        res->sanloc_snippet = myc_result_arena_dup(res, e->sanloc_snippet, 0);
     /* PENTING (SOL-18): myc_result_free memanggil free() INDIVIDUAL pada
      * field-field ini (lihat myc_result_free). Karena itu replay WAJIB
      * memakai myc_strdup (malloc), BUKAN myc_result_arena_dup — arena
@@ -1957,6 +1996,22 @@ void myc_cache_store(const myc_request *req, const myc_result *res,
 
     snprintf(ne->sanitizer_marker, sizeof(ne->sanitizer_marker), "%s",
              res->run_sanitizer_marker);
+    /* IDE-1 (MYC-AUDIT-053): lokasi pelanggaran runtime ikut di-snapshot
+     * (replay identik — cache hit TIDAK boleh membuang lokasi bug). */
+    ne->sanloc_have = res->sanloc_have;
+    ne->sanloc_line = res->sanloc_line;
+    ne->sanloc_col = res->sanloc_col;
+    ne->sanloc_alloc_line = res->sanloc_alloc_line;
+    snprintf(ne->sanloc_kind, sizeof(ne->sanloc_kind), "%s",
+             res->sanloc_kind ? res->sanloc_kind : "");
+    snprintf(ne->sanloc_function, sizeof(ne->sanloc_function), "%s",
+             res->sanloc_function ? res->sanloc_function : "");
+    snprintf(ne->sanloc_file, sizeof(ne->sanloc_file), "%s",
+             res->sanloc_file ? res->sanloc_file : "");
+    snprintf(ne->sanloc_alloc_function, sizeof(ne->sanloc_alloc_function),
+             "%s", res->sanloc_alloc_function ? res->sanloc_alloc_function : "");
+    snprintf(ne->sanloc_snippet, sizeof(ne->sanloc_snippet), "%s",
+             res->sanloc_snippet ? res->sanloc_snippet : "");
     snprintf(ne->prove_mode, sizeof(ne->prove_mode), "%s",
              res->prove_mode ? res->prove_mode : "");
     snprintf(ne->prove_version, sizeof(ne->prove_version), "%s",

@@ -30,3 +30,5 @@ repro_filc.sh
 AGENTS.md
 bench/reports/baseline-*.txt
 !bench/reports/baseline-latest.txt
+bench/reports/success-metrics-*.txt
+!bench/reports/success-metrics-latest.txt

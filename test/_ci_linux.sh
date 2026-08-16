@@ -1435,6 +1435,17 @@ else
     fail "Fase -1 benchmark: ada task GAGAL (detection/precision baseline)"
 fi
 
+# --- 7c. Fase 7 ukuran sukses keseluruhan (qwen-review §7, T6) ---
+# Roll-up 5 metrik: lokasi runtime benar >=90%, repair template >=50%,
+# regression replay 100%, agent_check konvergen <=3 iterasi >=50%,
+# self-dogfood semua source OK. Laporan di bench/reports/.
+if bash bench/run_success_metrics.sh > /tmp/sm_ci.log 2>&1; then
+    note "Fase 7 success metrics: 5 metrik §7 PASS (lihat bench/reports/)"
+else
+    grep -E '\[FAIL\]|result:' /tmp/sm_ci.log | head -10
+    fail "Fase 7 success metrics: ada metrik §7 GAGAL"
+fi
+
 # --- 8. audit018 (deadlock/OOM/concurrency/fork/descendants) ---
 if bash test/_audit018.sh; then
     note "audit018 SELESAI OK"
