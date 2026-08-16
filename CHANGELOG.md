@@ -7,9 +7,21 @@ semantik per tag rilis (`vX.Y.Z`).
 Sejarah implementasi & audit terperinci (MYC-AUDIT-001..055, fase
 pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 
-## [Unreleased] — qwen-review IDE-1+IDE-5+IDE-4+IDE-2 (T1+T2+T3)
+## [Unreleased] — qwen-review IDE-1+IDE-5+IDE-4+IDE-2+IDE-3 (T1+T2+T3+T4)
 
 ### Added
+
+- **Bounded `agent_check` repair loop — MYC-AUDIT-056 (qwen-review IDE-3/T4).**
+  Tool MCP `agent_check` kini menerima `flags` (array string, helper
+  bersama `mcp_apply_flags` diekstrak dari `check`) + `max_iter` (number
+  1..8, default 3): check → repair(template) → apply patch di memori →
+  check lagi → bandingkan verdict, ulangi maks `max_iter`. Bounded:
+  tidak ada loop tak terbatas. Tiap iterasi tercatat receipt chain di
+  ledger (`receipt_parent`); hasil memuat `repair_loop` (steps +
+  `converged` + `iterations`) + `preservation_obligations` +
+  `regression_replay` pasca-repair. Anti-overclaim: template tidak yakin
+  / UBSan → `why` jujur, loop berhenti (patch tidak pernah menebak).
+  Verdict/gate semantics tidak berubah.
 
 - **Repair template RUNTIME_VIOLATION — MYC-AUDIT-055 (qwen-review IDE-2/T3).**
   MCP `repair` menerima `run:1`: verdict `RUNTIME_VIOLATION` + `sanitizer_location`

@@ -46,6 +46,7 @@
 #include "lint.h"
 #include "agent.h"
 #include "regress.h"
+#include "ledger.h"
 
 #define MCP_VERSION  "0.1.0"
 #define MCP_PROTOCOL "2024-11-05"
@@ -149,6 +150,61 @@ static void send_error(json_value *id, int code, const char *message)
     send_response(id, err, 1);
 }
 
+/* ------------------------- flags bersama ----------------------------- */
+
+/* Terapkan array flags ke request. Mengembalikan 0 bila sukses, -1 bila
+ * flags bukan array string / ada entry non-string / flag tak dikenal
+ * (fail-fast, MYC-AUDIT-016/048). err diisi pesan error (max errsz). */
+static int mcp_apply_flags(json_value *flags, myc_request *req,
+                           char *err, size_t errsz)
+{
+    size_t i;
+
+    if (!flags)
+        return 0;
+    if (flags->type != JSON_ARR) {
+        snprintf(err, errsz, "Invalid params: 'flags' harus array string");
+        return -1;
+    }
+    for (i = 0; i < flags->len; i++) {
+        const char *f = flags->items[i] && flags->items[i]->type == JSON_STR
+                            ? flags->items[i]->str : NULL;
+        if (!f) {
+            snprintf(err, errsz, "Invalid params: 'flags' harus array string");
+            return -1;
+        }
+        if (strcmp(f, "--run") == 0)
+            req->run = 1;
+        else if (strcmp(f, "--prove") == 0)
+            req->prove = 1;
+        else if (strcmp(f, "--checked") == 0)
+            req->checked = 1;
+        else if (strcmp(f, "--filc") == 0)
+            req->filc = 1;
+        else if (strcmp(f, "--driver") == 0)
+            req->driver = 1;
+        else if (strcmp(f, "--analyze") == 0)
+            req->run_analyzer = 1;
+        else if (strcmp(f, "--strict") == 0)
+            req->strict = 1;
+        else if (strcmp(f, "--no-lint") == 0)
+            req->run_lint = 0;
+        else if (strcmp(f, "--quorum") == 0)
+            req->quorum = 1;
+        else if (strcmp(f, "--metamorphic") == 0)
+            req->metamorphic = 1;
+        else if (strcmp(f, "--negative") == 0)
+            req->negative = 1;
+        else if (strcmp(f, "--require-complete") == 0)
+            req->require_complete = 1;
+        else {
+            snprintf(err, errsz, "Invalid params: flag tidak dikenal: %.100s", f);
+            return -1;
+        }
+    }
+    return 0;
+}
+
 /* ------------------------- tool: check ------------------------------ */
 
 static void tool_check(json_value *id, json_value *args)
@@ -163,7 +219,6 @@ static void tool_check(json_value *id, json_value *args)
     json_value *result = NULL;
     json_value *content = NULL;
     json_value *item = NULL;
-    size_t      i;
 
     if (!args) {
         send_error(id, -32602, "Invalid params: arguments wajib");
@@ -199,53 +254,11 @@ static void tool_check(json_value *id, json_value *args)
      * diam-diam -- mematikan gate tanpa sepengetahuan pemanggil = silent
      * misbehavior. Fail-fast -32602, konsisten dengan kebijakan unknown
      * flag (MYC-AUDIT-016). */
-    if (flags) {
-        if (flags->type != JSON_ARR) {
-            send_error(id, -32602,
-                       "Invalid params: 'flags' harus array string");
+    {
+        char ferr[160];
+        if (mcp_apply_flags(flags, &req, ferr, sizeof(ferr)) != 0) {
+            send_error(id, -32602, ferr);
             return;
-        }
-        for (i = 0; i < flags->len; i++) {
-            const char *f = flags->items[i] && flags->items[i]->type == JSON_STR
-                                ? flags->items[i]->str : NULL;
-            if (!f) {
-                send_error(id, -32602,
-                           "Invalid params: 'flags' harus array string");
-                return;
-            }
-            if (strcmp(f, "--run") == 0)
-                req.run = 1;
-            else if (strcmp(f, "--prove") == 0)
-                req.prove = 1;
-            else if (strcmp(f, "--checked") == 0)
-                req.checked = 1;
-            else if (strcmp(f, "--filc") == 0)
-                req.filc = 1;
-            else if (strcmp(f, "--driver") == 0)
-                req.driver = 1;
-            else if (strcmp(f, "--analyze") == 0)
-                req.run_analyzer = 1;
-            else if (strcmp(f, "--strict") == 0)
-                req.strict = 1;
-            else if (strcmp(f, "--no-lint") == 0)
-                req.run_lint = 0;
-            else if (strcmp(f, "--quorum") == 0)
-                req.quorum = 1;
-            else if (strcmp(f, "--metamorphic") == 0)
-                req.metamorphic = 1;
-            else if (strcmp(f, "--negative") == 0)
-                req.negative = 1;
-            else if (strcmp(f, "--require-complete") == 0)
-                req.require_complete = 1;
-            else {
-                /* Unknown flags TIDAK diabaikan lagi (MYC-AUDIT-016):
-                 * fail-fast dengan pesan yang menyebut flag. */
-                char fb[160];
-                snprintf(fb, sizeof(fb),
-                         "Invalid params: flag tidak dikenal: %.100s", f);
-                send_error(id, -32602, fb);
-                return;
-            }
         }
     }
 
@@ -484,20 +497,43 @@ static void tool_lint(json_value *id, json_value *args)
 
 /* ------------------------- tool: agent_check ------------------------ */
 
+/* IDE-3 (qwen-review, T4): bounded repair loop di agent_check.
+ * agent_check(source, flags, max_iter):
+ *   1. check(mode) -> verdict
+ *   2. bila findings: repair(template) -> patch
+ *   3. apply patch di memori -> check lagi -> bandingkan verdict
+ *   4. ulangi maks max_iter; tiap iterasi tercatat receipt chain (ledger)
+ *   5. hasil: verdict akhir + array langkah + preservation obligations
+ * Bounded: max_iter dibatasi 1..8 (anti loop tak terbatas). Deterministik:
+ * tiap iterasi myc_pipeline (tanpa cache — sanloc fresh, konsisten IDE-2).
+ * Anti-overclaim: template tidak yakin / verdict tanpa template -> why
+ * jujur, loop berhenti (patch TIDAK pernah menebak). */
 static void tool_agent_check(json_value *id, json_value *args)
 {
     const char *source = NULL;
     const char *pack_dir = NULL;
     int         no_pack = 0;
-    myc_request req;
-    myc_result  res;
-    myc_agent_result ar;
+    json_value *flags = NULL;
+    int         max_iter = 3;
     myc_pack_info pinfo;
     int         pinfo_loaded = 0;
     json_value *result = NULL;
     json_value *content = NULL;
     json_value *item = NULL;
     const char *js = NULL;
+    char       *text_out = NULL;
+    char       *current = NULL;      /* source saat ini (malloc'd) */
+    char       *prev_receipt = NULL; /* receipt iterasi sebelumnya (chain) */
+    const char *prev_verdict = NULL; /* verdict iterasi sebelumnya (delta) */
+    myc_result  pending;             /* hasil check yang sudah ada (skip re-run) */
+    int         have_pending = 0;
+    myc_result  final_res;           /* hasil terakhir (utk agent result) */
+    int         have_final = 0;
+    json_value *steps = NULL;
+    int         iterations = 0;
+    int         converged = 0;
+    myc_agent_result ar;
+    int         i;
 
     if (!args) {
         send_error(id, -32602, "Invalid params: arguments wajib");
@@ -517,16 +553,20 @@ static void tool_agent_check(json_value *id, json_value *args)
         if (np && np->type == JSON_BOOL && np->boolean)
             no_pack = 1;
     }
-
-    myc_request_init(&req);
-    req.input.kind = MYC_SOURCE_MEMORY;
-    req.input.data = source;
-    req.input.len = strlen(source);
-    req.run_lint = 1;
-    req.checked_header_dir = g_exe_dir;
-
-    myc_result_init(&res);
-    myc_pipeline(&req, &res);
+    flags = json_get(args, "flags");
+    {
+        /* IDE-3: bounded loop. max_iter default 3, dibatasi 1..8 (anti
+         * loop tak terbatas; deterministik). Tipe salah = fail-fast. */
+        json_value *mi = json_get(args, "max_iter");
+        if (mi) {
+            if (mi->type != JSON_NUM || mi->num < 1 || mi->num > 8) {
+                send_error(id, -32602,
+                           "Invalid params: 'max_iter' harus number 1..8");
+                return;
+            }
+            max_iter = (int)mi->num;
+        }
+    }
 
     /* Fase 7 (MYC-AUDIT-039): muat pack proyek lokal. spec.json ADA tapi
      * invalid = error tool -32602 (fail-fast, pola CLI exit 2); OOM/IO =
@@ -539,41 +579,385 @@ static void tool_agent_check(json_value *id, json_value *args)
                        "Invalid params: myc.spec.json invalid (skema: "
                        "version=1, name wajib; rules/allow_headers/"
                        "deny_functions = array string)");
-            myc_result_free(&res);
             return;
         }
         if (prc == -2) {
             send_error(id, -32603,
                        "Internal error: gagal membaca pack proyek (OOM/IO)");
-            myc_result_free(&res);
             return;
         }
         pinfo_loaded = 1;
     }
 
+    current = myc_strdup(source);
+    if (!current) {
+        send_error(id, -32603, "Internal error: OOM");
+        if (pinfo_loaded)
+            myc_free(pinfo.prompt_text);
+        return;
+    }
+    steps = json_new_arr();
+    if (!steps) {
+        send_error(id, -32603, "Internal error: OOM");
+        myc_free(current);
+        if (pinfo_loaded)
+            myc_free(pinfo.prompt_text);
+        return;
+    }
+    myc_result_init(&pending);
+    myc_result_init(&final_res);
+
+    for (i = 1; i <= max_iter && !converged; i++) {
+        myc_request req;
+        myc_result  res;
+        char        ferr[160];
+        json_value *step;
+        const char *this_receipt;
+
+        myc_request_init(&req);
+        req.input.kind = MYC_SOURCE_MEMORY;
+        req.input.data = current;
+        req.input.len = strlen(current);
+        req.run_lint = 1;
+        req.checked_header_dir = g_exe_dir;
+        if (mcp_apply_flags(flags, &req, ferr, sizeof(ferr)) != 0) {
+            send_error(id, -32602, ferr);
+            myc_free(current);
+            myc_free(prev_receipt);
+            myc_result_free(&pending);
+            myc_result_free(&final_res);
+            json_free(steps);
+            if (pinfo_loaded)
+                myc_free(pinfo.prompt_text);
+            return;
+        }
+
+        if (have_pending) {
+            /* hasil check patched dari iterasi sebelumnya: tanpa re-run */
+            res = pending;
+            myc_result_init(&pending);
+            have_pending = 0;
+        } else {
+            myc_result_init(&res);
+            myc_pipeline(&req, &res);
+        }
+        this_receipt = res.receipt_sha256[0] ? res.receipt_sha256 : NULL;
+
+        step = json_new_obj();
+        if (!step) {
+            send_error(id, -32603, "Internal error: OOM");
+            myc_result_free(&res);
+            myc_free(current);
+            myc_free(prev_receipt);
+            myc_result_free(&pending);
+            myc_result_free(&final_res);
+            json_free(steps);
+            if (pinfo_loaded)
+                myc_free(pinfo.prompt_text);
+            return;
+        }
+        json_obj_set(step, "iter", json_new_num(i));
+        json_obj_set(step, "verdict",
+                     json_new_str(myc_verdict_name(res.verdict)));
+        json_obj_set(step, "finding",
+                     json_new_str(myc_finding_name(res.finding)));
+        if (res.source_sha256)
+            json_obj_set(step, "source_sha256",
+                         json_new_str(res.source_sha256));
+        if (this_receipt)
+            json_obj_set(step, "receipt_sha256", json_new_str(this_receipt));
+        if (prev_receipt && prev_receipt[0])
+            json_obj_set(step, "parent_receipt", json_new_str(prev_receipt));
+
+        /* IDE-3: tiap iterasi tercatat receipt chain di ledger
+         * (.myc/ledger.json, NON-blocking). receipt_parent = receipt
+         * iterasi sebelumnya; verdict/finding/scenario tercatat agar
+         * harness bisa mendeteksi cherry-pick / regresi antar iterasi. */
+        {
+            myc_ledger_entry e;
+            char *scenario_hash;
+            memset(&e, 0, sizeof(e));
+            e.source_sha256 = res.source_sha256 ? res.source_sha256 : (char *)"";
+            e.receipt_sha256 = this_receipt ? (char *)this_receipt : (char *)"";
+            e.receipt_parent = prev_receipt;
+            scenario_hash = myc_ledger_build_scenario_hash(&req, NULL);
+            e.scenario_hash = scenario_hash;
+            e.timestamp = myc_ledger_timestamp();
+            e.verdict = (char *)myc_verdict_name(res.verdict);
+            e.finding = (char *)myc_finding_name(res.finding);
+            /* delta vs iterasi SEBELUMNYA (bukan klaim global):
+             * VIOLATION->OK = FIXED, OK->VIOLATION = NEW, sama =
+             * PERSISTENT, selain itu CHURN. Tanpa pembanding (iterasi
+             * 1) = PERSISTENT (netral, tanpa klaim transisi). */
+            if (prev_verdict && prev_verdict[0]) {
+                const char *cv = myc_verdict_name(res.verdict);
+                if (strstr(prev_verdict, "VIOLATION") &&
+                    strcmp(cv, "OK") == 0)
+                    e.delta = MYC_DELTA_FIXED;
+                else if (strstr(cv, "VIOLATION") &&
+                         strcmp(prev_verdict, "OK") == 0)
+                    e.delta = MYC_DELTA_NEW;
+                else if (strcmp(prev_verdict, cv) == 0)
+                    e.delta = MYC_DELTA_PERSISTENT;
+                else
+                    e.delta = MYC_DELTA_CHURN;
+            } else {
+                e.delta = MYC_DELTA_PERSISTENT;
+            }
+            myc_ledger_write(&e);
+            myc_free(scenario_hash);
+            myc_free(e.timestamp);
+        }
+
+        iterations = i;
+
+        if (res.verdict == MC_OK) {
+            /* konvergen: verdict OK, tanpa patch */
+            converged = 1;
+            json_arr_push(steps, step);
+            final_res = res;
+            myc_result_init(&res);
+            have_final = 1;
+            break;
+        }
+
+        if (res.verdict == MC_RUNTIME_VIOLATION && res.sanloc_have) {
+            /* IDE-2: template runtime deterministik berbasis lokasi */
+            myc_runtime_repair *rr =
+                myc_repair_runtime_patch(&res, current, strlen(current));
+            if (rr && rr->patched_source) {
+                char *new_src = myc_strdup(rr->patched_source);
+                json_obj_set(step, "patch_applied", json_new_bool(1));
+                if (rr->patch_text)
+                    json_obj_set(step, "patch", json_new_str(rr->patch_text));
+                if (rr->confidence > 0)
+                    json_obj_set(step, "confidence",
+                                 json_new_num(rr->confidence));
+                if (new_src) {
+                    myc_free(current);
+                    current = new_src;
+                    /* apply patch di memori -> check lagi (bukti) */
+                    {
+                        myc_request preq;
+                        myc_result  pres;
+                        const char *after;
+                        const char *pres_receipt;
+                        char        pres_rbuf[65];
+                        myc_request_init(&preq);
+                        preq.input.kind = MYC_SOURCE_MEMORY;
+                        preq.input.data = current;
+                        preq.input.len = strlen(current);
+                        preq.run_lint = 1;
+                        preq.checked_header_dir = g_exe_dir;
+                        (void)mcp_apply_flags(flags, &preq, ferr,
+                                              sizeof(ferr));
+                        myc_result_init(&pres);
+                        myc_pipeline(&preq, &pres);
+                        after = myc_verdict_name(pres.verdict);
+                        /* salin ke buffer lokal: `pending = pres` +
+                         * `myc_result_init(&pres)` meng-zero struct
+                         * asal sehingga pointer ke receipt_sha256 di
+                         * dalamnya jadi invalid (bug T4 v1). */
+                        if (pres.receipt_sha256[0])
+                            memcpy(pres_rbuf, pres.receipt_sha256, 65);
+                        else
+                            pres_rbuf[0] = '\0';
+                        pres_receipt = pres_rbuf[0] ? pres_rbuf : NULL;
+                        json_obj_set(step, "verdict_after_patch",
+                                     json_new_str(after));
+                        if (pres.verdict == MC_OK) {
+                            /* IDE-4: replay corpus regression terhadap
+                             * kode baru (bug lama hidup kembali = debt
+                             * eksplisit, bukan kesunyian). */
+                            int total = 0, resolved = 0, failing = 0;
+                            char rb[256];
+                            myc_regress_replay_mem(current,
+                                                   strlen(current),
+                                                   &total, &resolved,
+                                                   &failing);
+                            if (failing > 0)
+                                snprintf(rb, sizeof(rb),
+                                         "regression_replay: %d/%d clean, "
+                                         "%d masih gagal (bug lama hidup "
+                                         "kembali)", resolved, total,
+                                         failing);
+                            else if (total > 0)
+                                snprintf(rb, sizeof(rb),
+                                         "regression_replay: %d/%d clean",
+                                         resolved, total);
+                            else
+                                snprintf(rb, sizeof(rb),
+                                         "regression_replay: corpus kosong "
+                                         "(0 seed)");
+                            json_obj_set(step, "regression_replay",
+                                         json_new_str(rb));
+                            converged = 1;
+                            final_res = pres;
+                            myc_result_init(&pres);
+                            have_final = 1;
+                        } else {
+                            /* masih violation: iterasi berikutnya pakai
+                             * hasil check ini (tanpa re-run) */
+                            pending = pres;
+                            myc_result_init(&pres);
+                            have_pending = 1;
+                            /* parent chain iterasi berikutnya = hasil
+                             * PATCHED (pres), bukan check lama (res) */
+                            myc_free(prev_receipt);
+                            prev_receipt = pres_receipt
+                                               ? myc_strdup(pres_receipt)
+                                               : NULL;
+                            prev_verdict = after;
+                        }
+                    }
+                }
+            } else {
+                json_obj_set(step, "patch_applied", json_new_bool(0));
+                json_obj_set(step, "why", json_new_str(
+                    rr && rr->why ? rr->why
+                                  : "tidak ada template repair yang yakin "
+                                    "(jujur, anti-overclaim)"));
+                final_res = res;
+                myc_result_init(&res);
+                have_final = 1;
+            }
+            if (rr)
+                myc_runtime_repair_free(rr);
+        } else if (res.verdict == MC_COMPILE_ERROR && res.diag_count > 0) {
+            /* template compile = saran teks (bukan diff yang bisa
+             * diterapkan otomatis) -> catat, berhenti jujur. */
+            const char *code = repair_find_code(res.diags[0].message);
+            char *p = code ? myc_repair_get_patch(code) : NULL;
+            json_obj_set(step, "patch_applied", json_new_bool(0));
+            if (p) {
+                json_obj_set(step, "patch", json_new_str(p));
+                myc_free(p);
+            }
+            json_obj_set(step, "why", json_new_str(
+                "template compile = saran teks (bukan diff); tidak "
+                "diterapkan otomatis (anti-churn)"));
+            final_res = res;
+            myc_result_init(&res);
+            have_final = 1;
+        } else {
+            json_obj_set(step, "patch_applied", json_new_bool(0));
+            json_obj_set(step, "why", json_new_str(
+                "verdict tidak memiliki template repair (jujur)"));
+            final_res = res;
+            myc_result_init(&res);
+            have_final = 1;
+        }
+
+        json_arr_push(steps, step);
+        if (converged || have_final)
+            break;
+
+        /* lanjut iterasi: parent chain = receipt state berikutnya.
+         * Bila pending (hasil patched) sudah diset di blok patch,
+         * jangan timpa — res di sini adalah check LAMA. */
+        if (!have_pending) {
+            myc_free(prev_receipt);
+            prev_receipt = this_receipt ? myc_strdup(this_receipt) : NULL;
+            prev_verdict = myc_verdict_name(res.verdict);
+        }
+        myc_result_free(&res);
+    }
+
+    /* loop habis karena max_iter: hasil check terakhir (pending) jadi
+     * hasil akhir bila ada (bukan kesunyian — debt/verdict terlihat). */
+    if (have_pending) {
+        final_res = pending;
+        myc_result_init(&pending);
+        have_pending = 0;
+        have_final = 1;
+    }
+    if (!have_final) {
+        /* tidak mungkin (loop selalu break dgn final atau converged),
+         * tapi jaga-jaga agar tidak build dari struct kosong. */
+        send_error(id, -32603, "Internal error: loop agent_check kosong");
+        myc_free(current);
+        myc_free(prev_receipt);
+        myc_result_free(&pending);
+        myc_result_free(&final_res);
+        json_free(steps);
+        if (pinfo_loaded)
+            myc_free(pinfo.prompt_text);
+        return;
+    }
+
     memset(&ar, 0, sizeof(ar));
-    if (myc_build_agent_result(&res, &ar, NULL, NULL,
+    if (myc_build_agent_result(&final_res, &ar, NULL, NULL,
                                pinfo_loaded ? &pinfo : NULL) < 0) {
         /* Catatan: myc_build_agent_result SUDAH membebaskan ar secara
          * internal sebelum return -1 (payload > cap) -- jangan free lagi
-         * di sini (double-free). Hanya res + pinfo yang perlu dibersihkan. */
+         * di sini (double-free). */
         send_error(id, -32603, "Internal error: gagal build agent result");
+        myc_free(current);
+        myc_free(prev_receipt);
+        myc_result_free(&pending);
+        myc_result_free(&final_res);
+        json_free(steps);
         if (pinfo_loaded)
             myc_free(pinfo.prompt_text);
-        myc_result_free(&res);
         return;
     }
 
     js = myc_agent_result_json(&ar);
+
+    /* Text: JSON agent v2 + repair_loop (bounded loop steps) +
+     * preservation_obligations (anti-churn, konsisten context.c). */
+    {
+        json_value *root = NULL;
+        if (js && json_parse_cstr(js, &root) && root &&
+            root->type == JSON_OBJ) {
+            json_value *loop = json_new_obj();
+            json_value *pres = json_new_arr();
+            static const char *const OBLIG[] = {
+                "- jangan ubah kode di luar fungsi yang disorot "
+                "(anti-churn)",
+                "- jangan ubah/melemahkan kontrak //@ di atas fungsi "
+                "target",
+                "- jangan menyempitkan domain verifikasi / mengubah "
+                "scenario",
+                "- jangan menurunkan assurance / menonaktifkan "
+                "sanitizer, warning, atau assert",
+                "- pertahankan signature/ABI fungsi publik"
+            };
+            size_t k;
+            if (loop) {
+                json_obj_set(loop, "max_iter", json_new_num(max_iter));
+                json_obj_set(loop, "iterations", json_new_num(iterations));
+                json_obj_set(loop, "converged", json_new_bool(converged));
+                json_obj_set(loop, "steps", steps);
+                steps = NULL;
+                json_obj_set(root, "repair_loop", loop);
+            }
+            if (pres) {
+                for (k = 0; k < sizeof(OBLIG) / sizeof(OBLIG[0]); k++)
+                    json_arr_push(pres, json_new_str(OBLIG[k]));
+                json_obj_set(root, "preservation_obligations", pres);
+            }
+            if (!json_serialize(root, &text_out) || !text_out)
+                text_out = myc_strdup(js ? js : "{}");
+            json_free(root);
+        } else {
+            text_out = myc_strdup(js ? js : "{}");
+        }
+        if (steps) {
+            json_free(steps);
+            steps = NULL;
+        }
+    }
+
     result = json_new_obj();
     content = json_new_arr();
     item = json_new_obj();
     json_obj_set(item, "type", json_new_str("text"));
-    json_obj_set(item, "text", json_new_str(js ? js : "{}"));
+    json_obj_set(item, "text", json_new_str(text_out ? text_out : "{}"));
     json_arr_push(content, item);
     json_obj_set(result, "content", content);
 
-    /* structuredContent: objek agent v2 langsung */
+    /* structuredContent: objek agent v2 + ringkasan loop */
     {
         json_value *structured = json_new_obj();
         json_obj_set(structured, "schema", json_new_str("myc.agent.v2"));
@@ -592,17 +976,27 @@ static void tool_agent_check(json_value *id, json_value *args)
                      json_new_num((int64_t)ar.payload_size));
         json_obj_set(structured, "pack_present",
                      json_new_bool(ar.pack_json ? 1 : 0));
+        json_obj_set(structured, "repair_loop_max_iter",
+                     json_new_num(max_iter));
+        json_obj_set(structured, "repair_loop_iterations",
+                     json_new_num(iterations));
+        json_obj_set(structured, "repair_loop_converged",
+                     json_new_bool(converged));
         json_obj_set(result, "structuredContent", structured);
     }
 
     json_obj_set(result, "isError", json_new_bool(0));
     send_result(id, result);
 
+    myc_free(text_out);
     if (js) myc_free((void *)js);
     myc_agent_result_free(&ar);
+    myc_free(current);
+    myc_free(prev_receipt);
+    myc_result_free(&pending);
+    myc_result_free(&final_res);
     if (pinfo_loaded)
         myc_free(pinfo.prompt_text);
-    myc_result_free(&res);
 }
 
 /* ------------------------- tool: repair ---------------------------- */
@@ -1069,20 +1463,48 @@ static json_value *tools_list_body(void)
         "Jalankan pipeline myc pada source dan kembalikan hasil dalam "
         "format protokol agent (myc.agent.v2): finding_id, primary action, "
         "witness, next_check. Untuk konsumsi LLM agent. "
-        "source: kode C (string, wajib). pack_dir: direktori pack proyek "
-        "lokal myc.prompt.md + myc.spec.json (opsional; default cwd server, "
-        "Fase 7 MYC-AUDIT-039). no_pack: boolean opsional, true = "
-        "nonaktifkan pack. Pack NON-blocking: verdict tidak berubah; "
-        "structuredContent memuat pack_present."));
+        "source: kode C (string, wajib). "
+        "flags: array string opsional dari [--run --prove --checked --filc "
+        "--driver --analyze --strict --no-lint --quorum --metamorphic "
+        "--negative --require-complete] (sama seperti tool check; wajib "
+        "array string). "
+        "max_iter: number opsional 1..8 (default 3, IDE-3/qwen-review): "
+        "bounded repair loop -- check -> repair(template) -> apply patch "
+        "di memori -> check lagi -> bandingkan verdict, ulangi maks "
+        "max_iter. Tiap iterasi tercatat receipt chain di ledger; hasil "
+        "memuat repair_loop (steps, converged, iterations) + "
+        "preservation_obligations. Template tidak yakin = berhenti jujur "
+        "(why, tanpa menebak). "
+        "pack_dir: direktori pack proyek lokal myc.prompt.md + myc.spec.json "
+        "(opsional; default cwd server, Fase 7 MYC-AUDIT-039). no_pack: "
+        "boolean opsional, true = nonaktifkan pack. Pack NON-blocking: "
+        "verdict tidak berubah; structuredContent memuat pack_present."));
     {
         json_value *schema = json_new_obj();
         json_value *props = json_new_obj();
         json_value *p;
+        json_value *items;
         json_obj_set(schema, "type", json_new_str("object"));
         p = json_new_obj();
         json_obj_set(p, "type", json_new_str("string"));
         json_obj_set(p, "description", json_new_str("Kode sumber C yang akan diperiksa (wajib)."));
         json_obj_set(props, "source", p);
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("array"));
+        items = json_new_obj();
+        json_obj_set(items, "type", json_new_str("string"));
+        json_obj_set(p, "items", items);
+        json_obj_set(p, "description", json_new_str(
+            "Flag opsional: --run --prove --checked --filc --driver "
+            "--analyze --strict --no-lint --quorum --metamorphic "
+            "--negative --require-complete (wajib array string)."));
+        json_obj_set(props, "flags", p);
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("number"));
+        json_obj_set(p, "description", json_new_str(
+            "Bounded repair loop iterations 1..8 (default 3). "
+            "check -> repair -> apply -> check, maks max_iter."));
+        json_obj_set(props, "max_iter", p);
         p = json_new_obj();
         json_obj_set(p, "type", json_new_str("string"));
         json_obj_set(p, "description", json_new_str(

@@ -4369,3 +4369,83 @@ posisi ':' kedua. Bug debug: `colon2` sempat dideklarasikan `const char *`
 - Fixture baru: `test/fixtures/rt_strcpy_ovf.c`, `test/fixtures/rt_ubsan_ovf.c`.
 - `_audit018.sh` (17d) + `_regress_run.bat` (17d): unit test runtime_repair
   + cleanup; sanloc_test tetap 33/33 di kedua platform.
+
+---
+
+### MYC-AUDIT-056 (qwen-review IDE-3, T4) — Bounded `agent_check` repair loop
+
+**IDE-3 (celah §4, P0).** Harness multi-model memanggil `check` → `repair` →
+apply → `check` secara manual (loop tak terbatas, churn, tanpa jejak). T4
+menstandarkan **satu panggilan MCP yang terbatas**: `agent_check(source,
+flags, max_iter=3)` menjalankan loop bounded:
+
+1. `check(mode)` → verdict;
+2. bila findings: repair(template) → patch;
+3. apply patch **di memori** → check lagi → bandingkan verdict;
+4. ulangi maks `max_iter` (dibatasi 1..8, anti loop tak terbatas);
+5. hasil: verdict akhir + array langkah `repair_loop.steps[]` +
+   `preservation_obligations`.
+
+**Implementasi (`mcp.c`):**
+
+- `mcp_apply_flags()` — helper parsing flags array string di-ekstrak dari
+  `tool_check` (dipakai dua tool; perilaku identik — unknown flag /
+  non-array = -32602 fail-fast, MYC-AUDIT-016/048).
+- `tool_agent_check()` ditulis ulang: terima `flags` + `max_iter`
+  (number 1..8, tipe salah = -32602). Loop memakai `myc_pipeline` per
+  iterasi (tanpa cache — sanloc selalu fresh, konsisten IDE-2 rationale).
+  Hasil check iterasi berikutnya memakai `pending` (hasil patched yang
+  sudah di-check) — tanpa re-run duplikat.
+- **Template runtime (IDE-2) diterapkan per iterasi** (strcpy/strcat →
+  copy ber-batas, memset/memcpy → clamp, UAF → NULL-kan). Bila template
+  tidak yakin / verdict tanpa template → iterasi berhenti jujur (`why`),
+  `patch_applied=false` — patch TIDAK pernah menebak (anti-overclaim).
+  Template compile = saran teks (bukan diff yang bisa diterapkan
+  otomatis) → dicatat sebagai `patch` + `why` jujur, loop berhenti.
+- **Receipt chain per iterasi di ledger** (`.myc/ledger.json`,
+  NON-blocking): entry tiap iterasi dengan `receipt_parent` = receipt
+  iterasi sebelumnya (chain eksplisit — harness bisa mendeteksi
+  cherry-pick/regresi antar iterasi). `delta` dihitung vs iterasi
+  SEBELUMNYA (VIOLATION→OK = FIXED, OK→VIOLATION = NEW, sama =
+  PERSISTENT, lain = CHURN; tanpa pembanding = PERSISTENT netral).
+- **`regression_replay` pasca-repair (IDE-4):** bila `verdict_after_patch
+  = OK`, corpus `.myc/regression` di-replay terhadap kode baru
+  (in-process, `myc_regress_replay_mem`) → `regression_replay: K/N clean`
+  (atau debt eksplisit bila bug lama hidup kembali).
+- **Hasil JSON:** field `repair_loop` (`max_iter`, `iterations`,
+  `converged`, `steps[]` — tiap step: `iter`, `verdict`, `finding`,
+  `source_sha256`, `receipt_sha256`, `parent_receipt`, `patch_applied`,
+  `patch`, `confidence`, `verdict_after_patch`, `regression_replay`) +
+  `preservation_obligations` (5 teks anti-churn, konsisten context.c
+  SEC_PRESERVE). `structuredContent` menambah ringkasan
+  `repair_loop_max_iter` / `repair_loop_iterations` /
+  `repair_loop_converged`. `tools/list` schema agent_check diperbarui
+  (flags + max_iter).
+
+**Bug alur ditemukan & diperbaiki (debug WSL/Windows):** `pres_receipt`
+menunjuk ke `pres.receipt_sha256` di dalam struct `pres`, lalu
+`pending = pres; myc_result_init(&pres)` meng-zero struct asal → pointer
+invalid (parent chain hilang). Fix: salin ke buffer lokal `pres_rbuf[65]`
+SEBELUM struct di-reset. Juga: update `prev_receipt`/`prev_verdict` hanya
+bila TIDAK ada `pending` (hasil patched) — blok lanjut-iterasi tidak boleh
+menimpa chain dengan receipt check lama.
+
+**Verifikasi:**
+
+- Windows (`mcp.exe`): source dua bug runtime beruntun → `converged:
+  true`, `iterations: 2`, step 1 `RUNTIME_VIOLATION → RUNTIME_VIOLATION`,
+  step 2 `RUNTIME_VIOLATION → OK` + `parent_receipt` terisi + `regression_replay`; UBSan → `converged: false` + `why` jujur; source bersih →
+  converged 1 iterasi tanpa patch; `max_iter: 9` → -32602; `flags` string
+  → -32602. Ledger `.myc/ledger.json` memuat entry per iterasi dengan
+  `receipt_parent` chain.
+- Linux (WSL): build.sh + blok 6h `_ci_linux.sh` — BLOCK1/2/3 lulus
+  (konvergen 2 iterasi + replay + preservation; UBSan why; structuredContent
+  ringkasan).
+- `_mcp_smoke.bat` [OK]; `mcp_abuse` (T0-T7, soak 1.090) OK;
+  `_mcp_sdk_interop.py` 23 cek lulus (3 skip backend).
+- Self-dogfooding `mcp.c` verdict OK; `-Werror -pedantic` bersih dua
+  platform; `_regress_run.bat` blok 6h pola findstr terverifikasi.
+- Fixture e2e: `test/agent_check_loop_input.jsonl` (3 kasus) + blok 6h di
+  `_ci_linux.sh` dan `_regress_run.bat`.
+
+---

@@ -183,6 +183,32 @@ Contoh (runtime, IDE-2):
 ### 7. `agent_check` — verifikasi source C dengan protokol agent (myc.agent.v2)
 
 - `source` (string, **wajib**): kode C yang akan diperiksa.
+- `flags` (array string, opsional): sama seperti tool `check`
+  (`--run --prove --checked --filc --driver --analyze --strict --no-lint
+  --quorum --metamorphic --negative --require-complete`). **Wajib array
+  string** (PR-016 / MYC-AUDIT-048) — tipe salah = -32602 fail-fast.
+  Meneruskan `--run` mengaktifkan deteksi runtime (RUNTIME_VIOLATION +
+  `sanitizer_location`) sehingga loop repair bisa bekerja.
+- `max_iter` (number, opsional, **IDE-3/T4**, default 3, dibatasi 1..8):
+  **bounded repair loop** — satu panggilan `agent_check` menjalankan:
+  1. `check(mode)` → verdict;
+  2. bila findings: repair(template) → patch;
+  3. apply patch **di memori** → check lagi → bandingkan verdict;
+  4. ulangi maks `max_iter`; **setiap iterasi tercatat receipt chain di
+     ledger** (`.myc/ledger.json`, NON-blocking — receipt_parent =
+     receipt iterasi sebelumnya, delta dihitung vs iterasi sebelumnya);
+  5. hasil: verdict akhir + array langkah `repair_loop.steps[]` +
+     `preservation_obligations`.
+  Tiap langkah memuat `iter`, `verdict`, `finding`, `source_sha256`,
+  `receipt_sha256`, `parent_receipt`, `patch_applied`, `patch`
+  (deskripsi template, `null` bila tidak ada), `confidence`,
+  `verdict_after_patch` (BUKTI re-run, bukan klaim), dan opsional
+  `regression_replay` (IDE-4: corpus di-replay terhadap kode baru bila
+  convergen OK; bug lama hidup kembali = debt eksplisit).
+  **Bounded & anti-overclaim**: template runtime deterministik (IDE-2)
+  diterapkan per iterasi; bila template tidak yakin (mis. UBSan) atau
+  verdict tanpa template → iterasi berhenti jujur dengan `why` — patch
+  TIDAK pernah menebak, loop TIDAK pernah tak terbatas.
 - `pack_dir` (string, opsional): direktori pack proyek lokal
   (`myc.prompt.md` + `myc.spec.json`); default = cwd server. Spec.json
   ADA tapi invalid = error tool -32602 (fail-fast, pola CLI exit 2).
@@ -190,20 +216,28 @@ Contoh (runtime, IDE-2):
   pack absen).
 - **Hasil** JSON: `schema: "myc.agent.v2"`, `verdict`, `finding`,
   `primary_action`, `witness`, `next_check_command`, `payload_size`,
+  objek `repair_loop` (`max_iter`/`iterations`/`converged`/`steps[]`),
+  array `preservation_obligations` (anti-churn, konsisten context.c),
   plus objek `pack` (bila ada): `prompt_present`/`spec_present` +
   `prompt_text` verbatim + `prompt_sha256`/`spec_sha256` + spec
   (rules/allow_headers/deny_functions). `structuredContent` memuat
-  `pack_present` (bool). Pack NON-blocking: verdict tidak berubah;
-  dibuang terakhir saat enforcement cap (MYC-AUDIT-038/039).
+  `pack_present` (bool) + ringkasan `repair_loop_max_iter` /
+  `repair_loop_iterations` / `repair_loop_converged`. Pack NON-blocking:
+  verdict tidak berubah; dibuang terakhir saat enforcement cap
+  (MYC-AUDIT-038/039).
 - **Batasan**: mengikuti pipeline `check` standar (compile gate), output
-  dalam format agent-ready.
+  dalam format agent-ready. Loop repair aktif untuk verdict runtime
+  dengan lokasi sanitizer (IDE-1/IDE-2); template compile = saran teks
+  (tidak diterapkan otomatis — anti-churn).
 
-Contoh:
+Contoh (bounded repair loop, dua bug runtime beruntun → konvergen):
 
 ```
 {"name":"agent_check","arguments":{
-  "source":"int main(void){char*p=malloc(10);free(p);return *p;}",
-  "pack_dir":"."}}
+  "source":"#include <string.h>\nint f1(void){char a[6]; strcpy(a, \"abcdefghij\"); return a[0];}\nint f2(void){char b[6]; strcpy(b, \"klmnopqrst\"); return b[0];}\nint main(void){(void)f1(); (void)f2(); return 0;}\n",
+  "flags":["--run"],
+  "max_iter":3,
+  "no_pack":true}}
 ```
 
 ## Catatan untuk agent

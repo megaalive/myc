@@ -733,6 +733,38 @@ else
     fail "IDE-2: regression_replay tidak muncul pada patch runtime"
 fi
 rm -f test/_tmp_ide2_repair.jsonl
+# --- 6h. IDE-3 (qwen-review, T4): bounded agent_check repair loop ---
+# agent_check(source, flags, max_iter): check -> repair -> apply -> check,
+# maks max_iter. Tiap iterasi tercatat receipt chain di ledger; hasil
+# memuat repair_loop (steps + converged) + preservation_obligations.
+# Kasus 1: dua bug runtime beruntun -> konvergen 2 iterasi (patch
+# diterapkan tiap iterasi, verdict akhir OK). Kasus 2: UBSan -> template
+# tidak yakin -> why jujur (anti-overclaim), converged=false. Kasus 3:
+# source bersih -> converged tanpa patch (iterasi 1 OK).
+./mcp < test/agent_check_loop_input.jsonl > test/_tmp_ac_loop.jsonl 2>&1
+if grep -qF 'repair_loop' test/_tmp_ac_loop.jsonl && \
+   grep -qF 'converged\":true' test/_tmp_ac_loop.jsonl && \
+   grep -qF 'iterations\":2' test/_tmp_ac_loop.jsonl && \
+   grep -qF 'regression_replay' test/_tmp_ac_loop.jsonl && \
+   grep -qF 'preservation_obligations' test/_tmp_ac_loop.jsonl; then
+    note "IDE-3: agent_check loop konvergen 2 iterasi + regression_replay + preservation"
+else
+    fail "IDE-3: agent_check loop tidak konvergen / repair_loop tidak lengkap"
+fi
+if   grep -qF 'converged\":false' test/_tmp_ac_loop.jsonl && \
+   grep -qF 'why' test/_tmp_ac_loop.jsonl; then
+    note "IDE-3: UBSan -> why jujur (anti-overclaim, tanpa patch menebak)"
+else
+    fail "IDE-3: UBSan harus converged=false + why"
+fi
+if grep -qF 'repair_loop_max_iter' test/_tmp_ac_loop.jsonl && \
+   grep -qF 'repair_loop_iterations' test/_tmp_ac_loop.jsonl && \
+   grep -qF 'repair_loop_converged' test/_tmp_ac_loop.jsonl; then
+    note "IDE-3: structuredContent memuat ringkasan repair_loop"
+else
+    fail "IDE-3: structuredContent repair_loop ringkasan hilang"
+fi
+rm -f test/_tmp_ac_loop.jsonl
 
 # --- 6. dogfood tool ---
 for f in dogfood/dogfood_ring.c dogfood/dogfood_config.c dogfood/dogfood_tilemap.c; do

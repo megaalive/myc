@@ -138,6 +138,17 @@ if exist test\_tmp_ide4.jsonl del test\_tmp_ide4.jsonl
 if exist test\_tmp_ide4_out.jsonl del test\_tmp_ide4_out.jsonl
 if exist .myc\regression rmdir /s /q .myc\regression
 del %OUT%
+rem --- 6h. IDE-3 (qwen-review, T4): bounded agent_check repair loop ---
+rem agent_check(source, flags, max_iter): check -> repair -> apply -> check,
+rem maks max_iter. Fixture: 2 bug runtime beruntun (konvergen 2 iterasi),
+rem UBSan (why jujur), source bersih (converged tanpa patch).
+mcp.exe < test\agent_check_loop_input.jsonl > test\_tmp_ac_loop_out.jsonl 2>nul
+findstr /C:"repair_loop" test\_tmp_ac_loop_out.jsonl >nul && echo [OK] IDE-3 agent_check repair_loop ada || echo [FAIL] IDE-3 repair_loop tidak muncul
+findstr /C:"repair_loop_converged" test\_tmp_ac_loop_out.jsonl >nul && echo [OK] IDE-3 agent_check ringkasan converged ada || echo [WARN] IDE-3 agent_check ringkasan converged tidak ada
+findstr /C:"preservation_obligations" test\_tmp_ac_loop_out.jsonl >nul && echo [OK] IDE-3 preservation obligations ada || echo [FAIL] IDE-3 preservation obligations hilang
+findstr /C:"repair_loop_iterations" test\_tmp_ac_loop_out.jsonl >nul && echo [OK] IDE-3 structuredContent ringkasan loop || echo [FAIL] IDE-3 structuredContent ringkasan hilang
+if exist test\_tmp_ac_loop_out.jsonl del test\_tmp_ac_loop_out.jsonl
+del %OUT%
 rem --- Fase 6 Self-Challenge: Concurrency Probe (--thread-probe)
 myc.exe check test\fixtures\con_inv.c --thread-probe --no-cache > %OUT% 2>&1
 findstr /C:"LOCK-ORDER INVERSION" %OUT% >nul && echo [OK] Fase 6 thread-probe inversion terdeteksi || echo [WARN] Fase 6 thread-probe inversion tidak terdeteksi
