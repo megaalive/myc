@@ -125,6 +125,19 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   debt eksplisit "bug lama hidup kembali". Mencegah pola klasik LLM:
   memperbaiki bug A sambil menghidupkan kembali bug B. NON-blocking.
 
+### Fixed
+
+- **Sanloc hilang saat cache replay (kritis):** cache hit membuang
+  `sanitizer_location` — repair loop agent jadi tebakan lagi di jalur
+  replay (paling sering dilalui). `myc_cache_entry` kini menyimpan +
+  me-replay field sanloc (arena dup), replay identik SOL-18.
+
+---
+
+## [v2026-08-17] — qwen-review follow-up: perkuat M3 regression replay - 2026-08-17
+
+### Added
+
 - **Perkuat M3: regression replay skenario pasca-repair — MYC-AUDIT-065
   (follow-up T6).** `test/regress_replay_test.c` diperluas 5 → 8 kasus
   (12 → 36 CHECK): T6 repair parsial multi-kind (patch yang hanya
@@ -140,13 +153,6 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   penyimpanan saat replay (pass verifikasi, bukan discovery); verdict
   tidak berubah. M3 tetap 100% — kini terukur 36 CHECK deterministik
   di dua platform.
-
-### Fixed
-
-- **Sanloc hilang saat cache replay (kritis):** cache hit membuang
-  `sanitizer_location` — repair loop agent jadi tebakan lagi di jalur
-  replay (paling sering dilalui). `myc_cache_entry` kini menyimpan +
-  me-replay field sanloc (arena dup), replay identik SOL-18.
 
 ---
 
