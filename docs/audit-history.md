@@ -4565,7 +4565,7 @@ mengedit berulang). Perbaikan:
 
 | Metrik | Target | Terukur |
 |---|---|---|
-| M1 lokasi runtime benar (kind+line+fungsi, 6 fixture) | ≥90% | **100%** (6/6) |
+| M1 lokasi runtime benar (kind+line+fungsi, 9 fixture) | ≥90% | **100%** (9/9; diperkuat di MYC-AUDIT-061) |
 | M2 repair template memproduksi patch terverifikasi | ≥50% | **85%** (12/14; 12 template patchable + 2 jujur-null; diperkuat di MYC-AUDIT-060) |
 | M3 regression replay 100% pasca-repair | 100% | **100%** (regress_replay_test exit 0) |
 | M4 agent_check konvergen ≤3 iterasi | ≥50% | **87%** (7/8; 6 buggy template-able + 1 bersih; UBSan jujur why) |
@@ -4583,8 +4583,9 @@ turun di bawah ambang.
 
 - `bench/run_success_metrics.sh` PASS=11 FAIL=0 di Windows (`myc.exe`)
   dan Linux WSL (`./myc`) — hasil metrik identik (100/83/100/66/25)
-  saat rilis; M4 lalu diperkuat jadi 7/8 (87%) di MYC-AUDIT-059 dan
-  M2 jadi 12/14 (85%) di MYC-AUDIT-060.
+  saat rilis; M4 lalu diperkuat jadi 7/8 (87%) di MYC-AUDIT-059, M2
+  jadi 12/14 (85%) di MYC-AUDIT-060, dan M1 jadi 9/9 (100%) di
+  MYC-AUDIT-061.
 - `-Werror -pedantic` bersih (cache.c + seluruh source) dua platform.
 - `bash -n` bersih untuk `_ci_linux.sh` dan skrip baru; blok 6i dan
   suite MCP tetap lulus setelah perubahan cache.
@@ -4705,3 +4706,36 @@ WSL `./myc` sama-sama 12/14).
   `M2-TEMPLATE-PATCH: 12/14`.
 - `bench/run_success_metrics.sh` PASS=11 FAIL=0 di Windows dan WSL.
 - `bash -n` bersih untuk skrip yang diubah; M1/M3/M4/M5 tidak berubah.
+
+---
+
+### MYC-AUDIT-061 (qwen-review Fase 7, follow-up T6) — Perkuat M1: corpus lokasi runtime 9 fixture
+
+**Apa:** M1 (lokasi runtime benar — kind+line+fungsi) awalnya diukur
+dengan 6 fixture: 3 heap/stack overflow, 1 UAF, 2 UBSan. Corpus terlalu
+sempit — tidak mencakup kind `attempting double-free`, kapasitas malloc
+2-digit, atau overflow via `memcpy` (bukan strcpy/strcat). Audit ini
+menambah 3 fixture sehingga lokasi benar terukur tetap **100% (9/9)**
+dengan cakupan kind lebih luas.
+
+**Fixture baru (test/fixtures/):**
+
+| Fixture | Kind (sanloc) | Lokasi diharapkan | Catatan desain |
+|---|---|---|---|
+| `rt_double_free.c` | attempting double-free | @drop:16 | `free(g)` dua kali via fungsi `noinline drop()` — free ganda dalam satu fungsi tertangkap gate statis gcc `-Werror=use-after-free` di compile time; pola noinline lolos dan hanya terlihat ASan saat `--run` |
+| `rt_heap_memset12.c` | heap-buffer-overflow | @main:13 | `malloc(12)` lalu `memset(p,0,24)` — kapasitas 2-digit (rt_alloc_size_at multi-digit) |
+| `rt_memcpy_ovf.c` | stack-buffer-overflow | @f:9 | `memcpy(b,"abcdefghij",10)` ke `char b[4]` — cabang memcpy, bukan strcpy/strcat |
+
+**Efek metrik §7:** M1 = 9/9 (100% ≥ 90%) — corpus 50% lebih luas
+(6 → 9 fixture), deterministik di Windows dan Linux WSL (gcc vs clang
+sama-sama menghasilkan kind+line+fungsi identik). PASS metric naik
+11 → 14 (3 case M1 baru).
+
+**Verifikasi:**
+
+- `bench/run_success_metrics.sh` PASS=14 FAIL=0 di Windows (`myc.exe`)
+  dan Linux WSL (`./myc`) — M1: 9/9 lokasi benar (100%).
+- Kind `attempting double-free` diparse dari `ERROR: AddressSanitizer:`
+  sampai spasi + `on` (sanloc.c step 1) — terbukti bekerja dua platform.
+- `bash -n` bersih untuk skrip yang diubah; M2/M3/M4/M5 tidak berubah
+  (12/14, 100%, 7/8, 25/25).

@@ -18,7 +18,8 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   `agent_check` konvergen ≤3 iterasi 87% (≥50%; diperkuat di
   MYC-AUDIT-059 jadi 7/8), M5 self-dogfood 25/25. M2 repair template
   patch terverifikasi 85% (≥50%; diperkuat di MYC-AUDIT-060 jadi
-  12/14).
+  12/14). M1 lokasi runtime benar 100% (≥90%; corpus diperluas di
+  MYC-AUDIT-061 jadi 9/9).
   Report ke `bench/reports/success-metrics-latest.txt`; wired di
   `_ci_linux.sh` (blok 7c) + `_regress_run.bat`.
 
@@ -38,6 +39,14 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   hasil test (`M2-TEMPLATE-PATCH: 12/14`, bukan hardcode 5/6) — naik
   dari 83% ke **85%**; T14 membuktikan anti-overclaim di luar
   vokabular template.
+
+- **Perkuat M1: corpus lokasi runtime 9 fixture — MYC-AUDIT-061
+  (follow-up T6).** Fixture baru `rt_double_free.c` (kind baru
+  `attempting double-free` via `noinline` — lolos gate statis gcc),
+  `rt_heap_memset12.c` (heap-buffer-overflow kapasitas malloc 2-digit),
+  dan `rt_memcpy_ovf.c` (stack-buffer-overflow via `memcpy`). M1 tetap
+  **100% (9/9)** dengan cakupan kind lebih luas; deterministik dua
+  platform.
 
 ### Fixed
 

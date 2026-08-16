@@ -64,6 +64,9 @@ M1_CASES=(
   "test/fixtures/witness_oob.c:heap-buffer-overflow:7:main"
   "test/fixtures/rt_strcpy_ovf.c:stack-buffer-overflow:11:copy_it"
   "test/fixtures/rt_ubsan_ovf.c:undefined-behavior:10:main"
+  "test/fixtures/rt_double_free.c:attempting double-free:16:drop"
+  "test/fixtures/rt_heap_memset12.c:heap-buffer-overflow:13:main"
+  "test/fixtures/rt_memcpy_ovf.c:stack-buffer-overflow:9:f"
 )
 M1_TOTAL=0
 M1_OK=0
