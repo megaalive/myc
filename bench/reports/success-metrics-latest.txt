@@ -1,17 +1,17 @@
 === Success Metrics (qwen-review Fase 7, ukuran sukses §7) ===
-binary: ./myc | date: 20260816-030758
+binary: ./myc | date: 20260816-121529
 
 M1: 6/6 lokasi benar (100% >= 90%)
 M2: 5/6 template memproduksi patch terverifikasi (83% >= 50%; exit 0)
 M3: regress_replay_test exit 0 (replay 100% pasca-repair)
-M4: 2/3 kasus agent_check konvergen (66% >= 50%)
+M4: 7/8 kasus agent_check konvergen (87% >= 50%)
 M5: 25/25 source self-dogfood OK
 
 === Ringkasan ===
 M1 lokasi_runtime_benar_pct: 100 (target >=90)
 M2 repair_template_patch: 5/6 (target >=50)
 M3 regression_replay: 100% (target 100)
-M4 agent_check_konvergen_pct: 66 (target >=50)
+M4 agent_check_konvergen_pct: 87 (target >=50)
 M5 self_dogfood: 25/25 (target all)
 result: PASS
 pass: 11 fail: 0 total: 31

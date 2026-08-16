@@ -11,7 +11,10 @@
 #   M3  Regression replay 100% pasca-repair
 #       -> regress_replay_test (in-process, corpus vs source fixed).
 #   M4  agent_check satu-panggilan konvergen ≤3 iterasi ≥50%
-#       -> fixture agent_check_loop_input.jsonl via MCP.
+#       -> fixture agent_check_loop_input.jsonl via MCP (8 kasus:
+#          strcpy-pair, memset-heap, memset-array, strcat, UAF-guarded,
+#          memcpy-heap = 6 template runtime konvergen + UBSan why jujur
+#          + source bersih).
 #   M5  Seluruh source myc tetap self-dogfood OK
 #       -> myc check --no-cache verdict OK pada semua source inti.
 #
@@ -157,8 +160,10 @@ rm -f test/regress_replay_test_tmp test/regress_replay_test_tmp.exe \
 echo "--- M4. agent_check konvergen ≤3 iterasi (≥50%) ---"
 if [ -x "$MCP" ] && [ -f test/agent_check_loop_input.jsonl ]; then
     "$MCP" < test/agent_check_loop_input.jsonl > test/_tmp_sm_mcp.jsonl 2>&1
-    # 3 kasus: 1 buggy-konvergen (2 iterasi), 2 UBSan-jujur (why),
-    # 3 bersih-konvergen. Kasus template-able (1 & 3) = 2/2 konvergen.
+    # 8 kasus (MYC-AUDIT-059): 6 buggy runtime yang template-able
+    # (strcpy-pair, memset-heap, memset-array, strcat, UAF-guarded,
+    # memcpy-heap) semuanya konvergen + 1 UBSan why jujur (anti-
+    # overclaim, bukan konvergen) + 1 source bersih = 7/8 konvergen.
     N_CONV=$(grep -c 'converged\\":true' test/_tmp_sm_mcp.jsonl)
     N_WHY=$(grep -c 'converged\\":false' test/_tmp_sm_mcp.jsonl)
     M4_TOTAL=$((N_CONV + N_WHY))

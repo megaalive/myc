@@ -15,9 +15,18 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   `bench/run_success_metrics.sh` mengukur 5 metrik §7 pada corpus nyata:
   M1 lokasi runtime benar 100% (≥90%, baseline 0%), M2 repair template
   patch terverifikasi 83% (≥50%), M3 regression replay 100%, M4
-  `agent_check` konvergen ≤3 iterasi 66% (≥50%), M5 self-dogfood 25/25.
+  `agent_check` konvergen ≤3 iterasi 87% (≥50%; diperkuat di
+  MYC-AUDIT-059 jadi 7/8), M5 self-dogfood 25/25.
   Report ke `bench/reports/success-metrics-latest.txt`; wired di
   `_ci_linux.sh` (blok 7c) + `_regress_run.bat`.
+
+- **Perkuat M4: corpus `agent_check` 8 kasus — MYC-AUDIT-059 (follow-up
+  T6).** Fixture `test/agent_check_loop_input.jsonl` diperluas dengan 5
+  buggy runtime template-able baru: `memset`-heap, `memset`-array,
+  `strcat`, UAF lintas-fungsi (`noinline`, di-guard), dan `memcpy`-heap
+  — semuanya konvergen ≤3 iterasi via template repair A/B/C. M4 naik
+  dari 66% (2/3) ke **87% (7/8)**; UBSan tetap why jujur (anti-
+  overclaim).
 
 ### Fixed
 

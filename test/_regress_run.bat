@@ -140,8 +140,10 @@ if exist .myc\regression rmdir /s /q .myc\regression
 del %OUT%
 rem --- 6h. IDE-3 (qwen-review, T4): bounded agent_check repair loop ---
 rem agent_check(source, flags, max_iter): check -> repair -> apply -> check,
-rem maks max_iter. Fixture: 2 bug runtime beruntun (konvergen 2 iterasi),
-rem UBSan (why jujur), source bersih (converged tanpa patch).
+rem maks max_iter. Fixture 8 kasus (MYC-AUDIT-059): 2 bug runtime
+rem beruntun (konvergen 2 iterasi), UBSan (why jujur), source bersih
+rem (converged tanpa patch), 5 buggy runtime template-able (memset-heap,
+rem memset-array, strcat, UAF-guarded, memcpy-heap) -> semuanya konvergen.
 mcp.exe < test\agent_check_loop_input.jsonl > test\_tmp_ac_loop_out.jsonl 2>nul
 findstr /C:"repair_loop" test\_tmp_ac_loop_out.jsonl >nul && echo [OK] IDE-3 agent_check repair_loop ada || echo [FAIL] IDE-3 repair_loop tidak muncul
 findstr /C:"repair_loop_converged" test\_tmp_ac_loop_out.jsonl >nul && echo [OK] IDE-3 agent_check ringkasan converged ada || echo [WARN] IDE-3 agent_check ringkasan converged tidak ada

@@ -737,10 +737,11 @@ rm -f test/_tmp_ide2_repair.jsonl
 # agent_check(source, flags, max_iter): check -> repair -> apply -> check,
 # maks max_iter. Tiap iterasi tercatat receipt chain di ledger; hasil
 # memuat repair_loop (steps + converged) + preservation_obligations.
-# Kasus 1: dua bug runtime beruntun -> konvergen 2 iterasi (patch
-# diterapkan tiap iterasi, verdict akhir OK). Kasus 2: UBSan -> template
-# tidak yakin -> why jujur (anti-overclaim), converged=false. Kasus 3:
-# source bersih -> converged tanpa patch (iterasi 1 OK).
+# Fixture 8 kasus: dua bug runtime beruntun -> konvergen 2 iterasi (patch
+# diterapkan tiap iterasi, verdict akhir OK); UBSan -> template tidak
+# yakin -> why jujur (anti-overclaim), converged=false; source bersih ->
+# converged tanpa patch; 5 buggy runtime template-able lain (memset-heap,
+# memset-array, strcat, UAF-guarded, memcpy-heap) -> konvergen 1 iterasi.
 ./mcp < test/agent_check_loop_input.jsonl > test/_tmp_ac_loop.jsonl 2>&1
 if grep -qF 'repair_loop' test/_tmp_ac_loop.jsonl && \
    grep -qF 'converged\":true' test/_tmp_ac_loop.jsonl && \

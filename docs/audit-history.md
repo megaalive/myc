@@ -4568,11 +4568,12 @@ mengedit berulang). Perbaikan:
 | M1 lokasi runtime benar (kind+line+fungsi, 6 fixture) | ≥90% | **100%** (6/6) |
 | M2 repair template memproduksi patch terverifikasi | ≥50% | **83%** (5/6; T5 UBSan jujur NULL) |
 | M3 regression replay 100% pasca-repair | 100% | **100%** (regress_replay_test exit 0) |
-| M4 agent_check konvergen ≤3 iterasi | ≥50% | **66%** (2/3; kasus UBSan jujur why) |
+| M4 agent_check konvergen ≤3 iterasi | ≥50% | **87%** (7/8; 6 buggy template-able + 1 bersih; UBSan jujur why) |
 | M5 self-dogfood semua source myc OK | semua | **25/25 OK** |
 
 Baseline §7 sebelum Fase 7: M1 = 0% (lokasi dibuang). Semua metrik
 sekarang melewati ambang; hasil identik di Windows dan Linux (WSL).
+Nilai M4 diperkuat di MYC-AUDIT-059 (7/8, lihat bawah).
 
 **Wire CI:** blok 7c di `_ci_linux.sh` + blok di `_regress_run.bat`
 (setelah Fase -1 benchmark) — suite gagal bila salah satu metrik §7
@@ -4581,7 +4582,65 @@ turun di bawah ambang.
 **Verifikasi:**
 
 - `bench/run_success_metrics.sh` PASS=11 FAIL=0 di Windows (`myc.exe`)
-  dan Linux WSL (`./myc`) — hasil metrik identik (100/83/100/66/25).
+  dan Linux WSL (`./myc`) — hasil metrik identik (100/83/100/66/25)
+  saat rilis; M4 lalu diperkuat jadi 7/8 (87%) di MYC-AUDIT-059.
 - `-Werror -pedantic` bersih (cache.c + seluruh source) dua platform.
 - `bash -n` bersih untuk `_ci_linux.sh` dan skrip baru; blok 6i dan
   suite MCP tetap lulus setelah perubahan cache.
+
+---
+
+### MYC-AUDIT-059 (qwen-review Fase 7, follow-up T6) — Perkuat M4: corpus agent_check 8 kasus
+
+**Apa:** M4 (agent_check konvergen ≤3 iterasi) awalnya diukur 2/3
+(66%) — hanya 1 fixture buggy runtime (strcpy-pair). Ukuran di atas
+ambang (≥50%) tapi sampel terlalu kecil untuk membuktikan konvergensi
+lintas template. Audit ini memperluas fixture `test/agent_check_loop_input.jsonl`
+menjadi 8 kasus (6 buggy runtime + UBSan + bersih) sehingga konvergensi
+terukur naik ke **7/8 (87%)**.
+
+**Kasus baru (semua template-able, konvergen 1 iterasi):**
+
+| id | Bug runtime | Sanitizer | Template repair |
+|---|---|---|---|
+| 4 | `memset` heap overflow (`malloc(4)`, n=16) | heap-buffer-overflow | A clamp n → kapasitas malloc |
+| 5 | `memset` array lokal overflow (a[4], n=16) | stack-buffer-overflow | A clamp n → sizeof |
+| 6 | `strcat` overflow (b[6], sumber `g_src[]` global) | stack-buffer-overflow | B copy ber-batas + null-terminate |
+| 7 | use-after-free lintas fungsi (`noinline` setup/teardown) | heap-use-after-free | C NULL-kan setelah free |
+| 8 | `memcpy` heap overflow (`malloc(4)`, n=10) | heap-buffer-overflow | A clamp n → kapasitas malloc |
+
+Kasus 1 (strcpy-pair) tetap konvergen 2 iterasi; kasus 2 (UBSan
+`INT_MAX+1`) tetap why jujur (anti-overclaim, bukan konvergen); kasus 3
+(source bersih) tetap konvergen tanpa patch.
+
+**Catatan desain fixture:**
+
+- UAF memakai `__attribute__((noinline))` setup/teardown — UAF dalam
+  satu fungsi tertangkap gate statis gcc `-Werror=use-after-free` di
+  compile time (COMPILE_ERROR, bukan RUNTIME_VIOLATION); pattern
+  lintas-fungsi noinline lolos analisis statis dan hanya terlihat
+  runtime ASan (pola yang sama dengan `tests/bad_run_uaf.c`).
+- `strcat` memakai sumber global `g_src[]` (bukan literal string)
+  karena gate statis gcc (`-Wstringop-overflow`/fortified `array-bounds`
+  di `-O2 -Werror`) menangkap `strcat(b, "bcdefghij")` literal di
+  compile time di Linux — padahal kasus strcpy literal lolos gate
+  (asimetri gcc). Sumber global tidak bisa dipastikan panjangnya saat
+  kompilasi → hanya tertangkap runtime ASan (deterministik dua
+  platform).
+- UAF harus di-guard (`if (g) return g[0]`) — template C meng-NULL-kan
+  pointer setelah free; tanpa guard, hasil patch mem-baca NULL → masih
+  violation (jujur, bukan konvergen). Dengan guard, patch selesai → OK.
+- Semua 8 kasus deterministik (2x run identik di Windows).
+
+**Efek metrik §7:** M4 naik dari 66% → **87%** (7/8 ≥ 50%, margin jauh
+lebih lebar). Skrip `bench/run_success_metrics.sh` tidak berubah
+logikanya (menghitung `converged:true` vs `false` dari output MCP) —
+hanya komentar diperbarui; blok 6h `_ci_linux.sh`/`_regress_run.bat`
+tetap hijau (cek `iterations":2`, `converged":false`+why,
+`preservation_obligations` semuanya tetap ada).
+
+**Verifikasi:**
+
+- Windows: `./mcp.exe < test/agent_check_loop_input.jsonl` → 7
+  converged + 1 why (2x run identik).
+- `bash -n` bersih untuk skrip yang diubah.
