@@ -117,6 +117,11 @@ static int regress_run_src(const char *src, size_t len, const char *kind,
     req.input.data = src;
     req.input.len = len;
     req.no_cache = 1;
+    /* MYC-AUDIT-065: replay adalah pass VERIFIKASI, bukan discovery —
+     * saat source yang di-replay masih buggy, gate TIDAK menyimpan seed
+     * baru (corpus tidak boleh bermutasi di tengah replay; deterministik
+     * dan idempoten). Verdict/status gate tetap sama. */
+    req.no_regress = 1;
     if (strcmp(kind, "fuzz") == 0) {
         req.fuzz = 1;
         req.fuzz_iters = 2000;

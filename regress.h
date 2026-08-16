@@ -34,7 +34,10 @@ int myc_regress_list(FILE *out);
  * tiap seed (kind + seed PRNG) dijalankan pada source yang diberikan.
  * Mengisi *total, *resolved (OK), *failing; return jumlah seed yang
  * masih gagal (bug lama hidup kembali). NON-blocking: tidak mengubah
- * verdict run yang sedang berlangsung. */
+ * verdict run yang sedang berlangsung. MYC-AUDIT-065: replay adalah
+ * pass VERIFIKASI, bukan discovery — gate memakai req.no_regress=1
+ * sehingga corpus TIDAK pernah bermutasi di tengah replay (determinis-
+ * tik & idempoten; seed baru tidak disimpan walau source masih buggy). */
 int myc_regress_replay_mem(const char *source, size_t len,
                            int *total, int *resolved, int *failing);
 

@@ -1684,9 +1684,12 @@ int myc_driver_gate(const myc_request *req, const char *source, size_t source_le
         myc_remove_sanitizer_reports(tmp_dir, "myc_drv_ubsan_rpt");
         if (report_evidence || (omarker && res->exit_code != 0)) {
             add_diag_drv(res, "driver: sanitizer menangkap bug pada kasus tepi");
-            /* Fase 6: simpan counterexample sebagai seed regression. */
-            myc_regress_save(res, source, source_len, MYC_REG_DRIVER,
-                             "driver-violation", 0);
+            /* Fase 6: simpan counterexample sebagai seed regression.
+             * MYC-AUDIT-065: skip saat replay (no_regress) — replay
+             * adalah pass verifikasi, corpus tidak boleh bermutasi. */
+            if (!req->no_regress)
+                myc_regress_save(res, source, source_len, MYC_REG_DRIVER,
+                                 "driver-violation", 0);
             res->verdict = MC_DRIVER_VIOLATION;
             res->err = MYC_ERR_DRIVER_VIOLATION;
             myc_gate_set_status(res, MYC_GATE_DRIVER,
@@ -2605,9 +2608,12 @@ int myc_exhaustive_gate(const myc_request *req, const char *source,
             (omarker && res->exit_code != 0)) {
             add_diag_drv(res, "exhaustive: counterexample ditemukan pada "
                               "domain dideklarasikan");
-            /* Fase 6: simpan counterexample sebagai seed regression. */
-            myc_regress_save(res, source, source_len, MYC_REG_EXHAUSTIVE,
-                             "counterexample", 0);
+            /* Fase 6: simpan counterexample sebagai seed regression.
+             * MYC-AUDIT-065: skip saat replay (no_regress) — replay
+             * adalah pass verifikasi, corpus tidak boleh bermutasi. */
+            if (!req->no_regress)
+                myc_regress_save(res, source, source_len,
+                                 MYC_REG_EXHAUSTIVE, "counterexample", 0);
             res->verdict = MC_DRIVER_VIOLATION;
             res->err = MYC_ERR_DRIVER_VIOLATION;
             myc_gate_set_status(res, MYC_GATE_EXHAUSTIVE,
@@ -3852,9 +3858,12 @@ int myc_fuzz_gate(const myc_request *req, const char *source,
                          "fuzz: crash di %.63s (seed %u) -- input "
                          "reproduksibel", funcs[fi].name, seed);
                 add_diag_drv(res, note);
-                /* Fase 6: simpan input crash sebagai seed regression. */
-                myc_regress_save(res, source, source_len, MYC_REG_FUZZ,
-                                 funcs[fi].name, seed);
+                /* Fase 6: simpan input crash sebagai seed regression.
+                 * MYC-AUDIT-065: skip saat replay (no_regress) — replay
+                 * adalah pass verifikasi, corpus tidak boleh bermutasi. */
+                if (!req->no_regress)
+                    myc_regress_save(res, source, source_len, MYC_REG_FUZZ,
+                                     funcs[fi].name, seed);
                 res->verdict = MC_DRIVER_VIOLATION;
                 res->err = MYC_ERR_DRIVER_VIOLATION;
                 myc_gate_set_status(res, MYC_GATE_FUZZ,

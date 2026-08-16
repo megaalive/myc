@@ -125,6 +125,22 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   debt eksplisit "bug lama hidup kembali". Mencegah pola klasik LLM:
   memperbaiki bug A sambil menghidupkan kembali bug B. NON-blocking.
 
+- **Perkuat M3: regression replay skenario pasca-repair — MYC-AUDIT-065
+  (follow-up T6).** `test/regress_replay_test.c` diperluas 5 → 8 kasus
+  (12 → 36 CHECK): T6 repair parsial multi-kind (patch yang hanya
+  memperbaiki sebagian bug → replay jujur `1 resolved, 1 masih gagal`,
+  bukan "clean" palsu), T7 corpus multi-kind fuzz+exhaustive+driver
+  (tiap seed memakai gate-nya sendiri; fix lengkap resolved == total;
+  save ulang idempoten), T8 source tak terkait anti-false-positive
+  (0 failing pada source asing bersih). Fix nyata: replay selama ini
+  MENYIMPAN seed baru saat menemukan bug (gate memanggil
+  `myc_regress_save` tanpa syarat) → corpus bermutasi di tengah replay
+  (nondeterministik). Field `no_regress` baru di `myc_request`:
+  `regress_run_src` men-set-nya → gate driver/exhaustive/fuzz melewati
+  penyimpanan saat replay (pass verifikasi, bukan discovery); verdict
+  tidak berubah. M3 tetap 100% — kini terukur 36 CHECK deterministik
+  di dua platform.
+
 ### Fixed
 
 - **Sanloc hilang saat cache replay (kritis):** cache hit membuang

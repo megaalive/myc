@@ -780,6 +780,15 @@ typedef struct {
      * (pola A1: --no-assumptions + --require-assumptions-closed). */
     int         agent_payload_cap;
     int         no_persist;
+    /* IDE-4 (MYC-AUDIT-065): no_regress — replay regression (pasca-
+     * repair, myc_regress_replay_mem / myc_regress_run) adalah pass
+     * VERIFIKASI, bukan discovery: saat source yang di-replay masih
+     * buggy, gate TIDAK menyimpan seed baru ke corpus (corpus tidak
+     * bermutasi di tengah replay). Dipakai internal oleh regress.c;
+     * default 0 = discovery run normal (fuzz/exhaustive/driver check
+     * tetap menyimpan counterexample). NON-blocking: verdict/status
+     * gate TIDAK berubah, hanya efek samping penyimpanan yang mati. */
+    int         no_regress;
     /* Fase 7 (DS-15 pack wiring, MYC-AUDIT-038): pack proyek lokal
      * (myc.prompt.md + myc.spec.json, SOL-15) untuk output --agent dan
      * paket context SOL-22. pack_dir: --pack-dir DIR (NULL = cwd);

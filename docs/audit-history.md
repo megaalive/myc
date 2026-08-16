@@ -4299,11 +4299,14 @@ patch template + `applied_verdict`; tidak ada replay corpus pasca-repair.
   KODE BARU (source runtime-buggy tetap punya verdict OK di check).
 
 **Verifikasi IDE-4.**
-- Unit `test/regress_replay_test.c` (5 kasus × 12 CHECK): seed fuzz_div0
-  tersimpan otomatis → replay source buggy = masih gagal → replay source
-  fixed = RESOLVED → corpus kosong 0/0 → deterministik (dua panggilan
-  identik = hasil sama). Build `-Werror -pedantic` bersih Linux (WSL)
-  + Windows; cleanup penuh (tanpa leftover `.myc`).
+- Unit `test/regress_replay_test.c` (8 kasus × 36 CHECK; diperkuat di
+  MYC-AUDIT-065): seed fuzz_div0 tersimpan otomatis → replay source
+  buggy = masih gagal → replay source fixed = RESOLVED → corpus kosong
+  0/0 → deterministik (dua panggilan identik = hasil sama) → repair
+  parsial multi-kind jujur → corpus multi-kind (fuzz+exhaustive+
+  driver) → source tak terkait anti-false-positive. Build `-Werror
+  -pedantic` bersih Linux (WSL) + Windows; cleanup penuh (tanpa
+  leftover `.myc`).
 - E2E MCP: repair dengan `patched_source` versi fixed →
   `regression_replay: 1/1 clean`; versi masih-buggy → `2 masih gagal`.
   Cek di `_ci_linux.sh` (6f, source semantik penuh) dan `_regress_run.bat`
@@ -4567,7 +4570,7 @@ mengedit berulang). Perbaikan:
 |---|---|---|
 | M1 lokasi runtime benar (kind+line+fungsi, 9 fixture) | ≥90% | **100%** (9/9; diperkuat di MYC-AUDIT-061) |
 | M2 repair template memproduksi patch terverifikasi | ≥50% | **85%** (12/14; 12 template patchable + 2 jujur-null; diperkuat di MYC-AUDIT-060) |
-| M3 regression replay 100% pasca-repair | 100% | **100%** (regress_replay_test exit 0) |
+| M3 regression replay 100% pasca-repair | 100% | **100%** (regress_replay_test exit 0; 8 kasus × 36 CHECK, diperkuat di MYC-AUDIT-065) |
 | M4 agent_check konvergen ≤3 iterasi | ≥50% | **87%** (7/8; 6 buggy template-able + 1 bersih; UBSan jujur why) |
 | M5 self-dogfood semua source myc OK | semua | **56/56 OK** (semua source kompiler; diperkuat di MYC-AUDIT-062) |
 
@@ -4864,3 +4867,58 @@ string-vs-string (keduanya kosong); file vs string tidak boleh match.
   (caller)`, JSON `n_changed=1`; 6g grep single-quote → MATCH.
 - `bash build.sh` bersih Windows; `bash -n` bersih; `git diff --check`
   bersih.
+
+### MYC-AUDIT-065 (qwen-review Fase 7, follow-up) — perkuat M3: regression replay skenario pasca-repair
+
+**Apa:** M3 sebelumnya diukur oleh `test/regress_replay_test.c` dengan 5
+kasus (T1–T5) yang semuanya memakai SATU seed fuzz (`fuzz_div0`):
+seed tersimpan → replay buggy masih gagal → replay fixed RESOLVED →
+corpus kosong 0/0 → deterministik. Itu membuktikan mekanisme replay,
+tapi belum membuktikan skenario *pasca-repair* yang sebenarnya: patch
+yang TIDAK tuntas (hanya memperbaiki sebagian bug) harus terdeteksi,
+bukan diklaim "clean".
+
+**Perkuatan `test/regress_replay_test.c` (5 → 8 kasus, 12 → 36 CHECK):**
+
+- **T6 — repair parsial (multi-seed, beda kind):** corpus berisi 2 seed
+  dari bug yang berbeda kind: `fuzz` (fdiv div-by-zero) + `exhaustive`
+  (clamp_wrong, ensures `n < 64` gagal di n=64). Patch yang memperbaiki
+  HANYA bug fuzz → replay jujur `1 resolved, 1 masih gagal` (bukan
+  "clean" palsu). Patch lengkap → `0 gagal, 2 resolved`. Tanpa patch →
+  `2 gagal`. Plus deterministik lintas kind.
+- **T7 — corpus multi-kind (fuzz + exhaustive + driver):** 3 seed beda
+  kind di-replay bersama; tiap seed memakai gate-nya sendiri
+  (`regress_run_src` memilih gate dari kind seed). Fix lengkap →
+  `resolved == total`; semua buggy → `failing == total`. Save ulang
+  seed yang sama → idempoten (total tetap 3, bukan 4).
+- **T8 — source tak terkait (anti-false-positive):** source bersih yang
+  TIDAK mengandung bug corpus → SEMUA seed resolved, 0 failing. Replay
+  tidak menuduh source asing.
+
+**Bug nyata yang ditemukan & diperbaiki (replay bukan pass discovery):**
+
+- Selama replay, gate (fuzz/exhaustive/driver) memanggil
+  `myc_regress_save` secara UNCONDITIONAL saat menemukan bug — jadi
+  replay source yang masih buggy MENYIMPAN SEED BARU ke corpus di
+  tengah loop → `total` naik antar panggilan (nondeterministik,
+  tergantung timing read index). Replay adalah pass VERIFIKASI, bukan
+  discovery. Fix: field `no_regress` baru di `myc_request` (myc.h) —
+  gate driver/exhaustive/fuzz melewati `myc_regress_save` bila
+  `req->no_regress`; `regress_run_src` (regress.c, dipakai replay_mem
+  dan regression run) men-set `no_regress = 1`. Verdict/status gate
+  TIDAK berubah (NON-blocking), hanya efek samping penyimpanan yang
+  mati. Discovery run biasa (fuzz/exhaustive/driver check) tetap
+  menyimpan seed.
+
+**Verifikasi:**
+
+- `regress_replay_test` Windows + WSL: **36/36 PASS, exit 0**, dijalankan
+  3× deterministik (corpus tidak bermutasi antar panggilan replay).
+- Success metrics: M3 exit 0, **PASS=14 FAIL=0** di Windows + WSL; M1/M2/
+  M4/M5 tidak berubah (9/9, 12/14, 7/8, 56/56).
+- E2E regression (`myc check fuzz_div0 --fuzz` → seed tersimpan →
+  `myc regression run fuzz_div0_fixed.c` → RESOLVED) dan MCP repair
+  (6f `regression_replay` + 6g `new_verdict_after_patch:OK`) tetap
+  hijau di WSL dengan binary baru.
+- Build `-Werror -pedantic` bersih dua platform; `bash build.sh` OK;
+  `git diff --check` bersih.
