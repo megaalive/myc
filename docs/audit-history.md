@@ -4569,7 +4569,7 @@ mengedit berulang). Perbaikan:
 | M2 repair template memproduksi patch terverifikasi | ≥50% | **85%** (12/14; 12 template patchable + 2 jujur-null; diperkuat di MYC-AUDIT-060) |
 | M3 regression replay 100% pasca-repair | 100% | **100%** (regress_replay_test exit 0) |
 | M4 agent_check konvergen ≤3 iterasi | ≥50% | **87%** (7/8; 6 buggy template-able + 1 bersih; UBSan jujur why) |
-| M5 self-dogfood semua source myc OK | semua | **25/25 OK** |
+| M5 self-dogfood semua source myc OK | semua | **56/56 OK** (semua source kompiler; diperkuat di MYC-AUDIT-062) |
 
 Baseline §7 sebelum Fase 7: M1 = 0% (lokasi dibuang). Semua metrik
 sekarang melewati ambang; hasil identik di Windows dan Linux (WSL).
@@ -4738,4 +4738,42 @@ sama-sama menghasilkan kind+line+fungsi identik). PASS metric naik
 - Kind `attempting double-free` diparse dari `ERROR: AddressSanitizer:`
   sampai spasi + `on` (sanloc.c step 1) — terbukti bekerja dua platform.
 - `bash -n` bersih untuk skrip yang diubah; M2/M3/M4/M5 tidak berubah
-  (12/14, 100%, 7/8, 25/25).
+  (12/14, 100%, 7/8, 56/56).
+
+---
+
+### MYC-AUDIT-062 (qwen-review Fase 7, follow-up T6) — Perkuat M5: self-dogfood semua source kompiler 56/56
+
+**Apa:** M5 (self-dogfood — `myc check --no-cache` verdict OK pada
+source sendiri) awalnya di-hardcode daftar ~25 nama file di
+`bench/run_success_metrics.sh`. Daftar itu tidak lengkap: beberapa nama
+sudah tidak ada (debthub.c, fuzz.c, compare.c, unit.c, proof.c,
+interp.c — di-skip diam-diam oleh `[ -f ] || continue`), sementara 28
+source inti yang nyata tidak pernah di-check (sanloc.c, sha256.c,
+gate.c, persist.c, scenario.c, taxonomy.c, matrix.c, eig.c, dst).
+Audit ini mengganti daftar hardcode dengan iterasi deterministik atas
+SEMUA source kompiler: root `*.c` + `dogfood/*.c` (56 file), tetap
+mengecualikan fixture `test/` dan `tests/` yang sengaja buggy (bukan
+corpus self-dogfood).
+
+**Perubahan:**
+
+- `bench/run_success_metrics.sh` — blok M5: `for f in *.c dogfood/*.c`
+  (glob terurut, deterministik) menggantikan daftar nama hardcode.
+  Komentar header M5 diperbarui. Total iterasi M5: 25 → 56 file.
+- Hasil: **56/56 verdict OK** di Windows (`myc.exe`) dan Linux WSL
+  (`./myc`) — termasuk file yang sebelumnya tak pernah di-check
+  (sanloc.c, sha256.c, gate.c, persist.c, scenario.c, taxonomy.c,
+  matrix.c, eig.c, abi.c, witness.c, dst).
+
+**Efek metrik §7:** M5 tetap 100% tapi kini benar-benar "semua source"
+(56/56), bukan sampel hardcode yang tak lengkap. PASS metric tetap 14
+(total iterasi naik 34 → 65).
+
+**Verifikasi:**
+
+- `bench/run_success_metrics.sh` PASS=14 FAIL=0 di Windows dan WSL —
+  M5: 56/56 source self-dogfood OK (sebelumnya 25/25 dari daftar
+  parsial).
+- M1/M2/M3/M4 tidak berubah (9/9, 12/14, 100%, 7/8).
+- `bash -n` bersih; `git diff --check` bersih.

@@ -16,7 +16,9 @@
 #          memcpy-heap = 6 template runtime konvergen + UBSan why jujur
 #          + source bersih).
 #   M5  Seluruh source myc tetap self-dogfood OK
-#       -> myc check --no-cache verdict OK pada semua source inti.
+#       -> myc check --no-cache verdict OK pada SEMUA source kompiler
+#          (root *.c + dogfood/*.c; fixture test/ dan tests/ yang
+#          sengaja buggy tidak termasuk corpus self-dogfood).
 #
 # Report deterministik ke bench/reports/success-metrics-latest.txt;
 # exit 0 = semua metrik lulus, exit 1 = ada metrik gagal.
@@ -205,11 +207,10 @@ fi
 echo "--- M5. self-dogfood semua source myc (verdict OK) ---"
 M5_TOTAL=0
 M5_OK=0
-for f in myc.c proc.c scanner.c policy.c compile.c context.c run.c report.c \
-         cache.c ledger.c mcp.c prompt.c alloc.c json.c debthub.c regress.c \
-         lint.c sanitize.c driver.c stack.c mutate.c fuzz.c negative.c \
-         compare.c contract.c unit.c resource.c proof.c filc.c interp.c \
-         agent.c transaction.c; do
+# Semua source kompiler: root *.c + dogfood/*.c (deterministik, glob
+# terurut). Fixture test/ dan tests/ sengaja buggy -> bukan bagian
+# corpus self-dogfood, jadi tidak di-iterasi di sini.
+for f in *.c dogfood/*.c; do
     [ -f "$f" ] || continue
     inc; M5_TOTAL=$((M5_TOTAL + 1))
     r=$("$MYC" check "$f" --no-cache 2>&1 | grep -oE "verdict:[[:space:]]+[A-Z_]+" | head -1)

@@ -16,7 +16,8 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   M1 lokasi runtime benar 100% (≥90%, baseline 0%), M2 repair template
   patch terverifikasi 83% (≥50%), M3 regression replay 100%, M4
   `agent_check` konvergen ≤3 iterasi 87% (≥50%; diperkuat di
-  MYC-AUDIT-059 jadi 7/8), M5 self-dogfood 25/25. M2 repair template
+  MYC-AUDIT-059 jadi 7/8), M5 self-dogfood 56/56 (semua source
+  kompiler; diperkuat di MYC-AUDIT-062). M2 repair template
   patch terverifikasi 85% (≥50%; diperkuat di MYC-AUDIT-060 jadi
   12/14). M1 lokasi runtime benar 100% (≥90%; corpus diperluas di
   MYC-AUDIT-061 jadi 9/9).
@@ -47,6 +48,14 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   dan `rt_memcpy_ovf.c` (stack-buffer-overflow via `memcpy`). M1 tetap
   **100% (9/9)** dengan cakupan kind lebih luas; deterministik dua
   platform.
+
+- **Perkuat M5: self-dogfood semua source kompiler — MYC-AUDIT-062
+  (follow-up T6).** Blok M5 di `bench/run_success_metrics.sh` tidak
+  lagi hardcode daftar nama parsial (~25, beberapa sudah tidak ada);
+  kini iterasi deterministik `*.c dogfood/*.c` — **56/56 verdict OK**
+  (termasuk sanloc.c, sha256.c, gate.c, persist.c, dst yang sebelumnya
+  tak pernah di-check). Fixture `test/`/`tests/` yang sengaja buggy
+  tetap di luar corpus self-dogfood.
 
 ### Fixed
 
