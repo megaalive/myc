@@ -16,7 +16,9 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   M1 lokasi runtime benar 100% (≥90%, baseline 0%), M2 repair template
   patch terverifikasi 83% (≥50%), M3 regression replay 100%, M4
   `agent_check` konvergen ≤3 iterasi 87% (≥50%; diperkuat di
-  MYC-AUDIT-059 jadi 7/8), M5 self-dogfood 25/25.
+  MYC-AUDIT-059 jadi 7/8), M5 self-dogfood 25/25. M2 repair template
+  patch terverifikasi 85% (≥50%; diperkuat di MYC-AUDIT-060 jadi
+  12/14).
   Report ke `bench/reports/success-metrics-latest.txt`; wired di
   `_ci_linux.sh` (blok 7c) + `_regress_run.bat`.
 
@@ -27,6 +29,15 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   — semuanya konvergen ≤3 iterasi via template repair A/B/C. M4 naik
   dari 66% (2/3) ke **87% (7/8)**; UBSan tetap why jujur (anti-
   overclaim).
+
+- **Perkuat M2: corpus repair template 14 kasus — MYC-AUDIT-060
+  (follow-up T6).** `test/runtime_repair_test.c` diperluas T8–T15:
+  `memcpy`-array-lokal, `memcpy`-heap, `strcpy` multi-baris, UAF nama
+  lain, `strcpy`/`strcat` sumber global, overflow non-template
+  (jujur-null), dan `memset`-heap 2-digit. M2 kini derivatif dari
+  hasil test (`M2-TEMPLATE-PATCH: 12/14`, bukan hardcode 5/6) — naik
+  dari 83% ke **85%**; T14 membuktikan anti-overclaim di luar
+  vokabular template.
 
 ### Fixed
 

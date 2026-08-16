@@ -4566,7 +4566,7 @@ mengedit berulang). Perbaikan:
 | Metrik | Target | Terukur |
 |---|---|---|
 | M1 lokasi runtime benar (kind+line+fungsi, 6 fixture) | ≥90% | **100%** (6/6) |
-| M2 repair template memproduksi patch terverifikasi | ≥50% | **83%** (5/6; T5 UBSan jujur NULL) |
+| M2 repair template memproduksi patch terverifikasi | ≥50% | **85%** (12/14; 12 template patchable + 2 jujur-null; diperkuat di MYC-AUDIT-060) |
 | M3 regression replay 100% pasca-repair | 100% | **100%** (regress_replay_test exit 0) |
 | M4 agent_check konvergen ≤3 iterasi | ≥50% | **87%** (7/8; 6 buggy template-able + 1 bersih; UBSan jujur why) |
 | M5 self-dogfood semua source myc OK | semua | **25/25 OK** |
@@ -4583,7 +4583,8 @@ turun di bawah ambang.
 
 - `bench/run_success_metrics.sh` PASS=11 FAIL=0 di Windows (`myc.exe`)
   dan Linux WSL (`./myc`) — hasil metrik identik (100/83/100/66/25)
-  saat rilis; M4 lalu diperkuat jadi 7/8 (87%) di MYC-AUDIT-059.
+  saat rilis; M4 lalu diperkuat jadi 7/8 (87%) di MYC-AUDIT-059 dan
+  M2 jadi 12/14 (85%) di MYC-AUDIT-060.
 - `-Werror -pedantic` bersih (cache.c + seluruh source) dua platform.
 - `bash -n` bersih untuk `_ci_linux.sh` dan skrip baru; blok 6i dan
   suite MCP tetap lulus setelah perubahan cache.
@@ -4644,3 +4645,63 @@ tetap hijau (cek `iterations":2`, `converged":false`+why,
 - Windows: `./mcp.exe < test/agent_check_loop_input.jsonl` → 7
   converged + 1 why (2x run identik).
 - `bash -n` bersih untuk skrip yang diubah.
+
+---
+
+### MYC-AUDIT-060 (qwen-review Fase 7, follow-up T6) — Perkuat M2: corpus repair template 14 kasus
+
+**Apa:** M2 (repair runtime menghasilkan patch terverifikasi) awalnya
+diukur 5/6 (83%) dengan 6 kasus template (T1 strcpy, T2 memset-heap,
+T3 memset-array, T4 UAF, T6 strcat + T5 UBSan jujur-null). Sampel
+terlalu kecil dan hanya mencakup satu bentuk per template. Audit ini
+memperluas `test/runtime_repair_test.c` menjadi **14 kasus template**
+(12 patchable + 2 jujur-null) sehingga patch terverifikasi terukur naik
+ke **12/14 (85%)**.
+
+**Kasus baru (T8–T15):**
+
+| Kasus | Skenario | Template | Hasil |
+|---|---|---|---|
+| T8 | `memcpy` array lokal overflow | A (cabang memcpy + array lokal) | clamp ke sizeof |
+| T9 | `memcpy` heap overflow (malloc 8, n=10) | A (cabang memcpy + alloc line) | clamp ke kapasitas malloc |
+| T10 | `strcpy` multi-baris (deklarasi baris 3, violation baris 5) | B + `rt_is_local_array` scan ke belakang | copy ber-batas, deklarasi baris lain dipertahankan |
+| T11 | UAF nama variabel lain (`p`, bukan `g`) | C generik terhadap nama | `free(p); p = NULL;` |
+| T12 | `strcpy` sumber GLOBAL (`g_src[]`, bukan literal) | B generik terhadap bentuk sumber | copy ber-batas |
+| T13 | `strcat` sumber global | B strcat + sumber non-literal | copy offset ber-batas |
+| T14 | overflow NON-template (penulisan indeks `b[16]=0`) | tidak ada template yang cocok | jujur NULL + why (anti-overclaim) |
+| T15 | `memset` heap kapasitas 2-digit (malloc(12), n=24) | A + `rt_alloc_size_at` multi-digit | clamp ke 12 |
+
+T5 (UBSan) dan T14 (overflow non-template) = **jujur-null** — dihitung
+di `PATCH_TOTAL` (template dicoba, hasil jujur) tapi TIDAK di `PATCH_OK`
+(12/14 = 85%). T7 (sanloc_have=0 → NULL) tidak dihitung (bukan kasus
+template, guard anti-overclaim terpisah).
+
+**M2 kini derivatif (bukan hardcode):** test mencetak
+`M2-TEMPLATE-PATCH: OK/TOTAL`; `bench/run_success_metrics.sh` mem-parse
+baris itu (sed, bukan `grep -oE '[0-9]+'` — digit "M2" pada prefix ikut
+tertangkap, bug parse ditemukan saat verifikasi) dan menghitung persen
+dari hasil aktual. Hardcode `5/6` dihapus.
+
+**Catatan desain:**
+
+- T8/T9 menutup cabang `memcpy` template A yang sebelumnya hanya diuji
+  via `memset` (T2/T3) — pemilihan fungsi `strstr(snip,"memset(") ?
+  memset : memcpy` harus diverifikasi dua arah.
+- T10 menutup skenario nyata MCP: source multi-baris (bukan single-line)
+  dengan deklarasi array di baris berbeda dari lokasi violation.
+- T12/T13 menutup sumber non-literal (global array) — kasus yang
+  ternyata DETERMINISTIK dua platform (gcc vs clang) di M4 (MYC-AUDIT-059).
+- T14 membuktikan anti-overclaim untuk overflow di luar vokabular
+  template (bukan hanya UBSan): template TIDAK menebak `b[16]=0` jadi
+  `memset`/`strcpy`.
+
+**Efek metrik §7:** M2 naik dari 83% → **85%** (12/14 ≥ 50%, margin
+lebih lebar; deterministik dua platform — Windows `myc.exe` dan Linux
+WSL `./myc` sama-sama 12/14).
+
+**Verifikasi:**
+
+- `runtime_repair_test` build `-Werror -pedantic` bersih, PASS=35 FAIL=0,
+  `M2-TEMPLATE-PATCH: 12/14`.
+- `bench/run_success_metrics.sh` PASS=11 FAIL=0 di Windows dan WSL.
+- `bash -n` bersih untuk skrip yang diubah; M1/M3/M4/M5 tidak berubah.

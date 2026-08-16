@@ -7,7 +7,7 @@
 #       -> fixture runtime di-check --run, sanitizer_location
 #          dibandingkan dengan lokasi HARAPAN (kind+line+fungsi).
 #   M2  Repair runtime menghasilkan patch terverifikasi ≥50%
-#       -> runtime_repair_test (T1-T6 template; T5 UBSan jujur null).
+#       -> runtime_repair_test (T1-T15 template; T5/T14 jujur null).
 #   M3  Regression replay 100% pasca-repair
 #       -> regress_replay_test (in-process, corpus vs source fixed).
 #   M4  agent_check satu-panggilan konvergen ≤3 iterasi ≥50%
@@ -111,17 +111,30 @@ if $CC -O2 -std=c11 -Wall -Wextra -Werror -pedantic -I. -DMYC_NO_MAIN \
     else
         test/runtime_repair_test_tmp >"$LOG" 2>&1; RC=$?
     fi
-    # Template yang menghasilkan patched_source (dari T1-T6):
-    #   T1 strcpy, T2 memset-heap, T3 memset-array, T4 UAF, T6 strcat
-    #   = 5 patchable; T5 UBSan = jujur NULL (anti-overclaim, bukan patch).
-    # M2 = 5/6 kasus template = 83% >= 50%.
-    M2_PCT=$((5 * 100 / 6))
-    echo "M2: 5/6 template memproduksi patch terverifikasi ($M2_PCT% >= 50%; exit $RC)" >> "$REPORT"
-    if [ $RC -eq 0 ]; then
-        note "M2: runtime_repair_test lulus (5/6 template patch = $M2_PCT%)"
+    # Template yang menghasilkan patched_source: test mencetak
+    # "M2-TEMPLATE-PATCH: OK/TOTAL" — OK = kasus template yang benarbenar
+    # memproduksi patched_source, TOTAL = semua kasus template yang dicoba
+    # (termasuk jujur-null: UBSan T5 + overflow non-template T14).
+    # MYC-AUDIT-060: 12/14 (86%) — 12 template patchable (strcpy/memcpy
+    # strcat/memset lokasi baris sama & multi-baris, heap & array lokal,
+    # UAF 2 nama, sumber global) + 2 jujur-null; T7 anti-overclaim tidak
+    # dihitung (bukan kasus template).
+    M2_LINE=$(grep -oE 'M2-TEMPLATE-PATCH: [0-9]+/[0-9]+' "$LOG" | head -1)
+    # sed: ambil OK dan TOTAL dari "M2-TEMPLATE-PATCH: OK/TOTAL" (jangan
+    # pakai grep -oE '[0-9]+' — digit "M2" pada prefix ikut tertangkap).
+    M2_OK=$(echo "$M2_LINE" | sed -E 's/.*PATCH: ([0-9]+)\/[0-9]+.*/\1/')
+    M2_TOTAL=$(echo "$M2_LINE" | sed -E 's/.*PATCH: [0-9]+\/([0-9]+).*/\1/')
+    if [ -z "$M2_LINE" ] || [ -z "$M2_OK" ] || [ -z "$M2_TOTAL" ] || [ "$M2_TOTAL" -eq 0 ]; then
+        fail "M2: runtime_repair_test tidak mencetak M2-TEMPLATE-PATCH"
     else
-        fail "M2: runtime_repair_test exit $RC (lihat $LOG)"
-        grep -E '^\[FAIL\]' "$LOG" | head -5
+        M2_PCT=$((M2_OK * 100 / M2_TOTAL))
+        echo "M2: $M2_OK/$M2_TOTAL template memproduksi patch terverifikasi ($M2_PCT% >= 50%; exit $RC)" >> "$REPORT"
+        if [ $RC -eq 0 ]; then
+            note "M2: runtime_repair_test lulus ($M2_OK/$M2_TOTAL template patch = $M2_PCT%)"
+        else
+            fail "M2: runtime_repair_test exit $RC (lihat $LOG)"
+            grep -E '^\[FAIL\]' "$LOG" | head -5
+        fi
     fi
 else
     fail "M2: runtime_repair_test gagal dibangun (-Werror)"
@@ -216,7 +229,7 @@ fi
     echo ""
     echo "=== Ringkasan ==="
     echo "M1 lokasi_runtime_benar_pct: $M1_PCT (target >=90)"
-    echo "M2 repair_template_patch: 5/6 (target >=50)"
+    echo "M2 repair_template_patch: ${M2_OK:-?}/${M2_TOTAL:-?} (target >=50; pct ${M2_PCT:-0})"
     echo "M3 regression_replay: 100% (target 100)"
     echo "M4 agent_check_konvergen_pct: ${M4_PCT:-0} (target >=50)"
     echo "M5 self_dogfood: $M5_OK/$M5_TOTAL (target all)"
