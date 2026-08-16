@@ -706,7 +706,7 @@ fi
 # berubah jadi OK, myc me-replay corpus terhadap kode baru dan melampirkan
 # regression_replay: K/N clean. Corpus masih berisi seed fuzz_div0 dari
 # blok di atas; patched_source = versi fixed -> harus 1/1 clean.
-printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"repair","arguments":{"source":"//@ requires n >= 0 && n <= 3; int fdiv(int n){ return 10 / (n - 2); }","patched_source":"//@ requires n >= 0 && n <= 3; int fdiv(int n){ return n == 2 ? 0 : 10 / (n - 2); }"}}}' | ./mcp > test/_tmp_ide4_repair.jsonl 2>&1
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"repair","arguments":{"source":"//@ requires n >= 0 && n <= 3;\nint fdiv(int n){ return 10 / (n - 2); }","patched_source":"//@ requires n >= 0 && n <= 3;\nint fdiv(int n){ return n == 2 ? 0 : 10 / (n - 2); }"}}}' | ./mcp > test/_tmp_ide4_repair.jsonl 2>&1
 if grep -qF "regression_replay" test/_tmp_ide4_repair.jsonl && grep -qF "1/1 clean" test/_tmp_ide4_repair.jsonl; then
     note "Fase 6 regression: regression_replay di hasil repair (IDE-4)"
 else
@@ -721,7 +721,7 @@ rm -rf .myc/regression
 # klaim) + regression_replay. UBSan (rt_ubsan_ovf) -> jujur why tanpa
 # patch (anti-overclaim).
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"repair","arguments":{"source":"#include <string.h>\nint f(void){char b[6]; strcpy(b, \"abcdefghij\"); return b[0];}\nint main(void){(void)f(); return 0;}\n","run":1}}}' | ./mcp > test/_tmp_ide2_repair.jsonl 2>&1
-if grep -qF "new_verdict_after_patch":"OK" test/_tmp_ide2_repair.jsonl && \
+if grep -qF 'new_verdict_after_patch":"OK' test/_tmp_ide2_repair.jsonl && \
    grep -qF "stack-buffer-overflow" test/_tmp_ide2_repair.jsonl; then
     note "IDE-2: repair runtime strcpy -> patch + new_verdict OK"
 else

@@ -64,6 +64,16 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   observasi tetap untuk ukuran variabel/ekspresi. Mengurangi noise di
   payload agent tanpa mengubah verdict.
 
+- **CI hijau: fix 3 bug blok 6f/6g/6i — MYC-AUDIT-064.** Push pertama
+  Fase 7 mengekspos bug yang tak terlihat saat uji lokal (`.myc/`
+  kosong): (1) source repair fdiv satu-baris → komentar `//@` menelan
+  kode → COMPILE_ERROR → `regression_replay` hilang; (2) `grep -qF
+  "a":"b"` di bash membuang kutip → pattern salah (Windows `findstr`
+  tak terkena); (3) `cache_find_stale` mencocokkan file dengan entry
+  cache path-kosong (source MCP) → baseline watch-diff salah. Semua
+  blok 6f/6g/6i kini OK di `_ci_linux.sh` penuh (0 FAIL) + audit018
+  SELESAI OK.
+
 ### Fixed
 
 - **Sanloc hilang saat cache replay (kritis):** cache hit membuang

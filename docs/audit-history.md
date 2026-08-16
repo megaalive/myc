@@ -4814,3 +4814,53 @@ di teks observasi sendiri mengakui "ukuran eksplisit bisa valid".
 - `bench/run_success_metrics.sh` PASS=14 FAIL=0, M1..M5 tidak berubah
   (9/9, 12/14, 100%, 7/8, 56/56).
 - `bash -n` bersih; `git diff --check` bersih.
+
+---
+
+### MYC-AUDIT-064 (qwen-review Fase 7, follow-up) — CI merah: 3 bug blok 6f/6g/6i
+
+**Apa:** Push pertama Fase 7 memicu CI untuk pertama kalinya menjalankan
+blok 6f (IDE-4 replay), 6g (IDE-2 repair), dan 6i (IDE-6 watch-diff) di
+`_ci_linux.sh` — dan semuanya merah (Linux job; Windows job tetap
+success). Investigasi menemukan 3 bug nyata yang tidak pernah terlihat
+saat verifikasi lokal karena selalu diuji dengan `.myc/` kosong /
+blok terisolasi:
+
+**Bug 1 (6f — Fase 6 regression):** source repair fdiv ditulis SATU
+baris: `"//@ requires n >= 0 && n <= 3; int fdiv(...)"`. Dalam C,
+`//` mengomentari sampai akhir baris — komentar `//@` MENELAN seluruh
+kode → translation unit kosong → `COMPILE_ERROR` → repair "patch tidak
+tersedia" → `regression_replay` tidak muncul. Fixture `fuzz_div0.c`
+sendiri sudah multi-baris; hanya string JSON di blok 6f yang salah.
+Fix: pisahkan kontrak dan fungsi (dua baris).
+
+**Bug 2 (6g — IDE-2 repair strcpy):** `grep -qF "new_verdict_after_patch":"OK"` —
+di bash, dua string literal yang digabung `"a":"b"` menjadi `a:b`
+(tanda kutip DIBUANG) → pattern `new_verdict_after_patch:OK` tidak
+pernah cocok dengan JSON `"new_verdict_after_patch":"OK"` → FAIL palsu
+meski output repair benar (terbukti via debug echo). Windows tidak
+terkena karena `findstr /C:` mempertahankan kutip. Fix: single-quote
+`grep -qF 'new_verdict_after_patch":"OK'`.
+
+**Bug 3 (6i — IDE-6 watch-diff):** `cache_find_stale` — guard path
+hanya memeriksa bila path tersedia di KEDUA sisi; entry dengan
+`path=''` (source string dari MCP repair/agent_check) tidak pernah
+di-skip → file `test/_tmp_wd.c` dicocokkan dengan entry path-kosong
+(scenario/tool/cwd sama, source berbeda) → baseline yang salah →
+"belum ada baseline" tidak muncul, delta per-fungsi salah, JSON
+`watch_diff` hilang. Di lingkungan lokal selalu `rm -rf .myc` dulu
+(cache kosong → miss → "belum ada baseline" benar), sehingga tidak
+terlihat. Fix: path harus KONSISTEN — file-vs-file (sama) atau
+string-vs-string (keduanya kosong); file vs string tidak boleh match.
+
+**Verifikasi:**
+
+- `_ci_linux.sh` penuh di WSL: 6f/6g/6i semua OK; total 0 FAIL
+  (sebelumnya 7 FAIL di blok-blok ini).
+- `_audit018.sh` SELESAI OK (RC=0) — cache.c fix tidak regresi test
+  cache (cache_key_matrix, cache_corrupt, dst).
+- Reproduksi manual: 6f → `regression_replay: 1/1 clean`; 6i run1 →
+  "belum ada baseline", run2 → `1 berubah (helper) + 1 dependent
+  (caller)`, JSON `n_changed=1`; 6g grep single-quote → MATCH.
+- `bash build.sh` bersih Windows; `bash -n` bersih; `git diff --check`
+  bersih.

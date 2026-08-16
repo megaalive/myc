@@ -1670,15 +1670,20 @@ static int cache_find_stale(const myc_cache_entry *entries, int n,
                             const char *path)
 {
     int i;
+    int has_path = path && path[0];
     for (i = 0; i < n; i++) {
         if (strcmp(entries[i].scenario_hash, scenario_hash) != 0 ||
             strcmp(entries[i].tool_key, tool_key) != 0 ||
             strcmp(entries[i].cwd, cwd) != 0 ||
             strcmp(entries[i].source_sha256, source_sha256) == 0)
             continue;
-        /* bila path tersedia di kedua sisi, harus cocok (file yang sama). */
-        if (path && path[0] && entries[i].path[0] &&
-            strcmp(entries[i].path, path) != 0)
+        /* path harus KONSISTEN: file-vs-file (sama) atau string-vs-string
+         * (keduanya kosong). Entry path-kosong (source string MCP) tidak
+         * boleh jadi baseline untuk file (IDE-6 watch-diff: delta salah
+         * karena membandingkan file dengan source MCP lain). */
+        if (has_path != (entries[i].path[0] != 0))
+            continue;
+        if (has_path && strcmp(entries[i].path, path) != 0)
             continue;
         return i;
     }
