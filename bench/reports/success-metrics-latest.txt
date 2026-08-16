@@ -1,5 +1,5 @@
 === Success Metrics (qwen-review Fase 7, ukuran sukses §7) ===
-binary: ./myc | date: 20260816-151153
+binary: ./myc.exe | date: 20260816-155925
 
 M1: 9/9 lokasi benar (100% >= 90%)
 M2: 12/14 template memproduksi patch terverifikasi (85% >= 50%; exit 0)

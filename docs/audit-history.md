@@ -4777,3 +4777,40 @@ corpus self-dogfood).
   parsial).
 - M1/M2/M3/M4 tidak berubah (9/9, 12/14, 100%, 7/8).
 - `bash -n` bersih; `git diff --check` bersih.
+
+---
+
+### MYC-AUDIT-063 (qwen-review Fase 7, follow-up) — Celah #3: lint heuristik tidak melebar untuk ukuran literal
+
+**Apa:** Celah #3 qwen-review §3.4 (RENDAH, observasi): pada kode sah
+`memset(p, 'A', 64)` dengan ukuran EKSPLISIT literal, lint tetap
+memancarkan observasi "memcpy/memmove/memset tanpa sizeof -- bounds
+tidak dibuktikan statis". Tidak memengaruhi verdict (non-blocking),
+tapi menambah noise di payload agent: agent LLM membaca observasi itu
+sebagai sinyal bahwa kode yang sudah benar perlu diubah. Disclaimer
+di teks observasi sendiri mengakui "ukuran eksplisit bisa valid".
+
+**Perbaikan (lint.c):**
+
+- Helper baru `region_size_is_int_literal()`: mem-parsing argumen ketiga
+  (ukuran) pada panggilan memcpy/memmove/memset — mendukung literal
+  desimal, hex `0x..`, dan suffix integer C (`u`/`U`/`l`/`L`).
+- Aturan 3 lint kini skip observasi bila ukuran adalah integer literal
+  murni: `memset(p, 'A', 64)` / `memcpy(d, s, 0x40)` / `memset(p,0,64U)`
+  → bersih. Observasi tetap dipancarkan untuk ukuran NON-literal:
+  variabel (`memset(p,'A',n)`), ekspresi (`memset(p,0,n+1)`), dan bila
+  region tidak berbentuk 3-argumen (konservatif: tidak mengubah
+  perilaku di luar kasus yang dimaksud). Aturan `sizeof` (sudah ada)
+  tidak disentuh.
+
+**Verifikasi:**
+
+- Fixture uji: literal/hex/suffix bersih; variabel/ekspresi tetap
+  observasi; sizeof tetap bersih — identik di Windows (`myc.exe`,
+  clang) dan Linux WSL (`./myc`, gcc).
+- `bash build.sh` (`-Werror`) bersih dua platform.
+- audit018 SELESAI OK (RC=0) di WSL; blok lint CI lain (bad_intptr,
+  mmio_clean, ok_lint) tidak berubah.
+- `bench/run_success_metrics.sh` PASS=14 FAIL=0, M1..M5 tidak berubah
+  (9/9, 12/14, 100%, 7/8, 56/56).
+- `bash -n` bersih; `git diff --check` bersih.

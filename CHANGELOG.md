@@ -57,6 +57,13 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   tak pernah di-check). Fixture `test/`/`tests/` yang sengaja buggy
   tetap di luar corpus self-dogfood.
 
+- **Lint tidak melebar untuk ukuran literal — MYC-AUDIT-063 (Celah #3
+  qwen-review §3.4).** Observasi "tanpa sizeof" kini di-skip bila
+  argumen ukuran memcpy/memmove/memset adalah integer literal murni
+  (`memset(p,'A',64)`, hex, suffix C) — ukuran eksplisit memang valid;
+  observasi tetap untuk ukuran variabel/ekspresi. Mengurangi noise di
+  payload agent tanpa mengubah verdict.
+
 ### Fixed
 
 - **Sanloc hilang saat cache replay (kritis):** cache hit membuang

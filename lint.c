@@ -422,6 +422,63 @@ static int region_has_mul(const char *s, size_t a, size_t b)
     return 0;
 }
 
+/* Apakah argumen ketiga (ukuran) pada panggilan memcpy/memmove/memset
+ * berupa integer literal murni (mis. memset(p, 'A', 64))?
+ *
+ * Celah #3 (qwen-review §3.4): kode sah dengan ukuran EKSPLISIT literal
+ * tetap dipancari observasi "tanpa sizeof -- bounds tidak dibuktikan
+ * statis", padahal disclaimer observasi sendiri mengakui "ukuran
+ * eksplisit bisa valid". Literal integer == ukuran eksplisit, jadi bukan
+ * noise; observasi tetap relevan untuk ukuran non-literal (variabel /
+ * ekspresi) yang memang tidak dibuktikan statis. */
+static int region_size_is_int_literal(const char *s, size_t a, size_t b)
+{
+    size_t i = a;
+    int    commas = 0;
+    int    depth = 0;
+
+    /* lewati whitespace di awal region */
+    while (i < b && (s[i] == ' ' || s[i] == '\t'))
+        i++;
+    /* hitung koma level-0 sampai argumen ketiga dimulai */
+    for (; i < b; i++) {
+        if (s[i] == '(')
+            depth++;
+        else if (s[i] == ')' && depth > 0)
+            depth--;
+        else if (s[i] == ',' && depth == 0) {
+            commas++;
+            if (commas == 2)
+                break;
+        }
+    }
+    if (commas < 2)
+        return 0; /* bukan bentuk 3-argumen -> jangan ubah perilaku */
+    i++; /* mulai dari argumen ketiga */
+    while (i < b && (s[i] == ' ' || s[i] == '\t'))
+        i++;
+    if (i >= b || s[i] < '0' || s[i] > '9')
+        return 0;
+    /* izinkan 0x/0X hex, lalu digit; lalu suffix integer C (u/U/l/L) */
+    if (s[i] == '0' && i + 1 < b && (s[i + 1] == 'x' || s[i + 1] == 'X')) {
+        i += 2;
+        if (i >= b || !isxdigit((unsigned char)s[i]))
+            return 0;
+        while (i < b && isxdigit((unsigned char)s[i]))
+            i++;
+    } else {
+        while (i < b && isdigit((unsigned char)s[i]))
+            i++;
+    }
+    while (i < b && (s[i] == 'u' || s[i] == 'U' || s[i] == 'l' ||
+                     s[i] == 'L'))
+        i++;
+    /* sisanya hanya whitespace (argumen terakhir, tidak ada koma lagi) */
+    while (i < b && (s[i] == ' ' || s[i] == '\t'))
+        i++;
+    return i == b;
+}
+
 /* --- D1.2 (P8): pelacakan variabel MYC_BUF + akses langsung b[i] --- */
 
 /* Nama variabel yang dideklarasikan via MYC_BUF (max 64).
@@ -901,7 +958,9 @@ int myc_lint_source(const char *source, size_t len, int embedded,
                     j++;
                 if (j < len && source[j] == '(') {
                     find_call_args(source, len, j, &argstart, &argstop);
-                    if (!region_has_sizeof(source, argstart, argstop)) {
+                    if (!region_has_sizeof(source, argstart, argstop) &&
+                        !region_size_is_int_literal(source, argstart,
+                                                    argstop)) {
                         observations += add_diag(res, (int)line, (int)tokcol,
                                                  MYC_CONF_OBSERVATION,
                                                  "memcpy/memmove/memset tanpa "
