@@ -189,6 +189,9 @@ static int mcp_apply_flags(json_value *flags, myc_request *req,
             req->strict = 1;
         else if (strcmp(f, "--no-lint") == 0)
             req->run_lint = 0;
+        else if (strcmp(f, "--watch-diff") == 0 ||
+                 strcmp(f, "--delta") == 0)
+            req->watch_diff = 1;   /* IDE-6: delta assurance per-fungsi */
         else if (strcmp(f, "--quorum") == 0)
             req->quorum = 1;
         else if (strcmp(f, "--metamorphic") == 0)

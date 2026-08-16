@@ -964,6 +964,9 @@ void myc_run(const myc_request *req, myc_result *res)
      * SEBELUM branch cache -- jalur cache-hit pun memakainya (agent output
      * selalu dibangun ulang dari res, tidak di-replay dari cache). */
     res->agent_payload_cap = req->agent_payload_cap;
+    /* IDE-6 (--watch-diff): tandai diminta agar report bisa berkata jujur
+     * saat baseline belum ada (delta kosong, bukan error). */
+    res->watch_diff_requested = req->watch_diff;
 
     /* MYC-AUDIT-030 (Fase 2): canonicalize cwd di ingress. cwd relatif
      * (".", "./test/../test", dll) disamakan ke bentuk absolut+lexical
@@ -1147,8 +1150,12 @@ static void usage(void)
     printf(
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
-        "  myc check <file.c> [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache] [--no-assumptions] [--cwd DIR] [--profile ID] [--calibrate]\n"
+        "  myc check <file.c> [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache] [--no-assumptions] [--cwd DIR] [--profile ID] [--calibrate] [--watch-diff]\n"
         "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--exhaustive] [--stack [--stack-budget N]] [--fuzz [--fuzz-iters N] [--fuzz-seed S]] [--mutate-audit [--mutate-max N]] [--freestanding] [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete] [--scenario NAME [--scenario-file PATH]] [--matrix] [--abi]\n"
+        "  myc check <file.c> [--watch-diff | --delta]   (IDE-6: fast inner loop per-fungsi --\n"
+        "                        delta assurance terstruktur vs baseline cache (fungsi\n"
+        "                        berubah/identik/baru/hilang/dependents) + timing;\n"
+        "                        NON-blocking penuh, verdict TIDAK berubah)\n"
         "  myc check <file.c> --divergence   (Fase 4 A2: matriks toolchain {gcc,clang,tcc} x {-O0,-O2}, klasifikasi DS-02)\n"
         "  myc check <file.c> [--require-assumptions-closed] [--assumption-ack id:status,...]   (Fase 4 A1: ledger asumsi portabilitas)\n"
         "  myc check <file.c> [--timeout MS] [--output-cap BYTES]\n"
@@ -2411,6 +2418,15 @@ int main(int argc, char **argv)
                 req.run_lint = 0; known = 1;
             } else if (strcmp(argv[i], "--no-cache") == 0) {
                 req.no_cache = 1; known = 1;
+            } else if (strcmp(argv[i], "--watch-diff") == 0 ||
+                       strcmp(argv[i], "--delta") == 0) {
+                /* IDE-6 (T5, qwen-review): fast inner loop per-fungsi.
+                 * Output-only: delta assurance terstruktur (fungsi
+                 * berubah/identik/baru/hilang/dependents vs baseline
+                 * cache) + timing; TIDAK masuk scenario hash (verdict
+                 * TIDAK berubah, NON-blocking penuh). `--delta` alias
+                 * untuk perintah yang sudah disarankan prompt.c. */
+                req.watch_diff = 1; known = 1;
             } else if (strcmp(argv[i], "--no-assumptions") == 0) {
                 req.no_assumptions = 1; known = 1;
             } else if (strcmp(argv[i], "--require-assumptions-closed") == 0) {

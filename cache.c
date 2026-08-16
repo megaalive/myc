@@ -1696,6 +1696,19 @@ int myc_cache_try_replay(const myc_request *req, myc_result *res,
     for (i = 0; i < n; i++) {
         if (strcmp(entries[i].key_sha256, key) == 0) {
             cache_replay_into(&entries[i], res);
+            /* IDE-6 (--watch-diff): hit = source SAMA dengan baseline →
+             * delta kosong (0 berubah) + baseline = source itu sendiri.
+             * Agent mendapat konfirmasi golden: tidak ada fungsi berubah. */
+            if (req->watch_diff) {
+                res->watch_diff_present = 1;
+                res->watch_diff_count = 0;
+                res->watch_diff_n_changed = 0;
+                res->watch_diff_n_identical = 0;
+                res->watch_diff_n_new = 0;
+                res->watch_diff_n_removed = 0;
+                res->watch_diff_n_dep = 0;
+                memcpy(res->watch_diff_baseline, source_hex, 65);
+            }
             ret = 1;
             goto done;
         }
@@ -1712,6 +1725,27 @@ int myc_cache_try_replay(const myc_request *req, myc_result *res,
         if (stale >= 0) {
             res->cache_delta_report =
                 myc_cache_delta_report(src, srclen, &entries[stale]);
+            /* IDE-6 (--watch-diff): delta assurance TERSTRUKTUR per-fungsi
+             * (nama + line + status) + baseline + timing. Output-only,
+             * NON-blocking: verdict TIDAK berubah. Delta murni teks
+             * (tanpa backend) — diukur agar agent tahu biaya re-verify. */
+            if (req->watch_diff) {
+                res->watch_diff_present = 1;
+                memcpy(res->watch_diff_baseline,
+                       entries[stale].source_sha256, 65);
+                res->watch_diff_ms = myc_wall_ms();
+                res->watch_diff_count =
+                    myc_cache_delta_struct(src, srclen, &entries[stale],
+                                           res->watch_diff_funcs,
+                                           MYC_CACHE_MAX_FUNCS,
+                                           &res->watch_diff_n_changed,
+                                           &res->watch_diff_n_identical,
+                                           &res->watch_diff_n_new,
+                                           &res->watch_diff_n_removed,
+                                           &res->watch_diff_n_dep);
+                res->watch_diff_ms =
+                    myc_wall_ms() - res->watch_diff_ms;
+            }
         }
     }
 
@@ -2237,48 +2271,40 @@ static int token_in_range(const char *src, size_t start, size_t end,
     return 0;
 }
 
-char *myc_cache_delta_report(const char *src, size_t srclen,
-                             const myc_cache_entry *old_entry)
+int myc_cache_delta_struct(const char *src, size_t srclen,
+                           const myc_cache_entry *old_entry,
+                           myc_delta_func *out, int cap,
+                           int *n_changed, int *n_identical, int *n_new,
+                           int *n_removed, int *n_dep)
 {
     range_func cur[MYC_CACHE_MAX_FUNCS];
-    char changed[1024];
-    char identical[1024];
-    char added[1024];
-    char removed[1024];
-    char dependents[1024];
     char changed_names[MYC_CACHE_MAX_FUNCS][64];
     int  cur_n, changed_n = 0, i, j;
-    int  n_changed = 0, n_identical = 0, n_added = 0, n_removed = 0, n_dep = 0;
-    size_t co = 0, io = 0, ao = 0, ro = 0, dp = 0;
+    int  out_n = 0;
+    int  c_changed = 0, c_identical = 0, c_new = 0, c_removed = 0, c_dep = 0;
 
+    if (n_changed)   *n_changed = 0;
+    if (n_identical) *n_identical = 0;
+    if (n_new)       *n_new = 0;
+    if (n_removed)   *n_removed = 0;
+    if (n_dep)       *n_dep = 0;
     if (!src || !old_entry)
-        return NULL;
+        return 0;
 
     cur_n = extract_ranges(src, srclen, cur, MYC_CACHE_MAX_FUNCS);
     if (cur_n < 0)
-        return NULL;
+        return 0;
 
-    changed[0] = identical[0] = added[0] = removed[0] = dependents[0] = '\0';
-
-    /* fungsi berubah / identik / BARU (bandingkan vs cache), dan
-     * kumpulkan nama fungsi berubah. */
+    /* Pass 1: klasifikasi dasar per fungsi (berubah / baru) + kumpulkan
+     * nama fungsi berubah/baru (calon dependents). Fungsi identik dihitung
+     * di pass 2 dari status FINAL (sebagian menjadi DEPENDENT). */
     for (i = 0; i < cur_n; i++) {
         int oi = find_func(old_entry->funcs, old_entry->func_count,
                            cur[i].name);
-        if (oi >= 0 && strcmp(cur[i].hash, old_entry->funcs[oi].hash) == 0) {
-            n_identical++;
-            if (io < sizeof(identical) - 64) {
-                int r = snprintf(identical + io, sizeof(identical) - io,
-                                 "%s%s", io ? "," : "", cur[i].name);
-                if (r > 0) io += (size_t)r;
-            }
-        } else if (oi >= 0) {
-            n_changed++;
-            if (co < sizeof(changed) - 64) {
-                int r = snprintf(changed + co, sizeof(changed) - co,
-                                 "%s%s", co ? "," : "", cur[i].name);
-                if (r > 0) co += (size_t)r;
-            }
+        if (oi >= 0 && strcmp(cur[i].hash, old_entry->funcs[oi].hash) == 0)
+            continue;   /* identik — klasifikasi final di pass 2 */
+        if (oi >= 0) {
+            c_changed++;
             if (changed_n < MYC_CACHE_MAX_FUNCS) {
                 size_t nl = strlen(cur[i].name);
                 if (nl >= 64)
@@ -2288,13 +2314,8 @@ char *myc_cache_delta_report(const char *src, size_t srclen,
                 changed_n++;
             }
         } else {
-            n_added++;
-            if (ao < sizeof(added) - 64) {
-                int r = snprintf(added + ao, sizeof(added) - ao,
-                                 "%s%s", ao ? "," : "", cur[i].name);
-                if (r > 0) ao += (size_t)r;
-            }
-            /* fungsi baru juga perlu dependents (memanggil fungsi lain). */
+            c_new++;
+            /* fungsi baru juga calon dependents (memanggil fungsi lain). */
             if (changed_n < MYC_CACHE_MAX_FUNCS) {
                 size_t nl = strlen(cur[i].name);
                 if (nl >= 64)
@@ -2308,35 +2329,132 @@ char *myc_cache_delta_report(const char *src, size_t srclen,
 
     /* fungsi yang HILANG dari cache (sudah dihapus/rename di source). */
     for (i = 0; i < old_entry->func_count; i++) {
-        if (find_range_func(cur, cur_n, old_entry->funcs[i].name) < 0) {
-            n_removed++;
-            if (ro < sizeof(removed) - 64) {
-                int r = snprintf(removed + ro, sizeof(removed) - ro,
-                                 "%s%s", ro ? "," : "",
-                                 old_entry->funcs[i].name);
-                if (r > 0) ro += (size_t)r;
-            }
-        }
+        if (find_range_func(cur, cur_n, old_entry->funcs[i].name) < 0)
+            c_removed++;
     }
 
-    /* dependents: fungsi (yang TIDAK berubah) yang body-nya memanggil
-     * salah satu fungsi berubah/baru -> perlu diverifikasi ulang. */
-    for (i = 0; i < cur_n; i++) {
-        int self_changed = 0;
-        if (find_name(changed_names, changed_n, cur[i].name))
-            self_changed = 1;
-        if (self_changed)
-            continue;
-        for (j = 0; j < changed_n; j++) {
-            if (token_in_range(src, cur[i].start, cur[i].end,
-                               changed_names[j])) {
-                n_dep++;
-                if (dp < sizeof(dependents) - 64) {
-                    int r = snprintf(dependents + dp, sizeof(dependents) - dp,
-                                     "%s%s", dp ? "," : "", cur[i].name);
-                    if (r > 0) dp += (size_t)r;
+    /* Pass 2: isi array output — satu entry per fungsi source saat ini.
+     * Fungsi identik yang body-nya memanggil fungsi berubah/baru =
+     * DEPENDENT (perlu diverifikasi ulang), bukan IDENTICAL polos. */
+    for (i = 0; i < cur_n && out_n < cap; i++) {
+        myc_delta_func *df = &out[out_n];
+        int oi = find_func(old_entry->funcs, old_entry->func_count,
+                           cur[i].name);
+        int self_changed = find_name(changed_names, changed_n, cur[i].name);
+
+        memset(df, 0, sizeof(*df));
+        {
+            size_t nl = strlen(cur[i].name);
+            if (nl >= sizeof(df->name))
+                nl = sizeof(df->name) - 1;
+            memcpy(df->name, cur[i].name, nl);
+            df->name[nl] = '\0';
+        }
+        df->line = cur[i].line;
+        if (oi >= 0 && strcmp(cur[i].hash, old_entry->funcs[oi].hash) == 0) {
+            if (self_changed) {
+                df->status = MYC_DELTA_FUNC_DEPENDENT;
+                c_dep++;
+            } else {
+                int is_dep = 0;
+                for (j = 0; j < changed_n; j++) {
+                    if (token_in_range(src, cur[i].start, cur[i].end,
+                                       changed_names[j])) {
+                        is_dep = 1;
+                        break;
+                    }
                 }
-                break;
+                if (is_dep) {
+                    df->status = MYC_DELTA_FUNC_DEPENDENT;
+                    c_dep++;
+                } else {
+                    df->status = MYC_DELTA_FUNC_IDENTICAL;
+                    c_identical++;
+                }
+            }
+        } else if (oi >= 0) {
+            df->status = MYC_DELTA_FUNC_CHANGED;
+        } else {
+            df->status = MYC_DELTA_FUNC_NEW;
+        }
+        out_n++;
+    }
+
+    if (n_changed)   *n_changed = c_changed;
+    if (n_identical) *n_identical = c_identical;
+    if (n_new)       *n_new = c_new;
+    if (n_removed)   *n_removed = c_removed;
+    if (n_dep)       *n_dep = c_dep;
+    return out_n;
+}
+
+char *myc_cache_delta_report(const char *src, size_t srclen,
+                             const myc_cache_entry *old_entry)
+{
+    myc_delta_func  funcs[MYC_CACHE_MAX_FUNCS];
+    char changed[1024];
+    char identical[1024];
+    char added[1024];
+    char removed[1024];
+    char dependents[1024];
+    int  n_changed = 0, n_identical = 0, n_added = 0, n_removed = 0, n_dep = 0;
+    int  fn, i;
+    size_t co = 0, io = 0, ao = 0, ro = 0, dp = 0;
+
+    fn = myc_cache_delta_struct(src, srclen, old_entry,
+                                funcs, MYC_CACHE_MAX_FUNCS,
+                                &n_changed, &n_identical, &n_added,
+                                &n_removed, &n_dep);
+    if (fn <= 0)
+        return NULL;
+
+    changed[0] = identical[0] = added[0] = removed[0] = dependents[0] = '\0';
+    for (i = 0; i < fn; i++) {
+        char *dst = NULL;
+        size_t *po = NULL;
+        if (funcs[i].status == MYC_DELTA_FUNC_CHANGED) {
+            dst = changed; po = &co;
+        } else if (funcs[i].status == MYC_DELTA_FUNC_IDENTICAL ||
+                   funcs[i].status == MYC_DELTA_FUNC_DEPENDENT) {
+            /* dependents tetap masuk daftar "identik" (hash sama) agar
+             * format string lama tidak berubah; nama mereka juga muncul
+             * di daftar dependents. */
+            dst = identical; po = &io;
+        } else if (funcs[i].status == MYC_DELTA_FUNC_NEW) {
+            dst = added; po = &ao;
+        }
+        if (dst && *po < 1024 - 80) {
+            int r = snprintf(dst + *po, 1024 - *po, "%s%s",
+                             *po ? "," : "", funcs[i].name);
+            if (r > 0)
+                *po += (size_t)r;
+        }
+        if (funcs[i].status == MYC_DELTA_FUNC_DEPENDENT) {
+            int r = snprintf(dependents + dp, 1024 - dp, "%s%s",
+                             dp ? "," : "", funcs[i].name);
+            if (r > 0)
+                dp += (size_t)r;
+        }
+    }
+    /* fungsi yang HILANG (REMOVED) tidak ada di array output — hitung
+     * ulang dari counts agar string tetap lengkap. */
+    {
+        const myc_cache_function *ocf = old_entry->funcs;
+        int oc = old_entry->func_count;
+        int i2;
+        for (i2 = 0; i2 < oc && ro < 1024 - 80; i2++) {
+            int still = 0, k;
+            for (k = 0; k < fn; k++) {
+                if (strcmp(funcs[k].name, ocf[i2].name) == 0) {
+                    still = 1;
+                    break;
+                }
+            }
+            if (!still) {
+                int r = snprintf(removed + ro, 1024 - ro, "%s%s",
+                                 ro ? "," : "", ocf[i2].name);
+                if (r > 0)
+                    ro += (size_t)r;
             }
         }
     }
@@ -2345,11 +2463,13 @@ char *myc_cache_delta_report(const char *src, size_t srclen,
         char *out = (char *)myc_malloc(3072);
         if (!out)
             return NULL;
+        /* identik (string lama) = identik polos + dependents. */
         snprintf(out, 3072,
                  "%d berubah (%s); %d identik (%s); %d baru (%s); "
                  "%d hilang (%s)%s%s",
                  n_changed, n_changed ? changed : "-",
-                 n_identical, n_identical ? identical : "-",
+                 n_identical + n_dep,
+                 (n_identical + n_dep) ? identical : "-",
                  n_added, n_added ? added : "-",
                  n_removed, n_removed ? removed : "-",
                  n_dep ? "; dependents: " : "",

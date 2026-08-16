@@ -766,6 +766,53 @@ else
 fi
 rm -f test/_tmp_ac_loop.jsonl
 
+# --- 6i. IDE-6 (qwen-review, T5): --watch-diff fast inner loop per-fungsi ---
+# watch-diff membandingkan source vs baseline cache (scenario sama):
+# fungsi berubah/identik/baru/hilang/dependents + timing delta.
+# NON-blocking penuh: verdict TIDAK berubah. Alias --delta (perintah
+# yang disarankan prompt.c).
+cp test/fixtures/watchdiff_base.c test/_tmp_wd.c
+if ./myc check test/_tmp_wd.c --watch-diff 2>&1 | grep -qF "watch-diff: belum ada baseline"; then
+    note "IDE-6: baseline pertama = delta kosong (jujur)"
+else
+    fail "IDE-6: baseline pertama harus watch-diff no-baseline"
+fi
+# edit helper -> miss vs baseline base: delta 1 berubah + 1 dependent.
+cp test/fixtures/watchdiff_edit.c test/_tmp_wd.c
+./myc check test/_tmp_wd.c --watch-diff > test/_tmp_wd_out.txt 2>&1
+if grep -qF "watch-diff: 1 berubah, 1 identik, 0 baru, 0 hilang, 1 dependents" test/_tmp_wd_out.txt; then
+    note "IDE-6: delta 1 berubah (helper) + 1 dependent (caller) + 1 identik (main)"
+else
+    fail "IDE-6: delta per-fungsi salah"
+fi
+if grep -qE "^  helper +berubah" test/_tmp_wd_out.txt; then
+    note "IDE-6: per-fungsi helper=berubah"
+else
+    fail "IDE-6: helper harus ditandai berubah"
+fi
+if grep -qE "^  caller +dependent" test/_tmp_wd_out.txt; then
+    note "IDE-6: per-fungsi caller=dependent (pemanggil helper)"
+else
+    fail "IDE-6: caller harus ditandai dependent"
+fi
+# edit2 = miss baru vs baseline edit (hash baru; helper x+2 → x+3):
+# JSON summary --delta alias harus n_changed=1 (helper berubah lagi).
+cp test/fixtures/watchdiff_edit2.c test/_tmp_wd.c
+./myc check test/_tmp_wd.c --delta --json-summary > test/_tmp_wd_json.txt 2>&1
+if grep -qF "\"watch_diff\":{\"delta_ms\":" test/_tmp_wd_json.txt && \
+   grep -qF "\"n_changed\":1" test/_tmp_wd_json.txt; then
+    note "IDE-6: --delta alias + JSON summary watch_diff n_changed=1"
+else
+    fail "IDE-6: JSON summary watch_diff tidak muncul (alias rusak)"
+fi
+# source sama dengan cache terakhir (base) -> hit = delta kosong.
+if ./myc check test/_tmp_wd.c --watch-diff 2>&1 | grep -qF "watch-diff: 0 berubah, 0 identik, 0 baru, 0 hilang, 0 dependents"; then
+    note "IDE-6: cache hit = delta kosong (golden: fungsi tak berubah)"
+else
+    fail "IDE-6: cache hit harus delta kosong"
+fi
+rm -f test/_tmp_wd.c test/_tmp_wd_out.txt test/_tmp_wd_json.txt
+
 # --- 6. dogfood tool ---
 for f in dogfood/dogfood_ring.c dogfood/dogfood_config.c dogfood/dogfood_tilemap.c; do
     assert_out "dogfood $(basename "$f") -> OK" "verdict:   OK" "$f"

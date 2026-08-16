@@ -7,21 +7,22 @@ semantik per tag rilis (`vX.Y.Z`).
 Sejarah implementasi & audit terperinci (MYC-AUDIT-001..055, fase
 pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 
-## [Unreleased] — qwen-review IDE-1+IDE-5+IDE-4+IDE-2+IDE-3 (T1+T2+T3+T4)
+## [Unreleased] — qwen-review IDE-1+IDE-5+IDE-4+IDE-2+IDE-3+IDE-6 (T1..T5)
 
 ### Added
 
-- **Bounded `agent_check` repair loop — MYC-AUDIT-056 (qwen-review IDE-3/T4).**
-  Tool MCP `agent_check` kini menerima `flags` (array string, helper
-  bersama `mcp_apply_flags` diekstrak dari `check`) + `max_iter` (number
-  1..8, default 3): check → repair(template) → apply patch di memori →
-  check lagi → bandingkan verdict, ulangi maks `max_iter`. Bounded:
-  tidak ada loop tak terbatas. Tiap iterasi tercatat receipt chain di
-  ledger (`receipt_parent`); hasil memuat `repair_loop` (steps +
-  `converged` + `iterations`) + `preservation_obligations` +
-  `regression_replay` pasca-repair. Anti-overclaim: template tidak yakin
-  / UBSan → `why` jujur, loop berhenti (patch tidak pernah menebak).
-  Verdict/gate semantics tidak berubah.
+- **`--watch-diff` delta assurance per-fungsi — MYC-AUDIT-057 (qwen-review IDE-6/T5).**
+  Fast inner loop untuk agent yang mengedit per-fungsi: bandingkan source vs
+  baseline cache (scenario sama) → delta TERSTRUKTUR per-fungsi `{name, line,
+  status: berubah | identik | baru | dependent}` + counts + timing
+  (`watch_diff_ms`, murni teks tanpa backend). Status `dependent` = fungsi
+  identik yang memanggil fungsi berubah (perlu re-verify ikut). Output text
+  `watch-diff:` + JSON `watch_diff` (`--json` / `--json-summary` / MCP check).
+  Run pertama tanpa baseline → jujur "belum ada baseline" (bukan error);
+  cache hit → delta kosong (konfirmasi golden). NON-blocking penuh: flag
+  TIDAK masuk scenario hash, verdict/gates/receipt TIDAK berubah. Alias
+  `--delta` — perintah `myc check <file.c> --delta` yang sudah disarankan
+  `myc prompt` selama ini kini valid (sebelumnya unknown flag = fail-fast).
 
 - **Repair template RUNTIME_VIOLATION — MYC-AUDIT-055 (qwen-review IDE-2/T3).**
   MCP `repair` menerima `run:1`: verdict `RUNTIME_VIOLATION` + `sanitizer_location`

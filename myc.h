@@ -734,6 +734,12 @@ typedef struct {
     int         json_summary;     /* --json-summary: output JSON ringkas
                                      (tanpa stdout/stderr/fingerprint) untuk
                                      agent LLM */
+    /* IDE-6 (--watch-diff / --delta): fast inner loop per-fungsi. Output-
+     * only (TIDAK masuk scenario hash, seperti --json-summary): menambah
+     * delta assurance terstruktur per-fungsi ke hasil (fungsi berubah /
+     * identik / baru / hilang / dependents vs baseline cache) + timing.
+     * NON-blocking penuh: verdict/hasil TIDAK berubah. */
+    int         watch_diff;
      int         no_cache;        /* --no-cache: matikan incremental evidence
                                      cache (SOL-18); default 0 = cache ON */
      int         agent;            /* --agent: output protokol agent
@@ -978,6 +984,26 @@ typedef struct {
     int   little_endian;     /* endianness target */
     int   deltas;            /* fakta yang berubah vs host */
 } myc_matrix_cell;
+
+/* --- IDE-6 (--watch-diff): delta assurance per-fungsi ---
+ * Status satu fungsi vs baseline cache (hash body). Didefinisikan di
+ * sini (bukan cache.h) karena dipakai myc_result; cache.h include myc.h. */
+#define MYC_CACHE_MAX_FUNCS 256
+
+typedef enum {
+    MYC_DELTA_FUNC_IDENTICAL = 0, /* hash sama dengan baseline */
+    MYC_DELTA_FUNC_CHANGED,       /* hash beda (isi fungsi berubah) */
+    MYC_DELTA_FUNC_NEW,           /* tidak ada di baseline */
+    MYC_DELTA_FUNC_REMOVED,       /* ada di baseline, hilang dari source */
+    MYC_DELTA_FUNC_DEPENDENT      /* identik tapi memanggil fungsi berubah */
+} myc_delta_func_status;
+
+/* Satu entry delta per-fungsi (nama + line + status). */
+typedef struct {
+    char  name[64];
+    int   line;
+    myc_delta_func_status status;
+} myc_delta_func;
 
 typedef struct {
     myc_verdict verdict;
@@ -1311,6 +1337,27 @@ char          *rsrc_report;                /* arena */
     int         cache_hit;
     char       *cache_delta_report;
 
+    /* --- IDE-6 (--watch-diff): delta assurance terstruktur per-fungsi ---
+     * watch_diff_present=1 bila delta dihitung (ada baseline cache,
+     * scenario sama, source berubah); watch_diff[] = satu entry per
+     * fungsi source saat ini (IDENTICAL/CHANGED/NEW/DEPENDENT); counts
+     * per status (REMOVED tidak masuk array); watch_diff_baseline =
+     * source_sha256 entry baseline; watch_diff_ms = durasi hitung delta
+     * (murni teks, tanpa backend). NON-blocking: verdict TIDAK berubah. */
+    /* watch_diff_requested = 1 bila --watch-diff diminta (untuk laporan
+     * jujur saat baseline belum ada: "belum ada baseline — delta kosong"). */
+    int             watch_diff_requested;
+    int             watch_diff_present;
+    int             watch_diff_count;
+    myc_delta_func  watch_diff_funcs[MYC_CACHE_MAX_FUNCS];
+    int             watch_diff_n_changed;
+    int             watch_diff_n_identical;
+    int             watch_diff_n_new;
+    int             watch_diff_n_removed;
+    int             watch_diff_n_dep;
+    char            watch_diff_baseline[65];
+    unsigned long long watch_diff_ms;
+
     /* --- Assurance Budget Contract (Fase 3, SOL-30) ---
      * Hasil enforcement: budget_active=1 bila kontrak dipakai;
      * budget_met=1 bila SEMUA target tercapai; budget_report = teks
@@ -1609,6 +1656,11 @@ char *myc_strdup(const char *s);
  * atau NULL bila exec gagal / exit != 0 / tidak ada output. Implementasi
  * di proc.c (selalu di-link). Dipakai pipeline (gcc/clang) + `myc version`. */
 char *myc_tool_version(const char *exe);
+
+/* Wall clock monotonic dalam milidetik (IDE-6, --watch-diff: timing
+ * delta assurance). Implementasi di alloc.c (selalu di-link). Caller
+ * hanya boleh memakai SELISIH dua panggilan; 0 bila clock tidak ada. */
+unsigned long long myc_wall_ms(void);
 
 /* Jalankan pipeline penuh pada request. Mengisi res. */
 void myc_run(const myc_request *req, myc_result *res);

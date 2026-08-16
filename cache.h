@@ -35,7 +35,9 @@
 
 #define MYC_CACHE_FILE       ".myc/evidence_cache.json"
 #define MYC_CACHE_MAX_ENTRIES 64
-#define MYC_CACHE_MAX_FUNCS   256
+/* MYC_CACHE_MAX_FUNCS + myc_delta_func/myc_delta_func_status didefinisikan
+ * di myc.h (dipakai myc_result untuk delta assurance IDE-6); cache.h
+ * include myc.h. */
 
 /* Satu fungsi yang ter-ekstrak dari source (untuk delta report). */
 typedef struct {
@@ -274,6 +276,17 @@ int myc_cache_extract_functions(const char *src, size_t srclen,
  * malloc'd "N berubah (a,b), M identik, dependents: x,y" atau NULL. */
 char *myc_cache_delta_report(const char *src, size_t srclen,
                              const myc_cache_entry *old_entry);
+
+/* Varian TERSTRUKTUR (IDE-6): isi `out` dengan satu entry per fungsi
+ * source saat ini + status (IDENTICAL/CHANGED/NEW/DEPENDENT); fungsi
+ * yang hilang dari baseline (REMOVED) hanya masuk counts. Mengembalikan
+ * jumlah entry terisi (<= cap). n_changed/n_identical/n_new/n_removed/
+ * n_dep = counts per status (REMOVED tidak masuk array). */
+int myc_cache_delta_struct(const char *src, size_t srclen,
+                           const myc_cache_entry *old_entry,
+                           myc_delta_func *out, int cap,
+                           int *n_changed, int *n_identical, int *n_new,
+                           int *n_removed, int *n_dep);
 
 /* Bebaskan entry (saat ini semua field flat — hanya untuk masa depan). */
 void myc_cache_entry_free(myc_cache_entry *e);

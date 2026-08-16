@@ -243,6 +243,36 @@ void myc_report_text(const myc_result *res)
         printf("cache:     hit (replay dari .myc/evidence_cache.json)\n");
     else if (res->cache_delta_report)
         printf("cache:     %s\n", res->cache_delta_report);
+    /* IDE-6 (--watch-diff): delta assurance terstruktur per-fungsi. */
+    if (res->watch_diff_present) {
+        int i;
+        printf("watch-diff: %d berubah, %d identik, %d baru, %d hilang, "
+               "%d dependents (delta %llu ms, baseline %.12s)\n",
+               res->watch_diff_n_changed, res->watch_diff_n_identical,
+               res->watch_diff_n_new, res->watch_diff_n_removed,
+               res->watch_diff_n_dep,
+               (unsigned long long)res->watch_diff_ms,
+               res->watch_diff_baseline);
+        for (i = 0; i < res->watch_diff_count &&
+                    i < MYC_CACHE_MAX_FUNCS; i++) {
+            const myc_delta_func *df = &res->watch_diff_funcs[i];
+            const char *st = "?";
+            switch (df->status) {
+            case MYC_DELTA_FUNC_IDENTICAL: st = "identik"; break;
+            case MYC_DELTA_FUNC_CHANGED:   st = "berubah"; break;
+            case MYC_DELTA_FUNC_NEW:       st = "baru"; break;
+            case MYC_DELTA_FUNC_DEPENDENT: st = "dependent"; break;
+            default: break;
+            }
+            printf("  %-32s %-10s line %d\n", df->name, st, df->line);
+        }
+    } else if (res->watch_diff_requested) {
+        /* IDE-6: diminta tapi baseline belum ada (cache kosong / tidak ada
+         * entry dengan scenario sama) — jujur: delta kosong, bukan error.
+         * Run ini menjadi baseline untuk delta berikutnya. */
+        printf("watch-diff: belum ada baseline (delta kosong; run ini "
+               "menjadi baseline)\n");
+    }
     if (res->resolved_gcc)
         printf("gcc:       %s\n", res->resolved_gcc);
     /* MYC-AUDIT-022 (roadmap 7.1): exact tool identity. */
@@ -855,6 +885,41 @@ char *myc_result_to_json(const myc_result *res)
         json_sb_printf(&b, "\"cache_delta\":");
         json_sb_escape(&b, res->cache_delta_report);
         json_sb_puts(&b, ",");
+    }
+    /* IDE-6 (--watch-diff): delta assurance terstruktur per-fungsi. */
+    if (res->watch_diff_present) {
+        int i;
+        json_sb_printf(&b, "\"watch_diff\":{\"baseline\":");
+        json_sb_escape(&b, res->watch_diff_baseline);
+        json_sb_printf(&b, ",\"delta_ms\":%llu,"
+                           "\"n_changed\":%d,\"n_identical\":%d,"
+                           "\"n_new\":%d,\"n_removed\":%d,"
+                           "\"n_dependents\":%d,\"funcs\":[",
+                       (unsigned long long)res->watch_diff_ms,
+                       res->watch_diff_n_changed,
+                       res->watch_diff_n_identical,
+                       res->watch_diff_n_new,
+                       res->watch_diff_n_removed,
+                       res->watch_diff_n_dep);
+        for (i = 0; i < res->watch_diff_count &&
+                    i < MYC_CACHE_MAX_FUNCS; i++) {
+            const myc_delta_func *df = &res->watch_diff_funcs[i];
+            const char *st = "?";
+            switch (df->status) {
+            case MYC_DELTA_FUNC_IDENTICAL: st = "identical"; break;
+            case MYC_DELTA_FUNC_CHANGED:   st = "changed"; break;
+            case MYC_DELTA_FUNC_NEW:       st = "new"; break;
+            case MYC_DELTA_FUNC_DEPENDENT: st = "dependent"; break;
+            default: break;
+            }
+            if (i)
+                json_sb_puts(&b, ",");
+            json_sb_printf(&b, "{\"name\":");
+            json_sb_escape(&b, df->name);
+            json_sb_printf(&b, ",\"line\":%d,\"status\":\"%s\"}",
+                           df->line, st);
+        }
+        json_sb_puts(&b, "]},");
     }
     /* Fase 4 A1: ledger asumsi portabilitas. */
     json_sb_printf(&b, "\"assumptions\":{\"detected\":%d,\"count\":%d,"
@@ -1910,6 +1975,37 @@ void myc_report_json_summary(const myc_result *res)
                        "\"ok\":%s},",
                    res->assumption_count, res->assumption_unclosed,
                    res->assumption_ok ? "true" : "false");
+    /* IDE-6 (--watch-diff): delta assurance per-fungsi (ringkas di
+     * summary — counts + nama fungsi berubah saja; detail penuh di --json). */
+    if (res->watch_diff_present) {
+        int i;
+        json_sb_printf(&b, "\"watch_diff\":{\"delta_ms\":%llu,"
+                           "\"n_changed\":%d,\"n_identical\":%d,"
+                           "\"n_new\":%d,\"n_removed\":%d,"
+                           "\"n_dependents\":%d,\"changed\":[",
+                       (unsigned long long)res->watch_diff_ms,
+                       res->watch_diff_n_changed,
+                       res->watch_diff_n_identical,
+                       res->watch_diff_n_new,
+                       res->watch_diff_n_removed,
+                       res->watch_diff_n_dep);
+        for (i = 0; i < res->watch_diff_count &&
+                    i < MYC_CACHE_MAX_FUNCS; i++) {
+            if (res->watch_diff_funcs[i].status != MYC_DELTA_FUNC_CHANGED &&
+                res->watch_diff_funcs[i].status != MYC_DELTA_FUNC_NEW)
+                continue;
+            if (i)
+                json_sb_puts(&b, ",");
+            json_sb_printf(&b, "{\"name\":");
+            json_sb_escape(&b, res->watch_diff_funcs[i].name);
+            json_sb_printf(&b, ",\"line\":%d}",
+                           res->watch_diff_funcs[i].line);
+        }
+        json_sb_puts(&b, "]},");
+    } else if (res->watch_diff_requested) {
+        /* IDE-6: diminta tapi baseline belum ada — jujur. */
+        json_sb_printf(&b, "\"watch_diff\":{\"baseline\":null},");
+    }
     json_sb_printf(&b, "\"quorum_status\":\"%s\"",
                    myc_quorum_status_name(res->quorum_status));
     json_sb_puts(&b, "}");

@@ -4449,3 +4449,84 @@ menimpa chain dengan receipt check lama.
   `_ci_linux.sh` dan `_regress_run.bat`.
 
 ---
+
+### MYC-AUDIT-057 (Fase 7, T5): IDE-6 `--watch-diff` — fast inner loop per-fungsi
+
+**Tujuan (qwen-review.md IDE-6):** untuk agent yang mengedit per-fungsi
+dalam satu sesi, loop verifikasi terdalam (compile-only ~35 ms) tidak
+perlu menampilkan seluruh pipeline — cukup jawab "fungsi apa yang
+berubah, dependents siapa yang ikut terdampak, dan apakah hasil untuk
+fungsi yang TIDAK berubah masih golden (dari baseline cache)". Output
+delta assurance terstruktur + timing.
+
+**Fondasi yang sudah ada (jangan dibangun ulang):** delta report string
+`cache: N berubah (a,b); M identik (c); dependents: x` dari SOL-18
+(`myc_cache_delta_report` di cache.c) — sudah menghitung fungsi berubah
++ dependents saat source berubah dengan scenario sama.
+
+**Yang ditambahkan:**
+
+1. **Delta TERSTRUKTUR per-fungsi** — `myc_cache_delta_struct()` di
+   cache.c: satu entry per fungsi source saat ini
+   `{name, line, status: IDENTICAL | CHANGED | NEW | DEPENDENT}` +
+   counts (`n_changed/n_identical/n_new/n_removed/n_dep`). `myc_cache_delta_report`
+   (string lama) di-refactor memakai struct ini — format string lama
+   TIDAK berubah (dependents tetap dihitung dalam "identik" + tercantum
+   sendiri, kompatibilitas penuh).
+2. **Field request `req.watch_diff`** (CLI `--watch-diff`, alias `--delta`
+   — perintah `myc check <file.c> --delta` yang SUDAH disarankan
+   `prompt.c` selama ini, kini valid) + field hasil `res.watch_diff_*`
+   (present/count/funcs/counts/baseline/ms) + `res.watch_diff_requested`
+   (laporan jujur saat baseline belum ada).
+3. **Wire di `myc_cache_try_replay`:** saat `req.watch_diff` dan ada
+   baseline cache (miss + source berubah, scenario/tool/cwd sama) →
+   hitung struct + simpan baseline `source_sha256` + `watch_diff_ms`
+   (durasi hitung delta, murni teks tanpa backend). Pada **cache hit**
+   → delta kosong (0 berubah) + baseline = source itu sendiri (agent
+   mendapat konfirmasi golden: tidak ada fungsi berubah).
+4. **Helper `myc_wall_ms()`** di alloc.c (GetTickCount64 / clock_gettime
+   CLOCK_MONOTONIC; POSIX butuh `_POSIX_C_SOURCE 200809L` sebelum include
+   sistem — pola sama proc.c).
+5. **Output:** text `watch-diff: N berubah, M identik, K baru, L hilang,
+   D dependents (delta X ms, baseline …)` + baris per-fungsi
+   `  <nama> <status> line N`; JSON `--json`/`--json-summary`/MCP
+   (`myc_result_to_json` + summary): objek `watch_diff` (`baseline`,
+   `delta_ms`, counts, `funcs[]` per-fungsi status). Diminta tapi tanpa
+   baseline → text `watch-diff: belum ada baseline (delta kosong; run ini
+   menjadi baseline)` / JSON `"watch_diff":{"baseline":null}` — jujur,
+   bukan error.
+6. **MCP:** `tool_check` menerima flag `--watch-diff` / `--delta`
+   (mcp_apply_flags).
+
+**Semantik (jujur):** NON-blocking penuh — `watch_diff` TIDAK masuk
+scenario hash (output-only, seperti `--json-summary`), verdict/gates/
+receipt TIDAK berubah; delta hanya LAPORAN scope edit vs baseline.
+Status `DEPENDENT` = fungsi identik (hash body sama) yang memanggil
+fungsi berubah/baru → perlu perhatian (re-verify ikut) walau tidak
+berubah. `REMOVED` (hilang dari source) hanya masuk counts (tidak ada
+entry di array). Delta murni teks: `watch_diff_ms` = biaya komputasi
+delta saja (tanpa backend), agent bisa bandingkan dengan `duration_ms`.
+
+**Ukuran sukses (qwen-review):** re-verify 1 fungsi berubah < 200 ms vs
+pipeline penuh; hasil untuk fungsi TAK berubah = golden (dijamin karena
+delta murni observasi — tidak ada gate yang di-skip/diubah). Diukur di
+verifikasi: fixture watchdiff (3 fungsi, edit 1) → delta 1 berubah
+(helper), 1 dependent (caller), 1 identik (main) dalam ~0 ms delta;
+pipeline penuh fixture ~110-160 ms < 200 ms.
+
+**Verifikasi:**
+
+- Fixture `test/fixtures/watchdiff_base.c` + `watchdiff_edit.c` (edit
+  helper saja) + blok 6i di `_ci_linux.sh` dan `_regress_run.bat`
+  (baseline no-baseline → delta 1/1/1 dependent → hit delta kosong →
+  `--delta` alias + JSON).
+- Windows: 6 cek blok 6i lulus (no-baseline, delta counts, helper
+  berubah, caller dependent, --delta JSON, hit kosong). Linux (WSL):
+  build + blok 6i lulus.
+- `-Werror -pedantic` bersih dua platform (termasuk alloc.c dengan
+  `_POSIX_C_SOURCE` untuk clock_gettime); self-dogfooding 53 source
+  myc OK; `_mcp_smoke.bat` OK; `mcp_abuse` OK; `_cap_sync.sh` PASS.
+- `git diff --check` bersih; CHANGELOG + capabilities.md + docs
+  diperbarui.
+
+---

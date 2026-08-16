@@ -148,6 +148,26 @@ findstr /C:"repair_loop_converged" test\_tmp_ac_loop_out.jsonl >nul && echo [OK]
 findstr /C:"preservation_obligations" test\_tmp_ac_loop_out.jsonl >nul && echo [OK] IDE-3 preservation obligations ada || echo [FAIL] IDE-3 preservation obligations hilang
 findstr /C:"repair_loop_iterations" test\_tmp_ac_loop_out.jsonl >nul && echo [OK] IDE-3 structuredContent ringkasan loop || echo [FAIL] IDE-3 structuredContent ringkasan hilang
 if exist test\_tmp_ac_loop_out.jsonl del test\_tmp_ac_loop_out.jsonl
+rem --- 6i. IDE-6 (qwen-review, T5): --watch-diff fast inner loop per-fungsi ---
+rem watch-diff membandingkan source vs baseline cache (scenario sama):
+rem fungsi berubah/identik/baru/hilang/dependents + timing delta.
+rem NON-blocking penuh (verdict tidak berubah); alias --delta (perintah
+rem yang disarankan prompt.c). Fixture: base -> edit helper saja ->
+rem delta 1 berubah (helper), 1 dependent (caller), 1 identik (main).
+copy /y test\fixtures\watchdiff_base.c test\_tmp_wd.c >nul
+myc.exe check test\_tmp_wd.c --watch-diff > %OUT% 2>&1
+findstr /C:"watch-diff: belum ada baseline" %OUT% >nul && echo [OK] IDE-6 baseline pertama = no-baseline || echo [FAIL] IDE-6 baseline pertama harus no-baseline
+copy /y test\fixtures\watchdiff_edit.c test\_tmp_wd.c >nul
+myc.exe check test\_tmp_wd.c --watch-diff > %OUT% 2>&1
+findstr /C:"watch-diff: 1 berubah, 1 identik, 0 baru, 0 hilang, 1 dependents" %OUT% >nul && echo [OK] IDE-6 delta 1 berubah + 1 dependent + 1 identik || echo [FAIL] IDE-6 delta per-fungsi salah
+findstr /C:"helper" %OUT% | findstr /C:"berubah" >nul && echo [OK] IDE-6 helper=berubah || echo [FAIL] IDE-6 helper harus berubah
+findstr /C:"caller" %OUT% | findstr /C:"dependent" >nul && echo [OK] IDE-6 caller=dependent || echo [FAIL] IDE-6 caller harus dependent
+copy /y test\fixtures\watchdiff_edit2.c test\_tmp_wd.c >nul
+myc.exe check test\_tmp_wd.c --delta --json-summary > %OUT% 2>&1
+findstr /C:"watch_diff" %OUT% >nul && findstr /R /C:"n_changed.:1" %OUT% >nul && echo [OK] IDE-6 --delta alias + JSON watch_diff n_changed=1 || echo [FAIL] IDE-6 --delta alias tidak valid
+myc.exe check test\_tmp_wd.c --watch-diff > %OUT% 2>&1
+findstr /C:"watch-diff: 0 berubah, 0 identik, 0 baru, 0 hilang, 0 dependents" %OUT% >nul && echo [OK] IDE-6 cache hit = delta kosong (golden) || echo [FAIL] IDE-6 cache hit harus delta kosong
+if exist test\_tmp_wd.c del test\_tmp_wd.c
 del %OUT%
 rem --- Fase 6 Self-Challenge: Concurrency Probe (--thread-probe)
 myc.exe check test\fixtures\con_inv.c --thread-probe --no-cache > %OUT% 2>&1

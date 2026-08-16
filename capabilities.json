@@ -259,7 +259,9 @@
     "--calibrate",
     "--match",
     "--pack-dir",
-    "--no-pack"
+    "--no-pack",
+    "--watch-diff",
+    "--delta"
   ],
   "mcp_tools": [
     "check",

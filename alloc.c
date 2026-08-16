@@ -10,9 +10,21 @@
  *   Nilai < 0 = passthrough penuh. Runner OOM mengulang myc_run untuk
  *   fail point 0..N sampai semua titik alokasi ter-exercise.
  */
+/* POSIX: clock_gettime (myc_wall_ms) butuh _POSIX_C_SOURCE — harus
+ * SEBELUM include sistem apa pun (pola sama dengan proc.c). */
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#endif
 #include "alloc.h"
 
 #include <stdlib.h>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
+#include <time.h>
+#endif
 
 #ifdef MYC_ALLOC_TEST
 static long g_fail_after = -1;   /* <0 passthrough; >=0 hitung mundur */
@@ -93,3 +105,19 @@ void myc_free(void *p)
     free(p);
 }
 #endif
+
+/* Wall clock monotonic dalam milidetik (IDE-6, --watch-diff: timing
+ * delta assurance). Windows: GetTickCount64; POSIX: CLOCK_MONOTONIC.
+ * Return 0 bila clock tidak tersedia (caller hanya pakai SELISIH). */
+unsigned long long myc_wall_ms(void)
+{
+#ifdef _WIN32
+    return (unsigned long long)GetTickCount64();
+#else
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        return 0;
+    return (unsigned long long)ts.tv_sec * 1000 +
+           (unsigned long long)ts.tv_nsec / 1000000;
+#endif
+}
