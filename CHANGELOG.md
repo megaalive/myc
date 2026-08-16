@@ -7,7 +7,7 @@ semantik per tag rilis (`vX.Y.Z`).
 Sejarah implementasi & audit terperinci (MYC-AUDIT-001..055, fase
 pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 
-## [Unreleased] — qwen-review Fase 7 lengkap (T1..T6, MYC-AUDIT-053..058)
+## [v2026-08-16] — qwen-review Fase 7 lengkap (T1..T6, MYC-AUDIT-053..064) - 2026-08-16
 
 ### Added
 
@@ -74,18 +74,7 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   blok 6f/6g/6i kini OK di `_ci_linux.sh` penuh (0 FAIL) + audit018
   SELESAI OK.
 
-### Fixed
-
-- **Sanloc hilang saat cache replay (kritis):** cache hit membuang
-  `sanitizer_location` — repair loop agent jadi tebakan lagi di jalur
-  replay (paling sering dilalui). `myc_cache_entry` kini menyimpan +
-  me-replay field sanloc (arena dup), replay identik SOL-18.
-
----
-
-## [Unreleased] — qwen-review IDE-1+IDE-5+IDE-4+IDE-2+IDE-6 (T1+T2+T3+T5)
-
-### Added
+### Added (T1-T5: IDE-1/2/4/5/6, MYC-AUDIT-053..057)
 
 - **`--watch-diff` delta assurance per-fungsi — MYC-AUDIT-057 (qwen-review IDE-6/T5).**
   Fast inner loop untuk agent yang mengedit per-fungsi: bandingkan source vs
@@ -135,6 +124,15 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   `regression_replay: K/N clean` di hasil — bila ada seed masih gagal,
   debt eksplisit "bug lama hidup kembali". Mencegah pola klasik LLM:
   memperbaiki bug A sambil menghidupkan kembali bug B. NON-blocking.
+
+### Fixed
+
+- **Sanloc hilang saat cache replay (kritis):** cache hit membuang
+  `sanitizer_location` — repair loop agent jadi tebakan lagi di jalur
+  replay (paling sering dilalui). `myc_cache_entry` kini menyimpan +
+  me-replay field sanloc (arena dup), replay identik SOL-18.
+
+---
 
 ## [v2026-08-14] — PR-018/PR-019 + hotfix MYC-AUDIT-052 - 2026-08-14
 
