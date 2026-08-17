@@ -26,7 +26,8 @@ Agen lemah: pakai tool **`verify`** (`myc.lite.v1`). Agen frontier: `agent_check
 
 - `source` (string, **wajib**): kode C yang akan diperiksa.
 - `flags` (array string, opsional): `--run --prove --checked --filc
-  --driver --analyze --strict --no-lint` (lihat README untuk arti tiap flag).
+  --driver --analyze --strict --no-lint` (lihat
+  [`docs/capabilities.md`](capabilities.md) untuk arti tiap flag).
   **Wajib array string** (PR-016 / MYC-AUDIT-048): `"flags":"--run"`
   (string) atau entry non-string → error -32602 fail-fast — tipe salah
   TIDAK pernah di-abaikan diam-diam (bisa mematikan gate tanpa pesan).

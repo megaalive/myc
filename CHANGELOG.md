@@ -26,6 +26,10 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 - **G2 — skip `gcc -E`.** Source tanpa direktif preprocessor tidak
   memanggil preprocessor; marker/denylist tetap di-scan pada source
   asli.
+- **G2 — cache in-process.** Proses MCP hidup: sidecar sha256 + mtime +
+  size tidak berubah → skip parse JSON (PR-013 tetap fail-closed).
+- **G2 — `--watch-diff` di lite.** Bila fungsi finding tidak `CHANGED`,
+  `action=STOP_COMPILE_CLEAN` (anti-churn; mengalahkan eskalasi runtime).
 - **G3 — template gets/sprintf + compile apply.** `gets(buf)` →
   `fgets(buf, sizeof buf, stdin)` dan `sprintf(buf,` → `snprintf` pada
   array lokal. `agent_check` menerapkan patch compile satu baris bila
@@ -34,10 +38,19 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 - **G4 — `--eig-apply --budget-ms`.** Setelah L1, paling banyak satu
   eksperimen EIG within_budget. MCP `context` / `next` /
   `compare_candidates`. Tabel biaya tunggal `experiment_cost.h`.
+- **G5 — README GitHub.** Happy path agen + pack `myc.prompt.md` /
+  `myc.spec.json`; ensiklopedia flag di `docs/capabilities.md`.
+- **B2 — self-ASan Linux opsional.** Job CI `linux-asan`
+  (`continue-on-error`), bukan gate rilis.
+
+### Changed
+
+- **P1 — `gcc -dM -E` sekali per proses.** `myc_assume_fetch_facts`
+  menyimpan fakta toolchain di TLS (assume + prompt tidak spawn dua kali).
 
 ### Tests
 
-- `test/lite_agent_test.c` (10 kasus agen-bodoh), golden
+- `test/lite_agent_test.c` (kasus agen-bodoh + watch-diff lite), golden
   `myc.lite.v1.json`, schema_compat T3b/T10 lite.
 
 ## [v2026-08-17.2] — nemo agent protocol: next_check/edits/delta + payload_dropped/feedback - 2026-08-17

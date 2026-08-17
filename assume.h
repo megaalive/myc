@@ -39,7 +39,8 @@ const char *myc_assumption_status_name(myc_assumption_status s);
 
 /* Ambil fakta toolchain host: `gcc -dM -E -` dengan stdin KOSONG (macro
  * predefined murni — deterministik, tidak bergantung source/syntax).
- * Mengisi *out; return 1 bila berhasil (gcc tersedia). */
+ * Hasil di-cache TLS per path gcc (assume + prompt dalam satu proses
+ * tidak spawn dua kali). Mengisi *out; return 1 bila dump sukses. */
 int myc_assume_fetch_facts(const char *gcc, myc_host_facts *out);
 
 /* Validasi spec ack "id:status,..." (fail-fast CLI). 0 valid, -1

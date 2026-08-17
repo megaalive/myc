@@ -183,6 +183,43 @@ static void test_ten_cases(void)
           "C10 nama action panjang");
     myc_lite_result_free(&lr);
     myc_result_free(&res);
+
+    /* 11. OK + main + watch-diff, fungsi finding tidak berubah → STOP */
+    res_init(&res);
+    res.verdict = MC_OK;
+    myc_gate_set_status(&res, MYC_GATE_RUNTIME, MYC_GATE_NOT_REQUESTED, NULL);
+    res.watch_diff_present = 1;
+    res.watch_diff_count = 1;
+    res.watch_diff_n_changed = 1;
+    snprintf(res.watch_diff_funcs[0].name,
+             sizeof(res.watch_diff_funcs[0].name), "helper");
+    res.watch_diff_funcs[0].status = MYC_DELTA_FUNC_CHANGED;
+    CHECK(myc_build_lite_result(&res, &lr, cli, strlen(cli)) == 0, "C11 build");
+    CHECK(lr.action == MYC_LITE_STOP_COMPILE_CLEAN,
+          "C11 STOP meski ada main (finding fn tidak berubah)");
+    CHECK(lr.why && strstr(lr.why, "fungsi finding tidak berubah"),
+          "C11 why inner-loop");
+    CHECK(!dumb_would_edit(&lr), "C11 agen bodoh tidak menyunting");
+    myc_lite_result_free(&lr);
+    myc_result_free(&res);
+
+    /* 12. OK + main + watch-diff, fungsi finding CHANGED → eskalasi */
+    res_init(&res);
+    res.verdict = MC_OK;
+    myc_gate_set_status(&res, MYC_GATE_RUNTIME, MYC_GATE_NOT_REQUESTED, NULL);
+    res.watch_diff_present = 1;
+    res.watch_diff_count = 1;
+    res.watch_diff_n_changed = 1;
+    snprintf(res.watch_diff_funcs[0].name,
+             sizeof(res.watch_diff_funcs[0].name), "helper");
+    res.watch_diff_funcs[0].status = MYC_DELTA_FUNC_CHANGED;
+    res.sanloc_have = 1;
+    res.sanloc_function = "helper";
+    CHECK(myc_build_lite_result(&res, &lr, cli, strlen(cli)) == 0, "C12 build");
+    CHECK(lr.action == MYC_LITE_ESCALATE_RUNTIME,
+          "C12 ESCALATE bila finding fn berubah");
+    myc_lite_result_free(&lr);
+    myc_result_free(&res);
 }
 
 int main(void)

@@ -721,6 +721,29 @@ myc_lite_action myc_agent_select_action(const myc_result *res,
         return MYC_LITE_GIVE_UP_NO_TEMPLATE;
 
     if (res->verdict == MC_OK) {
+        /* --watch-diff: bila fungsi finding tidak CHANGED (atau tidak ada
+         * finding), STOP — jangan eskalasi runtime hanya karena main ada.
+         * Anti-churn inner loop (G2). */
+        if (res->watch_diff_present) {
+            const char *fn = NULL;
+            int finding_fn_changed = 0;
+            int i;
+            if (res->sanloc_have && res->sanloc_function &&
+                res->sanloc_function[0])
+                fn = res->sanloc_function;
+            if (fn) {
+                for (i = 0; i < res->watch_diff_count; i++) {
+                    if (res->watch_diff_funcs[i].status ==
+                            MYC_DELTA_FUNC_CHANGED &&
+                        strcmp(res->watch_diff_funcs[i].name, fn) == 0) {
+                        finding_fn_changed = 1;
+                        break;
+                    }
+                }
+            }
+            if (!finding_fn_changed)
+                return MYC_LITE_STOP_COMPILE_CLEAN;
+        }
         rs = agent_gate_status(res, MYC_GATE_RUNTIME);
         if (rs == MYC_GATE_NOT_REQUESTED || rs == MYC_GATE_NOT_APPLICABLE) {
             if (!source || source_len == 0 ||
@@ -1196,6 +1219,9 @@ int myc_build_lite_result(const myc_result *res, myc_lite_result *lr,
         msg = res->diags[0].message;
     if (msg)
         lr->why = agent_strdup(msg);
+    if (!lr->why && res->watch_diff_present &&
+        lr->action == MYC_LITE_STOP_COMPILE_CLEAN)
+        lr->why = agent_strdup("fungsi finding tidak berubah");
 
     fix = NULL;
     if (res->verdict == MC_RUNTIME_VIOLATION && source && source_len > 0) {

@@ -69,10 +69,10 @@ if exist test\agent_nemo_test.exe (
   echo [WARN] agent_nemo_test gagal dibangun
 )
 del test\agent_nemo_test.exe 2>nul
-echo --- myc.lite.v1 agen-bodoh (10 kasus action/span)
+echo --- myc.lite.v1 agen-bodoh (action/span + watch-diff)
 gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\lite_agent_test.exe test\lite_agent_test.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
 if exist test\lite_agent_test.exe (
-  test\lite_agent_test.exe | findstr "FAIL=0" >nul && echo [OK] lite_agent_test lulus 10 kasus agen-bodoh || echo [FAIL] lite_agent_test menemukan kegagalan
+  test\lite_agent_test.exe | findstr "FAIL=0" >nul && echo [OK] lite_agent_test lulus kasus agen-bodoh || echo [FAIL] lite_agent_test menemukan kegagalan
 ) else (
   echo [WARN] lite_agent_test gagal dibangun
 )

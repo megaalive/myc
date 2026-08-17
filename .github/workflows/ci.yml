@@ -139,3 +139,50 @@ jobs:
           echo "--- C4 target matrix ---"
           ./myc check tests/ok_hello.c --matrix --no-cache 2>&1 | grep -qF "matrix (C4):"
           echo "--- Fase 5 gates: SEMUA PASS ---"
+
+  linux-asan:
+    name: Linux self-ASan (optional)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+
+      - name: Build myc/mcp with Clang ASan+UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -e
+          PIPELINE="myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c"
+          FLAGS="-O1 -g -std=c11 -Wall -Wextra -fsanitize=address,undefined -fno-omit-frame-pointer"
+          clang $FLAGS -o myc-asan $PIPELINE
+          clang $FLAGS -DMYC_NO_MAIN -o mcp-asan mcp.c $PIPELINE
+          echo "[ok] myc-asan mcp-asan"
+
+      - name: Smoke subset under ASan
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -e
+          ./myc-asan check tests/ok_hello.c --lite --no-cache
+          ./myc-asan check tests/ok_hello.c --lite
+          ./myc-asan check test/fixtures/bad_syntax.c --lite --no-cache || true
+          clang -O1 -g -std=c11 -Wall -Wextra -fsanitize=address,undefined -I. -DMYC_NO_MAIN \
+            -o test/lite_agent_test_asan test/lite_agent_test.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c
+          ./test/lite_agent_test_asan | grep -q 'FAIL=0'
+
+      - name: mcp_abuse short (protocol, not release gate)
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -e
+          clang -O1 -g -std=c11 -Wall -Wextra -I. -pthread \
+            -o test/mcp_abuse test/mcp_abuse.c proc.c json.c alloc.c
+          timeout 180 ./test/mcp_abuse ./mcp-asan

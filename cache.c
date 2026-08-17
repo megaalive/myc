@@ -14,13 +14,18 @@
 #include "proc.h"
 #include "sha256.h"
 
-/* mkdir portabel (pola sama dengan driver.c/filc.c). */
+/* mkdir + stat portabel (pola sama dengan driver.c/filc.c). */
 #if defined(_WIN32)
 #include <direct.h>
+#include <sys/stat.h>
 #define cache_mkdir(p) _mkdir(p)
+#define cache_stat     _stat
+typedef struct _stat cache_stat_t;
 #else
 #include <sys/stat.h>
 #define cache_mkdir(p) mkdir(p, 0700)
+#define cache_stat     stat
+typedef struct stat cache_stat_t;
 #endif
 
 /* PR-013 (MYC-AUDIT-045, P3-T04): sidecar integrity hash dari file cache.
@@ -322,6 +327,96 @@ static int cache_entry_semantic_ok(const json_value *e, char *why,
     return 1;
 }
 
+/* G2: memo decoded cache dalam proses (MCP hidup). Sidecar sha256 +
+ * mtime + size file harus sama; bila berubah → parse JSON penuh lagi
+ * (PR-013 tetap fail-closed). CLI one-shot tidak wajib, tetapi aman. */
+static _Thread_local myc_cache_entry *g_cache_memo;
+static _Thread_local int g_cache_memo_n;
+static _Thread_local int g_cache_memo_valid;
+static _Thread_local char g_cache_memo_hex[65];
+static _Thread_local long long g_cache_memo_mtime;
+static _Thread_local long long g_cache_memo_size;
+
+static void cache_memo_invalidate(void)
+{
+    g_cache_memo_valid = 0;
+    g_cache_memo_n = 0;
+    g_cache_memo_hex[0] = '\0';
+}
+
+static int cache_stat_file(const char *path, long long *mtime, long long *sz)
+{
+    cache_stat_t st;
+    if (!path || cache_stat(path, &st) != 0)
+        return 0;
+    *mtime = (long long)st.st_mtime;
+    *sz = (long long)st.st_size;
+    return 1;
+}
+
+static void cache_memo_copy_in(const myc_cache_entry *src, int n)
+{
+    if (!g_cache_memo) {
+        g_cache_memo = (myc_cache_entry *)myc_calloc(
+            (size_t)MYC_CACHE_MAX_ENTRIES, sizeof(*g_cache_memo));
+        if (!g_cache_memo) {
+            cache_memo_invalidate();
+            return;
+        }
+    }
+    if (n < 0)
+        n = 0;
+    if (n > MYC_CACHE_MAX_ENTRIES)
+        n = MYC_CACHE_MAX_ENTRIES;
+    memcpy(g_cache_memo, src, sizeof(*g_cache_memo) * (size_t)n);
+    g_cache_memo_n = n;
+}
+
+static int cache_memo_try(myc_cache_entry *out, int cap, int *n_out)
+{
+    char hex[65];
+    long long mt, sz;
+    int n, copy;
+
+    if (!g_cache_memo_valid || !g_cache_memo || !out || cap <= 0)
+        return 0;
+    if (!cache_sidecar_read(hex) || strcmp(hex, g_cache_memo_hex) != 0)
+        return 0;
+    if (!cache_stat_file(MYC_CACHE_FILE, &mt, &sz))
+        return 0;
+    if (mt != g_cache_memo_mtime || sz != g_cache_memo_size)
+        return 0;
+    n = g_cache_memo_n;
+    copy = n < cap ? n : cap;
+    memcpy(out, g_cache_memo, sizeof(*out) * (size_t)copy);
+    *n_out = copy;
+    return 1;
+}
+
+static void cache_memo_commit(const myc_cache_entry *src, int n,
+                              const char *hex)
+{
+    long long mt, sz;
+
+    if (!src || !hex || !cache_hex64(hex)) {
+        cache_memo_invalidate();
+        return;
+    }
+    cache_memo_copy_in(src, n);
+    if (!g_cache_memo) {
+        cache_memo_invalidate();
+        return;
+    }
+    memcpy(g_cache_memo_hex, hex, 65);
+    if (!cache_stat_file(MYC_CACHE_FILE, &mt, &sz)) {
+        cache_memo_invalidate();
+        return;
+    }
+    g_cache_memo_mtime = mt;
+    g_cache_memo_size = sz;
+    g_cache_memo_valid = 1;
+}
+
 static int cache_read_all(myc_cache_entry *out, int cap)
 {
     FILE *f;
@@ -330,11 +425,18 @@ static int cache_read_all(myc_cache_entry *out, int cap)
     json_value *root, *arr;
     int i, n = 0, qbad = 0;
     char qwhy[96];
+    char file_hex[65];
 
     qwhy[0] = '\0';
+    file_hex[0] = '\0';
 
     if (cap <= 0)
         return 0;
+    {
+        int memo_n = 0;
+        if (cache_memo_try(out, cap, &memo_n))
+            return memo_n;
+    }
     f = fopen(MYC_CACHE_FILE, "rb");
     if (!f)
         return 0;
@@ -367,12 +469,14 @@ static int cache_read_all(myc_cache_entry *out, int cap)
         char fhex[65];
         sha256_hex(buf, (size_t)sz, hex);
         if (!cache_sidecar_read(fhex) || strcmp(hex, fhex) != 0) {
+            cache_memo_invalidate();
             myc_free(buf);
             fprintf(stderr,
                     "myc: cache: %s corrupt (integrity sha256 mismatch) - "
                     "ignored; evidence recomputed\n", MYC_CACHE_FILE);
             return 0;
         }
+        memcpy(file_hex, hex, 65);
     }
 
     if (!json_parse(buf, (size_t)sz, &root) || !root ||
@@ -380,6 +484,7 @@ static int cache_read_all(myc_cache_entry *out, int cap)
         if (root)
             json_free(root);
         myc_free(buf);
+        cache_memo_invalidate();
         fprintf(stderr,
                 "myc: cache: %s corrupt (JSON parse failed) - ignored; "
                 "evidence recomputed\n", MYC_CACHE_FILE);
@@ -390,6 +495,7 @@ static int cache_read_all(myc_cache_entry *out, int cap)
         /* Schema korup: file cache tanpa array entries (fail-closed). */
         json_free(root);
         myc_free(buf);
+        cache_memo_invalidate();
         fprintf(stderr,
                 "myc: cache: %s corrupt (entries schema) - ignored; "
                 "evidence recomputed\n", MYC_CACHE_FILE);
@@ -791,6 +897,8 @@ static int cache_read_all(myc_cache_entry *out, int cap)
                 qbad, qbad == 1 ? "y" : "ies",
                 qwhy[0] ? qwhy : "?");
         cache_write_all(out, n);
+    } else if (file_hex[0]) {
+        cache_memo_commit(out, n, file_hex);
     }
     return n;
 }
@@ -1148,6 +1256,7 @@ static void cache_write_all(const myc_cache_entry *entries, int count)
         char hex[65];
         sha256_hex(out, strlen(out), hex);
         (void)myc_persist_atomic_write_str(MYC_CACHE_SHA_FILE, hex);
+        cache_memo_commit(entries, count, hex);
     }
     myc_free(out);
 }

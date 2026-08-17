@@ -1,46 +1,16 @@
 # myc
 
-A small, self-contained verifier for C code written by LLMs (and humans). It
-checks that a C source file is at least *plausibly* safe before you trust it,
-using a layered pipeline of cheap static checks plus optional, real
-compiler/run-time verification.
+A small, self-contained verifier for C written by LLMs (and humans). It treats
+source as **untrusted input**: never a shell string; the compiler is always
+`program + argv[]`.
 
-myc treats C source as **untrusted input**: it is never passed through a
-shell. Source goes in via stdin; the compiler is always launched with an
-explicit `program + argv[]`.
-
-> myc is a best-effort safety net, **not** a proof of correctness. See
-> [Assurance](#assurance) for exactly what each result does and does not mean.
-
-## How it works
-
-```
-scan includes (whitelist)        -> warning (non-blocking)
-lint (heuristic memory-safety)   -> observations (non-blocking)
-gcc -E (preprocess, argv-exact)  -> preprocessed source
-scan "# 1" markers (depth 2)     -> warning (non-blocking)
-scan denylisted calls            -> warning (non-blocking)
-gcc -c -O2 -Wall -Wextra -Werror -pedantic + memory-tier warnings
-    (-Warray-bounds, -Wstringop-overflow, -Wuse-after-free, ...)
-                              -> COMPILE_ERROR on violation
-gcc -c -O2 -fanalyzer        (--analyze, optional) -> COMPILE_ERROR
-gcc -c -O2 -DMYC_CHECKED=1   (--checked, optional) -> L4 SPATIAL (fat-pointer bounds)
-clang -O0 -fsanitize=address,undefined (--run, optional) -> L3 RUNTIME
-driver-generator (--driver, optional) -> L3 RUNTIME on contract edge cases
-metamorphic -O0 vs -O2 (--metamorphic, optional) -> UB / toolchain-sensitive
-divergence {gcc,clang,tcc} x {-O0,-O2} (--divergence, optional, Fase 4 A2) -> klasifikasi DS-02
-negative-space (--negative, optional) -> "missing pattern" observations
-quorum (--quorum, optional) -> cross-backend agreement
---require-complete -> verification gap = CI failure (MYC-INCOMPLETE-*)
-```
-
-The hard gates come only from **semantic evidence** (compiler diagnostics,
-sanitizer reports, fat-pointer bounds checks, Frama-C, Fil-C). Everything else
-is a warning or a non-blocking observation.
+> myc is a best-effort safety net, **not** a proof of correctness. Default
+> `OK` means **compile-clean** (gcc `-Werror` + memory-tier warnings). It does
+> **not** mean memory-safe. See [Assurance](#assurance).
 
 ## For coding agents
 
-Default inner loop:
+Inner loop (one action, not a flag soup):
 
 ```
 myc check prog.c --lite
@@ -51,206 +21,111 @@ Read `action` and stop guessing:
 | `action` | What to do |
 |---|---|
 | `STOP_COMPILE_CLEAN` | Stop. Compile-clean, **not** "memory-safe". |
-| `FIX_ONE` | Edit only `allowed_span`. Use `fix_or_null` if present. |
+| `FIX_ONE` | Edit only `allowed_span`. Use `fix_or_null` if present; do not guess if null. |
 | `ESCALATE_RUNTIME` | `myc check prog.c --run --lite` |
 | `ESCALATE_CONTRACT` | `myc check prog.c --driver --lite` |
 | `GIVE_UP_NO_TEMPLATE` | `myc context prog.c --budget 4K` |
 
-MCP: prefer tool `verify` (schema `myc.lite.v1`, default `--scenario auto`).
-Frontier models can still use `agent_check` (`myc.agent.v2`). See
-`examples/cursor-rule.md` and `docs/mcp-tools.md`.
+MCP: prefer tool `verify` (`myc.lite.v1`, default `--scenario auto`). Frontier
+models can still use `agent_check` (`myc.agent.v2`).
+
+- Cursor rule: [`examples/cursor-rule.md`](examples/cursor-rule.md)
+- MCP config: [`examples/mcp.json`](examples/mcp.json)
+- Tool reference: [`docs/mcp-tools.md`](docs/mcp-tools.md)
+
+Every C repo that agents touch should keep a **project pack** next to the
+sources (not optional if you care what the model writes):
+
+| File | Role |
+|---|---|
+| `myc.prompt.md` | Free-text project rules (verbatim, cap 8 KiB) |
+| `myc.spec.json` | Structured spec: `version`, `name`, optional `rules` / `allow_headers` / `deny_functions` |
+
+myc loads them from the project directory (`--pack-dir`, `--no-pack` to skip).
+Example: [`test/fixtures/pack/`](test/fixtures/pack/). Invalid spec = fail-fast.
+
+## Install
+
+```
+build.bat        # MinGW-w64 / GCC  → myc.exe, mcp.exe, argv_probe.exe
+bash build.sh    # POSIX / GCC      → myc, mcp, argv_probe
+```
+
+Requires GCC. Clang (`--run`), Frama-C (`--prove`), and Fil-C (`--filc`) are
+optional and used only when present.
+
+Release zips: GitHub Releases (`myc-windows-latest.zip` / `myc-linux-latest.tar.gz`).
 
 ## Usage
 
 ```
-myc check <file.c> [--json] [--json-summary] [--agent] [--lite] [--analyze] [--strict] [--no-lint] [--cwd DIR]
-myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver]
-myc check <file.c> [--exhaustive] [--stack [--stack-budget N]] [--fuzz [--fuzz-iters N] [--fuzz-seed S]]
-myc check <file.c> [--mutate-audit [--mutate-max N]] [--freestanding] [--matrix]
-myc check <file.c> [--scenario NAME [--scenario-file PATH]] [--metamorphic] [--divergence]
-myc check <file.c> [--negative] [--quorum] [--require-complete]
-myc check <file.c> [--eig-apply [--budget-ms N]]
-myc check <file.c> [--json-summary] [--timeout MS] [--output-cap BYTES] [--no-cache]
-myc check -            [--json] [--analyze] [--strict] [--no-lint]   (source from stdin)
-myc compare <ref.c> <new.c> [func...]     (differential oracle pair, A4/DS-04)
-myc scenario list | info <name>           (scenario packs, C5/DS-12)
-myc calibrate mark <rule> <outcome> [--match <fragmen>]  (trust ledger)
-myc calibrate list | show <rule> | reset [rule]
-myc canary list | run [backend]          (canary swarm, Fase 6)
-myc audit-tests                          (test-quality audit, Fase 6)
---perturb                                (environment perturbation, Fase 6)
---thread-probe                            (concurrency lock-order + TSan, Fase 6)
-myc regression list | run [file.c]        (counterexample seeds, Fase 6)
-myc context <file.c> [--finding-id ID] [--budget 4K|8K|16K] [gate flags...]
-myc policy
-myc probe
-myc prompt <file.c> [--pack-dir DIR] [--no-pack] [--harness cursor|claude|codex]
+myc check FILE.c --lite
+myc check FILE.c --run --lite
+myc check FILE.c --watch-diff --lite
+myc check FILE.c --json
+myc check -                         (source on stdin)
+myc prompt FILE.c --harness cursor
+myc context FILE.c --budget 4K
 myc version
-mcp.exe               (MCP server; see docs/mcp-tools.md)
 ```
 
-Flags:
+`myc --help` lists every command. Full flag encyclopedia and honest gate
+limits: [`docs/capabilities.md`](docs/capabilities.md). Registry:
+[`capabilities.json`](capabilities.json).
 
-- `--analyze` — also run `gcc -fanalyzer`.
-- `--checked` — build with `-DMYC_CHECKED=1`. `MYC_BUF` becomes a fat-pointer
-  struct and every access must go through `MYC_AT` (a direct `b[i]` is a
-  compile error). A clean build ⇒ **L4 SPATIAL** for `MYC_BUF` buffers.
-- `--run` — compile with Clang + ASan/UBSan and run under controlled
-  execution. Clean (exit 0, no sanitizer report) ⇒ **L3 RUNTIME**.
-- `--run-stdin FILE` — provide stdin to the verification build.
-- `--prove` — run Frama-C Eva (optional backend).
-- `--filc` — run under Fil-C (optional backend, Linux/x86_64).
-- `--driver` — generate and run a driver that exercises contract-tagged
-  functions at edge cases (optional backend).
-- `--exhaustive` — small-domain exhaustive proof (A3/DS-03): functions with
-  `//@ requires` bounded integer domains are enumerated **in full**
-  (product ≤ 1e6) ⇒ **P1 EXHAUSTIVE** for the declared domain; a narrowed
-  domain vs a previous run is flagged as `SCOPE_LAUNDERING`.
-- `--stack [--stack-budget N]` — stack budget analyzer (C2/DS-10):
-  `gcc -fstack-usage` + call-graph worst path vs budget (default 4096 B);
-  recursion / alloca / VLA detected. Observation, non-blocking.
-- `--fuzz [--fuzz-iters N] [--fuzz-seed S]` — fuzz-lite gate (D1/DS-13):
-  deterministic PRNG + bounded loop on contract functions; inputs are
-  constrained by `requires` (edge over blind fuzzers); a sanitizer crash is
-  a **hard DRIVER_VIOLATION** with a reproducible seed.
-- `--mutate-audit [--mutate-max N]` — mutation-audited verification
-  (B5/DS-09): the verifier audits itself by mutating the code with LLM-error
-  patterns; a mutant that stays clean is a **coverage gap**.
-- `--freestanding` — C-without-OS mode (C1): compile with
-  `-ffreestanding -fno-builtin`; hosted libc APIs (`printf`, `malloc`,
-  `fopen`, `exit`, …) become **trap observations**. Also activates the
-  bare-metal lint family (C3/DS-11): MMIO deref without `volatile`,
-  polling loop without `volatile`, packed struct with multi-byte fields,
-  `uint8_t*` → multi-byte cast, ISR without `volatile`/`_Atomic`.
-- `--scenario NAME [--scenario-file PATH]` — scenario packs (C5/DS-12): one
-  command activates a per-domain gate recipe from a JSON profile
-  (`cli-daily`, `library`, `parser`, `firmware`, `auto`); `--scenario auto`
-  (D3) infers the smallest sufficient recipe from source structure and
-  reports **why**. Environment contract (DS-12: `stack_budget`, `no_heap`,
-  `no_recursion`) is recorded in the report.
-- `--matrix` — bare-metal target matrix (C4): cross-compiles with
-  `arm-none-eabi-gcc` / `riscv*-unknown-elf-gcc` when installed, dumps
-  target macros, and prints the **portability matrix** — which bets
-  (`char` signedness, pointer width, endianness) change between host and
-  target. Honest host-only note when no cross-compiler is installed.
-- `myc compare <ref.c> <new.c> [func...]` — differential oracle pair
-  (A4/DS-04): runs a shared input battery on both versions and compares
-  return + errno + output digest + exit ⇒ `behavior-preserving` or
-  `unexpected_change`.
-- `--calibrate` — annotate check results with the local Trust Calibration
-  Ledger (Fase 7/SOL-21): a rule marked `LOW` stays an observation and
-  **never** raises the verdict (exit criteria: a calibrated-low rule does
-  not produce a hard finding). The ledger itself lives at
-  `.myc/calibration.json` and is managed with `myc calibrate` (offline).
-- `--divergence` — build and run the source with a toolchain matrix
-  ({gcc, clang, [tcc]} × {-O0, -O2}); compare exit code, sanitizer
-  findings, sha256 of stdout trace, and build warning set. Classification
-  (DS-02): `sanitizer_divergence` (finding in one cell, clean in another
-  → hard RUNTIME_VIOLATION, toolchain-sensitive bug), `all_findings`
-  (consistent bug), `semantic_divergence` / `diagnostic_divergence`
-  (observations, non-blocking). Toolchains that lack ASan (e.g. gcc
-  MinGW) fall back to a no-sanitizer build and never claim sanitizer
-  evidence. Non-blocking: missing toolchain / failed build = cell
-  skipped.
-- `--metamorphic` — build and run the source twice (`-O0` vs `-O2`) and
-  compare results; a discrepancy signals UB / toolchain-sensitive code.
-- `--negative` — negative-space analysis: mine "missing patterns" (e.g. an
-  unchecked `malloc`), as confidence-scored observations.
-- `--quorum` — compare all requested backends; report clean / conflict /
-  inconclusive agreement.
-- `--require-complete` — treat verification gaps as CI failures (emits
-  `MYC-INCOMPLETE-*` debt), never silent silence.
-- `--json-summary` — compact JSON for LLM agents (verdict, assurance vector,
-  receipt, finding, gate matrix, debt).
-- `--lite` — compact `myc.lite.v1` for weak agents: one `action` enum,
-  `allowed_span`, `fix_or_null`. `STOP_COMPILE_CLEAN` is compile-clean, not
-  "safe".
-- `--eig-apply` — after L1, run at most one EIG experiment within
-  `--budget-ms` (default 5000). Opt-in; does not change default `myc check`.
-- `--timeout MS` — per-process timeout (0–600000, default 30000).
-- `--output-cap BYTES` — cap captured child output (0–104857600, default 1 MiB).
-- `--strict` — extra strict warnings (`-Wconversion`, `-Wsign-conversion`, …).
-- `--no-lint` — disable the heuristic memory-safety lint.
-- `--no-cache` — disable the incremental evidence cache (replay of identical
-  input + scenario + tool runs from `.myc/evidence_cache.json`).
-- `--budget N` — (with `context`) target package size in tokens: `4K`, `8K`,
-  `16K` (default `8K`). Sections are dropped in priority order when over
-  budget, and `context_sha256` stays deterministic across budgets.
-- `--budget-contract JSON` — an explicit **assurance budget contract**
-  (SOL-30): a target per gate plus optional time/output limits, e.g.
-  `'{"required":{"runtime":"clean"},"max_time_ms":10000}'`. myc never
-  silently picks a weaker recipe: a gate required `clean` that was not run
-  / unavailable / found findings makes the target unmet
-  (`MYC-INCOMPLETE-BUDGET-UNMET`), the verdict becomes `INCONCLUSIVE`
-  (unless a real bug already set it), and the report lists exactly which
-  dimension was sacrificed.
-- `--no-assumptions` — disable the portability **assumption ledger** (Fase 4
-  A1): a non-blocking scan that lists which code bets on implementation-
-  defined facts (char signedness, int width, bit-field endianness, alignment
-  casts, `sizeof` assumptions) next to the host toolchain truth from
-  `gcc -dM -E`.
-- `--require-assumptions-closed` — treat open assumptions (status
-  `observed`/`contradicted`) as a verification gap (`MYC-INCOMPLETE-`
-  `ASSUMPTIONS-OPEN`), making the verdict `INCONCLUSIVE` (DS-01 closure
-  loop).
-- `--assumption-ack id:status,...` — close specific assumptions
-  (`declared|tested|contradicted|eliminated|accepted-risk`); the status is
-  persisted in `.myc/assumptions.json` so later runs show which assumptions
-  are closed, without removing them from the receipt.
+Common extras (all optional; missing backends stay non-blocking):
 
-## Agent context (`myc context`)
+- `--scenario auto` — smallest sufficient gate recipe from source shape
+- `--eig-apply [--budget-ms N]` — after L1, run **at most one** EIG experiment (default off)
+- `--require-complete` — verification gaps fail CI (`MYC-INCOMPLETE-*`)
+- `--no-cache` — disable evidence replay from `.myc/evidence_cache.json`
 
-`myc context <file.c>` runs the normal verification pipeline, then emits a
-minimal, deterministic **context package** (`myc.context.v1`) for an LLM agent:
+## How it works
 
-- header: source hash, receipt hash, verdict, assurance vector, scenario,
-  exact tool identities, and the exact `verify` command to reproduce the run;
-- finding slice: the `--finding-id` target (or the confirmed root), the
-  containing function's source slice, callers/callees, and its `//@` contracts;
-- witness summary and a single **one action** (next-best experiment) with the
-  cheapest ranked experiment for the current frontier;
-- preservation obligations (what the agent must not change).
+Hard gates come only from **semantic evidence** (compiler diagnostics,
+sanitizer reports, fat-pointer checks, Frama-C, Fil-C). Lint, include
+scanning, and other heuristics are observations — they never lower the
+verdict.
 
-The hash covers the full package regardless of `--budget`, so agents can
-compare contexts across runs without re-verification.
-
-All optional backends (`--run` / `--checked` / `--filc` / `--driver` /
-`--prove` / `--metamorphic`) are **non-blocking**: if a backend is
-unavailable, myc still reports the static result plus a diagnostic.
+```
+scan includes / lint / denylist     → warnings (non-blocking)
+gcc -E (skipped if no # directive)  → preprocessed source
+gcc -c -O2 -Wall -Wextra -Werror -pedantic + memory-tier
+                                    → COMPILE_ERROR on violation
+optional:
+  --analyze     gcc -fanalyzer
+  --checked     MYC_BUF fat pointers → L4 SPATIAL
+  --run         clang ASan/UBSan     → L3 RUNTIME
+  --driver      contract edge harness
+  --metamorphic -O0 vs -O2
+  --divergence  {gcc,clang,tcc} × {-O0,-O2}
+  --negative    missing-pattern observations
+  --quorum      cross-backend agreement
+  --require-complete → gap = CI failure
+```
 
 ## Policy
 
-- **Headers are free.** The include whitelist is only a conservative default;
-  include / marker / call scanning is non-blocking (warnings only).
-- **Denylisted calls** (`system`, `exec*`, `popen`, file I/O, network, …) are
-  reported as warnings, never as blockers.
-- **Hard gates come only from semantic evidence** (compiler, sanitizer,
-  fat-pointer, Frama-C, Fil-C). Unknown functions are caught by
-  `-Werror=implicit-function-declaration`.
+- **Headers are free.** The include whitelist is a conservative default, not a ban.
+- **Denylisted calls** (`system`, `exec*`, `popen`, file I/O, …) are warnings, never blockers.
+- Unknown functions are caught by `-Werror=implicit-function-declaration`.
 
 ## MCP server
 
-`mcp.exe` exposes myc as an MCP server (JSON-RPC 2.0 over stdio) with tools
-`verify` (lite, default `--scenario auto`), `check`, `agent_check`, `repair`,
-`lint`, `contracts`, `version`, and `policy`. Results use typed
-`structuredContent` (`myc.lite.v1`, `myc.result.v1`, `myc.agent.v2`,
-`myc.repair.v1`). See [docs/mcp-tools.md](docs/mcp-tools.md). A
-dependency-free example client is `docs/mcp_client.py`. Example Cursor
-config: `examples/mcp.json`.
+`mcp.exe` is JSON-RPC 2.0 over stdio. Tools:
 
-## Learn more
+| Tool | Output |
+|---|---|
+| `verify` | `myc.lite.v1` (default `--scenario auto`) |
+| `check` | `myc.result.v1` |
+| `agent_check` | `myc.agent.v2` |
+| `context` / `next` / `compare_candidates` | frontier: package, EIG (no apply), Pareto |
+| `repair` / `lint` / `contracts` / `version` / `policy` | as named |
 
-- `docs/quickstart.md` — build, basic check, `MYC_BUF` (L4), `--run`,
-  contracts, CI.
-- `docs/capabilities.md` — honest gate matrix and limitations (what each flag
-  guarantees, and what it does **not**).
-- `docs/mcp-tools.md` — MCP server tool reference for coding agents.
-- `CHANGELOG.md` — release notes per rilis (Fase 7: trust calibration,
-  scheduler EIG, candidate tournament, privacy/size controls, pack).
+See [`docs/mcp-tools.md`](docs/mcp-tools.md). Example Cursor config:
+[`examples/mcp.json`](examples/mcp.json).
 
 ## In CI
-
-A minimal GitHub Actions step (after building `myc.exe`):
 
 ```yaml
 - name: Verify generated C
@@ -261,73 +136,36 @@ A minimal GitHub Actions step (after building `myc.exe`):
     done
 ```
 
-To guard against regressions where myc silently reports OK on broken input,
-run the bundled negative guard (Windows):
+Negative guard (Windows): `test\_anti_false_ok.bat` — fails if a known-bad
+fixture stops producing a negative verdict.
 
-```
-test\_anti_false_ok.bat
-```
+GitHub Actions (`.github/workflows/ci.yml`): Windows `build.bat` +
+`test\_regress_run.bat`; Linux `build.sh` + `test/_ci_linux.sh`. Both compile
+with `-Werror`, pre-flight `prove.c`, `git diff --check`, and trust-core
+regression.
 
-It fails the build if any known-bad fixture stops producing a negative
-verdict.
+## Learn more
 
-## Build
+| Doc | Contents |
+|---|---|
+| [`docs/quickstart.md`](docs/quickstart.md) | Build, `MYC_BUF` (L4), `--run`, contracts |
+| [`docs/capabilities.md`](docs/capabilities.md) | Gate matrix: what each flag does **and does not** guarantee |
+| [`docs/mcp-tools.md`](docs/mcp-tools.md) | MCP tool schemas |
+| [`docs/result-schema.md`](docs/result-schema.md) | Frozen `myc.result.v1` / `myc.agent.v2` / `myc.lite.v1` |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release notes |
 
-```
-build.bat        # MinGW-w64 / GCC  -> myc.exe, mcp.exe, argv_probe.exe
-build.sh         # POSIX / GCC       -> myc, mcp, argv_probe
-```
-
-Requires a MinGW-w64 / GCC toolchain. Clang (for `--run`), Frama-C (for
-`--prove`), and Fil-C (for `--filc`) are optional and only used when present.
-
-## CI
-
-GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push to
-`master` and on pull requests:
-
-- **Windows**: MSYS2 gcc + LLVM clang → `build.bat` + `test\_regress_run.bat`
-- **Linux**: gcc + clang → `bash build.sh` + `bash test/_ci_linux.sh`
-
-Both jobs include:
-1. `-Werror` compile check for all source files (catches `unused variable`
-   / `unused function` warnings as errors).
-2. Pre-flight `prove.c -Werror` check (fast fail for WSL/Frama-C code).
-3. `git diff --check` (whitespace / CRLF hygiene).
-4. Full trust-core regression: self-dogfooding, fixtures, driver, audit018,
-   json_abuse, and MCP smoke tests.
-
-## Release binaries
-
-Pre-built binaries are attached to GitHub Releases. Download the latest
-`myc-windows-latest.zip` or `myc-linux-latest.tar.gz` from the Releases page.
-
-## License
-
-MIT License — see [`LICENSE`](LICENSE). Copyright (c) 2026 megaalive.
+Baseline bench: `bash bench/run_bench.sh` (20 tasks; reports in `bench/reports/`).
 
 ## Assurance
 
-Results are reported as an **assurance vector** `C1 S0 R1 B0 P0 D0 F0`
-(Compile / Static / Runtime / Checked / Proof / Driver / Filc; `0` = n/a,
-`1` = clean, `2` = findings, `3` = inconclusive, `4` = observations).
+Results are an **assurance vector** `C1 S0 R1 B0 P0 D0 F0` (Compile / Static /
+Runtime / Checked / Proof / Driver / Filc; `0` = not run, `1` = clean, `2` =
+findings, `3` = inconclusive, `4` = observations).
 
-The older scalar L1–L5 labels are **legacy and experimental**: they describe
-the strongest backend that happened to run, not a formal guarantee. Treat the
-real evidence — the gate matrix, the per-finding `receipt_sha256`, and the
-source hash — as the source of truth, not the label.
+Scalar L1–L5 labels are **legacy**: they name the strongest backend that ran,
+not a formal guarantee. Trust the gate matrix, `receipt_sha256`, and source
+hash — not the label.
 
-## Baseline benchmark
+## License
 
-`bash bench/run_bench.sh` menjalankan **20 task baseline** (Fase -1,
-SOL-24) terhadap fixture terverifikasi: 10 hazard-class detection
-(spatial/temporal/integer/checked/memory/driver/contract/lint/negative)
-ditambah gate Fase 5-6 (fuzz-lite, exhaustive, witness, divergence,
-stack-recursion, perturb, thread-probe). Task observasi NON-blocking
-menggunakan `obs_pattern` (observasi harus muncul, verdict tetap OK).
-
-- Melaporkan detection rate, false-positive rate, binary size, default
-  latency, full-suite latency, dan agent payload size.
-- Report deterministik disimpan ke `bench/reports/baseline-latest.txt`
-  (+ timestamp). Selalu memakai `--no-cache` agar deterministik.
-- Skema hasil terbekukan: lihat [`docs/result-schema.md`](docs/result-schema.md).
+MIT — [`LICENSE`](LICENSE). Copyright (c) 2026 megaalive.

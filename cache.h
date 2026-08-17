@@ -24,6 +24,9 @@
  *     vs identik + dependents (fungsi yang memanggil fungsi berubah)
  *     dari function fingerprints yang disimpan.
  *   - Persist: .myc/evidence_cache.json (sama seperti ledger).
+ *   - In-process memo (G2, sesi MCP hidup): bila sidecar sha256 +
+ *     mtime + size file tidak berubah, skip parse JSON; PR-013 tetap
+ *     fail-closed pada miss. CLI one-shot tidak wajib memo.
  *   - NON-blocking: bila .myc/ tak dapat ditulis, cache dilewati
  *     dengan aman; replay TIDAK pernah menurunkan/menaikkan verdict
  *     (hanya mengembalikan hasil yang sudah pernah dihitung valid).

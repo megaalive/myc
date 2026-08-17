@@ -195,6 +195,15 @@ static int asm_facts_parse(myc_host_facts *f, const char *txt, size_t len)
     return 1;
 }
 
+/* Satu myc_run memanggil assume lalu prompt; keduanya butuh gcc -dM -E.
+ * Fakta toolchain tidak berubah dalam proses: cache TLS per path gcc. */
+static _Thread_local struct {
+    int valid;
+    int last_ok;
+    char gcc[512];
+    myc_host_facts facts;
+} g_facts_tls;
+
 int myc_assume_fetch_facts(const char *gcc, myc_host_facts *out)
 {
     myc_proc_request preq;
@@ -207,6 +216,10 @@ int myc_assume_fetch_facts(const char *gcc, myc_host_facts *out)
     memset(out, 0, sizeof(*out));
     if (!gcc)
         gcc = "gcc";
+    if (g_facts_tls.valid && strcmp(g_facts_tls.gcc, gcc) == 0) {
+        *out = g_facts_tls.facts;
+        return g_facts_tls.last_ok;
+    }
 
     argv[0] = gcc;
     argv[1] = "-dM";
@@ -232,6 +245,10 @@ int myc_assume_fetch_facts(const char *gcc, myc_host_facts *out)
         }
     }
     myc_proc_result_free(&pres);
+    snprintf(g_facts_tls.gcc, sizeof(g_facts_tls.gcc), "%s", gcc);
+    g_facts_tls.facts = *out;
+    g_facts_tls.last_ok = ok;
+    g_facts_tls.valid = 1;
     return ok;
 }
 
