@@ -212,6 +212,13 @@ Contoh (runtime, IDE-2):
   diterapkan per iterasi; bila template tidak yakin (mis. UBSan) atau
   verdict tanpa template → iterasi berhenti jujur dengan `why` — patch
   TIDAK pernah menebak, loop TIDAK pernah tak terbatas.
+- **Timeout (B3, kebijakan additive):** setiap iterasi `myc_pipeline`
+  memakai `timeout_ms` penuh (`myc_request_init` → default
+  `MYC_DEFAULT_TIMEOUT_MS` = 30000). Bukan timeout bersama untuk seluruh
+  panggilan. Worst-case dinding jam ≈ `max_iter` × timeout satu pipeline;
+  tiap spawn backend di dalam pipeline tetap `timeout_ms` per proses
+  (PR-006/007 process-tree kill). `max_iter` 1..8 membatasi jumlah
+  pipeline, bukan membagi satu deadline.
 - `pack_dir` (string, opsional): direktori pack proyek lokal
   (`myc.prompt.md` + `myc.spec.json`); default = cwd server. Spec.json
   ADA tapi invalid = error tool -32602 (fail-fast, pola CLI exit 2).
@@ -230,8 +237,10 @@ Contoh (runtime, IDE-2):
   (MYC-AUDIT-038/039).
 - **Batasan**: mengikuti pipeline `check` standar (compile gate), output
   dalam format agent-ready. Loop repair aktif untuk verdict runtime
-  dengan lokasi sanitizer (IDE-1/IDE-2); template compile = saran teks
-  (tidak diterapkan otomatis — anti-churn).
+  dengan lokasi sanitizer (IDE-1/IDE-2). Template compile satu baris
+  (`gets`/`sprintf` array lokal, G3) diterapkan di memori bila
+  confidence tinggi dan re-check tidak menambah diagnostic; selain itu
+  saran teks, berhenti (anti-churn / anti-overclaim).
 
 Contoh (bounded repair loop, dua bug runtime beruntun → konvergen):
 

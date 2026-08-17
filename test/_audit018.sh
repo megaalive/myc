@@ -11,7 +11,8 @@
 #   3. oom_alloc     -- injeksi kegagalan malloc/calloc/realloc via allocator
 #                      wrapper FORMAL (PR-019/P7-T02: alloc.c + MYC_ALLOC_TEST
 #                      -> myc_alloc_set_fail_after Nth; TIDAK lagi --wrap),
-#                      incl. fase JSON (MYC-AUDIT-009 sb_reserve/obj_set).
+#                      incl. fase JSON (MYC-AUDIT-009 sb_reserve/obj_set)
+#                      + persist atomik + OOM di tengah loop agent_check (B3).
 #   4. stress_threads-- concurrency myc_run paralel (Fase 5, juga Windows).
 #   5. audit_lampiran-- lampiran A: exec-vs-127, temp path, contract panjang,
 #                      NUL portability, 0 driver cases, immutable, fp-long

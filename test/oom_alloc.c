@@ -12,7 +12,9 @@
  *   - injeksi benar-benar aktif (setidaknya satu alokasi ditolak),
  *   - kontrol tanpa OOM -> MC_OK,
  *   - persistent state (ledger via myc_persist_atomic_write) TIDAK korup
- *     saat alokasi gagal di tengah penulisan (P7-T02: no corrupted state).
+ *     saat alokasi gagal di tengah penulisan (P7-T02: no corrupted state),
+ *   - OOM di tengah loop berbentuk agent_check (check → patch → re-check),
+ *     bukan hanya myc_run sekali (B3).
  *
  * Tidak lagi memakai --wrap (allocator injection GNU ld): wrapper formal
  * lebih portabel (tidak butuh flag linker) dan lintas platform.
@@ -29,6 +31,7 @@
 #include <string.h>
 
 #include "myc.h"
+#include "compile.h"
 #include "json.h"
 #include "alloc.h"
 #include "persist.h"
@@ -38,6 +41,16 @@
 static const char SMALL_SRC[] =
     "static int g_arr[16];\n"
     "int main(void){int i,s=0;for(i=0;i<16;i++)s+=g_arr[i];return s&1;}\n";
+
+/* G3/agent_check: gets pada array lokal → template satu baris. */
+static const char AGENT_SRC[] =
+    "#include <stdio.h>\n"
+    "int main(void){char buf[64];gets(buf);return 0;}\n";
+
+static int verdict_in_range(myc_verdict v)
+{
+    return v >= MC_OK && v <= MC_INCONCLUSIVE;
+}
 
 /* Jumlah titik kegagalan; bisa dinaikkan via MYC_OOM_POINTS. */
 static long oom_points(void)
@@ -78,7 +91,7 @@ int main(void)
         req.run_lint = 1;
         myc_result_init(&res);
         myc_run(&req, &res);
-        if (res.verdict < MC_OK || res.verdict > MC_INCONCLUSIVE)
+        if (!verdict_in_range(res.verdict))
             bad_verdict++;
         myc_result_free(&res);
     }
@@ -195,6 +208,62 @@ int main(void)
             myc_free(NULL); /* myc_free(NULL) aman (idiom gratis) */
         }
         remove(target);
+    }
+
+    /* --- fase agent_check loop (B3): OOM pada re-check, bukan myc_run
+     * sekali. Cermin tool_agent_check tanpa menarik mcp.c: iter 1
+     * myc_pipeline (tanpa OOM) → myc_repair_source_line_patch → iter 2
+     * myc_pipeline dengan fail_after(0). Jangan printf selama injeksi
+     * aktif. */
+    {
+        myc_runtime_repair *crr = NULL;
+        const char *patched;
+        int line = 2;
+
+        myc_alloc_set_fail_after(-1);
+        myc_request_init(&req);
+        req.input.kind = MYC_SOURCE_MEMORY;
+        req.input.data = AGENT_SRC;
+        req.input.len = strlen(AGENT_SRC);
+        req.run_lint = 1;
+        myc_result_init(&res);
+        myc_pipeline(&req, &res);
+        if (!verdict_in_range(res.verdict))
+            bad_verdict++;
+        if (res.verdict == MC_COMPILE_ERROR && res.diag_count > 0 &&
+            res.diags[0].line > 0)
+            line = res.diags[0].line;
+        crr = myc_repair_source_line_patch(AGENT_SRC, strlen(AGENT_SRC),
+                                           line);
+        if (!crr || !crr->patched_source || crr->confidence < 80) {
+            myc_result_free(&res);
+            if (crr)
+                myc_runtime_repair_free(crr);
+            fprintf(stderr, "[FAIL] oom_alloc: fixture agent_check tidak "
+                            "dapat di-patch (template gets)\n");
+            return 1;
+        }
+        patched = crr->patched_source;
+
+        myc_alloc_set_fail_after(0);
+        {
+            myc_request req2;
+            myc_result  res2;
+
+            myc_request_init(&req2);
+            req2.input.kind = MYC_SOURCE_MEMORY;
+            req2.input.data = patched;
+            req2.input.len = strlen(patched);
+            req2.run_lint = 1;
+            myc_result_init(&res2);
+            myc_pipeline(&req2, &res2);
+            if (!verdict_in_range(res2.verdict))
+                bad_verdict++;
+            myc_result_free(&res2);
+        }
+        myc_alloc_set_fail_after(-1);
+        myc_result_free(&res);
+        myc_runtime_repair_free(crr);
     }
 
     /* cetak hasil HANYA setelah reset (printf bisa mengalokasi). */

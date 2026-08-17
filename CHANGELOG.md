@@ -62,6 +62,14 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 - **B4 — `alloc.c` hook tes `_Thread_local`.** `g_fail_after` /
   `g_null_returned` / `g_total_calls` (hanya `-DMYC_ALLOC_TEST`) per
   thread. Produksi passthrough tidak berubah.
+- **B3 — OOM di tengah loop `agent_check`.** `test/oom_alloc.c`: iter 1
+  `myc_pipeline` + `myc_repair_source_line_patch` (gets), iter 2
+  `myc_pipeline` dengan `fail_after(0)`. Proses tidak crash; verdict
+  enum valid; `myc_result_free` utuh.
+- **B3 — timeout `agent_check` additive.** Setiap iterasi memakai
+  `timeout_ms` penuh (default 30000 ms), bukan satu deadline bersama.
+  Worst-case dinding jam ≈ `max_iter` × timeout satu pipeline. Docs:
+  `docs/mcp-tools.md`.
 
 ### Changed
 

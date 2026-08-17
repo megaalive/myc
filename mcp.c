@@ -520,6 +520,11 @@ static void tool_lint(json_value *id, json_value *args)
  *   5. hasil: verdict akhir + array langkah + preservation obligations
  * Bounded: max_iter dibatasi 1..8 (anti loop tak terbatas). Deterministik:
  * tiap iterasi myc_pipeline (tanpa cache — sanloc fresh, konsisten IDE-2).
+ * Timeout (B3): additive, bukan bersama. Setiap myc_pipeline memakai
+ * req.timeout_ms penuh (default MYC_DEFAULT_TIMEOUT_MS). Worst-case
+ * dinding jam ≈ max_iter × timeout satu pipeline; spawn backend di dalam
+ * pipeline tetap timeout_ms per proses (PR-006/007). Bukan satu deadline
+ * untuk seluruh panggilan.
  * Anti-overclaim: template tidak yakin / verdict tanpa template -> why
  * jujur, loop berhenti (patch TIDAK pernah menebak). */
 static void tool_agent_check(json_value *id, json_value *args)
@@ -628,7 +633,7 @@ static void tool_agent_check(json_value *id, json_value *args)
         json_value *step;
         const char *this_receipt;
 
-        myc_request_init(&req);
+        myc_request_init(&req); /* timeout_ms = MYC_DEFAULT_TIMEOUT_MS (additive) */
         req.input.kind = MYC_SOURCE_MEMORY;
         req.input.data = current;
         req.input.len = strlen(current);
@@ -1874,7 +1879,10 @@ static json_value *tools_list_body(void)
         json_obj_set(p, "type", json_new_str("number"));
         json_obj_set(p, "description", json_new_str(
             "Bounded repair loop iterations 1..8 (default 3). "
-            "check -> repair -> apply -> check, maks max_iter."));
+            "check -> repair -> apply -> check, maks max_iter. "
+            "Timeout additive: tiap iterasi myc_pipeline memakai "
+            "timeout_ms penuh (default 30000 ms); bukan timeout "
+            "bersama untuk seluruh panggilan."));
         json_obj_set(props, "max_iter", p);
         p = json_new_obj();
         json_obj_set(p, "type", json_new_str("string"));
