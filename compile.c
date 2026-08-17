@@ -25,6 +25,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <process.h>
+#else
+#include <pthread.h>
+#endif
+
 #include "contract.h"
 #include "driver.h"
 #include "filc.h"
@@ -881,6 +889,208 @@ static void run_checked_gate(const myc_request *req, const char *gcc_path,
                   "checked build OK: transformasi fat-pointer (MYC_BUF) -> L4 SPATIAL");
 }
 
+/* ------------------------------------------------------------------ */
+/* P4: --parallel-gates — worker --run, merge ke hasil utama.          */
+/* Analyzer tetap di thread utama supaya urutan insert gate/evidence   */
+/* sama dengan jalur sekuensial. Default OFF: myc_run_gate di main.    */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    const myc_request *req;
+    const char        *src;
+    size_t             srclen;
+    myc_result         scratch;
+    int                ok;
+    int                started;
+#ifdef _WIN32
+    HANDLE             th;
+#else
+    pthread_t          th;
+#endif
+} par_run_job;
+
+#ifdef _WIN32
+static unsigned __stdcall par_run_thread(void *arg)
+#else
+static void *par_run_thread(void *arg)
+#endif
+{
+    par_run_job *j = (par_run_job *)arg;
+    j->ok = myc_run_gate(j->req, j->src, j->srclen, &j->scratch);
+#ifdef _WIN32
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
+static int par_run_start(par_run_job *j, const myc_request *req,
+                         const char *src, size_t srclen)
+{
+    memset(j, 0, sizeof(*j));
+    j->req = req;
+    j->src = src;
+    j->srclen = srclen;
+    myc_result_init(&j->scratch);
+#ifdef _WIN32
+    j->th = (HANDLE)_beginthreadex(NULL, 0, par_run_thread, j, 0, NULL);
+    if (!j->th) {
+        myc_result_free(&j->scratch);
+        return -1;
+    }
+#else
+    if (pthread_create(&j->th, NULL, par_run_thread, j) != 0) {
+        myc_result_free(&j->scratch);
+        return -1;
+    }
+#endif
+    j->started = 1;
+    return 0;
+}
+
+static void par_run_join(par_run_job *j)
+{
+    if (!j || !j->started)
+        return;
+#ifdef _WIN32
+    if (j->th) {
+        WaitForSingleObject(j->th, INFINITE);
+        CloseHandle(j->th);
+        j->th = NULL;
+    }
+#else
+    pthread_join(j->th, NULL);
+#endif
+}
+
+static char *par_dup_arena(myc_result *dst, const char *s)
+{
+    return s ? myc_result_arena_dup(dst, s, 0) : NULL;
+}
+
+static void par_merge_runtime(myc_result *dst, myc_result *src)
+{
+    size_t i;
+    const myc_gate_result *g;
+
+    if (!dst || !src)
+        return;
+
+    dst->ran_runtime = src->ran_runtime;
+    dst->run_timed_out = src->run_timed_out;
+    dst->run_truncated = src->run_truncated;
+    dst->run_sanitizer_detected = src->run_sanitizer_detected;
+    memcpy(dst->run_sanitizer_marker, src->run_sanitizer_marker,
+           sizeof(dst->run_sanitizer_marker));
+    dst->run_total_stdout_bytes = src->run_total_stdout_bytes;
+    dst->run_total_stderr_bytes = src->run_total_stderr_bytes;
+    dst->run_shown_stdout_bytes = src->run_shown_stdout_bytes;
+    dst->run_shown_stderr_bytes = src->run_shown_stderr_bytes;
+    dst->exit_code = src->exit_code;
+    dst->duration_ms += src->duration_ms;
+
+    myc_free(dst->run_stdout_text);
+    myc_free(dst->run_stderr_text);
+    dst->run_stdout_text = src->run_stdout_text;
+    dst->run_stderr_text = src->run_stderr_text;
+    src->run_stdout_text = NULL;
+    src->run_stderr_text = NULL;
+
+    if (src->clang_version && !dst->clang_version) {
+        dst->clang_version = src->clang_version;
+        src->clang_version = NULL;
+    }
+
+    /* Clean success leaves scratch verdict at MC_ERROR (init); jangan
+     * menimpa OK compile. Failure/inconclusive menyalin apa adanya. */
+    if (src->verdict != MC_ERROR || src->err != MYC_ERR_NONE) {
+        dst->verdict = src->verdict;
+        dst->err = src->err;
+    }
+
+    dst->sanloc_have = src->sanloc_have;
+    dst->sanloc_line = src->sanloc_line;
+    dst->sanloc_col = src->sanloc_col;
+    dst->sanloc_alloc_line = src->sanloc_alloc_line;
+    dst->sanloc_kind = par_dup_arena(dst, src->sanloc_kind);
+    dst->sanloc_function = par_dup_arena(dst, src->sanloc_function);
+    dst->sanloc_file = par_dup_arena(dst, src->sanloc_file);
+    dst->sanloc_alloc_function = par_dup_arena(dst, src->sanloc_alloc_function);
+    dst->sanloc_snippet = par_dup_arena(dst, src->sanloc_snippet);
+
+    dst->perturb_ran = src->perturb_ran;
+    dst->perturb_changed = src->perturb_changed;
+    dst->perturb_report = par_dup_arena(dst, src->perturb_report);
+
+    if (src->witness && !dst->witness) {
+        dst->witness = (myc_witness *)myc_malloc(sizeof(*dst->witness));
+        if (dst->witness) {
+            myc_witness_init(dst->witness);
+            dst->witness->source_len = src->witness->source_len;
+            dst->witness->stdin_len = src->witness->stdin_len;
+            dst->witness->argc = src->witness->argc;
+            dst->witness->slice_line_start = src->witness->slice_line_start;
+            dst->witness->slice_line_end = src->witness->slice_line_end;
+            dst->witness->violation_line = src->witness->violation_line;
+            dst->witness->violation_col = src->witness->violation_col;
+            dst->witness->source = par_dup_arena(dst, src->witness->source);
+            dst->witness->stdin_data = par_dup_arena(dst, src->witness->stdin_data);
+            dst->witness->slice_file = par_dup_arena(dst, src->witness->slice_file);
+            dst->witness->violation_kind = par_dup_arena(dst, src->witness->violation_kind);
+            dst->witness->violation_msg = par_dup_arena(dst, src->witness->violation_msg);
+            dst->witness->backend = par_dup_arena(dst, src->witness->backend);
+            dst->witness->backend_version = par_dup_arena(dst, src->witness->backend_version);
+            dst->witness->pre_state = par_dup_arena(dst, src->witness->pre_state);
+            dst->witness->operation = par_dup_arena(dst, src->witness->operation);
+        }
+    }
+
+    for (i = 0; i < (size_t)src->diag_count &&
+                dst->diag_count < MYC_MAX_DIAGNOSTICS; i++) {
+        dst->diags[dst->diag_count] = src->diags[i];
+        dst->diags[dst->diag_count].message =
+            par_dup_arena(dst, src->diags[i].message);
+        dst->diag_count++;
+    }
+
+    g = myc_gate_get(src, MYC_GATE_RUNTIME);
+    if (g) {
+        myc_gate_set_status(dst, MYC_GATE_RUNTIME, g->status, g->output);
+        myc_gate_add_ms(dst, MYC_GATE_RUNTIME, g->duration_ms);
+    }
+
+    for (i = 0; i < src->evidence_count; i++) {
+        if (src->evidence[i].gate_id != (uint32_t)MYC_GATE_RUNTIME)
+            continue;
+        myc_result_add_evidence(dst, MYC_GATE_RUNTIME,
+                                (myc_evidence_type)src->evidence[i].event_type,
+                                src->evidence[i].message
+                                    ? src->evidence[i].message : "");
+    }
+}
+
+static void par_run_join_discard(par_run_job *j)
+{
+    if (!j || !j->started)
+        return;
+    par_run_join(j);
+    myc_result_free(&j->scratch);
+    j->started = 0;
+}
+
+static int par_run_join_merge(par_run_job *j, myc_result *dst)
+{
+    int ok;
+    if (!j || !j->started)
+        return 0;
+    par_run_join(j);
+    j->started = 0;
+    ok = j->ok;
+    par_merge_runtime(dst, &j->scratch);
+    myc_result_free(&j->scratch);
+    return ok;
+}
+
 void myc_pipeline(const myc_request *req, myc_result *res)
 {
     char *gcc_path = NULL;
@@ -892,9 +1102,11 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     size_t      srclen;
     char        hex[65];
     unsigned long long compile_ms = 0;
+    par_run_job prun;
 
     src = req->input.data;
     srclen = req->input.len;
+    memset(&prun, 0, sizeof(prun));
 
     /* Inisialisasi gate status (Fase 3). */
     myc_gate_set_status(res, MYC_GATE_PREPROCESS, MYC_GATE_NOT_APPLICABLE, NULL);
@@ -1219,11 +1431,20 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     myc_result_add_evidence(res, MYC_GATE_COMPILE, MYC_EVIDENCE_GATE_END,
                             "gcc -c clean");
 
+    /* P4: overlap --run dengan --analyze. Fail-closed ke sekuensial
+     * bila thread gagal di-spawn. Analyzer findings tetap membatalkan
+     * merge run (join + buang) agar receipt sama dengan default OFF. */
+    if (req->parallel_gates && req->run_analyzer && req->run) {
+        if (par_run_start(&prun, req, src, srclen) != 0)
+            memset(&prun, 0, sizeof(prun));
+    }
+
     /* --- Gate opsional: -fanalyzer --- */
     if (req->run_analyzer) {
         const char *const *lists[4];
         const char **args;
         size_t      nargs;
+        unsigned long long t0;
         lists[0] = ANALYZER_EXTRA;
         lists[1] = SYNTAX_BASE;
         lists[2] = MEMORY_WARNINGS;
@@ -1232,15 +1453,19 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         if (!args) {
             res->verdict = MC_ERROR;
             res->err = MYC_ERR_INTERNAL;
+            par_run_join_discard(&prun);
             myc_free(gcc_path);
             return;
         }
+        t0 = myc_wall_ms();
         run_gcc(req, gcc_path, args, src, srclen, max_out, &pr);
+        myc_gate_add_ms(res, MYC_GATE_ANALYZER, myc_wall_ms() - t0);
         myc_free((void *)args);
         if (pr.timed_out) {
             res->verdict = MC_TIMEOUT;
             res->err = MYC_ERR_TIMEOUT;
             myc_proc_result_free(&pr);
+            par_run_join_discard(&prun);
             myc_free(gcc_path);
             myc_gate_set_status(res, MYC_GATE_ANALYZER, MYC_GATE_INCONCLUSIVE,
                                 "analyzer timeout");
@@ -1261,6 +1486,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             if (res->stderr_text)
                 ingest_gcc_diagnostics(res, res->stderr_text);
             myc_proc_result_free(&pr);
+            par_run_join_discard(&prun);
             myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
@@ -1293,6 +1519,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                                         ? MYC_EVIDENCE_FINDING
                                         : MYC_EVIDENCE_ERROR,
                                     "checked build gagal/timeout");
+            par_run_join_discard(&prun);
             myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
@@ -1339,6 +1566,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                 myc_result_add_evidence(res, MYC_GATE_PROVE, MYC_EVIDENCE_ERROR,
                                         "Frama-C Eva timeout");
             }
+            par_run_join_discard(&prun);
             myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
@@ -1400,6 +1628,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
                 myc_result_add_evidence(res, MYC_GATE_FILC, MYC_EVIDENCE_ERROR,
                                         "Fil-C timeout");
             }
+            par_run_join_discard(&prun);
             myc_free(gcc_path);
             myc_reduce_verdict(res);
             return;
@@ -1435,7 +1664,9 @@ void myc_pipeline(const myc_request *req, myc_result *res)
 
     /* --- Gate opsional: verification run (P6, --run) -> L3 RUNTIME --- */
     if (req->run) {
-        int ok = myc_run_gate(req, src, srclen, res);
+        int ok = prun.started
+                     ? par_run_join_merge(&prun, res)
+                     : myc_run_gate(req, src, srclen, res);
         if (res->verdict == MC_TIMEOUT || res->verdict == MC_RUNTIME_VIOLATION ||
             res->err == MYC_ERR_EXECUTE_FAILED || res->err == MYC_ERR_INTERNAL) {
             /* violation = bug terbukti -> assurance turun ke NONE
@@ -1787,6 +2018,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     }
 
     myc_reduce_verdict(res);
+    par_run_join_discard(&prun);
     myc_free(gcc_path);
 }
 

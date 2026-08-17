@@ -48,6 +48,10 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 - **G6 — M6–M10.** `bench/run_success_metrics.sh`: span lite, cache-hit
   inner-loop, payload ≤2 KiB, STOP vs `--scenario auto`, first-action
   enum.
+- **P4 — `--parallel-gates`.** Setelah compile clean, `--run` di-spawn
+  berbarengan dengan `--analyze` (default OFF). Join, lalu tulis status
+  RUNTIME urutan kanonik. Analyzer findings = buang hasil run (receipt
+  sama dengan jalur sekuensial). Masuk cache key g2.
 
 ### Changed
 
@@ -58,6 +62,8 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 
 - `test/lite_agent_test.c` (kasus agen-bodoh + watch-diff lite), golden
   `myc.lite.v1.json`, schema_compat T3b/T10 lite.
+- `--parallel-gates` receipt vs sekuensial di `_ci_linux.sh` / `_regress_run.bat`;
+  `cache_key_matrix` T4 `parallel_gates`.
 
 ## [v2026-08-17.2] — nemo agent protocol: next_check/edits/delta + payload_dropped/feedback - 2026-08-17
 

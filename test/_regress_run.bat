@@ -535,6 +535,13 @@ rem menghitung parens sehingga `(CI-portabel)` memutus blok (error: `)` tak terd
 if not defined REC1 echo [WARN] receipt tidak terbaca
 if defined REC1 if "%REC1%"=="%REC2%" echo [OK] receipt deterministik lintas-run, CI-portabel
 if defined REC1 if not "%REC1%"=="%REC2%" echo [WARN] receipt tidak deterministik: %REC1% vs %REC2%
+myc.exe check tests\ok_hello.c --analyze --run --no-cache --no-persist > %OUT% 2>&1
+for /f "tokens=2" %%r in ('findstr /C:"receipt_sha256:" %OUT%') do set SEQREC=%%r
+myc.exe check tests\ok_hello.c --analyze --run --parallel-gates --no-cache --no-persist > %OUT% 2>&1
+for /f "tokens=2" %%r in ('findstr /C:"receipt_sha256:" %OUT%') do set PARREC=%%r
+if defined SEQREC if "%SEQREC%"=="%PARREC%" echo [OK] P4 parallel-gates: receipt identik vs sekuensial
+if defined SEQREC if not "%SEQREC%"=="%PARREC%" echo [FAIL] P4 parallel-gates: receipt beda
+if not defined SEQREC echo [WARN] P4 parallel-gates: receipt sekuensial tidak terbaca
 echo --- driver fixtures (D2.2, --driver): ok_driver harus OK, bad_driver_oob harus DRIVER_VIOLATION
 for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c) do (
   echo === %%f

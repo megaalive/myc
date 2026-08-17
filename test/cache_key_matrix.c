@@ -17,7 +17,7 @@
  *   T4  dimensi flag gate Fase 5/6 (g2 hash, PR-011): no_lint /
  *       exhaustive / stack / stack_budget / fuzz / fuzz_iters / fuzz_seed /
  *       mutate_audit / mutate_max / freestanding / matrix / abi / perturb /
- *       thread_probe
+ *       thread_probe / eig_apply / eig_budget_ms / parallel_gates
  *   T5  dimensi budget contract (active / level / max_time / max_output)
  *   T6  dimensi eksekusi (PR-011): timeout_ms / max_output_bytes /
  *       run_stdin / checked_header_dir
@@ -279,6 +279,7 @@ static void d_pert(myc_request *r)    { r->perturb = 1; }
 static void d_tp(myc_request *r)      { r->thread_probe = 1; }
 static void d_eig(myc_request *r)     { r->eig_apply = 1; }
 static void d_eigb(myc_request *r)    { r->eig_apply = 1; r->eig_budget_ms = 1000; }
+static void d_par(myc_request *r)     { r->parallel_gates = 1; }
 
 static const dim_case GATE_DIMS[] = {
     /* T3: flag gate inti (scenario hash — sudah ada sejak v1) */
@@ -312,6 +313,7 @@ static const dim_case GATE_DIMS[] = {
     { "thread_probe", d_tp },
     { "eig_apply", d_eig },
     { "eig_budget_ms", d_eigb },
+    { "parallel_gates", d_par },
 };
 #define N_GATE_DIMS (int)(sizeof(GATE_DIMS) / sizeof(GATE_DIMS[0]))
 

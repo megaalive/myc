@@ -209,6 +209,8 @@ static int mcp_apply_flags(json_value *flags, myc_request *req,
             req->require_complete = 1;
         else if (strcmp(f, "--eig-apply") == 0)
             req->eig_apply = 1;
+        else if (strcmp(f, "--parallel-gates") == 0)
+            req->parallel_gates = 1;
         else {
             snprintf(err, errsz, "Invalid params: flag tidak dikenal: %.100s", f);
             return -1;

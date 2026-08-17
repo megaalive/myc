@@ -255,6 +255,15 @@ else
     fail "receipt tidak deterministik ($R1 vs $R2)"
 fi
 
+# --- 5b2. P4 --parallel-gates: receipt identik vs sekuensial (ok_hello) ---
+SEQ=$(./myc check tests/ok_hello.c --analyze --run --no-cache --no-persist 2>&1 | sed -n 's/.*receipt_sha256: //p' | head -1)
+PAR=$(./myc check tests/ok_hello.c --analyze --run --parallel-gates --no-cache --no-persist 2>&1 | sed -n 's/.*receipt_sha256: //p' | head -1)
+if [ -n "$SEQ" ] && [ "$SEQ" = "$PAR" ]; then
+    note "P4 parallel-gates: receipt identik vs sekuensial"
+else
+    fail "P4 parallel-gates: receipt beda ($SEQ vs $PAR)"
+fi
+
 # --- 5c. driver: case record + combinatorial budget + harness sha (AUDIT-027) ---
 if ./myc check test/fixtures/ok_driver.c --driver 2>&1 | grep -qF \
     "combinatorial: max_product=5 budget=32 strategy=full"; then

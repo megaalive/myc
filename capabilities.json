@@ -265,7 +265,8 @@
     "--watch-diff",
     "--delta",
     "--eig-apply",
-    "--budget-ms"
+    "--budget-ms",
+    "--parallel-gates"
   ],
   "mcp_tools": [
     "check",

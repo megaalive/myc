@@ -750,6 +750,12 @@ typedef struct {
       * 5000 ms. Masuk cache key g2 (hasil bisa berbeda). */
      int         eig_apply;
      int         eig_budget_ms;
+     /* P4: --parallel-gates — setelah compile clean, spawn --run
+      * berbarengan dengan --analyze. Default OFF. Join, lalu tulis
+      * status RUNTIME dalam urutan kanonik (setelah analyzer /
+      * checked / prove / filc). Masuk cache key g2. Timeout anak
+      * tetap timeout_ms. */
+     int         parallel_gates;
      int         write_repro;     /* --write-repro: tulis .myc-witness/ repro dir */
      int         tx_verify;       /* --tx-verify: verifikasi patch dalam transaksi */
      char       *tx_finding_id;   /* --finding-id ID: finding target */

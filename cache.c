@@ -78,7 +78,8 @@ static void cache_tool_key(const myc_request *req, char *out, size_t cap)
 /* PR-011 (MYC-AUDIT-043): hash deterministik flag gate Fase 5/6 yang
  * MENGUBAH HASIL tetapi belum tercakup myc_ledger_build_scenario_hash
  * (lint, exhaustive, stack + stack_budget, fuzz + iters + seed,
- * mutate-audit + max, freestanding, matrix, abi, perturb, thread-probe).
+ * mutate-audit + max, freestanding, matrix, abi, perturb, thread-probe,
+ * eig-apply + budget, parallel-gates).
  * Tanpa dimensi ini dua run dgn resep gate berbeda berbagi cache entry:
  * replay lintas-flag = stale/lossy (mis. --fuzz hit dari entry polos =
  * gate fuzz HILANG dari output; --exhaustive hit dari entry polos =
@@ -93,12 +94,14 @@ static void cache_gates2_hash(const myc_request *req, char out[33])
 
     gn += snprintf(gbuf + gn, sizeof(gbuf) - gn,
                    "lint=%d|exh=%d|stk=%d|stb=%d|fz=%d|fzi=%d|fzs=%u|mut=%d|"
-                   "mutm=%d|free=%d|mat=%d|abi=%d|pert=%d|tp=%d|eig=%d|eigb=%d",
+                   "mutm=%d|free=%d|mat=%d|abi=%d|pert=%d|tp=%d|eig=%d|eigb=%d|"
+                   "par=%d",
                    req->run_lint, req->exhaustive, req->stack,
                    req->stack_budget, req->fuzz, req->fuzz_iters,
                    req->fuzz_seed, req->mutate_audit, req->mutate_max,
                    req->freestanding, req->matrix, req->abi, req->perturb,
-                   req->thread_probe, req->eig_apply, req->eig_budget_ms);
+                   req->thread_probe, req->eig_apply, req->eig_budget_ms,
+                   req->parallel_gates);
     if (gn >= (int)sizeof(gbuf))
         gn = (int)sizeof(gbuf) - 1;
     sha256_init(&gctx);

@@ -430,6 +430,7 @@ static void ctx_verify_command(const myc_request *req, const char *path,
     if (req->strict) sb_puts(out, " --strict");
     if (req->run_analyzer) sb_puts(out, " --analyze");
     if (req->run) sb_puts(out, " --run");
+    if (req->parallel_gates) sb_puts(out, " --parallel-gates");
     if (req->prove) sb_puts(out, " --prove");
     if (req->checked) sb_puts(out, " --checked");
     if (req->filc) sb_puts(out, " --filc");

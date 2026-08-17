@@ -48,7 +48,7 @@ key = sha256(
 | `t` | `req->timeout_ms` | Timeout gate berbeda → hasil berbeda (timeout vs selesai). **Gap v1, fix PR-011** |
 | `o` | `req->max_output_bytes` | Output cap mengubah truncation/teks yang disimpan; marker sanitizer di luar cap bisa hilang. **Gap v1, fix PR-011** |
 | `hdir` | `req->checked_header_dir` | Versi `myc_buf.h` berbeda → hasil L4 SPATIAL berbeda. **Gap v1, fix PR-011** |
-| `g2` | hash flags gate Fase 5/6 + G4: `run_lint`, `exhaustive`, `stack` (+`stack_budget`), `fuzz` (+`fuzz_iters`, `fuzz_seed`), `mutate_audit` (+`mutate_max`), `freestanding`, `matrix`, `abi`, `perturb`, `thread_probe`, `eig_apply`, `eig_budget_ms` | Resep gate berbeda → hasil/observasi berbeda. `--eig-apply` mengubah gate yang dijalankan setelah L1, jadi wajib di key. |
+| `g2` | hash flags gate Fase 5/6 + G4 + P4: `run_lint`, `exhaustive`, `stack` (+`stack_budget`), `fuzz` (+`fuzz_iters`, `fuzz_seed`), `mutate_audit` (+`mutate_max`), `freestanding`, `matrix`, `abi`, `perturb`, `thread_probe`, `eig_apply`, `eig_budget_ms`, `parallel_gates` | Resep gate berbeda → hasil/observasi berbeda. `--eig-apply` mengubah gate yang dijalankan setelah L1; `--parallel-gates` mengubah jadwal spawn `--analyze`/`--run` (receipt urutan kanonik, tapi cache dipisah). |
 
 ### Dimensi yang sengaja TIDAK di key (dan alasannya aman)
 

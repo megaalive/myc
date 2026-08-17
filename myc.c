@@ -1248,7 +1248,11 @@ static void usage(void)
         "  myc check <file.c> [--eig-apply [--budget-ms N]]\n"
         "                        (G4: setelah L1 jalankan paling banyak satu\n"
         "                        eksperimen EIG within_budget; default OFF;\n"
-        "                        N=0 atau absen = 5000 ms)\n");
+        "                        N=0 atau absen = 5000 ms)\n"
+        "  myc check <file.c> [--analyze --run --parallel-gates]\n"
+        "                        (P4: overlap gcc -fanalyzer dengan clang\n"
+        "                        ASan/UBSan setelah compile clean; default OFF;\n"
+        "                        status gate ditulis urutan kanonik)\n");
     /* PR-017: blok usage backends dipisah ke printf tersendiri — string
      * literal yang BERTETANGGA digabung compiler (overlength-strings),
      * dan gabungan usage utama sudah mendekati batas 4095 C99. */
@@ -2630,6 +2634,8 @@ int main(int argc, char **argv)
                 req.lite = 1; known = 1;
             } else if (strcmp(argv[i], "--eig-apply") == 0) {
                 req.eig_apply = 1; known = 1;
+            } else if (strcmp(argv[i], "--parallel-gates") == 0) {
+                req.parallel_gates = 1; known = 1;
             } else if (strcmp(argv[i], "--budget-ms") == 0) {
                 int ms;
                 if (i + 1 >= argc) {
