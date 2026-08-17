@@ -82,4 +82,8 @@ int myc_pack_load(const char *pack_dir, int no_pack, myc_pack_info *info);
 char *myc_prompt_build_packed(const char *source, size_t len,
                               const myc_pack_info *info);
 
+/* Cuplikan protokol lite untuk harness (cursor|claude|codex).
+ * malloc'd; caller myc_free. NULL bila kind tidak dikenal atau OOM. */
+char *myc_prompt_harness(const char *kind, const char *source, size_t len);
+
 #endif /* MYC_PROMPT_H */

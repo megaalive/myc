@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "myc": {
+      "command": "mcp.exe",
+      "args": []
+    }
+  }
+}

@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "json.h"
+#include "experiment_cost.h"
 
 static const char *EXPERIMENT_NAMES[] = {
     "alloc_fail",
@@ -93,7 +94,7 @@ void myc_observation_to_experiment(const myc_result *res,
             exp->description = EXPERIMENT_DESCRIPTIONS[MYC_EXPERIMENT_CROSS_TARGET];
             exp->source_anchor = myc_strdup(anchor);
             exp->confidence = d->confidence;
-            exp->cost_estimate_ms = 2000;
+            exp->cost_estimate_ms = myc_experiment_cost_ms(exp->type);
             exp->severity = 2;
             exp->command = myc_experiment_command(exp, NULL);
         }
@@ -104,7 +105,7 @@ void myc_observation_to_experiment(const myc_result *res,
             exp->description = EXPERIMENT_DESCRIPTIONS[MYC_EXPERIMENT_REALLOC_PATH];
             exp->source_anchor = myc_strdup(anchor);
             exp->confidence = d->confidence;
-            exp->cost_estimate_ms = 1500;
+            exp->cost_estimate_ms = myc_experiment_cost_ms(exp->type);
             exp->severity = 3;
             exp->command = myc_experiment_command(exp, NULL);
         }
@@ -115,7 +116,7 @@ void myc_observation_to_experiment(const myc_result *res,
             exp->description = EXPERIMENT_DESCRIPTIONS[MYC_EXPERIMENT_ASSERTION_HARNESS];
             exp->source_anchor = myc_strdup(anchor);
             exp->confidence = d->confidence;
-            exp->cost_estimate_ms = 3000;
+            exp->cost_estimate_ms = myc_experiment_cost_ms(exp->type);
             exp->severity = 2;
             exp->command = myc_experiment_command(exp, NULL);
         }
@@ -126,7 +127,7 @@ void myc_observation_to_experiment(const myc_result *res,
             exp->description = EXPERIMENT_DESCRIPTIONS[MYC_EXPERIMENT_ALLOC_FAIL];
             exp->source_anchor = myc_strdup(anchor);
             exp->confidence = d->confidence;
-            exp->cost_estimate_ms = 5000;
+            exp->cost_estimate_ms = myc_experiment_cost_ms(exp->type);
             exp->severity = 3;
             exp->command = myc_experiment_command(exp, NULL);
         }
@@ -137,7 +138,7 @@ void myc_observation_to_experiment(const myc_result *res,
             exp->description = EXPERIMENT_DESCRIPTIONS[MYC_EXPERIMENT_BOUNDARY_INPUT];
             exp->source_anchor = myc_strdup(anchor);
             exp->confidence = d->confidence;
-            exp->cost_estimate_ms = 2500;
+            exp->cost_estimate_ms = myc_experiment_cost_ms(exp->type);
             exp->severity = 3;
             exp->command = myc_experiment_command(exp, NULL);
         }
@@ -149,7 +150,7 @@ void myc_observation_to_experiment(const myc_result *res,
             exp->description = EXPERIMENT_DESCRIPTIONS[MYC_EXPERIMENT_ASSERTION_HARNESS];
             exp->source_anchor = myc_strdup(anchor);
             exp->confidence = d->confidence;
-            exp->cost_estimate_ms = 3000;
+            exp->cost_estimate_ms = myc_experiment_cost_ms(exp->type);
             exp->severity = 1;
             exp->command = myc_experiment_command(exp, NULL);
         }
@@ -165,7 +166,7 @@ void myc_observation_to_experiment(const myc_result *res,
         exp->description = EXPERIMENT_DESCRIPTIONS[MYC_EXPERIMENT_DRIVER_GEN];
         exp->source_anchor = myc_strdup("negative-space");
         exp->confidence = MYC_CONF_LIKELY;
-        exp->cost_estimate_ms = 4000;
+        exp->cost_estimate_ms = myc_experiment_cost_ms(exp->type);
         exp->severity = 2;
         exp->command = myc_experiment_command(exp, NULL);
     }

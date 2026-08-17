@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "json.h"
+#include "experiment_cost.h"
 
 /* ---------- rule table: hazard -> eksperimen cocok ---------- */
 
@@ -46,34 +47,12 @@ static const nextbest_rule NEXTBEST_RULES[] = {
  * aktual). Sama dengan angka di observation.c. */
 static int exp_cost(myc_experiment_type t)
 {
-    switch (t) {
-    case MYC_EXPERIMENT_ALLOC_FAIL:       return 5000;
-    case MYC_EXPERIMENT_BOUNDARY_INPUT:   return 2500;
-    case MYC_EXPERIMENT_SHORT_IO:         return 2000;
-    case MYC_EXPERIMENT_CROSS_TARGET:     return 2000;
-    case MYC_EXPERIMENT_POLLING_HARNESS:  return 1500;
-    case MYC_EXPERIMENT_REALLOC_PATH:     return 1500;
-    case MYC_EXPERIMENT_LEAK_CHECK:       return 4000;
-    case MYC_EXPERIMENT_DRIVER_GEN:       return 4000;
-    case MYC_EXPERIMENT_ASSERTION_HARNESS:return 3000;
-    default:                              return 3000;
-    }
+    return myc_experiment_cost_ms(t);
 }
 
 static int exp_severity(myc_experiment_type t)
 {
-    switch (t) {
-    case MYC_EXPERIMENT_ALLOC_FAIL:       return 3;
-    case MYC_EXPERIMENT_BOUNDARY_INPUT:   return 3;
-    case MYC_EXPERIMENT_SHORT_IO:         return 2;
-    case MYC_EXPERIMENT_CROSS_TARGET:     return 2;
-    case MYC_EXPERIMENT_POLLING_HARNESS:  return 2;
-    case MYC_EXPERIMENT_REALLOC_PATH:     return 3;
-    case MYC_EXPERIMENT_LEAK_CHECK:       return 2;
-    case MYC_EXPERIMENT_DRIVER_GEN:       return 2;
-    case MYC_EXPERIMENT_ASSERTION_HARNESS:return 1;
-    default:                              return 1;
-    }
+    return myc_experiment_severity(t);
 }
 
 /* Skor: severity*1000 - cost_ms. Makin tinggi makin direkomendasikan. */

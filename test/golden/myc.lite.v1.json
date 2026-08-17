@@ -1,0 +1,25 @@
+{
+  "schema": "myc.lite.v1",
+  "verdict": "OK",
+  "claim": "compile_clean (runtime not run)",
+  "action": "STOP_COMPILE_CLEAN",
+  "finding_id": "f-00000000",
+  "line": 0,
+  "function": "",
+  "why": "",
+  "fix_or_null": null,
+  "allowed_span": "",
+  "next_command": "STOP_COMPILE_CLEAN",
+  "assurance_vector": {
+    "C": "clean",
+    "S": "not_applicable",
+    "R": "not_applicable",
+    "B": "not_applicable",
+    "P": "not_applicable",
+    "D": "not_applicable",
+    "F": "not_applicable"
+  },
+  "receipt_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "source_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "source_anchor": "f-L0-01234567"
+}

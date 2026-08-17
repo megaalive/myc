@@ -40,22 +40,22 @@ static void test_next_check(void)
     myc_result res;
     char *cmd;
 
-    /* T1: RUNTIME_VIOLATION -> --run */
+    /* T1: RUNTIME_VIOLATION tanpa sanloc -> GIVE_UP + context */
     res_init(&res);
     res.verdict = MC_RUNTIME_VIOLATION;
     cmd = myc_agent_build_next_check(&res, NULL);
-    CHECK(cmd && strstr(cmd, "--run") && strstr(cmd, "--agent"),
-          "T1: RUNTIME -> --run --agent");
+    CHECK(cmd && strstr(cmd, "myc context") && strstr(cmd, "--budget 4K"),
+          "T1: RUNTIME tanpa template -> myc context --budget 4K");
     CHECK(cmd && !strstr(cmd, "--prove"), "T1: tanpa --prove");
     myc_free(cmd);
     myc_result_free(&res);
 
-    /* T2: COMPILE_ERROR -> tanpa --run */
+    /* T2: COMPILE_ERROR tanpa template -> context, bukan re-check */
     res_init(&res);
     res.verdict = MC_COMPILE_ERROR;
     cmd = myc_agent_build_next_check(&res, "x.c");
-    CHECK(cmd && strcmp(cmd, "myc check x.c --agent") == 0,
-          "T2: COMPILE_ERROR -> myc check x.c --agent");
+    CHECK(cmd && strstr(cmd, "myc context x.c --budget 4K"),
+          "T2: COMPILE_ERROR tanpa template -> myc context x.c --budget 4K");
     myc_free(cmd);
     myc_result_free(&res);
 
@@ -75,6 +75,8 @@ static void test_next_check(void)
     myc_gate_set_status(&res, MYC_GATE_RUNTIME, MYC_GATE_COMPLETED_CLEAN,
                         NULL);
     cmd = myc_agent_build_next_check(&res, NULL);
+    CHECK(cmd && strstr(cmd, "STOP_COMPILE_CLEAN"),
+          "T4: OK + runtime clean -> STOP_COMPILE_CLEAN");
     CHECK(cmd && !strstr(cmd, "--run"),
           "T4: OK + runtime clean -> tanpa --run");
     myc_free(cmd);
@@ -125,8 +127,10 @@ static void test_diagnostic_class_and_edits(void)
               strcmp(ar.primary_finding.diagnostic_class, "runtime") == 0,
           "T6: diagnostic_class=runtime");
     CHECK(ar.has_next_check && ar.next_check.command &&
-              strstr(ar.next_check.command, "--run"),
-          "T6: next_check --run");
+              (strstr(ar.next_check.command, "FIX_ONE") ||
+               strstr(ar.next_check.command, "myc context")),
+          "T6: next_check FIX_ONE atau context (bukan re-check buta)");
+    CHECK(ar.has_action, "T6: action terisi");
     CHECK(ar.allowed_edit_count >= 1, "T6: allowed_edits non-empty");
     CHECK(ar.preserve_count >= 1, "T6: preserve non-empty");
     CHECK(ar.forbidden_count >= 1 && ar.forbidden[0].region &&
@@ -252,8 +256,14 @@ static void test_compile_class(void)
               strcmp(ar.primary_finding.diagnostic_class, "compile") == 0,
           "T8: diagnostic_class=compile");
     CHECK(ar.next_check.command &&
+              strstr(ar.next_check.command, "FIX_ONE") &&
               !strstr(ar.next_check.command, "--run"),
-          "T8: next_check tanpa --run");
+          "T8: next_check FIX_ONE tanpa --run");
+    CHECK(ar.has_action && ar.action == MYC_LITE_FIX_ONE,
+          "T8: action=FIX_ONE");
+    CHECK(ar.has_primary && ar.primary_finding.source_anchor &&
+              strstr(ar.primary_finding.source_anchor, "f-"),
+          "T8: source_anchor additive");
     myc_agent_result_free(&ar);
     myc_result_free(&res);
 }

@@ -30,8 +30,8 @@
  * gate, TIDAK menambah debt. Ledger/profil gagal baca = prior tabel murni.
  *
  * Batas jujur (v1): lapisan PERENCANAAN rekomendasi (`myc eig <file>`),
- * belum memilih/menjalankan gate otomatis di dalam `myc check`. Pemakaian
- * rekomendasi ini oleh assurance budget (D3/SOL-30) = follow-up.
+ * plus opt-in `--eig-apply` pada `myc check` yang menjalankan paling
+ * banyak satu eksperimen within_budget setelah L1. Default OFF.
  */
 #ifndef MYC_EIG_H
 #define MYC_EIG_H
@@ -95,6 +95,11 @@ char *myc_eig_json(const myc_eig_set *eig);
 
 /* Bebaskan eig set (command/source_anchor/rationale/report). */
 void myc_eig_free(myc_eig_set *eig);
+
+/* G4: --eig-apply. Mutasi req: set flag satu eksperimen within_budget
+ * yang belum aktif. Kembali 1 bila req berubah (caller re-run pipeline).
+ * 0 = tidak ada yang bisa dijalankan (sudah set / tidak within_budget). */
+int myc_eig_apply_one(myc_request *req, const myc_result *res);
 
 /* Tabel biaya default per eksperimen (DS-14) — diekspos agar modul lain
  * memakai tabel yang sama, bukan salinan (Candidate Tournament SOL-10

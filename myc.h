@@ -744,6 +744,12 @@ typedef struct {
                                      cache (SOL-18); default 0 = cache ON */
      int         agent;            /* --agent: output protokol agent
                                       (myc.agent.v2) untuk konsumsi LLM */
+     int         lite;             /* --lite: output myc.lite.v1 (agen lemah) */
+     /* G4: --eig-apply [--budget-ms N]: setelah L1, jalankan paling
+      * banyak satu eksperimen within_budget. Default OFF. Budget 0 =
+      * 5000 ms. Masuk cache key g2 (hasil bisa berbeda). */
+     int         eig_apply;
+     int         eig_budget_ms;
      int         write_repro;     /* --write-repro: tulis .myc-witness/ repro dir */
      int         tx_verify;       /* --tx-verify: verifikasi patch dalam transaksi */
      char       *tx_finding_id;   /* --finding-id ID: finding target */
@@ -1678,6 +1684,8 @@ void myc_run(const myc_request *req, myc_result *res);
 void myc_report_text(const myc_result *res);
 void myc_report_json(const myc_result *res);
 void myc_report_json_summary(const myc_result *res);
+int myc_report_lite(const myc_result *res, const char *source,
+                    size_t source_len);
 
 /* Nama error code (statis). */
 const char *myc_error_name(myc_error_code c);

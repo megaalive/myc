@@ -80,6 +80,60 @@ static void fingerprint_cache_invalidate(void)
     fp_cache.valid = 0;
 }
 
+/* G2: true bila source memuat direktif preprocessor di luar string/komentar.
+ * Fail-closed: ada '#' di awal baris (setelah ws) -> perlu gcc -E. */
+static int src_has_pp_directive(const char *s, size_t len)
+{
+    size_t i = 0;
+    int at_bol = 1;
+
+    if (!s)
+        return 0;
+    while (i < len) {
+        if (s[i] == '"' || s[i] == '\'') {
+            char q = s[i++];
+            at_bol = 0;
+            while (i < len) {
+                if (s[i] == '\\' && i + 1 < len) {
+                    i += 2;
+                    continue;
+                }
+                if (s[i] == q) {
+                    i++;
+                    break;
+                }
+                i++;
+            }
+            continue;
+        }
+        if (s[i] == '/' && i + 1 < len && s[i + 1] == '/') {
+            i += 2;
+            while (i < len && s[i] != '\n')
+                i++;
+            continue;
+        }
+        if (s[i] == '/' && i + 1 < len && s[i + 1] == '*') {
+            i += 2;
+            at_bol = 0;
+            while (i + 1 < len && !(s[i] == '*' && s[i + 1] == '/'))
+                i++;
+            i += 2;
+            continue;
+        }
+        if (s[i] == '\n') {
+            at_bol = 1;
+            i++;
+            continue;
+        }
+        if (at_bol && s[i] == '#')
+            return 1;
+        if (s[i] != ' ' && s[i] != '\t' && s[i] != '\r' && s[i] != '\f')
+            at_bol = 0;
+        i++;
+    }
+    return 0;
+}
+
 static void fingerprint_cache_update(const char *gcc_path,
                                      const char *cwd,
                                      const char *policy_hex,
@@ -837,6 +891,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     const char *src;
     size_t      srclen;
     char        hex[65];
+    unsigned long long compile_ms = 0;
 
     src = req->input.data;
     srclen = req->input.len;
@@ -955,6 +1010,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
      * (sama dengan negative-space 9.8). Hard evidence tetap dari gate
      * semantik: gcc -Wuse-after-free / -fanalyzer, sanitizer, dst. */
     if (req->run_lint) {
+        unsigned long long t0 = myc_wall_ms();
         res->lint_observations =
             myc_lint_source(src, srclen, req->freestanding, res);
         if (res->lint_observations > 0) {
@@ -970,6 +1026,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             myc_result_add_evidence(res, MYC_GATE_LINT, MYC_EVIDENCE_GATE_END,
                                     "lint: bersih");
         }
+        myc_gate_add_ms(res, MYC_GATE_LINT, myc_wall_ms() - t0);
     }
 
     /* --- Gate opsional: Negative-Space Analysis (9.8, --negative) ---
@@ -1006,55 +1063,67 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         /* Non-blocking: lanjut pipeline normal (tidak return). */
     }
 
-    /* --- gcc -E --- */
-    {
+    /* --- gcc -E (G2: skip spawn bila tidak ada direktif preprocessor) --- */
+    if (!src_has_pp_directive(src, srclen)) {
+        memset(&pr, 0, sizeof(pr));
+        res->ran_preprocess = 1;
+        myc_gate_set_status(res, MYC_GATE_PREPROCESS, MYC_GATE_COMPLETED_CLEAN,
+                            "preprocess skipped: no directive");
+        myc_result_add_evidence(res, MYC_GATE_PREPROCESS, MYC_EVIDENCE_GATE_END,
+                                "gcc -E skipped (no preprocessor directive)");
+        myc_scan_markers(src, srclen, res);
+        myc_scan_calls(src, srclen, res);
+    } else {
+        unsigned long long t0 = myc_wall_ms();
         static const char *const pre_args[] = { "-E", "-std=c11", NULL };
         run_gcc(req, gcc_path, pre_args, src, srclen, max_out, &pr);
-    }
-    if (pr.timed_out) {
-        res->verdict = MC_TIMEOUT;
-        res->err = MYC_ERR_TIMEOUT;
+        myc_gate_set_status(res, MYC_GATE_PREPROCESS,
+                            MYC_GATE_COMPLETED_CLEAN, NULL);
+        myc_gate_add_ms(res, MYC_GATE_PREPROCESS, myc_wall_ms() - t0);
+        if (pr.timed_out) {
+            res->verdict = MC_TIMEOUT;
+            res->err = MYC_ERR_TIMEOUT;
+            myc_proc_result_free(&pr);
+            myc_free(gcc_path);
+            myc_gate_set_status(res, MYC_GATE_PREPROCESS, MYC_GATE_INCONCLUSIVE,
+                                "preprocess timeout");
+            myc_result_add_evidence(res, MYC_GATE_PREPROCESS, MYC_EVIDENCE_ERROR,
+                                    "gcc -E timeout");
+            myc_reduce_verdict(res);
+            return;
+        }
+        res->ran_preprocess = 1;
+        adopt_proc(res, &pr);
         myc_proc_result_free(&pr);
-        myc_free(gcc_path);
-        myc_gate_set_status(res, MYC_GATE_PREPROCESS, MYC_GATE_INCONCLUSIVE,
-                            "preprocess timeout");
-        myc_result_add_evidence(res, MYC_GATE_PREPROCESS, MYC_EVIDENCE_ERROR,
-                                "gcc -E timeout");
-        myc_reduce_verdict(res);
-        return;
-    }
-    res->ran_preprocess = 1;
-    adopt_proc(res, &pr);
-    myc_proc_result_free(&pr);
 
-    if (res->exit_code != 0) {
-        /* preprocess gagal (mis. makro rusak) */
-        res->verdict = MC_COMPILE_ERROR;
-        res->err = MYC_ERR_PREPROCESS_ERROR;
-        myc_gate_set_status(res, MYC_GATE_PREPROCESS, MYC_GATE_COMPLETED_FINDINGS,
-                            res->stderr_text ? res->stderr_text : "preprocess error");
-        myc_result_add_evidence(res, MYC_GATE_PREPROCESS, MYC_EVIDENCE_FINDING,
-                                "preprocess gagal");
-        if (res->stderr_text)
-            ingest_gcc_diagnostics(res, res->stderr_text);
-        myc_free(gcc_path);
-        myc_reduce_verdict(res);
-        return;
-    }
-    myc_gate_set_status(res, MYC_GATE_PREPROCESS, MYC_GATE_COMPLETED_CLEAN,
-                        "preprocess clean");
-    myc_result_add_evidence(res, MYC_GATE_PREPROCESS, MYC_EVIDENCE_GATE_END,
-                            "gcc -E clean");
+        if (res->exit_code != 0) {
+            res->verdict = MC_COMPILE_ERROR;
+            res->err = MYC_ERR_PREPROCESS_ERROR;
+            myc_gate_set_status(res, MYC_GATE_PREPROCESS,
+                                MYC_GATE_COMPLETED_FINDINGS,
+                                res->stderr_text ? res->stderr_text
+                                                 : "preprocess error");
+            myc_result_add_evidence(res, MYC_GATE_PREPROCESS,
+                                    MYC_EVIDENCE_FINDING,
+                                    "preprocess gagal");
+            if (res->stderr_text)
+                ingest_gcc_diagnostics(res, res->stderr_text);
+            myc_free(gcc_path);
+            myc_reduce_verdict(res);
+            return;
+        }
+        myc_gate_set_status(res, MYC_GATE_PREPROCESS, MYC_GATE_COMPLETED_CLEAN,
+                            "preprocess clean");
+        myc_result_add_evidence(res, MYC_GATE_PREPROCESS, MYC_EVIDENCE_GATE_END,
+                                "gcc -E clean");
 
-    /* --- Lapis 2 + 3: markers & calls (warning, non-blocking) --- */
-    {
-        /* pre = buffer yang TERSIMPAN (mungkin terpotong 1MB); panjangnya
-         * harus shown_stdout_bytes, BUKAN total (gcc bisa menulis jauh lebih
-         * banyak). Memakai total -> out-of-bounds read (bug dogfooding). */
-        const char *pre = res->stdout_text ? res->stdout_text : "";
-        size_t      prelen = res->stdout_text ? res->shown_stdout_bytes : 0;
-        myc_scan_markers(pre, prelen, res);
-        myc_scan_calls(pre, prelen, res);
+        /* Lapis 2 + 3: markers & calls (warning, non-blocking) */
+        {
+            const char *pre = res->stdout_text ? res->stdout_text : "";
+            size_t      prelen = res->stdout_text ? res->shown_stdout_bytes : 0;
+            myc_scan_markers(pre, prelen, res);
+            myc_scan_calls(pre, prelen, res);
+        }
     }
 
     /* --- Gate: kompilasi + tier dasar memori (perlu -O2 utk memori) ---
@@ -1082,7 +1151,11 @@ void myc_pipeline(const myc_request *req, myc_result *res)
             myc_free(gcc_path);
             return;
         }
-        run_gcc(req, gcc_path, args, src, srclen, max_out, &pr);
+        {
+            unsigned long long t0 = myc_wall_ms();
+            run_gcc(req, gcc_path, args, src, srclen, max_out, &pr);
+            compile_ms = myc_wall_ms() - t0;
+        }
         myc_free((void *)args);
     }
     if (req->freestanding) {
@@ -1116,6 +1189,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         myc_free(gcc_path);
         myc_gate_set_status(res, MYC_GATE_COMPILE, MYC_GATE_INCONCLUSIVE,
                             "compile timeout");
+        myc_gate_add_ms(res, MYC_GATE_COMPILE, compile_ms);
         myc_result_add_evidence(res, MYC_GATE_COMPILE, MYC_EVIDENCE_ERROR,
                                 "gcc -c timeout");
         myc_reduce_verdict(res);
@@ -1130,6 +1204,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
         res->err = MYC_ERR_COMPILE_ERROR;
         myc_gate_set_status(res, MYC_GATE_COMPILE, MYC_GATE_COMPLETED_FINDINGS,
                             res->stderr_text ? res->stderr_text : "compile error");
+        myc_gate_add_ms(res, MYC_GATE_COMPILE, compile_ms);
         myc_result_add_evidence(res, MYC_GATE_COMPILE, MYC_EVIDENCE_FINDING,
                                 "compile gagal");
         if (res->stderr_text)
@@ -1140,6 +1215,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     }
     myc_gate_set_status(res, MYC_GATE_COMPILE, MYC_GATE_COMPLETED_CLEAN,
                         "compile clean");
+    myc_gate_add_ms(res, MYC_GATE_COMPILE, compile_ms);
     myc_result_add_evidence(res, MYC_GATE_COMPILE, MYC_EVIDENCE_GATE_END,
                             "gcc -c clean");
 
@@ -2131,6 +2207,129 @@ static long rt_alloc_size_at(const char *src, size_t len, int line)
     return v;
 }
 
+/* G3: ident-boundary call `fn(` di string (bukan fgets vs gets). */
+static int rt_has_ident_call(const char *s, const char *fn)
+{
+    const char *p;
+    size_t fl;
+
+    if (!s || !fn)
+        return 0;
+    fl = strlen(fn);
+    p = s;
+    while ((p = strstr(p, fn)) != NULL) {
+        char prev = (p == s) ? 0 : p[-1];
+        const char *q;
+        int ident = (prev >= '0' && prev <= '9') ||
+                    (prev >= 'A' && prev <= 'Z') ||
+                    (prev >= 'a' && prev <= 'z') ||
+                    prev == '_';
+        if (!ident) {
+            q = p + fl;
+            while (*q == ' ' || *q == '\t')
+                q++;
+            if (*q == '(')
+                return 1;
+        }
+        p++;
+    }
+    return 0;
+}
+
+/* G3: gets(buf) -> fgets(buf, sizeof(buf), stdin) dan
+ * sprintf(buf, ...) -> snprintf(buf, sizeof(buf), ...) bila buf array lokal.
+ * Satu baris, transformasi lokal, confidence tinggi. Kembali 1 bila patch. */
+static int try_stdio_local_patch(myc_runtime_repair *r,
+                                 const char *source, size_t source_len,
+                                 int line)
+{
+    size_t      ll;
+    const char *ln;
+    char        linebuf[1024];
+    const char *ap[8];
+    size_t      al[8];
+    int         na, i;
+
+    if (!r || !source || line < 1)
+        return 0;
+    ln = rt_line_at(source, source_len, line, &ll);
+    if (!ln || ll == 0 || ll >= sizeof(linebuf))
+        return 0;
+    memcpy(linebuf, ln, ll);
+    linebuf[ll] = '\0';
+
+    if (rt_has_ident_call(linebuf, "gets")) {
+        na = rt_call_args(linebuf, "gets", ap, al, 1);
+        if (na >= 1 &&
+            rt_is_local_array(source, source_len, line, ap[0], al[0])) {
+            size_t need = al[0] * 3 + 48;
+            char  *buf = (char *)myc_malloc(need);
+            if (!buf)
+                return 0;
+            snprintf(buf, need, "fgets(%.*s, sizeof(%.*s), stdin);",
+                     (int)al[0], ap[0], (int)al[0], ap[0]);
+            r->patched_source = rt_replace_call_seg(source, source_len,
+                                                    line, "gets(", buf);
+            if (r->patched_source) {
+                size_t dlen = al[0] + 80;
+                char  *dbuf = (char *)myc_malloc(dlen);
+                if (dbuf) {
+                    snprintf(dbuf, dlen,
+                             "ganti gets(%.*s) dengan fgets + sizeof "
+                             "(array lokal)",
+                             (int)al[0], ap[0]);
+                    r->patch_text = dbuf;
+                }
+                r->confidence = 90;
+            }
+            myc_free(buf);
+            return r->patched_source != NULL;
+        }
+        return 0;
+    }
+
+    if (rt_has_ident_call(linebuf, "sprintf")) {
+        na = rt_call_args(linebuf, "sprintf", ap, al, 8);
+        if (na >= 2 &&
+            rt_is_local_array(source, source_len, line, ap[0], al[0])) {
+            size_t need = al[0] * 2 + 48;
+            char  *buf;
+            size_t o;
+            for (i = 1; i < na; i++)
+                need += al[i] + 2;
+            buf = (char *)myc_malloc(need);
+            if (!buf)
+                return 0;
+            o = (size_t)snprintf(buf, need,
+                                 "snprintf(%.*s, sizeof(%.*s)",
+                                 (int)al[0], ap[0], (int)al[0], ap[0]);
+            for (i = 1; i < na && o < need; i++)
+                o += (size_t)snprintf(buf + o, need - o, ", %.*s",
+                                      (int)al[i], ap[i]);
+            if (o < need)
+                snprintf(buf + o, need - o, ");");
+            r->patched_source = rt_replace_call_seg(source, source_len,
+                                                    line, "sprintf(", buf);
+            if (r->patched_source) {
+                size_t dlen = al[0] + 80;
+                char  *dbuf = (char *)myc_malloc(dlen);
+                if (dbuf) {
+                    snprintf(dbuf, dlen,
+                             "ganti sprintf(%.*s, ...) dengan snprintf + "
+                             "sizeof (array lokal)",
+                             (int)al[0], ap[0]);
+                    r->patch_text = dbuf;
+                }
+                r->confidence = 90;
+            }
+            myc_free(buf);
+            return r->patched_source != NULL;
+        }
+        return 0;
+    }
+    return 0;
+}
+
 myc_runtime_repair *myc_repair_runtime_patch(const myc_result *res,
                                              const char *source,
                                              size_t source_len)
@@ -2320,13 +2519,38 @@ myc_runtime_repair *myc_repair_runtime_patch(const myc_result *res,
         }
     }
 
+    /* G3: gets / sprintf pada array lokal (setelah template A-C). */
+    if (!r->patched_source)
+        try_stdio_local_patch(r, source, source_len, loc_line);
+
     if (!r->patched_source) {
         if (!r->why) {
             r->why = myc_strdup(
                 "template runtime tidak yakin untuk kasus ini "
                 "(butuh analisis manual: kapasitas tidak statis / "
-                "polanya di luar strcpy-strcat-memset-memcpy-UAF)");
+                "polanya di luar strcpy-strcat-memset-memcpy-UAF-"
+                "gets-sprintf)");
         }
+        r->confidence = 5;
+    }
+    return r;
+}
+
+myc_runtime_repair *myc_repair_source_line_patch(const char *source,
+                                                 size_t source_len,
+                                                 int line)
+{
+    myc_runtime_repair *r;
+
+    if (!source || line < 1)
+        return NULL;
+    r = (myc_runtime_repair *)myc_calloc(1, sizeof(*r));
+    if (!r)
+        return NULL;
+    if (!try_stdio_local_patch(r, source, source_len, line)) {
+        r->why = myc_strdup(
+            "template compile tidak yakin untuk baris ini "
+            "(bukan gets/sprintf pada array lokal)");
         r->confidence = 5;
     }
     return r;

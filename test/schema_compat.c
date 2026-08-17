@@ -218,6 +218,7 @@ static void test_goldens_parse(void)
     static const char *const files[] = {
         "myc.result.v1.json",
         "myc.agent.v2.json",
+        "myc.lite.v1.json",
         "myc.calibration.v1.json",
         "myc.evidence_cache.v1.json",
         "myc.scenario.v1.json",
@@ -433,6 +434,47 @@ static void test_agent_v2(void)
         }
     }
 
+    json_free(root);
+}
+
+/* ------------------------------------------------------------------ */
+/* T3b: myc.lite.v1 conformance (additive, agen lemah)                  */
+/* ------------------------------------------------------------------ */
+
+static void test_lite_v1(void)
+{
+    json_value *root = parse_golden("myc.lite.v1.json");
+    json_value *v, *av;
+    static const char *const actions[] = {
+        "STOP_COMPILE_CLEAN", "FIX_ONE", "ESCALATE_RUNTIME",
+        "ESCALATE_CONTRACT", "GIVE_UP_NO_TEMPLATE"
+    };
+    static const char *const keys[] = {
+        "schema", "verdict", "claim", "action", "finding_id", "line",
+        "function", "why", "fix_or_null", "allowed_span", "next_command",
+        "assurance_vector", "receipt_sha256", "source_sha256",
+        "source_anchor"
+    };
+    size_t i;
+    char label[160];
+
+    CHECK(root != NULL, "T3b: golden lite.v1 ter-parse");
+    if (!root)
+        return;
+    for (i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+        v = json_get(root, keys[i]);
+        snprintf(label, sizeof(label), "T3b: field %s ada", keys[i]);
+        CHECK(v != NULL, label);
+    }
+    v = json_get(root, "schema");
+    CHECK(is_str(v) && strcmp(v->str, "myc.lite.v1") == 0,
+          "T3b: schema = myc.lite.v1");
+    v = json_get(root, "action");
+    CHECK(is_str(v) && str_in(v->str, actions, 5), "T3b: action enum");
+    v = json_get(root, "fix_or_null");
+    CHECK(v && v->type == JSON_NULL, "T3b: fix_or_null boleh null");
+    av = json_get(root, "assurance_vector");
+    CHECK(is_obj(av), "T3b: assurance_vector objek");
     json_free(root);
 }
 
@@ -1115,6 +1157,40 @@ static void test_producers(void)
         }
         myc_agent_result_free(&ar);
     }
+
+    /* --- lite: myc_lite_result_json memancarkan field wajib --- */
+    {
+        myc_lite_result lr;
+        char *js;
+        static const char *const lite_keys[] = {
+            "schema", "verdict", "claim", "action", "finding_id", "line",
+            "function", "why", "fix_or_null", "allowed_span",
+            "next_command", "assurance_vector"
+        };
+
+        myc_lite_result_init(&lr);
+        lr.verdict = MC_OK;
+        lr.action = MYC_LITE_STOP_COMPILE_CLEAN;
+        lr.claim = t_strdup("compile_clean (runtime not run)");
+        lr.finding_id = t_strdup("f-00000000");
+        lr.next_command = t_strdup("STOP_COMPILE_CLEAN");
+        js = myc_lite_result_json(&lr);
+        CHECK(js != NULL, "T10: myc_lite_result_json menghasilkan JSON");
+        if (js) {
+            CHECK(json_parse_cstr(js, &root) && root, "T10: lite JSON ter-parse");
+            if (root) {
+                for (i = 0; i < sizeof(lite_keys) / sizeof(lite_keys[0]); i++) {
+                    v = json_get(root, lite_keys[i]);
+                    snprintf(label, sizeof(label),
+                             "T10: lite memancarkan field %s", lite_keys[i]);
+                    CHECK(v != NULL, label);
+                }
+                json_free(root);
+            }
+            myc_free(js);
+        }
+        myc_lite_result_free(&lr);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -1138,6 +1214,7 @@ int main(int argc, char **argv)
     test_goldens_parse();
     test_result_v1();
     test_agent_v2();
+    test_lite_v1();
     test_calibration_v1();
     test_evidence_cache();
     test_scenario_v1();

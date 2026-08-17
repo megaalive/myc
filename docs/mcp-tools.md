@@ -4,6 +4,8 @@
 satu pesan per baris). Agen yang mendukung MCP dapat menghubungkan `mcp.exe`
 sebagai server dan memanggil pipeline verifikasi `myc` sebagai tool.
 
+Agen lemah: pakai tool **`verify`** (`myc.lite.v1`). Agen frontier: `agent_check`.
+
 ## Koneksi
 
 - Transport: stdio (server dijalankan sebagai subproses, `command: mcp.exe`).
@@ -239,6 +241,47 @@ Contoh (bounded repair loop, dua bug runtime beruntun → konvergen):
   "max_iter":3,
   "no_pack":true}}
 ```
+
+### 8. `verify` — lite check untuk agen (myc.lite.v1)
+
+- `source` (string, **wajib**): kode C.
+- `flags` (array string, opsional). Kosong atau absen = `--scenario auto`
+  (resep terkecil yang cukup dari bentuk source).
+- **Hasil**: `content[0].text` + `structuredContent` schema `myc.lite.v1`:
+  `verdict`, `claim`, `action`, `finding_id`, `line`, `function`, `why`,
+  `fix_or_null`, `allowed_span`, `next_command`, `assurance_vector`,
+  `receipt_sha256`, `source_sha256`, `source_anchor`.
+- `action` enum: `STOP_COMPILE_CLEAN` | `FIX_ONE` | `ESCALATE_RUNTIME` |
+  `ESCALATE_CONTRACT` | `GIVE_UP_NO_TEMPLATE`.
+- `STOP_COMPILE_CLEAN` = compile bersih, **bukan** memory-safe.
+
+Contoh:
+
+```
+{"name":"verify","arguments":{"source":"int add(int a,int b){return a+b;}\n"}}
+```
+
+### 9. `context` — paket konteks minimal (SOL-22)
+
+- `source` (string, **wajib**).
+- `flags` (array string, opsional).
+- `finding_id` (string, opsional).
+- `budget` (number, opsional, 4096..16384, default 4096).
+- **Hasil**: teks paket context. NON-blocking; verdict tidak berubah.
+
+### 10. `next` — rekomendasi EIG tanpa apply
+
+- `source` (string, **wajib**).
+- `flags` (array string, opsional).
+- `budget_ms` (number, opsional, default 5000).
+- **Hasil**: JSON rekomendasi EIG. Tidak menjalankan gate tambahan.
+  Untuk mengeksekusi satu eksperimen: CLI `--eig-apply` / flag MCP `check`.
+
+### 11. `compare_candidates` — Pareto frontier kandidat
+
+- `baseline_path` (string, **wajib**): path file C baseline.
+- `candidate_paths` (array string, **wajib**): 1..7 path kandidat.
+- myc **tidak** memilih pemenang; harness yang memilih.
 
 ## Catatan untuk agent
 

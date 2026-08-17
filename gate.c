@@ -56,6 +56,24 @@ void myc_gate_set_status(myc_result *res,
     }
 }
 
+void myc_gate_add_ms(myc_result *res, myc_gate_id id,
+                     unsigned long long ms)
+{
+    myc_gate_result *g = NULL;
+    size_t i;
+
+    if (!res || id >= MYC_GATE_COUNT || ms == 0)
+        return;
+    for (i = 0; i < res->gate_count; i++) {
+        if (res->gates[i].id == id) {
+            g = &res->gates[i];
+            break;
+        }
+    }
+    if (g)
+        g->duration_ms += ms;
+}
+
 const myc_gate_result *myc_gate_get(const myc_result *res, myc_gate_id id)
 {
     size_t i;

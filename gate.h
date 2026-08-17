@@ -24,6 +24,11 @@ void myc_gate_set_status(myc_result *res,
                          myc_gate_status status,
                          const char *output);
 
+/* Tambah durasi wall-clock ke gate (P0). Tidak masuk receipt.
+ * No-op bila gate belum ada. */
+void myc_gate_add_ms(myc_result *res, myc_gate_id id,
+                     unsigned long long ms);
+
 /* Dapatkan gate result berdasarkan id (NULL bila tidak ada). */
 const myc_gate_result *myc_gate_get(const myc_result *res, myc_gate_id id);
 

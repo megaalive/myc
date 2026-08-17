@@ -896,6 +896,23 @@ static void myc_ledger_integrate(const myc_request *req, myc_result *res)
     myc_ledger_free(&ledger);
 }
 
+/* G4: setelah L1, paling banyak satu eksperimen EIG within_budget. */
+static void maybe_eig_apply(const myc_request *req, myc_result *res)
+{
+    myc_request reqe;
+
+    if (!req || !res || !req->eig_apply || res->verdict != MC_OK)
+        return;
+    reqe = *req;
+    if (!myc_eig_apply_one(&reqe, res))
+        return;
+    reqe.eig_apply = 0;
+    myc_result_free(res);
+    myc_result_init(res);
+    myc_pipeline(&reqe, res);
+    res->eig_ran = 1;
+}
+
 void myc_run(const myc_request *req, myc_result *res)
 {
     myc_error_code ve = myc_request_validate(req);
@@ -1018,6 +1035,7 @@ void myc_run(const myc_request *req, myc_result *res)
                  * bila source berubah (fungsi berubah + dependents). */
                 if (!myc_cache_try_replay(&req2, res, buf, len)) {
                     myc_pipeline(&req2, res);
+                    maybe_eig_apply(&req2, res);
                     /* Fase 4 A1: ledger asumsi portabilitas — deteksi +
                      * state + ack (NON-blocking; facts dari macro dump
                      * gcc; jalur cache-hit memakai facts dari entry). */
@@ -1075,6 +1093,7 @@ void myc_run(const myc_request *req, myc_result *res)
         if (!myc_cache_try_replay(eff, res, eff->input.data,
                                   eff->input.len)) {
             myc_pipeline(eff, res);
+            maybe_eig_apply(eff, res);
             /* Fase 4 A1: ledger asumsi portabilitas (non-blocking). */
             if (!eff->no_assumptions && !eff->no_persist)
                 myc_assume_run(eff, res, eff->input.data, eff->input.len,
@@ -1150,7 +1169,7 @@ static void usage(void)
     printf(
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
-        "  myc check <file.c> [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache] [--no-assumptions] [--cwd DIR] [--profile ID] [--calibrate] [--watch-diff]\n"
+        "  myc check <file.c> [--json] [--json-summary] [--agent] [--lite] [--analyze] [--strict] [--no-lint] [--no-cache] [--no-assumptions] [--cwd DIR] [--profile ID] [--calibrate] [--watch-diff]\n"
         "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--exhaustive] [--stack [--stack-budget N]] [--fuzz [--fuzz-iters N] [--fuzz-seed S]] [--mutate-audit [--mutate-max N]] [--freestanding] [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete] [--scenario NAME [--scenario-file PATH]] [--matrix] [--abi]\n"
         "  myc check <file.c> [--watch-diff | --delta]   (IDE-6: fast inner loop per-fungsi --\n"
         "                        delta assurance terstruktur vs baseline cache (fungsi\n"
@@ -1170,7 +1189,7 @@ static void usage(void)
         "                        utk output --agent; NON-blocking, Fase 7)\n"
         "  myc check <file.c> --budget-contract '{\"required\":{\"runtime\":\"clean\"},\"max_time_ms\":10000}'\n"
         "                        (SOL-30: target assurance eksplisit; tak tercapai = INCONCLUSIVE + report)\n"
-        "  myc check -          [--json] [--json-summary] [--agent] [--analyze] [--strict] [--no-lint] [--no-cache]\n"
+        "  myc check -          [--json] [--json-summary] [--agent] [--lite] [--analyze] [--strict] [--no-lint] [--no-cache]\n"
         "                        (source dari stdin)\n"
         "  myc context <file.c> [--finding-id ID] [--budget 4K|8K|16K] [--pack-dir DIR] [--no-pack] [gate flags...]\n"
         "                        (paket konteks minimal untuk model: function slice,\n"
@@ -1179,11 +1198,12 @@ static void usage(void)
         "                        pack; SOL-22 + pack Fase 7 NON-blocking)\n"
         "  myc policy\n"
         "  myc probe\n"
-        "  myc prompt <file.c> [--pack-dir DIR] [--no-pack]\n"
+        "  myc prompt <file.c> [--pack-dir DIR] [--no-pack] [--harness cursor|claude|codex]\n"
         "                        (D4/DS-15: system-prompt snippet deterministik\n"
         "                        dari fakta target + kebijakan proyek; pack\n"
         "                        proyek lokal myc.prompt.md + myc.spec.json,\n"
-        "                        NON-blocking, Fase 7)\n"
+        "                        NON-blocking, Fase 7; --harness menambah\n"
+        "                        protokol myc.lite.v1)\n"
         "  myc compare <ref.c> <new.c> [func...]\n"
         "                        (A4/DS-04: differential oracle pair --\n"
         "                        baterai input bersama dijalankan pada KEDUA\n"
@@ -1224,6 +1244,11 @@ static void usage(void)
          "                        severity x scope / (time x token); prior tabel\n"
          "                        deterministik dikalibrasi dari ledger SOL-21 +\n"
          "                        profil SOL-20; NON-blocking, verdict tetap)\n");
+    printf(
+        "  myc check <file.c> [--eig-apply [--budget-ms N]]\n"
+        "                        (G4: setelah L1 jalankan paling banyak satu\n"
+        "                        eksperimen EIG within_budget; default OFF;\n"
+        "                        N=0 atau absen = 5000 ms)\n");
     /* PR-017: blok usage backends dipisah ke printf tersendiri — string
      * literal yang BERTETANGGA digabung compiler (overlength-strings),
      * dan gabungan usage utama sudah mendekati batas 4095 C99. */
@@ -1864,7 +1889,8 @@ static int cmd_abi_pair(const char *a_path, const char *b_path)
     return changed ? 1 : 0;
 }
 
-static int cmd_prompt(const char *path, const char *pack_dir, int no_pack)
+static int cmd_prompt(const char *path, const char *pack_dir, int no_pack,
+                      const char *harness)
 {
     myc_source_input in;
     const char *buf;
@@ -1884,8 +1910,19 @@ static int cmd_prompt(const char *path, const char *pack_dir, int no_pack)
                 path, myc_error_name(le));
         return 1;
     }
-    /* Project-local pack: myc.prompt.md + myc.spec.json (Fase 7).
-     * spec.json ADA tapi invalid = fail-fast exit 2 (pola scenario). */
+    if (harness) {
+        prompt = myc_prompt_harness(harness, buf, len);
+        if (needs_free)
+            myc_free((void *)buf);
+        if (!prompt) {
+            fprintf(stderr,
+                    "myc: prompt: --harness harus cursor, claude, atau codex\n");
+            return 2;
+        }
+        printf("%s", prompt);
+        myc_free(prompt);
+        return 0;
+    }
     prc = myc_pack_load(pack_dir, no_pack, &info);
     if (prc == -1) {
         fprintf(stderr,
@@ -1944,6 +1981,7 @@ int main(int argc, char **argv)
     if (strcmp(argv[1], "prompt") == 0) {
         const char *ppack_dir = NULL;
         int         pno_pack = 0;
+        const char *pharness = NULL;
         int         pi;
         if (argc < 3) {
             fprintf(stderr, "myc: prompt membutuhkan argumen file.c\n");
@@ -1955,13 +1993,16 @@ int main(int argc, char **argv)
                 pi++;
             } else if (strcmp(argv[pi], "--no-pack") == 0) {
                 pno_pack = 1;
+            } else if (strcmp(argv[pi], "--harness") == 0 && pi + 1 < argc) {
+                pharness = argv[pi + 1];
+                pi++;
             } else {
                 fprintf(stderr, "myc: prompt: flag tidak dikenal: %s\n",
                         argv[pi]);
                 return 2;
             }
         }
-        return cmd_prompt(argv[2], ppack_dir, pno_pack);
+        return cmd_prompt(argv[2], ppack_dir, pno_pack, pharness);
     }
 
     /* A4 (DS-04): myc compare <ref.c> <new.c> [func...]. */
@@ -2585,6 +2626,26 @@ int main(int argc, char **argv)
                 req.require_complete = 1; known = 1;
             } else if (strcmp(argv[i], "--agent") == 0) {
                 req.agent = 1; known = 1;
+            } else if (strcmp(argv[i], "--lite") == 0) {
+                req.lite = 1; known = 1;
+            } else if (strcmp(argv[i], "--eig-apply") == 0) {
+                req.eig_apply = 1; known = 1;
+            } else if (strcmp(argv[i], "--budget-ms") == 0) {
+                int ms;
+                if (i + 1 >= argc) {
+                    fprintf(stderr,
+                            "myc: --budget-ms membutuhkan argumen N\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                if (!parse_int_arg(argv[i + 1], &ms) || ms < 0) {
+                    fprintf(stderr,
+                            "myc: --budget-ms harus bilangan >= 0\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                req.eig_budget_ms = ms;
+                i++; known = 1;
             } else if (strcmp(argv[i], "--pack-dir") == 0) {
                 /* Fase 7 (DS-15 wiring): pack proyek lokal utk --agent
                  * dan context (myc.prompt.md + myc.spec.json). */
@@ -2983,6 +3044,11 @@ int main(int argc, char **argv)
                 agent_len = len;
                 agent_free = needs_free;
                 needs_free = 0;
+            } else if (req.lite && !is_context) {
+                agent_src = src;
+                agent_len = len;
+                agent_free = needs_free;
+                needs_free = 0;
             }
             if (needs_free)
                 myc_free((void *)src);
@@ -2996,6 +3062,10 @@ int main(int argc, char **argv)
             else if (req.agent) {
                 myc_report_agent(&res, pinfo_loaded ? &pinfo : NULL,
                                  agent_src, agent_len);
+                if (agent_free)
+                    myc_free((void *)agent_src);
+            } else if (req.lite) {
+                myc_report_lite(&res, agent_src, agent_len);
                 if (agent_free)
                     myc_free((void *)agent_src);
             } else

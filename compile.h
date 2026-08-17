@@ -43,6 +43,11 @@ typedef struct {
 myc_runtime_repair *myc_repair_runtime_patch(const myc_result *res,
                                              const char *source,
                                              size_t source_len);
+/* G3: patch satu baris gets/sprintf pada array lokal, tanpa sanloc.
+ * Dipakai apply compile in-memory (confidence tinggi + satu baris). */
+myc_runtime_repair *myc_repair_source_line_patch(const char *source,
+                                                 size_t source_len,
+                                                 int line);
 void myc_runtime_repair_free(myc_runtime_repair *r);
 
 #endif /* MYC_COMPILE_H */

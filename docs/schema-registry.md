@@ -23,6 +23,7 @@
 |---|---|---|---|---|
 | `myc.result.v1` | `--json-summary` | `report.c` `myc_report_json_summary` | CLI/MCP/harness | `test/golden/myc.result.v1.json` |
 | `myc.agent.v2` | `--agent` | `agent.c` `myc_agent_result_json` | agent harness, MCP `agent_check` | `test/golden/myc.agent.v2.json` |
+| `myc.lite.v1` | `--lite` / MCP `verify` | `agent.c` `myc_lite_result_json` | agen lemah, MCP `verify` | `test/golden/myc.lite.v1.json` |
 | `myc.calibration.v1` | `.myc/calibration.json` | `calibrate.c` `calib_save` | `calibrate.c` `calib_load` (EIG/annotasi) | `test/golden/myc.calibration.v1.json` |
 | evidence cache | `.myc/evidence_cache.json` | `cache.c` `cache_write_all` | `cache.c` `cache_read_all` (replay) | `test/golden/myc.evidence_cache.v1.json` |
 | scenario profile | file profil user / `--scenario` | user / `scenario.c` builtin | `scenario.c` `parse_profiles` | `test/golden/myc.scenario.v1.json` |

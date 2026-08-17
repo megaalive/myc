@@ -1481,6 +1481,23 @@ char *myc_result_to_json(const myc_result *res)
                        myc_gate_status_name(g->status));
     }
     json_sb_puts(&b, "],");
+    json_sb_printf(&b, "\"gate_ms\":{");
+    {
+        int gi, first_ms = 1;
+        for (gi = 0; gi < (int)res->gate_count; gi++) {
+            const myc_gate_result *g = &res->gates[gi];
+            if (g->duration_ms == 0)
+                continue;
+            if (!first_ms)
+                json_sb_puts(&b, ",");
+            first_ms = 0;
+            json_sb_printf(&b, "\"%s\":%llu",
+                           (int)g->id < MYC_GATE_COUNT ?
+                               myc_gate_id_short(g->id) : "?",
+                           g->duration_ms);
+        }
+    }
+    json_sb_puts(&b, "},");
     json_sb_printf(&b, "\"evidence\":[");
     for (i = 0; i < (int)res->evidence_count; i++) {
         const myc_evidence_event *ev = &res->evidence[i];
@@ -1955,6 +1972,23 @@ void myc_report_json_summary(const myc_result *res)
                        myc_gate_status_name(g->status));
     }
     json_sb_puts(&b, "],");
+    json_sb_printf(&b, "\"gate_ms\":{");
+    {
+        int gi, first_ms = 1;
+        for (gi = 0; gi < (int)res->gate_count; gi++) {
+            const myc_gate_result *g = &res->gates[gi];
+            if (g->duration_ms == 0)
+                continue;
+            if (!first_ms)
+                json_sb_puts(&b, ",");
+            first_ms = 0;
+            json_sb_printf(&b, "\"%s\":%llu",
+                           (int)g->id < MYC_GATE_COUNT ?
+                               myc_gate_id_short((myc_gate_id)g->id) : "?",
+                           g->duration_ms);
+        }
+    }
+    json_sb_puts(&b, "},");
     json_sb_printf(&b, "\"unverified_debt\":[");
     for (i = 0; i < (int)res->debt_count; i++) {
         const myc_debt_item *d = &res->debt[i];
@@ -2043,5 +2077,24 @@ int myc_report_agent(const myc_result *res, const myc_pack_info *pack,
     }
 
     myc_agent_result_free(&ar);
+    return 0;
+}
+
+int myc_report_lite(const myc_result *res, const char *source,
+                    size_t source_len)
+{
+    myc_lite_result lr;
+    char *js;
+
+    if (!res)
+        return -1;
+    if (myc_build_lite_result(res, &lr, source, source_len) != 0)
+        return -1;
+    js = myc_lite_result_json(&lr);
+    if (js) {
+        printf("%s\n", js);
+        myc_free(js);
+    }
+    myc_lite_result_free(&lr);
     return 0;
 }

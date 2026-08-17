@@ -7,6 +7,39 @@ semantik per tag rilis (`vX.Y.Z`).
 Sejarah implementasi & audit terperinci (MYC-AUDIT-001..055, fase
 pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 
+## [Unreleased] — myc.lite.v1 + MCP verify + skip-E + gate_ms - 2026-08-17
+
+### Added
+
+- **G1 — myc.lite.v1.** Skema agent-lite: satu `action`
+  (`STOP_COMPILE_CLEAN` / `FIX_ONE` / `ESCALATE_RUNTIME` /
+  `ESCALATE_CONTRACT` / `GIVE_UP_NO_TEMPLATE`), `allowed_span`,
+  `fix_or_null`. Klaim `STOP` = compile-clean, bukan "safe". `next_check`
+  v2 sekarang perintah aksi, bukan clone `myc check --agent`.
+- **G1 — MCP `verify`.** Default `--scenario auto`; output `myc.lite.v1`.
+  Tool `check` tetap ada, deskripsi dipotong.
+- **G1 — `myc check --lite`**, `myc prompt --harness cursor|claude|codex`.
+- **G1 — finding ID additive** `f-<fn>-<span-sha8>` di
+  `primary_finding.source_anchor`.
+- **P0 — `gate_ms`.** Durasi per-gate di `--json` / `--json-summary`
+  (additive, tidak masuk receipt).
+- **G2 — skip `gcc -E`.** Source tanpa direktif preprocessor tidak
+  memanggil preprocessor; marker/denylist tetap di-scan pada source
+  asli.
+- **G3 — template gets/sprintf + compile apply.** `gets(buf)` →
+  `fgets(buf, sizeof buf, stdin)` dan `sprintf(buf,` → `snprintf` pada
+  array lokal. `agent_check` menerapkan patch compile satu baris bila
+  confidence tinggi dan re-check tidak menambah diagnostic. `GIVE_UP`
+  menyertakan `myc context --budget 4K` di field `context`.
+- **G4 — `--eig-apply --budget-ms`.** Setelah L1, paling banyak satu
+  eksperimen EIG within_budget. MCP `context` / `next` /
+  `compare_candidates`. Tabel biaya tunggal `experiment_cost.h`.
+
+### Tests
+
+- `test/lite_agent_test.c` (10 kasus agen-bodoh), golden
+  `myc.lite.v1.json`, schema_compat T3b/T10 lite.
+
 ## [v2026-08-17.2] — nemo agent protocol: next_check/edits/delta + payload_dropped/feedback - 2026-08-17
 
 ### Added

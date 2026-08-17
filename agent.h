@@ -5,10 +5,21 @@
 #include "prompt.h"
 
 #define MYC_AGENT_SCHEMA "myc.agent.v2"
+#define MYC_LITE_SCHEMA  "myc.lite.v1"
 #define MYC_AGENT_MAX_FRONTIER 16
 #define MYC_AGENT_MAX_PRESERVE 16
 #define MYC_AGENT_MAX_FORBIDDEN 16
 #define MYC_AGENT_PAYLOAD_CAP 16384
+
+/* myc.lite.v1 action enum (beku, nilai baru hanya di akhir). Nama
+ * panjang disengaja: STOP_COMPILE_CLEAN bukan "safe". */
+typedef enum {
+    MYC_LITE_STOP_COMPILE_CLEAN = 0,
+    MYC_LITE_FIX_ONE,
+    MYC_LITE_ESCALATE_RUNTIME,
+    MYC_LITE_ESCALATE_CONTRACT,
+    MYC_LITE_GIVE_UP_NO_TEMPLATE
+} myc_lite_action;
 
 typedef struct {
     char *finding_id;
@@ -18,6 +29,8 @@ typedef struct {
     myc_confidence confidence;
     char *repro;
     char *witness_hash;
+    /* Additive: f-<fn>-<span-sha8> di samping finding_id f-%08x. */
+    char *source_anchor;
 } myc_agent_finding;
 
 typedef struct {
@@ -120,7 +133,32 @@ typedef struct {
      * NULL bila pack absen/--no-pack ATAU dibuang oleh enforcement cap
      * (enrichment, dibuang TERAKHIR setelah next_best_json). */
     char *pack_json;
+
+    /* Additive myc.lite.v1 action (satu aksi, sama dengan next_check). */
+    myc_lite_action action;
+    int has_action;
 } myc_agent_result;
+
+/* Paket ringkas untuk agen lemah (schema myc.lite.v1). Additive;
+ * tidak mengganti myc.agent.v2. */
+typedef struct {
+    myc_verdict       verdict;
+    myc_lite_action   action;
+    myc_assurance_vector assurance;
+    int               line;
+    char             *claim;
+    char             *finding_id;
+    char             *function;
+    char             *why;
+    char             *fix_or_null;
+    char             *allowed_span;
+    char             *next_command;
+    char             *receipt_sha256;
+    char             *source_sha256;
+    char             *source_anchor;
+    char             *context_text; /* G3: myc context 4K bila GIVE_UP */
+    int               cache_hit;
+} myc_lite_result;
 
 /* Inisialisasi dan pembebasan */
 void myc_agent_result_init(myc_agent_result *ar);
@@ -151,10 +189,30 @@ const myc_agent_finding *myc_agent_select_primary(const myc_result *res);
  * Mengembalikan string malloc'd yang harus free() oleh caller. */
 char *myc_agent_build_witness(const myc_result *res);
 
-/* Bangun next_check command string (NEMO-1: flag situasional).
+/* Bangun next_check command string.
  * path: NULL/"" -> token "<file>"; "-" tetap "-".
+ * source opsional: dipakai membedakan FIX_ONE vs GIVE_UP (template).
  * Mengembalikan string malloc'd yang harus free() oleh caller. */
 char *myc_agent_build_next_check(const myc_result *res,
                                  const char *path);
+char *myc_agent_build_next_check_ex(const myc_result *res,
+                                    const char *path,
+                                    const char *source,
+                                    size_t source_len);
+
+/* Satu aksi lite dari verdict/gate/template (deterministik). */
+myc_lite_action myc_agent_select_action(const myc_result *res,
+                                        const char *source,
+                                        size_t source_len);
+const char *myc_lite_action_name(myc_lite_action a);
+
+void myc_lite_result_init(myc_lite_result *lr);
+void myc_lite_result_free(myc_lite_result *lr);
+int myc_build_lite_result(const myc_result *res,
+                          myc_lite_result *lr,
+                          const char *source,
+                          size_t source_len);
+/* JSON malloc'd (caller myc_free). NULL bila OOM. */
+char *myc_lite_result_json(const myc_lite_result *lr);
 
 #endif

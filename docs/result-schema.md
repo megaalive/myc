@@ -105,7 +105,39 @@ Output `myc check <file> [flags] --agent`:
   (experiments/causal/next-best) dibuang bila melebihi cap, bukan
   ditruncate diam-diam.
 - **Stable finding_id**: `f-%08x` dari line hex; ID bertahan terhadap
-  pergeseran baris (semantic anchor via `source_anchor`).
+  pergeseran baris (semantic anchor via `source_anchor` `f-<fn>-<span-sha8>`).
+- **Additive `action`**: enum lite (`STOP_COMPILE_CLEAN` / `FIX_ONE` /
+  `ESCALATE_RUNTIME` / `ESCALATE_CONTRACT` / `GIVE_UP_NO_TEMPLATE`) pada
+  `myc.agent.v2` bila diisi.
+
+## Skema `--lite` / MCP `verify` (myc.lite.v1)
+
+Output `myc check <file> --lite` dan MCP tool `verify`:
+
+| Field | Tipe | Makna |
+|---|---|---|
+| `schema` | string | selalu `myc.lite.v1` |
+| `verdict` | string | nama verdict (`OK`, `COMPILE_ERROR`, …) |
+| `claim` | string | klaim jujur (`compile_clean (runtime not run)`, bukan "safe") |
+| `action` | string enum | satu aksi (lihat di atas) |
+| `finding_id` | string | `f-%08x` (kompatibel v2) |
+| `line` | int | baris finding (0 bila tidak ada) |
+| `function` | string | nama fungsi atau `""` |
+| `why` | string | alasan singkat |
+| `fix_or_null` | string/null | template deterministik atau JSON `null` |
+| `allowed_span` | string | wilayah sunting (`line N`) |
+| `next_command` | string | perintah berikutnya (bukan clone check) |
+| `assurance_vector` | obj | `C/S/R/B/P/D/F` → string status |
+| `receipt_sha256` | string | receipt (bila ada) |
+| `source_sha256` | string | hash source (bila ada) |
+| `source_anchor` | string | `f-<fn>-<span-sha8>` |
+| `cache` | string | additive: `HIT` atau `MISS` |
+| `context` | string | additive: paket `myc context --budget 4K` hanya pada `GIVE_UP_NO_TEMPLATE` |
+
+### Kontrak konsumen
+
+- Agen lemah **hanya** membaca `action` + `allowed_span` + `fix_or_null`.
+- `STOP_COMPILE_CLEAN` bukan izin mengklaim program aman.
 
 ## Riwayat kompatibilitas
 
@@ -118,6 +150,7 @@ Output `myc check <file> [flags] --agent`:
 | 2026-08-09 | `myc.result.v1` | Field `resource` ditambah (additive, Fase 5 SOL-12 Resource Linearity Ledger) — objek observasi NON-blocking (`pairs/acquires/releases/transferred/leaks/double_releases/release_unknown/findings/report`); tidak mengubah makna field lama. |
 | 2026-08-09 | `myc.result.v1` | Field `units` ditambah (additive, Fase 5 SOL-11 Units/Shape/Provenance) — objek observasi NON-blocking (`annotations/unbound/unit_mismatches/shape_dims/duplicates/findings/report`); tidak mengubah makna field lama. |
 | 2026-08-17 | `myc.agent.v2` | Field kondisional `payload_dropped` (NEMO-5) + `feedback` (NEMO-6) — additive; enrichment NON-blocking; verdict tidak berubah. |
+| 2026-08-17 | `myc.lite.v1` | Skema baru additive untuk agen lemah (`--lite`, MCP `verify`). `myc.agent.v2` mendapat field kondisional `action` + `primary_finding.source_anchor`. |
 
 ## Aturan perubahan (untuk pengembang)
 

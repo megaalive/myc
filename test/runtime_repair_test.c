@@ -467,6 +467,92 @@ int main(void)
         myc_result_free(&res);
     }
 
+    /* T16: gets pada array lokal -> fgets + sizeof. */
+    {
+        const char *src =
+            "#include <stdio.h>\n"
+            "int main(void){char b[8]; gets(b); return b[0];}\n";
+        myc_result res = make_res("stack-buffer-overflow", 2, 0,
+            "int main(void){char b[8]; gets(b); return b[0];}");
+        myc_runtime_repair *rr = myc_repair_runtime_patch(&res, src,
+                                                          strlen(src));
+        PATCH_CASE(rr && rr->patched_source, "T16: patch gets -> fgets");
+        if (rr && rr->patched_source) {
+            CHECK(strstr(rr->patched_source, "fgets(b, sizeof(b), stdin);") != NULL,
+                  "T16: fgets + sizeof");
+            CHECK(strstr(rr->patched_source, "gets(b)") == NULL,
+                  "T16: gets asli diganti");
+        }
+        if (rr)
+            myc_runtime_repair_free(rr);
+        free_res(&res);
+    }
+
+    /* T17: sprintf pada array lokal -> snprintf + sizeof. */
+    {
+        const char *src =
+            "#include <stdio.h>\n"
+            "int main(void){char b[8]; sprintf(b, \"%s\", \"abcdefghij\"); "
+            "return b[0];}\n";
+        myc_result res = make_res("stack-buffer-overflow", 2, 0,
+            "int main(void){char b[8]; sprintf(b, \"%s\", \"abcdefghij\"); "
+            "return b[0];}");
+        myc_runtime_repair *rr = myc_repair_runtime_patch(&res, src,
+                                                          strlen(src));
+        PATCH_CASE(rr && rr->patched_source,
+                   "T17: patch sprintf -> snprintf");
+        if (rr && rr->patched_source) {
+            CHECK(strstr(rr->patched_source,
+                         "snprintf(b, sizeof(b), \"%s\", \"abcdefghij\");") != NULL,
+                  "T17: snprintf + sizeof");
+        }
+        if (rr)
+            myc_runtime_repair_free(rr);
+        free_res(&res);
+    }
+
+    /* T18: gets, deklarasi array di baris lain. */
+    {
+        const char *src =
+            "char b[8];\n"
+            "int f(void)\n"
+            "{\n"
+            "  gets(b);\n"
+            "  return b[0];\n"
+            "}\n";
+        myc_result res = make_res("stack-buffer-overflow", 4, 0, "  gets(b);");
+        myc_runtime_repair *rr = myc_repair_runtime_patch(&res, src,
+                                                          strlen(src));
+        PATCH_CASE(rr && rr->patched_source, "T18: gets multi-baris");
+        if (rr && rr->patched_source) {
+            CHECK(strstr(rr->patched_source, "fgets(b, sizeof(b), stdin);") != NULL,
+                  "T18: fgets pada baris gets");
+            CHECK(strstr(rr->patched_source, "char b[8];") != NULL,
+                  "T18: deklarasi tetap");
+        }
+        if (rr)
+            myc_runtime_repair_free(rr);
+        free_res(&res);
+    }
+
+    /* T19: compile-path tanpa sanloc — sprintf via source_line_patch. */
+    {
+        const char *src =
+            "#include <stdio.h>\n"
+            "int main(void){char b[16]; sprintf(b, \"%s %d\", \"x\", 1); "
+            "return b[0];}\n";
+        myc_runtime_repair *rr = myc_repair_source_line_patch(src, strlen(src), 2);
+        PATCH_CASE(rr && rr->patched_source,
+                   "T19: source_line_patch sprintf");
+        if (rr && rr->patched_source) {
+            CHECK(strstr(rr->patched_source, "snprintf(b, sizeof(b),") != NULL,
+                  "T19: snprintf");
+            CHECK(rr->confidence >= 80, "T19: confidence tinggi");
+        }
+        if (rr)
+            myc_runtime_repair_free(rr);
+    }
+
     printf("runtime_repair_test: PASS=%d FAIL=%d\n", PASS, FAIL);
     printf("M2-TEMPLATE-PATCH: %d/%d\n", PATCH_OK, PATCH_TOTAL);
     return FAIL == 0 ? 0 : 1;

@@ -277,6 +277,8 @@ static void d_mat(myc_request *r)     { r->matrix = 1; }
 static void d_abi(myc_request *r)     { r->abi = 1; }
 static void d_pert(myc_request *r)    { r->perturb = 1; }
 static void d_tp(myc_request *r)      { r->thread_probe = 1; }
+static void d_eig(myc_request *r)     { r->eig_apply = 1; }
+static void d_eigb(myc_request *r)    { r->eig_apply = 1; r->eig_budget_ms = 1000; }
 
 static const dim_case GATE_DIMS[] = {
     /* T3: flag gate inti (scenario hash — sudah ada sejak v1) */
@@ -308,6 +310,8 @@ static const dim_case GATE_DIMS[] = {
     { "abi", d_abi },
     { "perturb", d_pert },
     { "thread_probe", d_tp },
+    { "eig_apply", d_eig },
+    { "eig_budget_ms", d_eigb },
 };
 #define N_GATE_DIMS (int)(sizeof(GATE_DIMS) / sizeof(GATE_DIMS[0]))
 

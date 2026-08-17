@@ -11,6 +11,7 @@
 #include "json.h"
 #include "calibrate.h"
 #include "profile.h"
+#include "experiment_cost.h"
 
 /* ---------- tabel deterministik: hazard -> kandidat + scope ---------- */
 
@@ -53,34 +54,12 @@ static const eig_rule EIG_RULES[] = {
  * aktual). Sama dengan angka di nextbest.c/observation.c. */
 static int exp_cost(myc_experiment_type t)
 {
-    switch (t) {
-    case MYC_EXPERIMENT_ALLOC_FAIL:       return 5000;
-    case MYC_EXPERIMENT_BOUNDARY_INPUT:   return 2500;
-    case MYC_EXPERIMENT_SHORT_IO:         return 2000;
-    case MYC_EXPERIMENT_CROSS_TARGET:     return 2000;
-    case MYC_EXPERIMENT_POLLING_HARNESS:  return 1500;
-    case MYC_EXPERIMENT_REALLOC_PATH:     return 1500;
-    case MYC_EXPERIMENT_LEAK_CHECK:       return 4000;
-    case MYC_EXPERIMENT_DRIVER_GEN:       return 4000;
-    case MYC_EXPERIMENT_ASSERTION_HARNESS:return 3000;
-    default:                              return 3000;
-    }
+    return myc_experiment_cost_ms(t);
 }
 
 static int exp_severity(myc_experiment_type t)
 {
-    switch (t) {
-    case MYC_EXPERIMENT_ALLOC_FAIL:       return 3;
-    case MYC_EXPERIMENT_BOUNDARY_INPUT:   return 3;
-    case MYC_EXPERIMENT_SHORT_IO:         return 2;
-    case MYC_EXPERIMENT_CROSS_TARGET:     return 2;
-    case MYC_EXPERIMENT_POLLING_HARNESS:  return 2;
-    case MYC_EXPERIMENT_REALLOC_PATH:     return 3;
-    case MYC_EXPERIMENT_LEAK_CHECK:       return 2;
-    case MYC_EXPERIMENT_DRIVER_GEN:       return 2;
-    case MYC_EXPERIMENT_ASSERTION_HARNESS:return 1;
-    default:                              return 1;
-    }
+    return myc_experiment_severity(t);
 }
 
 /* Proksi biaya token (dimensi independen di DS-14). Tabel deterministik. */
@@ -646,4 +625,76 @@ void myc_eig_free(myc_eig_set *eig)
     }
     myc_free(eig->report);
     memset(eig, 0, sizeof(*eig));
+}
+
+static int eig_try_set_flags(myc_request *req, myc_experiment_type t)
+{
+    switch (t) {
+    case MYC_EXPERIMENT_ALLOC_FAIL:
+    case MYC_EXPERIMENT_BOUNDARY_INPUT:
+    case MYC_EXPERIMENT_SHORT_IO:
+    case MYC_EXPERIMENT_DRIVER_GEN:
+        if (req->driver)
+            return 0;
+        req->driver = 1;
+        return 1;
+    case MYC_EXPERIMENT_CROSS_TARGET:
+        if (req->strict)
+            return 0;
+        req->strict = 1;
+        return 1;
+    case MYC_EXPERIMENT_POLLING_HARNESS:
+        if (req->metamorphic)
+            return 0;
+        req->metamorphic = 1;
+        return 1;
+    case MYC_EXPERIMENT_REALLOC_PATH:
+        if (req->checked && req->driver)
+            return 0;
+        req->checked = 1;
+        req->driver = 1;
+        return 1;
+    case MYC_EXPERIMENT_LEAK_CHECK:
+    case MYC_EXPERIMENT_ASSERTION_HARNESS:
+        if (req->run)
+            return 0;
+        req->run = 1;
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+int myc_eig_apply_one(myc_request *req, const myc_result *res)
+{
+    myc_frontier_set fs;
+    myc_experiment_set exps;
+    myc_eig_set eig;
+    myc_eig_input in;
+    int i, applied = 0;
+
+    if (!req || !res || res->verdict != MC_OK)
+        return 0;
+
+    memset(&fs, 0, sizeof(fs));
+    memset(&exps, 0, sizeof(exps));
+    memset(&eig, 0, sizeof(eig));
+    memset(&in, 0, sizeof(in));
+    myc_frontier_build(res, &fs);
+    myc_observation_to_experiment(res, &exps);
+    in.source_changed = 1;
+    in.budget_time_ms = req->eig_budget_ms > 0 ? req->eig_budget_ms : 5000;
+    myc_eig_plan(&fs, &exps, &in, &eig);
+    for (i = 0; i < eig.count; i++) {
+        if (!eig.items[i].within_budget)
+            continue;
+        if (eig_try_set_flags(req, eig.items[i].type)) {
+            applied = 1;
+            break;
+        }
+    }
+    myc_eig_free(&eig);
+    myc_experiment_free(&exps);
+    myc_frontier_free(&fs);
+    return applied;
 }

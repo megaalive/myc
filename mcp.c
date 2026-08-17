@@ -8,6 +8,7 @@
  * Tool yang diekspos (tools/list + tools/call):
  *   agent_check -- protokol agent myc.agent.v2 + pack proyek lokal
  *                  opsional (pack_dir/no_pack, MYC-AUDIT-039)
+ *   verify / context / next / compare_candidates -- permukaan agen (G1/G4)
  *   check   -- jalankan pipeline myc pada source C (verdict/assurance/dll)
  *   repair  -- kembalikan patch minimal untuk finding compile tertentu
  *   version -- versi myc + ketersediaan gcc/clang
@@ -47,6 +48,12 @@
 #include "agent.h"
 #include "regress.h"
 #include "ledger.h"
+#include "scenario.h"
+#include "context.h"
+#include "eig.h"
+#include "frontier.h"
+#include "observation.h"
+#include "candidate.h"
 
 #define MCP_VERSION  "0.1.0"
 #define MCP_PROTOCOL "2024-11-05"
@@ -200,6 +207,8 @@ static int mcp_apply_flags(json_value *flags, myc_request *req,
             req->negative = 1;
         else if (strcmp(f, "--require-complete") == 0)
             req->require_complete = 1;
+        else if (strcmp(f, "--eig-apply") == 0)
+            req->eig_apply = 1;
         else {
             snprintf(err, errsz, "Invalid params: flag tidak dikenal: %.100s", f);
             return -1;
@@ -827,21 +836,97 @@ static void tool_agent_check(json_value *id, json_value *args)
             if (rr)
                 myc_runtime_repair_free(rr);
         } else if (res.verdict == MC_COMPILE_ERROR && res.diag_count > 0) {
-            /* template compile = saran teks (bukan diff yang bisa
-             * diterapkan otomatis) -> catat, berhenti jujur. */
-            const char *code = repair_find_code(res.diags[0].message);
-            char *p = code ? myc_repair_get_patch(code) : NULL;
-            json_obj_set(step, "patch_applied", json_new_bool(0));
-            if (p) {
-                json_obj_set(step, "patch", json_new_str(p));
-                myc_free(p);
+            /* G3: apply in-memory hanya bila template satu baris
+             * (gets/sprintf array lokal) + confidence tinggi + re-check
+             * tidak menambah diagnostic. Selain itu saran teks, berhenti. */
+            int cline = res.diags[0].line;
+            myc_runtime_repair *crr = NULL;
+            if (cline > 0)
+                crr = myc_repair_source_line_patch(current, strlen(current),
+                                                   cline);
+            if (crr && crr->patched_source && crr->confidence >= 80) {
+                char *new_src = myc_strdup(crr->patched_source);
+                int orig_diags = res.diag_count;
+                json_obj_set(step, "patch_applied", json_new_bool(1));
+                if (crr->patch_text)
+                    json_obj_set(step, "patch",
+                                 json_new_str(crr->patch_text));
+                json_obj_set(step, "confidence",
+                             json_new_num(crr->confidence));
+                if (new_src) {
+                    myc_request preq;
+                    myc_result  pres;
+                    char ferr2[160];
+                    myc_free(current);
+                    current = new_src;
+                    myc_request_init(&preq);
+                    preq.input.kind = MYC_SOURCE_MEMORY;
+                    preq.input.data = current;
+                    preq.input.len = strlen(current);
+                    preq.run_lint = 1;
+                    preq.checked_header_dir = g_exe_dir;
+                    if (mcp_apply_flags(flags, &preq, ferr2,
+                                        sizeof(ferr2)) != 0) {
+                        myc_runtime_repair_free(crr);
+                        send_error(id, -32602, ferr2);
+                        myc_free(current);
+                        myc_free(prev_receipt);
+                        myc_result_free(&res);
+                        myc_result_free(&pending);
+                        myc_result_free(&final_res);
+                        json_free(steps);
+                        json_free(step);
+                        if (pinfo_loaded)
+                            myc_free(pinfo.prompt_text);
+                        return;
+                    }
+                    myc_result_init(&pres);
+                    myc_pipeline(&preq, &pres);
+                    if (pres.diag_count > orig_diags) {
+                        json_obj_set(step, "patch_reverted",
+                                     json_new_bool(1));
+                        json_obj_set(step, "why", json_new_str(
+                            "re-check menambah diagnostic; patch "
+                            "dibatalkan (anti-churn)"));
+                        myc_result_free(&pres);
+                        final_res = res;
+                        myc_result_init(&res);
+                        have_final = 1;
+                    } else if (pres.verdict == MC_OK) {
+                        pending = pres;
+                        myc_result_init(&pres);
+                        have_pending = 1;
+                    } else {
+                        pending = pres;
+                        myc_result_init(&pres);
+                        have_pending = 1;
+                    }
+                } else {
+                    json_obj_set(step, "patch_applied", json_new_bool(0));
+                    json_obj_set(step, "why", json_new_str("OOM saat apply"));
+                    final_res = res;
+                    myc_result_init(&res);
+                    have_final = 1;
+                }
+            } else {
+                const char *code = repair_find_code(res.diags[0].message);
+                char *p = code ? myc_repair_get_patch(code) : NULL;
+                json_obj_set(step, "patch_applied", json_new_bool(0));
+                if (p) {
+                    json_obj_set(step, "patch", json_new_str(p));
+                    myc_free(p);
+                }
+                json_obj_set(step, "why", json_new_str(
+                    crr && crr->why ? crr->why
+                                    : "template compile = saran teks "
+                                      "atau bukan satu baris lokal; "
+                                      "tidak diterapkan (anti-churn)"));
+                final_res = res;
+                myc_result_init(&res);
+                have_final = 1;
             }
-            json_obj_set(step, "why", json_new_str(
-                "template compile = saran teks (bukan diff); tidak "
-                "diterapkan otomatis (anti-churn)"));
-            final_res = res;
-            myc_result_init(&res);
-            have_final = 1;
+            if (crr)
+                myc_runtime_repair_free(crr);
         } else {
             json_obj_set(step, "patch_applied", json_new_bool(0));
             json_obj_set(step, "why", json_new_str(
@@ -1246,6 +1331,300 @@ static void tool_policy(json_value *id)
     json_sb_free(&b);
 }
 
+/* ------------------------- tool: verify (myc.lite.v1) --------------- */
+
+static void tool_verify(json_value *id, json_value *args)
+{
+    const char *source = NULL;
+    json_value *flags = NULL;
+    myc_request req;
+    myc_result  res;
+    myc_lite_result lr;
+    char       *js = NULL;
+    json_value *result = NULL;
+    json_value *content = NULL;
+    json_value *item = NULL;
+    int         use_auto = 1;
+
+    if (!args) {
+        send_error(id, -32602, "Invalid params: arguments wajib");
+        return;
+    }
+    source = json_get_str(args, "source");
+    if (!source) {
+        send_error(id, -32602,
+                   "Invalid params: 'source' wajib (string kode C)");
+        return;
+    }
+    flags = json_get(args, "flags");
+    if (flags && flags->type == JSON_ARR && flags->len > 0)
+        use_auto = 0;
+
+    myc_request_init(&req);
+    req.input.kind = MYC_SOURCE_MEMORY;
+    req.input.data = source;
+    req.input.len = strlen(source);
+    req.run_lint = 1;
+    req.checked_header_dir = g_exe_dir;
+    myc_result_init(&res);
+
+    if (use_auto) {
+        int serc = myc_scenario_apply(&req, "auto", source, strlen(source),
+                                      NULL, &res);
+        if (serc != 0) {
+            send_error(id, -32603,
+                       "Internal error: scenario auto gagal");
+            myc_result_free(&res);
+            return;
+        }
+    } else {
+        char ferr[160];
+        if (mcp_apply_flags(flags, &req, ferr, sizeof(ferr)) != 0) {
+            send_error(id, -32602, ferr);
+            myc_result_free(&res);
+            return;
+        }
+    }
+
+    myc_run(&req, &res);
+    if (myc_build_lite_result(&res, &lr, source, strlen(source)) != 0) {
+        send_error(id, -32603, "Internal error: gagal build lite result");
+        myc_result_free(&res);
+        return;
+    }
+    js = myc_lite_result_json(&lr);
+    result = json_new_obj();
+    content = json_new_arr();
+    item = json_new_obj();
+    json_obj_set(item, "type", json_new_str("text"));
+    json_obj_set(item, "text", json_new_str(js ? js : "{}"));
+    json_arr_push(content, item);
+    json_obj_set(result, "content", content);
+    {
+        json_value *sc = NULL;
+        if (js && json_parse_cstr(js, &sc) && sc && sc->type == JSON_OBJ)
+            json_obj_set(result, "structuredContent", sc);
+        else {
+            json_free(sc);
+            sc = json_new_obj();
+            if (sc)
+                json_obj_set(sc, "schema", json_new_str(MYC_LITE_SCHEMA));
+            json_obj_set(result, "structuredContent", sc);
+        }
+    }
+    json_obj_set(result, "isError", json_new_bool(
+        res.verdict == MC_ERROR || res.verdict == MC_TIMEOUT ||
+        res.verdict == MC_CANCELLED ? 1 : 0));
+    send_result(id, result);
+    myc_free(js);
+    myc_lite_result_free(&lr);
+    myc_result_free(&res);
+}
+
+static void mcp_send_json_text(json_value *id, const char *js, int is_error)
+{
+    json_value *result = json_new_obj();
+    json_value *content = json_new_arr();
+    json_value *item = json_new_obj();
+    json_value *sc = NULL;
+
+    json_obj_set(item, "type", json_new_str("text"));
+    json_obj_set(item, "text", json_new_str(js ? js : "{}"));
+    json_arr_push(content, item);
+    json_obj_set(result, "content", content);
+    if (js && json_parse_cstr(js, &sc) && sc && sc->type == JSON_OBJ)
+        json_obj_set(result, "structuredContent", sc);
+    else {
+        json_free(sc);
+        json_obj_set(result, "structuredContent", json_new_obj());
+    }
+    json_obj_set(result, "isError", json_new_bool(is_error ? 1 : 0));
+    send_result(id, result);
+}
+
+static void tool_context(json_value *id, json_value *args)
+{
+    const char *source;
+    json_value *flags;
+    myc_request req;
+    myc_result res;
+    char hash[65];
+    char *pkg;
+    int budget = 4096;
+    const char *finding_id = NULL;
+    json_value *bv;
+
+    if (!args) {
+        send_error(id, -32602, "Invalid params: arguments wajib");
+        return;
+    }
+    source = json_get_str(args, "source");
+    if (!source) {
+        send_error(id, -32602, "Invalid params: 'source' wajib");
+        return;
+    }
+    finding_id = json_get_str(args, "finding_id");
+    bv = json_get(args, "budget");
+    if (bv) {
+        if (bv->type != JSON_NUM || bv->num < 4096 || bv->num > 16384) {
+            send_error(id, -32602,
+                       "Invalid params: 'budget' harus number 4096..16384");
+            return;
+        }
+        budget = (int)bv->num;
+    }
+    flags = json_get(args, "flags");
+    myc_request_init(&req);
+    req.input.kind = MYC_SOURCE_MEMORY;
+    req.input.data = source;
+    req.input.len = strlen(source);
+    req.run_lint = 1;
+    req.checked_header_dir = g_exe_dir;
+    if (flags) {
+        char ferr[160];
+        if (mcp_apply_flags(flags, &req, ferr, sizeof(ferr)) != 0) {
+            send_error(id, -32602, ferr);
+            return;
+        }
+    }
+    myc_result_init(&res);
+    myc_run(&req, &res);
+    memset(hash, 0, sizeof(hash));
+    pkg = myc_context_build(&res, source, strlen(source), &req, NULL,
+                            finding_id, budget, hash);
+    {
+        json_value *result = json_new_obj();
+        json_value *content = json_new_arr();
+        json_value *item = json_new_obj();
+        json_value *sc = json_new_obj();
+        json_obj_set(item, "type", json_new_str("text"));
+        json_obj_set(item, "text", json_new_str(pkg ? pkg : ""));
+        json_arr_push(content, item);
+        json_obj_set(result, "content", content);
+        json_obj_set(sc, "context_sha256", json_new_str(hash));
+        json_obj_set(sc, "budget", json_new_num(budget));
+        json_obj_set(result, "structuredContent", sc);
+        json_obj_set(result, "isError", json_new_bool(
+            res.verdict == MC_ERROR || res.verdict == MC_TIMEOUT ? 1 : 0));
+        send_result(id, result);
+    }
+    myc_free(pkg);
+    myc_result_free(&res);
+}
+
+static void tool_next(json_value *id, json_value *args)
+{
+    const char *source;
+    json_value *flags;
+    myc_request req;
+    myc_result res;
+    myc_frontier_set fs;
+    myc_experiment_set exps;
+    myc_eig_set eig;
+    myc_eig_input in;
+    char *js;
+    json_value *bv;
+    int budget_ms = 5000;
+
+    if (!args) {
+        send_error(id, -32602, "Invalid params: arguments wajib");
+        return;
+    }
+    source = json_get_str(args, "source");
+    if (!source) {
+        send_error(id, -32602, "Invalid params: 'source' wajib");
+        return;
+    }
+    bv = json_get(args, "budget_ms");
+    if (bv) {
+        if (bv->type != JSON_NUM || bv->num < 0) {
+            send_error(id, -32602,
+                       "Invalid params: 'budget_ms' harus number >= 0");
+            return;
+        }
+        budget_ms = (int)bv->num;
+    }
+    flags = json_get(args, "flags");
+    myc_request_init(&req);
+    req.input.kind = MYC_SOURCE_MEMORY;
+    req.input.data = source;
+    req.input.len = strlen(source);
+    req.run_lint = 1;
+    req.checked_header_dir = g_exe_dir;
+    if (flags) {
+        char ferr[160];
+        if (mcp_apply_flags(flags, &req, ferr, sizeof(ferr)) != 0) {
+            send_error(id, -32602, ferr);
+            return;
+        }
+    }
+    myc_result_init(&res);
+    myc_run(&req, &res);
+    memset(&fs, 0, sizeof(fs));
+    memset(&exps, 0, sizeof(exps));
+    memset(&eig, 0, sizeof(eig));
+    memset(&in, 0, sizeof(in));
+    myc_frontier_build(&res, &fs);
+    myc_observation_to_experiment(&res, &exps);
+    in.source_changed = 1;
+    in.budget_time_ms = budget_ms;
+    myc_eig_plan(&fs, &exps, &in, &eig);
+    js = myc_eig_json(&eig);
+    mcp_send_json_text(id, js, 0);
+    myc_free(js);
+    myc_eig_free(&eig);
+    myc_experiment_free(&exps);
+    myc_frontier_free(&fs);
+    myc_result_free(&res);
+}
+
+static void tool_compare_candidates(json_value *id, json_value *args)
+{
+    const char *base;
+    json_value *cands;
+    const char *paths[MYC_MAX_CANDIDATES];
+    int n = 0;
+    size_t i;
+    myc_candidate_set cs;
+    char *js;
+
+    if (!args) {
+        send_error(id, -32602, "Invalid params: arguments wajib");
+        return;
+    }
+    base = json_get_str(args, "baseline_path");
+    if (!base) {
+        send_error(id, -32602, "Invalid params: 'baseline_path' wajib");
+        return;
+    }
+    cands = json_get(args, "candidate_paths");
+    if (!cands || cands->type != JSON_ARR || cands->len < 1) {
+        send_error(id, -32602,
+                   "Invalid params: 'candidate_paths' wajib array string");
+        return;
+    }
+    if (cands->len > MYC_MAX_CANDIDATES - 1) {
+        send_error(id, -32602,
+                   "Invalid params: terlalu banyak kandidat (maks 7)");
+        return;
+    }
+    for (i = 0; i < cands->len; i++) {
+        if (!cands->items[i] || cands->items[i]->type != JSON_STR ||
+            !cands->items[i]->str) {
+            send_error(id, -32602,
+                       "Invalid params: 'candidate_paths' harus array string");
+            return;
+        }
+        paths[n++] = cands->items[i]->str;
+    }
+    memset(&cs, 0, sizeof(cs));
+    myc_candidate_tournament(base, paths, n, g_exe_dir, &cs);
+    js = myc_candidate_json(&cs);
+    mcp_send_json_text(id, js, 0);
+    myc_free(js);
+    myc_candidate_free(&cs);
+}
+
 /* ------------------------- dispatcher ------------------------------- */
 
 /* Bangun respons tools/list. */
@@ -1259,26 +1638,11 @@ static json_value *tools_list_body(void)
     t = json_new_obj();
     json_obj_set(t, "name", json_new_str("check"));
     json_obj_set(t, "description", json_new_str(
-        "Verifikasi kode C dengan pipeline myc (memory-safety): verdict, "
-        "assurance L0-L5, error, diagnostics, output gate run/prove/checked/"
-        "filc. Hasil tersedia di content[0].text (JSON penuh) DAN sebagai "
-        "objek structuredContent (schema myc.result.v1) -- konsumen mesin "
-        "tidak perlu parse JSON di dalam JSON. isError=true HANYA untuk "
-        "kegagalan tool/protocol (ERROR/TIMEOUT/CANCELLED); finding pada "
-        "kode (PROVE/DRIVER_VIOLATION dll.) dikirim sebagai hasil biasa. "
-        "source: kode C (string, wajib). flags: array string opsional "
-        "dari [--run --prove --checked --filc --driver --analyze --strict --no-lint --quorum --metamorphic --negative --require-complete]. "
-        "--quorum: analisis differential backend (bandingkan status semua gate "
-        "yang diminta, laporkan konflik/inkonsistensi). "
-        "--metamorphic: verifikasi metamorphic (build ganda clang ASan -O0/-O2, "
-        "bandingkan hasil; beda = kemungkinan UB/toolchain-sensitive). "
-        "--negative: negative-space analysis (observasi konvensi pemeriksaan "
-        "hasil alokasi per callsite; HANYA diagnostic + confidence, non-blocking). "
-        "--require-complete: verifikasi harus LENGKAP - verification gap "
-        "(unverified_debt, MYC-INCOMPLETE-*) membuat hasil INCONCLUSIVE "
-        "(gagal di CI), bukan kesunyian. "
-        "run_stdin: string stdin untuk program verification (opsional; efektif "
-        "bila --run atau --filc diminta). cwd: direktori kerja opsional."));
+        "Verify C source with myc. source (string, required). "
+        "flags (array of strings, optional): --run --analyze --checked "
+        "--driver --strict --no-lint --require-complete. "
+        "Result: structuredContent myc.result.v1. isError=true only for "
+        "tool/protocol failure, not for compile/runtime findings."));
     {
         json_value *schema = json_new_obj();
         json_value *props = json_new_obj();
@@ -1531,6 +1895,140 @@ static json_value *tools_list_body(void)
     }
     json_arr_push(tools, t);
 
+    /* verify (myc.lite.v1) */
+    t = json_new_obj();
+    json_obj_set(t, "name", json_new_str("verify"));
+    json_obj_set(t, "description", json_new_str(
+        "Lite check for coding agents (myc.lite.v1). Default recipe is "
+        "--scenario auto. Returns one action: STOP_COMPILE_CLEAN, FIX_ONE, "
+        "ESCALATE_RUNTIME, ESCALATE_CONTRACT, or GIVE_UP_NO_TEMPLATE. "
+        "source required. flags optional array; omit to use scenario auto. "
+        "STOP_COMPILE_CLEAN is compile_clean, not memory-safe."));
+    {
+        json_value *schema = json_new_obj();
+        json_value *props = json_new_obj();
+        json_value *p;
+        json_value *items;
+        json_obj_set(schema, "type", json_new_str("object"));
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("string"));
+        json_obj_set(p, "description", json_new_str("Kode sumber C (wajib)."));
+        json_obj_set(props, "source", p);
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("array"));
+        items = json_new_obj();
+        json_obj_set(items, "type", json_new_str("string"));
+        json_obj_set(p, "items", items);
+        json_obj_set(p, "description", json_new_str(
+            "Flag opsional. Kosong/absen = --scenario auto."));
+        json_obj_set(props, "flags", p);
+        json_obj_set(schema, "properties", props);
+        {
+            json_value *req = json_new_arr();
+            json_arr_push(req, json_new_str("source"));
+            json_obj_set(schema, "required", req);
+        }
+        json_obj_set(t, "inputSchema", schema);
+    }
+    json_arr_push(tools, t);
+
+    /* context */
+    t = json_new_obj();
+    json_obj_set(t, "name", json_new_str("context"));
+    json_obj_set(t, "description", json_new_str(
+        "Minimal context pack for one finding (myc context --budget 4K). "
+        "source required. flags optional. budget number 4096..16384. "
+        "Does not change verdict."));
+    {
+        json_value *schema = json_new_obj();
+        json_value *props = json_new_obj();
+        json_value *p;
+        json_obj_set(schema, "type", json_new_str("object"));
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("string"));
+        json_obj_set(props, "source", p);
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("array"));
+        json_obj_set(props, "flags", p);
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("string"));
+        json_obj_set(props, "finding_id", p);
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("number"));
+        json_obj_set(props, "budget", p);
+        json_obj_set(schema, "properties", props);
+        {
+            json_value *req = json_new_arr();
+            json_arr_push(req, json_new_str("source"));
+            json_obj_set(schema, "required", req);
+        }
+        json_obj_set(t, "inputSchema", schema);
+    }
+    json_arr_push(tools, t);
+
+    /* next (EIG, no apply) */
+    t = json_new_obj();
+    json_obj_set(t, "name", json_new_str("next"));
+    json_obj_set(t, "description", json_new_str(
+        "EIG recommendations only (does not run extra gates). "
+        "source required. budget_ms optional (default 5000). "
+        "Use --eig-apply on check to execute at most one."));
+    {
+        json_value *schema = json_new_obj();
+        json_value *props = json_new_obj();
+        json_value *p;
+        json_obj_set(schema, "type", json_new_str("object"));
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("string"));
+        json_obj_set(props, "source", p);
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("array"));
+        json_obj_set(props, "flags", p);
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("number"));
+        json_obj_set(props, "budget_ms", p);
+        json_obj_set(schema, "properties", props);
+        {
+            json_value *req = json_new_arr();
+            json_arr_push(req, json_new_str("source"));
+            json_obj_set(schema, "required", req);
+        }
+        json_obj_set(t, "inputSchema", schema);
+    }
+    json_arr_push(tools, t);
+
+    /* compare_candidates */
+    t = json_new_obj();
+    json_obj_set(t, "name", json_new_str("compare_candidates"));
+    json_obj_set(t, "description", json_new_str(
+        "Pareto frontier of patch candidates. myc does not pick a winner; "
+        "the harness chooses. baseline_path + candidate_paths required."));
+    {
+        json_value *schema = json_new_obj();
+        json_value *props = json_new_obj();
+        json_value *p;
+        json_value *items;
+        json_obj_set(schema, "type", json_new_str("object"));
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("string"));
+        json_obj_set(props, "baseline_path", p);
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("array"));
+        items = json_new_obj();
+        json_obj_set(items, "type", json_new_str("string"));
+        json_obj_set(p, "items", items);
+        json_obj_set(props, "candidate_paths", p);
+        json_obj_set(schema, "properties", props);
+        {
+            json_value *req = json_new_arr();
+            json_arr_push(req, json_new_str("baseline_path"));
+            json_arr_push(req, json_new_str("candidate_paths"));
+            json_obj_set(schema, "required", req);
+        }
+        json_obj_set(t, "inputSchema", schema);
+    }
+    json_arr_push(tools, t);
+
     json_obj_set(result, "tools", tools);
     return result;
 }
@@ -1562,6 +2060,14 @@ static void handle_tools_call(json_value *id, json_value *params)
         tool_lint(id, args);
     else if (strcmp(name, "agent_check") == 0)
         tool_agent_check(id, args);
+    else if (strcmp(name, "verify") == 0)
+        tool_verify(id, args);
+    else if (strcmp(name, "context") == 0)
+        tool_context(id, args);
+    else if (strcmp(name, "next") == 0)
+        tool_next(id, args);
+    else if (strcmp(name, "compare_candidates") == 0)
+        tool_compare_candidates(id, args);
     else
         send_error(id, -32602, "Unknown tool");
 }

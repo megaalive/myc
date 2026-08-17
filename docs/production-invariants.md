@@ -246,15 +246,17 @@ PR-009 (2026-08-12): konsumen JSON menerapkan fail-closed yang sama —
 Tulisan terputus ke `.myc/*` tidak boleh menghasilkan cache/ledger/receipt
 valid.
 
-**Status:** sebagian. Read side fail-closed (file rusak/truncated → parse
-gagal → dianggap miss → recompute; tanpa crash). **Gap:** write side
-belum atomik (`myc_cache_store` cache.c: `fopen "wb"` + fwrite + fclose,
-tanpa temp+rename+fsync) → crash di tengah tulis menyisakan file truncated
-yang aman (ditolak read), tetapi tidak ada quarantine/diagnostic. Target:
-P3-T03 (atomic persistent state).
+**Status:** ditegakkan (PR-012 / P3-T03). Read side fail-closed (file
+rusak/truncated → parse gagal → miss → recompute). Write side atomik
+via `myc_persist_atomic_write` (`persist.c`): temp
+`<path>.tmp.<pid>` + flush + fsync/`_commit` + rename/replace
+(`MoveFileExA` di Windows) + parent-dir fsync POSIX. Crash kapan pun
+= OLD valid ATAU NEW valid (tidak pernah setengah). Sidecar
+`.myc/evidence_cache.sha256` (PR-013) menolak replay korup.
 
-**Implementasi:** `cache.c` (`cache_read_all` tolak parse gagal,
-`myc_cache_store` tulis langsung).
+**Implementasi:** `persist.c` (`myc_persist_atomic_write`); `cache.c` /
+`ledger.c` / assumptions / calibration / regression seed memakai helper
+yang sama.
 
 **Test:** `test/_regress_run.bat` blok cache; corpus korup
 `test/_schema_golden.sh` (myc.result, bukan cache).
@@ -328,7 +330,7 @@ ditolak).
 | INV-009 Receipt binds source | ✅ ditegakkan |
 | INV-010 Schema version explicit | ✅ ditegakkan |
 | INV-011 Unknown state fails closed | ✅ reducer (fix PR-003) / ⚠️ cache replay gap (P2/P3) |
-| INV-012 Partial write invalid cache | ⚠️ read ✅ / write atomik gap (P3-T03) |
+| INV-012 Partial write invalid cache | ✅ ditegakkan (persist.c PR-012) |
 | INV-013 Backend identity is evidence | ✅ ditegakkan |
 | INV-014 Reproduction command complete | ✅ ditegakkan |
 | INV-015 No silent weaker assurance | ✅ budget contract / `--production` = P12 |

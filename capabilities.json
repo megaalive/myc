@@ -237,6 +237,8 @@
     "--json",
     "--json-summary",
     "--agent",
+    "--lite",
+    "--harness",
     "--strict",
     "--level",
     "--no-lint",
@@ -261,7 +263,9 @@
     "--pack-dir",
     "--no-pack",
     "--watch-diff",
-    "--delta"
+    "--delta",
+    "--eig-apply",
+    "--budget-ms"
   ],
   "mcp_tools": [
     "check",
@@ -270,12 +274,17 @@
     "policy",
     "contracts",
     "lint",
-    "agent_check"
+    "agent_check",
+    "verify",
+    "context",
+    "next",
+    "compare_candidates"
   ],
   "schemas": [
     "myc.result.v1",
     "myc.repair.v1",
-    "myc.agent.v2"
+    "myc.agent.v2",
+    "myc.lite.v1"
   ],
   "dimensions": {
     "C": "Compile",

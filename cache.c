@@ -88,12 +88,12 @@ static void cache_gates2_hash(const myc_request *req, char out[33])
 
     gn += snprintf(gbuf + gn, sizeof(gbuf) - gn,
                    "lint=%d|exh=%d|stk=%d|stb=%d|fz=%d|fzi=%d|fzs=%u|mut=%d|"
-                   "mutm=%d|free=%d|mat=%d|abi=%d|pert=%d|tp=%d",
+                   "mutm=%d|free=%d|mat=%d|abi=%d|pert=%d|tp=%d|eig=%d|eigb=%d",
                    req->run_lint, req->exhaustive, req->stack,
                    req->stack_budget, req->fuzz, req->fuzz_iters,
                    req->fuzz_seed, req->mutate_audit, req->mutate_max,
                    req->freestanding, req->matrix, req->abi, req->perturb,
-                   req->thread_probe);
+                   req->thread_probe, req->eig_apply, req->eig_budget_ms);
     if (gn >= (int)sizeof(gbuf))
         gn = (int)sizeof(gbuf) - 1;
     sha256_init(&gctx);

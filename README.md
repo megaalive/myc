@@ -38,15 +38,38 @@ The hard gates come only from **semantic evidence** (compiler diagnostics,
 sanitizer reports, fat-pointer bounds checks, Frama-C, Fil-C). Everything else
 is a warning or a non-blocking observation.
 
+## For coding agents
+
+Default inner loop:
+
+```
+myc check prog.c --lite
+```
+
+Read `action` and stop guessing:
+
+| `action` | What to do |
+|---|---|
+| `STOP_COMPILE_CLEAN` | Stop. Compile-clean, **not** "memory-safe". |
+| `FIX_ONE` | Edit only `allowed_span`. Use `fix_or_null` if present. |
+| `ESCALATE_RUNTIME` | `myc check prog.c --run --lite` |
+| `ESCALATE_CONTRACT` | `myc check prog.c --driver --lite` |
+| `GIVE_UP_NO_TEMPLATE` | `myc context prog.c --budget 4K` |
+
+MCP: prefer tool `verify` (schema `myc.lite.v1`, default `--scenario auto`).
+Frontier models can still use `agent_check` (`myc.agent.v2`). See
+`examples/cursor-rule.md` and `docs/mcp-tools.md`.
+
 ## Usage
 
 ```
-myc check <file.c> [--json] [--analyze] [--strict] [--no-lint] [--cwd DIR]
+myc check <file.c> [--json] [--json-summary] [--agent] [--lite] [--analyze] [--strict] [--no-lint] [--cwd DIR]
 myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver]
 myc check <file.c> [--exhaustive] [--stack [--stack-budget N]] [--fuzz [--fuzz-iters N] [--fuzz-seed S]]
 myc check <file.c> [--mutate-audit [--mutate-max N]] [--freestanding] [--matrix]
 myc check <file.c> [--scenario NAME [--scenario-file PATH]] [--metamorphic] [--divergence]
 myc check <file.c> [--negative] [--quorum] [--require-complete]
+myc check <file.c> [--eig-apply [--budget-ms N]]
 myc check <file.c> [--json-summary] [--timeout MS] [--output-cap BYTES] [--no-cache]
 myc check -            [--json] [--analyze] [--strict] [--no-lint]   (source from stdin)
 myc compare <ref.c> <new.c> [func...]     (differential oracle pair, A4/DS-04)
@@ -61,7 +84,7 @@ myc regression list | run [file.c]        (counterexample seeds, Fase 6)
 myc context <file.c> [--finding-id ID] [--budget 4K|8K|16K] [gate flags...]
 myc policy
 myc probe
-myc prompt <file.c>  (deterministic system-prompt snippet, D4/DS-15)
+myc prompt <file.c> [--pack-dir DIR] [--no-pack] [--harness cursor|claude|codex]
 myc version
 mcp.exe               (MCP server; see docs/mcp-tools.md)
 ```
@@ -139,6 +162,11 @@ Flags:
   `MYC-INCOMPLETE-*` debt), never silent silence.
 - `--json-summary` — compact JSON for LLM agents (verdict, assurance vector,
   receipt, finding, gate matrix, debt).
+- `--lite` — compact `myc.lite.v1` for weak agents: one `action` enum,
+  `allowed_span`, `fix_or_null`. `STOP_COMPILE_CLEAN` is compile-clean, not
+  "safe".
+- `--eig-apply` — after L1, run at most one EIG experiment within
+  `--budget-ms` (default 5000). Opt-in; does not change default `myc check`.
 - `--timeout MS` — per-process timeout (0–600000, default 30000).
 - `--output-cap BYTES` — cap captured child output (0–104857600, default 1 MiB).
 - `--strict` — extra strict warnings (`-Wconversion`, `-Wsign-conversion`, …).
@@ -202,11 +230,13 @@ unavailable, myc still reports the static result plus a diagnostic.
 
 ## MCP server
 
-`mcp.exe` exposes myc as an MCP server (JSON-RPC 2.0 over stdio) with six
-tools: `check`, `version`, `policy`, `contracts`, `lint`, and `repair` (minimal
-template patch for a compile finding). Results use typed `structuredContent`
-schemas (`myc.result.v1`, `myc.repair.v1`) plus a text JSON payload. See
-`docs/mcp-tools.md`. A dependency-free example client is `docs/mcp_client.py`.
+`mcp.exe` exposes myc as an MCP server (JSON-RPC 2.0 over stdio) with tools
+`verify` (lite, default `--scenario auto`), `check`, `agent_check`, `repair`,
+`lint`, `contracts`, `version`, and `policy`. Results use typed
+`structuredContent` (`myc.lite.v1`, `myc.result.v1`, `myc.agent.v2`,
+`myc.repair.v1`). See [docs/mcp-tools.md](docs/mcp-tools.md). A
+dependency-free example client is `docs/mcp_client.py`. Example Cursor
+config: `examples/mcp.json`.
 
 ## Learn more
 

@@ -521,3 +521,40 @@ char *myc_prompt_build_packed(const char *source, size_t len,
     return out;
 #undef PK_APPEND
 }
+
+char *myc_prompt_harness(const char *kind, const char *source, size_t len)
+{
+    char *core;
+    const char *proto;
+    size_t clen, plen;
+    char *out;
+
+    if (!kind)
+        return NULL;
+    if (strcmp(kind, "cursor") != 0 && strcmp(kind, "claude") != 0 &&
+        strcmp(kind, "codex") != 0)
+        return NULL;
+    core = myc_prompt_build(source, len);
+    if (!core)
+        return NULL;
+    proto =
+        "\n# myc lite protocol (harness)\n"
+        "After writing C, run: myc check FILE --lite\n"
+        "Honor action: STOP_COMPILE_CLEAN = stop; FIX_ONE = edit only allowed_span;\n"
+        "ESCALATE_RUNTIME = myc check FILE --run --lite; ESCALATE_CONTRACT = --driver;\n"
+        "GIVE_UP_NO_TEMPLATE = stop guessing, run myc context FILE --budget 4K.\n"
+        "Do not pass extra flags unless action is ESCALATE_*.\n"
+        "STOP_COMPILE_CLEAN means compile_clean, not memory-safe.\n"
+        "Never edit outside allowed_span. Never dump the full flag list.\n";
+    clen = strlen(core);
+    plen = strlen(proto);
+    out = (char *)myc_malloc(clen + plen + 1);
+    if (!out) {
+        myc_free(core);
+        return NULL;
+    }
+    memcpy(out, core, clen);
+    memcpy(out + clen, proto, plen + 1);
+    myc_free(core);
+    return out;
+}

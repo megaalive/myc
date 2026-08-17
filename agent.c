@@ -8,6 +8,8 @@
 #include "nextbest.h"
 #include "compile.h"
 #include "lint.h"
+#include "sha256.h"
+#include "context.h"
 #include <string.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -64,6 +66,7 @@ void myc_agent_result_free(myc_agent_result *ar)
     myc_free(ar->primary_finding.message);
     myc_free(ar->primary_finding.repro);
     myc_free(ar->primary_finding.witness_hash);
+    myc_free(ar->primary_finding.source_anchor);
     myc_free(ar->witness_text);
     myc_free(ar->witness_repro);
     myc_free(ar->witness_slice);
@@ -225,6 +228,8 @@ const char *myc_agent_result_json(const myc_agent_result *ar)
                 ar->primary_finding.repro);
             agent_add_str(pf, "witness_hash",
                 ar->primary_finding.witness_hash);
+            agent_add_str(pf, "source_anchor",
+                ar->primary_finding.source_anchor);
             json_obj_set(root, "primary_finding", pf);
         }
     }
@@ -288,6 +293,9 @@ const char *myc_agent_result_json(const myc_agent_result *ar)
             json_obj_set(root, "next_check", obj);
         }
     }
+
+    if (ar->has_action)
+        agent_add_str(root, "action", myc_lite_action_name(ar->action));
 
     arr = json_new_arr();
     if (arr) {
@@ -586,40 +594,274 @@ char *myc_agent_build_witness(const myc_result *res)
     return agent_strdup(res->capsule->source_sha256);
 }
 
-/* NEMO-1: next_check dari verdict/gate — flag yang sudah ada, bukan --focus. */
-char *myc_agent_build_next_check(const myc_result *res, const char *path)
+/* Identifier `main` diikuti '(' di luar string/komentar. */
+static int agent_source_has_main(const char *s, size_t len)
 {
-    const char *p = (path && path[0]) ? path : "<file>";
-    char buf[320];
+    size_t i = 0;
+    while (s && i < len) {
+        if (s[i] == '"' || s[i] == '\'') {
+            char q = s[i++];
+            while (i < len) {
+                if (s[i] == '\\' && i + 1 < len) {
+                    i += 2;
+                    continue;
+                }
+                if (s[i] == q) {
+                    i++;
+                    break;
+                }
+                i++;
+            }
+            continue;
+        }
+        if (s[i] == '/' && i + 1 < len && s[i + 1] == '/') {
+            while (i < len && s[i] != '\n')
+                i++;
+            continue;
+        }
+        if (s[i] == '/' && i + 1 < len && s[i + 1] == '*') {
+            i += 2;
+            while (i + 1 < len && !(s[i] == '*' && s[i + 1] == '/'))
+                i++;
+            i += 2;
+            continue;
+        }
+        if ((i == 0 || !(isalnum((unsigned char)s[i - 1]) || s[i - 1] == '_')) &&
+            i + 4 < len && s[i] == 'm' && s[i + 1] == 'a' &&
+            s[i + 2] == 'i' && s[i + 3] == 'n') {
+            size_t j = i + 4;
+            if (j < len && (isalnum((unsigned char)s[j]) || s[j] == '_')) {
+                i++;
+                continue;
+            }
+            while (j < len && (s[j] == ' ' || s[j] == '\t' || s[j] == '\n' ||
+                               s[j] == '\r'))
+                j++;
+            if (j < len && s[j] == '(')
+                return 1;
+        }
+        i++;
+    }
+    return 0;
+}
+
+static int agent_runtime_has_template(const myc_result *res,
+                                      const char *source, size_t source_len)
+{
+    myc_runtime_repair *rr;
+    int ok = 0;
+    if (!res || res->verdict != MC_RUNTIME_VIOLATION || !res->sanloc_have)
+        return 0;
+    if (!source || source_len == 0)
+        return 1; /* tanpa source: optimistis (loop agent_check akan coba) */
+    rr = myc_repair_runtime_patch(res, source, source_len);
+    if (rr && rr->patched_source)
+        ok = 1;
+    if (rr)
+        myc_runtime_repair_free(rr);
+    return ok;
+}
+
+static int agent_compile_has_template(const myc_result *res)
+{
+    const char *msg = NULL;
+    char *p;
+    if (!res || res->verdict != MC_COMPILE_ERROR)
+        return 0;
+    if (res->diag_count > 0)
+        msg = res->diags[0].message;
+    if (!msg)
+        return 0;
+    p = myc_repair_from_diagnostic(msg);
+    if (p) {
+        myc_free(p);
+        return 1;
+    }
+    return 0;
+}
+
+const char *myc_lite_action_name(myc_lite_action a)
+{
+    switch (a) {
+    case MYC_LITE_STOP_COMPILE_CLEAN: return "STOP_COMPILE_CLEAN";
+    case MYC_LITE_FIX_ONE:            return "FIX_ONE";
+    case MYC_LITE_ESCALATE_RUNTIME:   return "ESCALATE_RUNTIME";
+    case MYC_LITE_ESCALATE_CONTRACT:  return "ESCALATE_CONTRACT";
+    case MYC_LITE_GIVE_UP_NO_TEMPLATE:return "GIVE_UP_NO_TEMPLATE";
+    }
+    return "GIVE_UP_NO_TEMPLATE";
+}
+
+myc_lite_action myc_agent_select_action(const myc_result *res,
+                                        const char *source,
+                                        size_t source_len)
+{
+    myc_gate_status rs;
 
     if (!res)
-        return agent_strdup("myc check <file> --agent");
+        return MYC_LITE_GIVE_UP_NO_TEMPLATE;
 
     if (res->verdict == MC_RUNTIME_VIOLATION) {
-        snprintf(buf, sizeof(buf), "myc check %s --run --agent", p);
-    } else if (res->verdict == MC_COMPILE_ERROR) {
-        snprintf(buf, sizeof(buf), "myc check %s --agent", p);
-    } else if (res->verdict == MC_DRIVER_VIOLATION) {
-        snprintf(buf, sizeof(buf), "myc check %s --driver --agent", p);
-    } else if (res->verdict == MC_PROVE_VIOLATION ||
-               agent_gate_status(res, MYC_GATE_PROVE) ==
-                   MYC_GATE_INCONCLUSIVE) {
-        snprintf(buf, sizeof(buf), "myc check %s --prove --agent", p);
-    } else if (res->verdict == MC_FILC_VIOLATION) {
-        snprintf(buf, sizeof(buf), "myc check %s --filc --agent", p);
-    } else if (agent_gate_status(res, MYC_GATE_CHECKED) ==
-               MYC_GATE_COMPLETED_FINDINGS) {
-        snprintf(buf, sizeof(buf), "myc check %s --checked --agent", p);
-    } else if (res->verdict == MC_OK) {
-        myc_gate_status rs = agent_gate_status(res, MYC_GATE_RUNTIME);
-        if (rs == MYC_GATE_NOT_REQUESTED || rs == MYC_GATE_NOT_APPLICABLE)
-            snprintf(buf, sizeof(buf), "myc check %s --run --agent", p);
-        else
-            snprintf(buf, sizeof(buf), "myc check %s --agent", p);
-    } else {
-        snprintf(buf, sizeof(buf), "myc check %s --agent", p);
+        if (agent_runtime_has_template(res, source, source_len))
+            return MYC_LITE_FIX_ONE;
+        return MYC_LITE_GIVE_UP_NO_TEMPLATE;
     }
+    if (res->verdict == MC_COMPILE_ERROR) {
+        if (agent_compile_has_template(res))
+            return MYC_LITE_FIX_ONE;
+        return MYC_LITE_GIVE_UP_NO_TEMPLATE;
+    }
+    if (res->verdict == MC_DRIVER_VIOLATION)
+        return MYC_LITE_ESCALATE_CONTRACT;
+    if (res->verdict == MC_PROVE_VIOLATION ||
+        res->verdict == MC_FILC_VIOLATION)
+        return MYC_LITE_GIVE_UP_NO_TEMPLATE;
+    if (agent_gate_status(res, MYC_GATE_CHECKED) ==
+        MYC_GATE_COMPLETED_FINDINGS)
+        return MYC_LITE_GIVE_UP_NO_TEMPLATE;
+
+    if (res->verdict == MC_OK) {
+        rs = agent_gate_status(res, MYC_GATE_RUNTIME);
+        if (rs == MYC_GATE_NOT_REQUESTED || rs == MYC_GATE_NOT_APPLICABLE) {
+            if (!source || source_len == 0 ||
+                agent_source_has_main(source, source_len))
+                return MYC_LITE_ESCALATE_RUNTIME;
+            return MYC_LITE_STOP_COMPILE_CLEAN;
+        }
+        return MYC_LITE_STOP_COMPILE_CLEAN;
+    }
+    return MYC_LITE_GIVE_UP_NO_TEMPLATE;
+}
+
+static int agent_primary_line(const myc_result *res)
+{
+    if (!res)
+        return 0;
+    if (res->sanloc_have && res->sanloc_line > 0)
+        return res->sanloc_line;
+    if (res->diag_count > 0 && res->diags[0].line > 0)
+        return res->diags[0].line;
+    return 0;
+}
+
+static const char *agent_primary_fn(const myc_result *res)
+{
+    if (res && res->sanloc_have && res->sanloc_function &&
+        res->sanloc_function[0])
+        return res->sanloc_function;
+    return NULL;
+}
+
+/* f-<fn|LN>-<sha8> dari isi baris (atau nama+nomor bila source absen). */
+static char *agent_make_source_anchor(const myc_result *res,
+                                      const char *source, size_t source_len)
+{
+    int line = agent_primary_line(res);
+    const char *fn = agent_primary_fn(res);
+    char fnbuf[40];
+    char hex[65];
+    const char *span = NULL;
+    size_t spanlen = 0;
+    size_t i, pos, n;
+    char idbuf[64];
+
+    if (fn && fn[0]) {
+        n = 0;
+        for (i = 0; fn[i] && n + 1 < sizeof(fnbuf); i++) {
+            unsigned char c = (unsigned char)fn[i];
+            if (isalnum(c) || c == '_')
+                fnbuf[n++] = (char)c;
+        }
+        fnbuf[n] = '\0';
+        if (fnbuf[0] == '\0')
+            snprintf(fnbuf, sizeof(fnbuf), "L%d", line > 0 ? line : 0);
+    } else {
+        snprintf(fnbuf, sizeof(fnbuf), "L%d", line > 0 ? line : 0);
+    }
+
+    if (source && source_len > 0 && line > 0) {
+        pos = 0;
+        n = 1;
+        while (pos < source_len && n < (size_t)line) {
+            if (source[pos] == '\n')
+                n++;
+            pos++;
+        }
+        if (n == (size_t)line && pos < source_len) {
+            span = source + pos;
+            spanlen = 0;
+            while (pos + spanlen < source_len &&
+                   source[pos + spanlen] != '\n' &&
+                   source[pos + spanlen] != '\r')
+                spanlen++;
+        }
+    }
+    if (!span) {
+        snprintf(idbuf, sizeof(idbuf), "%s:%d", fnbuf, line);
+        span = idbuf;
+        spanlen = strlen(idbuf);
+    }
+    sha256_hex(span, spanlen, hex);
+    return agent_printf("f-%s-%.8s", fnbuf, hex);
+}
+
+static char *agent_command_for_action(myc_lite_action a, const myc_result *res,
+                                      const char *path)
+{
+    const char *p = (path && path[0]) ? path : "<file>";
+    char buf[360];
+    int line;
+
+    switch (a) {
+    case MYC_LITE_STOP_COMPILE_CLEAN:
+        return agent_strdup("STOP_COMPILE_CLEAN");
+    case MYC_LITE_FIX_ONE:
+        line = agent_primary_line(res);
+        if (line > 0)
+            snprintf(buf, sizeof(buf), "FIX_ONE line %d", line);
+        else
+            snprintf(buf, sizeof(buf), "FIX_ONE");
+        return agent_strdup(buf);
+    case MYC_LITE_ESCALATE_RUNTIME:
+        snprintf(buf, sizeof(buf), "myc check %s --run --agent", p);
+        return agent_strdup(buf);
+    case MYC_LITE_ESCALATE_CONTRACT:
+        snprintf(buf, sizeof(buf), "myc check %s --driver --agent", p);
+        return agent_strdup(buf);
+    case MYC_LITE_GIVE_UP_NO_TEMPLATE:
+        if (res && res->verdict == MC_PROVE_VIOLATION) {
+            snprintf(buf, sizeof(buf), "myc check %s --prove --agent", p);
+            return agent_strdup(buf);
+        }
+        if (res && res->verdict == MC_FILC_VIOLATION) {
+            snprintf(buf, sizeof(buf), "myc check %s --filc --agent", p);
+            return agent_strdup(buf);
+        }
+        if (res && agent_gate_status(res, MYC_GATE_CHECKED) ==
+                       MYC_GATE_COMPLETED_FINDINGS) {
+            snprintf(buf, sizeof(buf), "myc check %s --checked --agent", p);
+            return agent_strdup(buf);
+        }
+        snprintf(buf, sizeof(buf), "myc context %s --budget 4K", p);
+        return agent_strdup(buf);
+    }
+    snprintf(buf, sizeof(buf), "myc context %s --budget 4K", p);
     return agent_strdup(buf);
+}
+
+char *myc_agent_build_next_check_ex(const myc_result *res, const char *path,
+                                    const char *source, size_t source_len)
+{
+    myc_lite_action a;
+    if (!res)
+        return agent_strdup("myc check <file> --agent");
+    a = myc_agent_select_action(res, source, source_len);
+    return agent_command_for_action(a, res, path);
+}
+
+char *myc_agent_build_next_check(const myc_result *res, const char *path)
+{
+    return myc_agent_build_next_check_ex(res, path, NULL, 0);
 }
 
 int myc_build_agent_result(const myc_result *res,
@@ -697,6 +939,8 @@ int myc_build_agent_result(const myc_result *res,
                     line = res->sanloc_line;
                 pf->finding_id = agent_printf("f-%08x",
                     (unsigned)line);
+                pf->source_anchor = agent_make_source_anchor(res, source,
+                                                             source_len);
                 pf->anchor = agent_strdup(d->message);
                 /* NEMO-4 */
                 pf->diagnostic_class = agent_strdup(
@@ -722,6 +966,8 @@ int myc_build_agent_result(const myc_result *res,
         myc_agent_finding *pf = &ar->primary_finding;
         int line = res->sanloc_line > 0 ? res->sanloc_line : 0;
         pf->finding_id = agent_printf("f-%08x", (unsigned)line);
+        pf->source_anchor = agent_make_source_anchor(res, source,
+                                                     source_len);
         pf->anchor = agent_strdup(res->sanloc_function
                                       ? res->sanloc_function : "");
         pf->diagnostic_class = agent_strdup(
@@ -759,11 +1005,14 @@ int myc_build_agent_result(const myc_result *res,
     agent_fill_edits(res, ar, source, source_len);
 
     /* NEMO-1: next_check situasional + finding_id dari primary */
-    ar->next_check.command = myc_agent_build_next_check(res, NULL);
+    ar->next_check.command = myc_agent_build_next_check_ex(res, NULL,
+                                                           source, source_len);
     if (ar->has_primary && ar->primary_finding.finding_id)
         ar->next_check.finding_id =
             agent_strdup(ar->primary_finding.finding_id);
     ar->has_next_check = 1;
+    ar->action = myc_agent_select_action(res, source, source_len);
+    ar->has_action = 1;
 
     /* NEMO-6: feedback = system-prompt deterministik (bukan AI). */
     if (source && source_len > 0)
@@ -864,4 +1113,184 @@ int myc_build_agent_result(const myc_result *res,
     }
 
     return 0;
+}
+
+void myc_lite_result_init(myc_lite_result *lr)
+{
+    if (lr)
+        memset(lr, 0, sizeof(*lr));
+}
+
+void myc_lite_result_free(myc_lite_result *lr)
+{
+    if (!lr)
+        return;
+    myc_free(lr->claim);
+    myc_free(lr->finding_id);
+    myc_free(lr->function);
+    myc_free(lr->why);
+    myc_free(lr->fix_or_null);
+    myc_free(lr->allowed_span);
+    myc_free(lr->next_command);
+    myc_free(lr->receipt_sha256);
+    myc_free(lr->source_sha256);
+    myc_free(lr->source_anchor);
+    myc_free(lr->context_text);
+    memset(lr, 0, sizeof(*lr));
+}
+
+static char *lite_claim_text(const myc_result *res)
+{
+    myc_gate_status rs;
+    if (!res)
+        return agent_strdup("unverified");
+    if (res->verdict == MC_COMPILE_ERROR)
+        return agent_strdup("compile_error");
+    if (res->verdict == MC_RUNTIME_VIOLATION)
+        return agent_strdup("runtime_violation");
+    if (res->verdict == MC_DRIVER_VIOLATION)
+        return agent_strdup("driver_violation");
+    if (res->verdict == MC_PROVE_VIOLATION)
+        return agent_strdup("prove_violation");
+    if (res->verdict == MC_FILC_VIOLATION)
+        return agent_strdup("filc_violation");
+    if (res->verdict == MC_INCONCLUSIVE)
+        return agent_strdup("inconclusive");
+    if (res->verdict == MC_OK) {
+        rs = agent_gate_status(res, MYC_GATE_RUNTIME);
+        if (rs == MYC_GATE_COMPLETED_CLEAN)
+            return agent_strdup("compile_clean+runtime_clean");
+        return agent_strdup("compile_clean (runtime not run)");
+    }
+    return agent_strdup(myc_claim_status_name(res->claim_status));
+}
+
+int myc_build_lite_result(const myc_result *res, myc_lite_result *lr,
+                          const char *source, size_t source_len)
+{
+    const char *msg = NULL;
+    char *fix;
+    int line;
+
+    if (!res || !lr)
+        return -1;
+    myc_lite_result_init(lr);
+    lr->verdict = res->verdict;
+    lr->assurance = res->assurance_vector;
+    lr->action = myc_agent_select_action(res, source, source_len);
+    lr->claim = lite_claim_text(res);
+    line = agent_primary_line(res);
+    lr->line = line;
+    if (agent_primary_fn(res))
+        lr->function = agent_strdup(agent_primary_fn(res));
+    lr->finding_id = agent_printf("f-%08x", (unsigned)line);
+    lr->source_anchor = agent_make_source_anchor(res, source, source_len);
+    if (res->source_sha256)
+        lr->source_sha256 = agent_strdup(res->source_sha256);
+    if (res->receipt_sha256[0])
+        lr->receipt_sha256 = agent_strdup(res->receipt_sha256);
+
+    if (res->sanloc_have && res->sanloc_kind)
+        msg = res->sanloc_kind;
+    else if (res->diag_count > 0)
+        msg = res->diags[0].message;
+    if (msg)
+        lr->why = agent_strdup(msg);
+
+    fix = NULL;
+    if (res->verdict == MC_RUNTIME_VIOLATION && source && source_len > 0) {
+        myc_runtime_repair *rr =
+            myc_repair_runtime_patch(res, source, source_len);
+        if (rr) {
+            if (rr->patch_text)
+                fix = agent_strdup(rr->patch_text);
+            myc_runtime_repair_free(rr);
+        }
+    }
+    if (!fix && msg) {
+        char *rp = myc_repair_from_diagnostic(msg);
+        if (rp)
+            fix = rp;
+        else {
+            const char *lf = myc_lint_fix(msg);
+            if (lf)
+                fix = agent_strdup(lf);
+        }
+    }
+    lr->fix_or_null = fix;
+
+    if (line > 0)
+        lr->allowed_span = agent_printf("line %d", line);
+    else if (lr->function)
+        lr->allowed_span = agent_strdup(lr->function);
+
+    lr->next_command = agent_command_for_action(lr->action, res, "<file>");
+    lr->cache_hit = res->cache_hit;
+    if (lr->action == MYC_LITE_GIVE_UP_NO_TEMPLATE && source &&
+        source_len > 0) {
+        myc_request treq;
+        char hash[65];
+        myc_request_init(&treq);
+        treq.input.kind = MYC_SOURCE_MEMORY;
+        treq.input.data = source;
+        treq.input.len = source_len;
+        memset(hash, 0, sizeof(hash));
+        lr->context_text = myc_context_build(res, source, source_len, &treq,
+                                             NULL, NULL, 4096, hash);
+    }
+    return 0;
+}
+
+char *myc_lite_result_json(const myc_lite_result *lr)
+{
+    json_value *root;
+    json_value *av;
+    char *out = NULL;
+    int ok;
+    const char *dim_names = "CSRBPDF";
+    int i;
+
+    if (!lr)
+        return NULL;
+    root = json_new_obj();
+    if (!root)
+        return NULL;
+    json_obj_set(root, "schema", json_new_str(MYC_LITE_SCHEMA));
+    agent_add_str(root, "verdict", myc_verdict_name(lr->verdict));
+    agent_add_str(root, "claim", lr->claim);
+    agent_add_str(root, "action", myc_lite_action_name(lr->action));
+    agent_add_str(root, "finding_id", lr->finding_id);
+    agent_add_int(root, "line", lr->line);
+    agent_add_str(root, "function", lr->function ? lr->function : "");
+    agent_add_str(root, "why", lr->why ? lr->why : "");
+    if (lr->fix_or_null)
+        agent_add_str(root, "fix_or_null", lr->fix_or_null);
+    else
+        json_obj_set(root, "fix_or_null", json_new_null());
+    agent_add_str(root, "allowed_span",
+                  lr->allowed_span ? lr->allowed_span : "");
+    agent_add_str(root, "next_command", lr->next_command);
+    av = json_new_obj();
+    if (av) {
+        for (i = 0; i < MYC_DIM_COUNT; i++) {
+            char key[2];
+            key[0] = dim_names[i];
+            key[1] = '\0';
+            json_obj_set(av, key,
+                         json_new_str(myc_dim_status_name(
+                             lr->assurance.status[i])));
+        }
+        json_obj_set(root, "assurance_vector", av);
+    }
+    agent_add_str(root, "receipt_sha256", lr->receipt_sha256);
+    agent_add_str(root, "source_sha256", lr->source_sha256);
+    agent_add_str(root, "source_anchor", lr->source_anchor);
+    agent_add_str(root, "cache", lr->cache_hit ? "HIT" : "MISS");
+    if (lr->context_text)
+        agent_add_str(root, "context", lr->context_text);
+    ok = json_serialize(root, &out);
+    json_free(root);
+    if (!ok)
+        return NULL;
+    return out;
 }
