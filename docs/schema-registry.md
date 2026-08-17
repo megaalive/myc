@@ -82,7 +82,9 @@ semua key golden.
 **Field kondisional (bila ada data):** `intent_hash`, `scenario_hash`,
 `primary_finding` (objek `{finding_id, anchor, diagnostic_class, message,
 confidence, repro, witness_hash}`), `witness_repro`, `witness_slice`,
-`experiments`, `causal`, `next_best`, `delta_receipt_sha`, `pack` (objek
+`experiments`, `causal`, `next_best`, `delta_receipt_sha`, `feedback`
+(NEMO-6: string system-prompt deterministik), `payload_dropped` (NEMO-5:
+array string nama enrichment yang dibuang karena cap), `pack` (objek
 JSON ter-parse dari `pack_json`).
 
 **Kontrak konsumen:** SATU aksi utama (`next_check`); payload cap

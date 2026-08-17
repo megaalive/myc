@@ -94,6 +94,8 @@ Output `myc check <file> [flags] --agent`:
 | `receipt_sha256` | string | receipt |
 | `source_sha256` | string | hash source |
 | `witness_text` | string | witness terformat (replay) |
+| `feedback` | string/null | NEMO-6: snippet system-prompt deterministik (`myc_prompt_build`); enrichment, dibuang saat cap |
+| `payload_dropped` | list/null | NEMO-5: nama enrichment yang dibuang karena `--agent-payload-cap` (`experiments`/`causal`/`next_best`/`feedback`/`pack`) |
 
 ### Kontrak konsumen
 
@@ -115,6 +117,7 @@ Output `myc check <file> [flags] --agent`:
 | 2026-08-08 | `myc.result.v1` | Field `abi` ditambah (additive, Fase 5 SOL-14 ABI Certificate) — objek observasi NON-blocking; tidak mengubah makna field lama. |
 | 2026-08-09 | `myc.result.v1` | Field `resource` ditambah (additive, Fase 5 SOL-12 Resource Linearity Ledger) — objek observasi NON-blocking (`pairs/acquires/releases/transferred/leaks/double_releases/release_unknown/findings/report`); tidak mengubah makna field lama. |
 | 2026-08-09 | `myc.result.v1` | Field `units` ditambah (additive, Fase 5 SOL-11 Units/Shape/Provenance) — objek observasi NON-blocking (`annotations/unbound/unit_mismatches/shape_dims/duplicates/findings/report`); tidak mengubah makna field lama. |
+| 2026-08-17 | `myc.agent.v2` | Field kondisional `payload_dropped` (NEMO-5) + `feedback` (NEMO-6) — additive; enrichment NON-blocking; verdict tidak berubah. |
 
 ## Aturan perubahan (untuk pengembang)
 

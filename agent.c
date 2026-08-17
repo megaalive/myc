@@ -88,6 +88,9 @@ void myc_agent_result_free(myc_agent_result *ar)
     myc_free(ar->causal_json);
     myc_free(ar->next_best_json);
     myc_free(ar->delta_receipt_sha);
+    myc_free(ar->feedback);
+    for (i = 0; i < (size_t)ar->payload_dropped_count; i++)
+        myc_free(ar->payload_dropped[i]);
     myc_free(ar->pack_json);
 }
 
@@ -298,6 +301,17 @@ const char *myc_agent_result_json(const myc_agent_result *ar)
     agent_add_str(root, "causal", ar->causal_json);
     agent_add_str(root, "next_best", ar->next_best_json);
     agent_add_str(root, "delta_receipt_sha", ar->delta_receipt_sha);
+    agent_add_str(root, "feedback", ar->feedback);
+
+    /* NEMO-5: daftar enrichment yang dibuang karena payload cap. */
+    if (ar->payload_dropped_count > 0) {
+        arr = json_new_arr();
+        if (arr) {
+            for (i = 0; i < (size_t)ar->payload_dropped_count; i++)
+                json_arr_push(arr, json_new_str(ar->payload_dropped[i]));
+            json_obj_set(root, "payload_dropped", arr);
+        }
+    }
 
     /* Fase 7 (DS-15 wiring): pack proyek lokal diserialisasi sebagai
      * objek (bukan string) bila ada. pack_json dibangun dari isi pack
@@ -313,6 +327,16 @@ const char *myc_agent_result_json(const myc_agent_result *ar)
     json_free(root);
     if (!ok) return NULL;
     return out;
+}
+
+/* NEMO-5: catat nama enrichment yang dibuang karena cap. */
+static void agent_note_drop(myc_agent_result *ar, const char *name)
+{
+    if (!ar || !name)
+        return;
+    if (ar->payload_dropped_count >= MYC_AGENT_MAX_DROPPED)
+        return;
+    ar->payload_dropped[ar->payload_dropped_count++] = agent_strdup(name);
 }
 
 /* NEMO-4: gate id dari verdict/sanloc/gate_status — bukan hardcode compile. */
@@ -741,6 +765,10 @@ int myc_build_agent_result(const myc_result *res,
             agent_strdup(ar->primary_finding.finding_id);
     ar->has_next_check = 1;
 
+    /* NEMO-6: feedback = system-prompt deterministik (bukan AI). */
+    if (source && source_len > 0)
+        ar->feedback = myc_prompt_build(source, source_len);
+
     /* Frontier + Experiments (Fase 3, SOL-02/SOL-17): isi peta frontier
      * dan set eksperimen dari observasi agar LLM bekerja di batas
      * pengetahuan, bukan mengulang pemeriksaan yang sudah selesai. */
@@ -780,15 +808,15 @@ int myc_build_agent_result(const myc_result *res,
 
     /* Check payload size: bila melebihi cap (dari res->agent_payload_cap,
      * default MYC_AGENT_PAYLOAD_CAP), buang field ENRICHMENT bertahap
-     * (experiments_json dulu, lalu causal_json) dan cek ulang -- protokol
-     * inti (verdict/finding/primary/witness) harus selalu utuh. Hanya bila
-     * protokol inti pun melebihi cap baru gagal total (-1). */
+     * (experiments → causal → next_best → feedback → pack) dan catat
+     * di payload_dropped (NEMO-5). Protokol inti tetap utuh. */
     js = myc_agent_result_json(ar);
     ar->payload_size = js ? strlen(js) : 0;
     myc_free((void *)js);
     if (ar->payload_size > ar->payload_cap && ar->experiments_json) {
         myc_free(ar->experiments_json);
         ar->experiments_json = NULL;
+        agent_note_drop(ar, "experiments");
         js = myc_agent_result_json(ar);
         ar->payload_size = js ? strlen(js) : 0;
         myc_free((void *)js);
@@ -796,6 +824,7 @@ int myc_build_agent_result(const myc_result *res,
     if (ar->payload_size > ar->payload_cap && ar->causal_json) {
         myc_free(ar->causal_json);
         ar->causal_json = NULL;
+        agent_note_drop(ar, "causal");
         js = myc_agent_result_json(ar);
         ar->payload_size = js ? strlen(js) : 0;
         myc_free((void *)js);
@@ -803,6 +832,16 @@ int myc_build_agent_result(const myc_result *res,
     if (ar->payload_size > ar->payload_cap && ar->next_best_json) {
         myc_free(ar->next_best_json);
         ar->next_best_json = NULL;
+        agent_note_drop(ar, "next_best");
+        js = myc_agent_result_json(ar);
+        ar->payload_size = js ? strlen(js) : 0;
+        myc_free((void *)js);
+    }
+    /* NEMO-6: feedback dibuang sebelum pack (sama kelas enrichment). */
+    if (ar->payload_size > ar->payload_cap && ar->feedback) {
+        myc_free(ar->feedback);
+        ar->feedback = NULL;
+        agent_note_drop(ar, "feedback");
         js = myc_agent_result_json(ar);
         ar->payload_size = js ? strlen(js) : 0;
         myc_free((void *)js);
@@ -813,6 +852,7 @@ int myc_build_agent_result(const myc_result *res,
     if (ar->payload_size > ar->payload_cap && ar->pack_json) {
         myc_free(ar->pack_json);
         ar->pack_json = NULL;
+        agent_note_drop(ar, "pack");
         js = myc_agent_result_json(ar);
         ar->payload_size = js ? strlen(js) : 0;
         myc_free((void *)js);

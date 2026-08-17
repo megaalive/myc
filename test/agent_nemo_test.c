@@ -157,6 +157,81 @@ static void test_diagnostic_class_and_edits(void)
     myc_result_free(&res);
 }
 
+static void test_feedback_and_payload_drop(void)
+{
+    myc_agent_result ar;
+    myc_result res;
+    const char *src =
+        "int main(void){return 0;}\n";
+
+    /* T9: feedback terisi bila source ada */
+    res_init(&res);
+    res.verdict = MC_OK;
+    CHECK(myc_build_agent_result(&res, &ar, NULL, NULL, NULL,
+                                 src, strlen(src)) == 0,
+          "T9: build with source");
+    CHECK(ar.feedback && ar.feedback[0] != '\0',
+          "T9: feedback non-empty from myc_prompt_build");
+    CHECK(ar.payload_dropped_count == 0,
+          "T9: no drops under default cap");
+    myc_agent_result_free(&ar);
+    myc_result_free(&res);
+
+    /* T10: cap di bawah payload penuh memaksa drop enrichment.
+     * Ukur dulu ukuran default, lalu rebuild dengan cap sedikit lebih kecil. */
+    res_init(&res);
+    res.verdict = MC_OK;
+    {
+        int i;
+        for (i = 0; i < 8 && i < MYC_MAX_DIAGNOSTICS; i++) {
+            res.diags[i].line = i + 1;
+            res.diags[i].col = 1;
+            res.diags[i].message =
+                "observation: lint pattern for payload pressure xxxxxxxx";
+            res.diags[i].confidence = MYC_CONF_OBSERVATION;
+        }
+        res.diag_count = 8;
+        res.finding = MYC_FINDING_FINDINGS;
+    }
+    CHECK(myc_build_agent_result(&res, &ar, NULL, NULL, NULL,
+                                 src, strlen(src)) == 0,
+          "T10a: build full payload");
+    {
+        size_t full = ar.payload_size;
+        int cap;
+        myc_agent_result_free(&ar);
+        cap = (int)full - 400;
+        if (cap < 1024)
+            cap = 1024;
+        if ((size_t)cap >= full)
+            cap = 1024;
+        res.agent_payload_cap = cap;
+        CHECK(myc_build_agent_result(&res, &ar, NULL, NULL, NULL,
+                                     src, strlen(src)) == 0,
+              "T10b: build under reduced cap");
+        CHECK(ar.payload_dropped_count > 0,
+              "T10: at least one enrichment dropped");
+        {
+            int i, ok_names = 1;
+            for (i = 0; i < ar.payload_dropped_count; i++) {
+                const char *n = ar.payload_dropped[i];
+                if (!n ||
+                    (strcmp(n, "experiments") != 0 &&
+                     strcmp(n, "causal") != 0 &&
+                     strcmp(n, "next_best") != 0 &&
+                     strcmp(n, "feedback") != 0 &&
+                     strcmp(n, "pack") != 0))
+                    ok_names = 0;
+            }
+            CHECK(ok_names, "T10: payload_dropped names known");
+        }
+        CHECK(ar.has_next_check && ar.next_check.command,
+              "T10: next_check tetap setelah drop");
+    }
+    myc_agent_result_free(&ar);
+    myc_result_free(&res);
+}
+
 static void test_compile_class(void)
 {
     myc_agent_result ar;
@@ -188,6 +263,7 @@ int main(void)
     test_next_check();
     test_diagnostic_class_and_edits();
     test_compile_class();
+    test_feedback_and_payload_drop();
     printf("agent_nemo_test: PASS=%d FAIL=%d\n", PASS, FAIL);
     return FAIL ? 1 : 0;
 }

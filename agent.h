@@ -105,6 +105,16 @@ typedef struct {
      * (--agent-payload-cap). Diserialisasi di JSON agent sbg payload_cap. */
     size_t payload_cap;
 
+    /* NEMO-5: nama enrichment yang dibuang karena cap (urutan drop).
+     * Kosong bila tidak ada drop; di-emit sebagai array string. */
+#define MYC_AGENT_MAX_DROPPED 8
+    char *payload_dropped[MYC_AGENT_MAX_DROPPED];
+    int   payload_dropped_count;
+
+    /* NEMO-6: snippet system-prompt deterministik (myc_prompt_build).
+     * Enrichment; dibuang bersama pack saat cap. NULL bila source absen. */
+    char *feedback;
+
     /* Project-local pack (Fase 7, DS-15 wiring): objek JSON berisi
      * prompt.md verbatim + spec (rules/allow/deny) + sha256 keduanya.
      * NULL bila pack absen/--no-pack ATAU dibuang oleh enforcement cap

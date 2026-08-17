@@ -7,6 +7,30 @@ semantik per tag rilis (`vX.Y.Z`).
 Sejarah implementasi & audit terperinci (MYC-AUDIT-001..055, fase
 pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 
+## [v2026-08-17.2] — nemo agent protocol: next_check/edits/delta + payload_dropped/feedback - 2026-08-17
+
+### Added
+
+- **NEMO-1..4 — agent protocol stubs wired.** `next_check` situasional dari
+  verdict/gate (flag yang sudah ada, bukan `--focus`); `allowed_edits` /
+  `preserve` / `forbidden_changes` diisi dari repair template + denylist;
+  `delta_receipt_sha` dari ledger `receipt_parent`; `diagnostic_class` =
+  `myc_gate_id_short` (bukan hardcode `compile`). Unit
+  `test/agent_nemo_test.c`; scanner diag denylist menyertakan nama fungsi.
+
+- **NEMO-5/6 — enrichment transparan.** Field kondisional additive
+  `payload_dropped` (array nama enrichment yang dibuang karena
+  `--agent-payload-cap`) dan `feedback` (snippet `myc_prompt_build`,
+  dibuang sebelum `pack` saat cap). Docs: `result-schema.md` +
+  `schema-registry.md`. Verdict tidak berubah.
+
+### Changed
+
+- `.gitignore`: rencana lokal `nemo-light-rev.md` / `qwen-review.md` /
+  `.fpagnt/` tidak di-commit.
+
+---
+
 ## [v2026-08-16] — qwen-review Fase 7 lengkap (T1..T6, MYC-AUDIT-053..064) - 2026-08-16
 
 ### Added
