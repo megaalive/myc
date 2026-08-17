@@ -152,6 +152,11 @@ if ./myc version 2>&1 | grep -qF "clang version:"; then
 else
     fail "myc version clang version hilang"
 fi
+if ./myc version 2>&1 | grep -qE '^git: (unstamped|[0-9a-f]{7,})$'; then
+    note "myc version cetak git SHA atau unstamped"
+else
+    fail "myc version baris git hilang"
+fi
 
 # --- 4. checked build (L4) ---
 assert_out "ok_checked --checked -> L4" "assurance: L4" tests/ok_checked.c --checked

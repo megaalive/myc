@@ -529,6 +529,7 @@ echo --- MYC-AUDIT-022: machine-readable diagnostic + exact tool identity (roadm
 myc.exe version > %OUT% 2>&1
 findstr /C:"gcc version:" %OUT% >nul && echo [OK] myc version cetak gcc version || echo [WARN] gcc version hilang di myc version
 findstr /C:"clang version:" %OUT% >nul && echo [OK] myc version cetak clang version || echo [WARN] clang version hilang di myc version
+findstr /C:"git:" %OUT% >nul && echo [OK] myc version cetak git SHA atau unstamped || echo [FAIL] git hilang di myc version
 myc.exe check tests\ok_hello.c > %OUT% 2>&1
 findstr /C:"gcc_version:" %OUT% >nul && echo [OK] report memuat gcc_version || echo [WARN] gcc_version tidak tampil
 myc.exe check tests\bad_realloc.c > %OUT% 2>&1

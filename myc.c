@@ -1377,6 +1377,13 @@ static int cmd_version(void)
     char *clang = myc_find_executable("clang");
     char *gv, *cv;
     printf("myc 0.1.0\n");
+#ifdef MYC_GIT_SHA
+#define MYC_GIT_SHA_XSTR(s) #s
+#define MYC_GIT_SHA_STR(s)  MYC_GIT_SHA_XSTR(s)
+    printf("git: %s\n", MYC_GIT_SHA_STR(MYC_GIT_SHA));
+#else
+    printf("git: unstamped\n");
+#endif
     if (gcc) {
         printf("gcc: %s\n", gcc);
         gv = myc_tool_version(gcc);

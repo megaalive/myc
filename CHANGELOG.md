@@ -77,6 +77,10 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 - **P12 — `--production`.** `require_complete` + floor versi backend
   (P5-T03): gcc 9+ / analyzer gcc 10+ / clang 11+ / frama-c 28+.
   Toolchain di bawah min = UNAVAILABLE, bukan CLEAN. Masuk cache key g2.
+- **P11 — provenance rilis.** Workflow `release.yml` mengunggah `SHA256SUMS`,
+  men-stempel `-DMYC_GIT_SHA` (`myc version` → `git: <sha>`), dan menulis
+  commit SHA di catatan rilis. Rebuild didokumentasikan di
+  `docs/release.md`; biner bit-identical **tidak** diklaim.
 
 ### Changed
 
