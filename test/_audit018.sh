@@ -178,6 +178,8 @@
 #                      MYC_ALLOC_TEST dan menutup 0..N titik alokasi tanpa
 #                      crash + persistent state tidak korup), (b) alloc.c
 #                      menyediakan hook nth-failure.
+# 23. pra01_soak       -- PR-A01: N× myc_run no-cache + miss/hit persist
+#                      tanpa verdict/receipt drift (cache basi dilarang).
 #
 # Dijalankan dari _regress_run.bat (bila bash tersedia) atau langsung di
 # POSIX/CI Linux. CWD harus root proyek.
@@ -234,10 +236,12 @@ rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \
       test/schema_compat.log \
       test/mcp_abuse test/mcp_abuse.exe \
       test/mcp_abuse.log \
+      test/pra01_soak test/pra01_soak.exe \
+      test/pra01_soak.log \
       test/.parser_fuzz_payload.bin test/.parser_fuzz_scen.json
 rm -rf test/.backend_fake_filc test/.parser_fuzz_filc test/.parser_fuzz_frama
 rm -rf test/.cache_key_tmp test/.atomic_tmp test/.cache_corrupt_tmp
-rm -rf test/.schema_compat_tmp test/.mcp_abuse_tmp test/.replay_tmp
+rm -rf test/.schema_compat_tmp test/.mcp_abuse_tmp test/.replay_tmp test/.pra01_tmp
 
 run_built() {
     local name="$1"; shift
@@ -1299,6 +1303,29 @@ else
     FAIL=1
 fi
 
+# --- 23. pra01_soak: PR-A01 beban berulang tanpa verdict/cache drift ---
+if $CC -O2 -std=c11 -Wall -Wextra -Werror -pedantic -I. -DMYC_NO_MAIN \
+       -o test/pra01_soak test/pra01_soak.c $SRCS 2>/dev/null; then
+    LOG="test/pra01_soak.log"
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 180 test/pra01_soak >"$LOG" 2>&1
+        PRC=$?
+    else
+        test/pra01_soak >"$LOG" 2>&1
+        PRC=$?
+    fi
+    if [ $PRC -eq 0 ]; then
+        echo "[OK] pra01_soak (PR-A01: no-cache + cache-hit tanpa drift)"
+    else
+        echo "[FAIL] pra01_soak (PR-A01 verdict/cache drift, exit $PRC)"
+        grep -E '^\[FAIL\]' "$LOG" | head -10
+        FAIL=1
+    fi
+else
+    echo "[FAIL] pra01_soak gagal dibangun (-Werror -pedantic)"
+    FAIL=1
+fi
+
 rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \
       test/oom_alloc test/oom_alloc.exe test/stress_threads test/stress_threads.exe \
       test/verify_descendants test/verify_descendants.exe \
@@ -1339,12 +1366,14 @@ rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \
       test/schema_compat.log \
       test/mcp_abuse test/mcp_abuse.exe \
       test/mcp_abuse.log \
+      test/pra01_soak test/pra01_soak.exe \
+      test/pra01_soak.log \
       test/.backends_canary.log \
       test/.parser_fuzz_payload.bin test/.parser_fuzz_scen.json
 rm -rf test/.backend_fake_filc test/.backend_fake_self test/.backend_fake_self.exe \
       test/.parser_fuzz_filc test/.parser_fuzz_frama
 rm -rf test/.cache_key_tmp test/.atomic_tmp test/.cache_corrupt_tmp
-rm -rf test/.schema_compat_tmp test/.mcp_abuse_tmp
+rm -rf test/.schema_compat_tmp test/.mcp_abuse_tmp test/.pra01_tmp
 
 # --- 6c. Fil-C gate (jika filc-clang tersedia di PATH) ---
 if command -v filc-clang >/dev/null 2>&1 && [ -x ./myc ]; then

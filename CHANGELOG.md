@@ -70,6 +70,10 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   `timeout_ms` penuh (default 30000 ms), bukan satu deadline bersama.
   Worst-case dinding jam ≈ `max_iter` × timeout satu pipeline. Docs:
   `docs/mcp-tools.md`.
+- **PR-A01 — soak tanpa verdict/cache drift.** `test/pra01_soak.c`: N×
+  `myc_run` no-cache (receipt identik) + miss persist lalu N× hit
+  (receipt/verdict sama dengan miss). INV-011/012 registry ditutup
+  (sudah ditegakkan PR-013/012; dokumen tidak lagi mengklaim gap).
 
 ### Changed
 

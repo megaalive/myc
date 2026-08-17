@@ -215,19 +215,19 @@ korup), `test/_mcp_smoke.bat`.
 Parser yang menerima status hard-gate tak dikenal tidak boleh menafsirkan
 ulang sebagai `clean`.
 
-**Status:** ditegakkan (reducer, sejak fix PR-003 2026-08-12); **gap
-terlihat** pada jalur cache replay (corrupt value verdict di luar rentang
-→ field di-ignore → default `MC_OK`; ditangani penuh di P2/P3
-cache-corruption policy — lihat `docs/verdict-state-inventory.md` §1d).
+**Status:** ditegakkan (reducer, sejak fix PR-003 2026-08-12; cache
+replay, sejak PR-013 / P3-T04).
 
-**Implementasi:** `gate.c` — `myc_reduce_verdict()` kini punya `default:`
+**Implementasi:** `gate.c` — `myc_reduce_verdict()` punya `default:`
 (INV-011): status tak dikenal (di luar enum) → `has_incomplete`
-→ `INCONCLUSIVE`, TIDAK pernah clean (sebelumnya jatuh diam-diam ke
-`MC_OK` — bug ditemukan test PR-003). `myc_build_debt()` juga menambah
+→ `INCONCLUSIVE`, TIDAK pernah clean. `myc_build_debt()` juga menambah
 debt `GATE-INCONCLUSIVE` untuk status tak dikenal (fails closed
-konsisten). `rc_gate_status()` default `"unknown"`. `cache.c` — clamp
-`num <= MYC_GATE_COMPLETED_OBSERVATIONS` / `num <= MC_INCONCLUSIVE`:
-nilai di luar rentang tidak di-set (gap verdict → default `MC_OK`).
+konsisten). `rc_gate_status()` default `"unknown"`.
+
+`cache.c` — `cache_entry_semantic_ok` (PR-013) dijalankan **sebelum**
+parse: verdict/err/gate di luar rentang, key bukan hex64, atau state
+mustahil (`MC_ERROR` tanpa err) → entry dikarantina, replay MISS,
+recompute. Nilai korup **tidak** di-clamp ke `MC_OK`.
 
 PR-009 (2026-08-12): konsumen JSON menerapkan fail-closed yang sama —
 `myc_budget_parse` (unknown gate/level, skema salah → -1, active=0),
@@ -237,7 +237,8 @@ PR-009 (2026-08-12): konsumen JSON menerapkan fail-closed yang sama —
 
 **Test:** `test/reducer_exhaustive.c` (PR-003, status `(myc_gate_status)99`
 → INCONCLUSIVE + debt, tidak pernah OK), `test/backend_abuse.c` T2
-(PR-009, konsumen JSON malformed/unknown fails closed).
+(PR-009, konsumen JSON malformed/unknown fails closed),
+`test/cache_corrupt.c` T9 (verdict out-of-range ditolak semantik).
 
 ---
 
@@ -329,7 +330,7 @@ ditolak).
 | INV-008 Timeout terminal | ✅ ditegakkan |
 | INV-009 Receipt binds source | ✅ ditegakkan |
 | INV-010 Schema version explicit | ✅ ditegakkan |
-| INV-011 Unknown state fails closed | ✅ reducer (fix PR-003) / ⚠️ cache replay gap (P2/P3) |
+| INV-011 Unknown state fails closed | ✅ ditegakkan (reducer PR-003 + cache PR-013) |
 | INV-012 Partial write invalid cache | ✅ ditegakkan (persist.c PR-012) |
 | INV-013 Backend identity is evidence | ✅ ditegakkan |
 | INV-014 Reproduction command complete | ✅ ditegakkan |

@@ -57,9 +57,9 @@ gate.c `myc_rebuild_receipt`).
 | Lokasi | Peran |
 |---|---|
 | `myc.c` L96 (`myc_result_init`) | `MC_ERROR` (nilai awal; reducer memrosesnya) |
-| `cache.c` L1042 | replay: `res->verdict = e->verdict` (hanya bila cache key cocok) |
-| `cache.c` L169 | parse verdict entry dengan clamp `0..MC_INCONCLUSIVE` — **GAP INV-011**: nilai korup di luar rentang → di-ignore → default `MC_OK` (target P2/P3) |
-| `agent.c` L377, `myc.c` L704 (capsule) | salinan ke output (bukan mutasi hasil) |
+| `cache.c` `cache_apply_entry` | replay: `res->verdict = e->verdict` (hanya bila cache key cocok **dan** `cache_entry_semantic_ok`) |
+| `cache.c` `cache_entry_semantic_ok` | verdict/err/gate out-of-range atau state mustahil → karantina, MISS, recompute (PR-013; **bukan** clamp ke `MC_OK`) |
+| `agent.c` `myc_agent_result` / capsule | salinan ke output (bukan mutasi hasil) |
 | `ledger.c` L330 | salinan string ke ledger |
 
 ---

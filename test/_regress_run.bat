@@ -36,6 +36,16 @@ if exist test\reducer_exhaustive.exe (
   echo [WARN] reducer_exhaustive gagal dibangun
 )
 del test\reducer_exhaustive.exe 2>nul
+echo --- PR-A01 soak: beban berulang tanpa verdict/cache drift
+if exist test\.pra01_tmp rmdir /s /q test\.pra01_tmp
+gcc -O2 -std=c11 -Wall -Wextra -Werror -pedantic -I. -DMYC_NO_MAIN -o test\pra01_soak.exe test\pra01_soak.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
+if exist test\pra01_soak.exe (
+  test\pra01_soak.exe | findstr "FAIL=0" >nul && echo [OK] pra01_soak lulus PR-A01 no-cache+hit tanpa drift || echo [FAIL] pra01_soak verdict/cache drift
+) else (
+  echo [WARN] pra01_soak gagal dibangun
+)
+del test\pra01_soak.exe 2>nul
+if exist test\.pra01_tmp rmdir /s /q test\.pra01_tmp
 echo --- IDE-1 sanitizer location extractor (qwen-review): fixture deterministik
 gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\sanloc_test.exe test\sanloc_test.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
 if exist test\sanloc_test.exe (

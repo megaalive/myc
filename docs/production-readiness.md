@@ -37,7 +37,7 @@ Diizinkan:
 
 Tidak diizinkan: diiklankan sebagai stabil.
 
-### PR-1 — Usable (posisi myc saat ini, 2026-08-11)
+### PR-1 — Usable (posisi myc 2026-08-11; PR-2 tercapai 2026-08-17)
 
 Persyaratan:
 
@@ -49,19 +49,19 @@ Persyaratan:
 - test anti-false-OK ada (`test/_anti_false_ok.bat`, `test/_anti_false_ok.sh`,
   `tests/spoof_marker_run.c`, `tests/bad_driver_spoof.c`).
 
-### PR-2 — Dependable
+### PR-2 — Dependable (posisi myc saat ini, 2026-08-17)
 
 Persyaratan (status tiap item tercantum):
 
 | Item | Status |
 |---|---|
-| Trust-core invariants diuji (INV-001..015) | INV-001/002/003/011 diuji eksplisit oleh `test/reducer_exhaustive.c` (PR-003); sisanya diuji via regresi per modul — lihat `docs/production-invariants.md` |
-| Transisi verdict/state diuji exhaustif | `test/reducer_exhaustive.c` (kombinasi status gate; PR-003) |
-| Process runner tahan abuse | Sebagian: `test/proc_flood.c`, `test/verify_descendants.c`, `test/stress_threads.c`; matriks deadlock penuh = P1-T03 (PR-006) |
-| Cache/receipt replay deterministik | Ya (`_regress_run.bat` blok cache + receipt; MYC-AUDIT-042) |
-| Schema punya versi + test kompatibilitas | `myc.result.v1` beku di `docs/result-schema.md` + `test/_schema_golden.sh`; kompatibilitas menyeluruh = P4 (PR-015) |
+| Trust-core invariants diuji (INV-001..015) | INV-001..014 ditegakkan; INV-015 budget contract ya, `--production` = P12. INV-001/002/003/011: `test/reducer_exhaustive.c`; INV-011 cache: `test/cache_corrupt.c` (PR-013) |
+| Transisi verdict/state diuji exhaustif | `test/reducer_exhaustive.c` (PR-003) |
+| Process runner tahan abuse | Ya: `proc_flood`, `verify_descendants`, `stress_threads`, deadlock matrix PR-006, process-tree kill PR-007 |
+| Cache/receipt replay deterministik | Ya (`_regress_run.bat` blok cache + receipt; MYC-AUDIT-042); PR-A01 soak miss/hit tanpa drift |
+| Schema punya versi + test kompatibilitas | `myc.result.v1` + registry `docs/schema-registry.md` + `test/schema_compat.c` (PR-015) |
 | Backend tak tersedia jadi typed debt | Ya (`myc_build_debt` gate.c; MYC-AUDIT-040/041/042) |
-| Crash/hang corpus adversial = 0 | Sebagian: `test/_corpus_abuse.bat`, `test/oom_alloc.c`; corpus penuh = P2/P7 |
+| Crash/hang corpus adversial = 0 | Sebagian: `test/_corpus_abuse.bat`, `oom_alloc`, `mcp_abuse`; soak beban berulang = PR-A01 (dimulai) |
 
 ### PR-3 — Production Ready (target plan ini)
 
@@ -77,7 +77,9 @@ Semua kondisi PR-2 **plus**:
 - prosedur insiden produksi ada (P15);
 - ≥2 codebase C eksternal nyata di-dogfood terus-menerus (P9-T03);
 - myc bertahan beban verifikasi self-hosted berulang tanpa leak, deadlock,
-  cache basi, atau verdict drift (PR-A01).
+  cache basi, atau verdict drift (PR-A01; soak `test/pra01_soak.c`
+  dimulai 2026-08-17 — N× no-cache + miss/hit persist; leak = job
+  `linux-asan`; deadlock = PR-006/007).
 
 ### PR-4 — High Assurance
 
