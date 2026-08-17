@@ -12,6 +12,9 @@
  *                                   lalu semua gagal; n < 0: passthrough.
  *   myc_alloc_fail_count()       -- jumlah alokasi yang ditolak.
  *   myc_alloc_call_count()       -- total panggilan ter-wrap.
+ * Hook state adalah `_Thread_local` (B4): aman bila tes OOM jalan
+ * ber-thread; produksi tanpa MYC_ALLOC_TEST tetap passthrough tanpa
+ * state.
  */
 #ifndef MYC_ALLOC_H
 #define MYC_ALLOC_H

@@ -27,9 +27,12 @@
 #endif
 
 #ifdef MYC_ALLOC_TEST
-static long g_fail_after = -1;   /* <0 passthrough; >=0 hitung mundur */
-static long g_null_returned = 0; /* jumlah alokasi yang ditolak */
-static long g_total_calls = 0;   /* total panggilan ter-wrap */
+/* Per-thread: MYC_ALLOC_TEST tidak boleh share counter antar thread
+ * (B4; pola lint.c buf_var_count). Produksi passthrough tidak punya
+ * state ini. */
+static _Thread_local long g_fail_after = -1;   /* <0 passthrough; >=0 hitung mundur */
+static _Thread_local long g_null_returned = 0; /* jumlah alokasi yang ditolak */
+static _Thread_local long g_total_calls = 0;   /* total panggilan ter-wrap */
 
 void myc_alloc_set_fail_after(long n)
 {

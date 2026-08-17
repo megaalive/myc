@@ -59,6 +59,9 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   matrix/witness/cache-delta). `myc_replay_capsule` hanya forward-decl
   (definisi `report.h`). Verdict, `gate_id`, dan `myc_budget_contract`
   tetap di `myc.h`.
+- **B4 — `alloc.c` hook tes `_Thread_local`.** `g_fail_after` /
+  `g_null_returned` / `g_total_calls` (hanya `-DMYC_ALLOC_TEST`) per
+  thread. Produksi passthrough tidak berubah.
 
 ### Changed
 
