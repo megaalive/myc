@@ -47,18 +47,23 @@ struct json_value {
     size_t       mlen, mcap;
 };
 
-/* Dynamic buffer untuk membangun string JSON. */
+/* Dynamic buffer untuk membangun string (JSON, context, MCP teks).
+ * P3: ini myc_sb bersama — context.c tidak menyalin builder. */
 typedef struct {
     char  *buf;
     size_t len;
     size_t cap;
 } json_sb;
+typedef json_sb myc_sb;
 
 int  json_sb_init(json_sb *b);
 void json_sb_free(json_sb *b);
 int  json_sb_putc(json_sb *b, char c);
 int  json_sb_puts(json_sb *b, const char *s);
+int  json_sb_append(json_sb *b, const char *s, size_t n);
 int  json_sb_printf(json_sb *b, const char *fmt, ...);
+/* Ambil ownership buf (NUL-terminated). Caller myc_free. */
+char *json_sb_steal(json_sb *b);
 
 /* Parse satu nilai JSON dari teks [len]. Sukses -> 1, *out diisi (harus
  * json_free). Gagal -> 0, *out = NULL. */

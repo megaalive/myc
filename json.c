@@ -7,6 +7,7 @@
 #include "json.h"
 
 #include "alloc.h"
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +23,7 @@ int json_sb_init(json_sb *b)
         b->cap = 0;
         return 0;
     }
+    b->buf[0] = '\0';
     return 1;
 }
 
@@ -67,17 +69,37 @@ int json_sb_putc(json_sb *b, char c)
     if (!sb_reserve(b, 1))
         return 0;
     b->buf[b->len++] = c;
+    b->buf[b->len] = '\0';
+    return 1;
+}
+
+int json_sb_append(json_sb *b, const char *s, size_t n)
+{
+    if (n > 0 && !s)
+        return 0;
+    if (!sb_reserve(b, n))
+        return 0;
+    if (n)
+        memcpy(b->buf + b->len, s, n);
+    b->len += n;
+    b->buf[b->len] = '\0';
     return 1;
 }
 
 int json_sb_puts(json_sb *b, const char *s)
 {
-    size_t n = strlen(s);
-    if (!sb_reserve(b, n))
-        return 0;
-    memcpy(b->buf + b->len, s, n);
-    b->len += n;
-    return 1;
+    return json_sb_append(b, s, s ? strlen(s) : 0);
+}
+
+char *json_sb_steal(json_sb *b)
+{
+    char *p;
+    if (!b)
+        return NULL;
+    p = b->buf;
+    b->buf = NULL;
+    b->len = b->cap = 0;
+    return p;
 }
 
 int json_sb_printf(json_sb *b, const char *fmt, ...)
@@ -101,6 +123,7 @@ int json_sb_printf(json_sb *b, const char *fmt, ...)
             return 0;
     }
     b->len += (size_t)n;
+    b->buf[b->len] = '\0';
     return 1;
 }
 

@@ -52,6 +52,8 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   berbarengan dengan `--analyze` (default OFF). Join, lalu tulis status
   RUNTIME urutan kanonik. Analyzer findings = buang hasil run (receipt
   sama dengan jalur sekuensial). Masuk cache key g2.
+- **P3 — `json_sb` = myc_sb bersama.** `json_sb_append` / `json_sb_steal`
+  + `typedef json_sb myc_sb`. `context.c` tidak lagi menyalin builder.
 
 ### Changed
 

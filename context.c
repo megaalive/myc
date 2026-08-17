@@ -12,7 +12,6 @@
  */
 #include "context.h"
 
-#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,73 +21,7 @@
 #include "ledger.h"
 #include "agent.h"
 #include "causal.h"
-
-/* ------------------------------------------------------------------ */
-/* String builder kecil (heap, tanpa static mutable)                  */
-/* ------------------------------------------------------------------ */
-
-typedef struct {
-    char  *p;
-    size_t len;
-    size_t cap;
-} ctx_sb;
-
-static int sb_reserve(ctx_sb *b, size_t extra)
-{
-    size_t need = b->len + extra + 1;
-    char  *np;
-    size_t cap;
-
-    if (need <= b->cap)
-        return 0;
-    cap = b->cap ? b->cap * 2 : 256;
-    while (cap < need)
-        cap *= 2;
-    np = (char *)myc_realloc(b->p, cap);
-    if (!np)
-        return -1;
-    b->p = np;
-    b->cap = cap;
-    return 0;
-}
-
-/* Append dengan panjang eksplisit (slice bisa mengandung NUL/biner). */
-static int sb_append(ctx_sb *b, const char *s, size_t l)
-{
-    if (sb_reserve(b, l) != 0)
-        return -1;
-    if (l) {
-        memcpy(b->p + b->len, s, l);
-        b->len += l;
-        b->p[b->len] = '\0';
-    }
-    return 0;
-}
-
-static int sb_puts(ctx_sb *b, const char *s)
-{
-    size_t l = s ? strlen(s) : 0;
-    return sb_append(b, s, l);
-}
-
-static int sb_printf(ctx_sb *b, const char *fmt, ...)
-{
-    va_list ap;
-    int     n;
-
-    va_start(ap, fmt);
-    n = vsnprintf(NULL, 0, fmt, ap);
-    va_end(ap);
-    if (n < 0)
-        return -1;
-    if (sb_reserve(b, (size_t)n) != 0)
-        return -1;
-    va_start(ap, fmt);
-    vsnprintf(b->p + b->len, b->cap - b->len, fmt, ap);
-    va_end(ap);
-    b->len += (size_t)n;
-    return 0;
-}
+#include "json.h"
 
 /* ------------------------------------------------------------------ */
 /* Function range extractor (Allman-aware, lihat pelajaran cache.c)    */
@@ -424,30 +357,30 @@ static int ctx_contracts_at(const char *src, size_t n, size_t sig_start,
 /* ------------------------------------------------------------------ */
 
 static void ctx_verify_command(const myc_request *req, const char *path,
-                               ctx_sb *out)
+                               json_sb *out)
 {
-    sb_printf(out, "myc check %s", path && path[0] ? path : "-");
-    if (req->strict) sb_puts(out, " --strict");
-    if (req->run_analyzer) sb_puts(out, " --analyze");
-    if (req->run) sb_puts(out, " --run");
-    if (req->parallel_gates) sb_puts(out, " --parallel-gates");
-    if (req->prove) sb_puts(out, " --prove");
-    if (req->checked) sb_puts(out, " --checked");
-    if (req->filc) sb_puts(out, " --filc");
-    if (req->driver) sb_puts(out, " --driver");
-    if (req->metamorphic) sb_puts(out, " --metamorphic");
-    if (req->negative) sb_puts(out, " --negative");
-    if (req->quorum) sb_puts(out, " --quorum");
-    if (req->require_complete) sb_puts(out, " --require-complete");
+    json_sb_printf(out, "myc check %s", path && path[0] ? path : "-");
+    if (req->strict) json_sb_puts(out, " --strict");
+    if (req->run_analyzer) json_sb_puts(out, " --analyze");
+    if (req->run) json_sb_puts(out, " --run");
+    if (req->parallel_gates) json_sb_puts(out, " --parallel-gates");
+    if (req->prove) json_sb_puts(out, " --prove");
+    if (req->checked) json_sb_puts(out, " --checked");
+    if (req->filc) json_sb_puts(out, " --filc");
+    if (req->driver) json_sb_puts(out, " --driver");
+    if (req->metamorphic) json_sb_puts(out, " --metamorphic");
+    if (req->negative) json_sb_puts(out, " --negative");
+    if (req->quorum) json_sb_puts(out, " --quorum");
+    if (req->require_complete) json_sb_puts(out, " --require-complete");
     if (req->cwd && req->cwd[0])
-        sb_printf(out, " --cwd %s", req->cwd);
+        json_sb_printf(out, " --cwd %s", req->cwd);
     if (req->tx_finding_id && req->tx_finding_id[0])
-        sb_printf(out, " --finding-id %s", req->tx_finding_id);
+        json_sb_printf(out, " --finding-id %s", req->tx_finding_id);
 }
 
-static void ctx_flag_string(const myc_request *req, ctx_sb *out)
+static void ctx_flag_string(const myc_request *req, json_sb *out)
 {
-    sb_printf(out,
+    json_sb_printf(out,
               "strict=%d analyzer=%d run=%d prove=%d checked=%d filc=%d "
               "driver=%d metamorphic=%d negative=%d quorum=%d reqc=%d",
               req->strict, req->run_analyzer, req->run, req->prove,
@@ -530,7 +463,7 @@ static int ctx_build_section(const myc_result *res, const char *src,
                              size_t srclen, int sec,
                              const ctx_func *f, int func_count,
                              int fidx, int diag_idx,
-                             const myc_pack_info *pack, ctx_sb *out)
+                             const myc_pack_info *pack, json_sb *out)
 {
     const myc_diagnostic *d = NULL;
     int i;
@@ -543,15 +476,15 @@ static int ctx_build_section(const myc_result *res, const char *src,
     case SEC_FINDING:
         if (d) {
             if (d->line > 0)
-                sb_printf(out, "line: %d col: %d\n", d->line, d->col);
+                json_sb_printf(out, "line: %d col: %d\n", d->line, d->col);
             else
-                sb_puts(out, "line: (lokasi tidak diketahui)\n");
-            sb_printf(out, "confidence: %s\n",
+                json_sb_puts(out, "line: (lokasi tidak diketahui)\n");
+            json_sb_printf(out, "confidence: %s\n",
                       myc_confidence_name(d->confidence));
-            sb_printf(out, "message: %s\n",
+            json_sb_printf(out, "message: %s\n",
                       d->message ? d->message : "(none)");
         } else {
-            sb_puts(out, "line: (tidak cocok dengan diagnostic mana pun)\n");
+            json_sb_puts(out, "line: (tidak cocok dengan diagnostic mana pun)\n");
         }
         break;
 
@@ -567,14 +500,14 @@ static int ctx_build_section(const myc_result *res, const char *src,
                 while (e < a + l && src[e] != '\n')
                     e++;
                 if (k > 0 || e > p)
-                    sb_printf(out, "%.*s\n", (int)(e - p), src + p);
+                    json_sb_printf(out, "%.*s\n", (int)(e - p), src + p);
                 p = e + 1;
                 k++;
             }
             if (p < a + l)
-                sb_puts(out, "... (slice terpotong)\n");
+                json_sb_puts(out, "... (slice terpotong)\n");
         } else {
-            sb_printf(out, "(baris finding di luar fungsi manapun)\n");
+            json_sb_printf(out, "(baris finding di luar fungsi manapun)\n");
         }
         break;
 
@@ -599,13 +532,13 @@ static int ctx_build_section(const myc_result *res, const char *src,
                     ctx_cpyname(callers[nc++], f[fidx].name);
             }
         }
-        sb_puts(out, "callers: ");
-        if (nc == 0) sb_puts(out, "(none)");
-        else { for (i = 0; i < nc; i++) sb_printf(out, "%s%s", i ? ", " : "", callers[i]); }
-        sb_puts(out, "\ncallees: ");
-        if (ncal == 0) sb_puts(out, "(none)");
-        else { for (i = 0; i < ncal; i++) sb_printf(out, "%s%s", i ? ", " : "", callees[i]); }
-        sb_puts(out, "\n");
+        json_sb_puts(out, "callers: ");
+        if (nc == 0) json_sb_puts(out, "(none)");
+        else { for (i = 0; i < nc; i++) json_sb_printf(out, "%s%s", i ? ", " : "", callers[i]); }
+        json_sb_puts(out, "\ncallees: ");
+        if (ncal == 0) json_sb_puts(out, "(none)");
+        else { for (i = 0; i < ncal; i++) json_sb_printf(out, "%s%s", i ? ", " : "", callees[i]); }
+        json_sb_puts(out, "\n");
         break;
     }
 
@@ -616,31 +549,31 @@ static int ctx_build_section(const myc_result *res, const char *src,
             ncl = ctx_contracts_at(src, srclen, f[fidx].sig_start,
                                    clauses, 8);
         if (ncl == 0)
-            sb_puts(out, "(tidak ada kontrak //@ di atas fungsi)\n");
+            json_sb_puts(out, "(tidak ada kontrak //@ di atas fungsi)\n");
         else
             for (i = 0; i < ncl; i++)
-                sb_printf(out, "%s\n", clauses[i]);
+                json_sb_printf(out, "%s\n", clauses[i]);
         break;
     }
 
     case SEC_WITNESS:
         if (res->witness) {
             const myc_witness *w = res->witness;
-            sb_printf(out, "kind: %s\n",
+            json_sb_printf(out, "kind: %s\n",
                       w->violation_kind ? w->violation_kind : "?");
             if (w->violation_line > 0)
-                sb_printf(out, "line: %d%s\n", w->violation_line,
+                json_sb_printf(out, "line: %d%s\n", w->violation_line,
                           w->violation_col > 0 ? " (col)" : "");
             if (w->violation_msg)
-                sb_printf(out, "msg: %s\n", w->violation_msg);
+                json_sb_printf(out, "msg: %s\n", w->violation_msg);
             if (w->backend)
-                sb_printf(out, "backend: %s\n", w->backend);
+                json_sb_printf(out, "backend: %s\n", w->backend);
             if (w->pre_state)
-                sb_printf(out, "pre_state: %s\n", w->pre_state);
+                json_sb_printf(out, "pre_state: %s\n", w->pre_state);
             if (w->operation)
-                sb_printf(out, "operation: %s\n", w->operation);
+                json_sb_printf(out, "operation: %s\n", w->operation);
         } else {
-            sb_puts(out, "(tidak ada witness untuk run ini)\n");
+            json_sb_puts(out, "(tidak ada witness untuk run ini)\n");
         }
         break;
 
@@ -650,38 +583,38 @@ static int ctx_build_section(const myc_result *res, const char *src,
         if (myc_build_agent_result(res, &ar, NULL, NULL, NULL,
                                    src, srclen) == 0) {
             if (ar.next_best_json && ar.next_best_json[0])
-                sb_printf(out, "next-best experiment: %s\n", ar.next_best_json);
+                json_sb_printf(out, "next-best experiment: %s\n", ar.next_best_json);
             if (ar.has_primary) {
-                sb_printf(out, "primary action: %s",
+                json_sb_printf(out, "primary action: %s",
                           ar.primary_finding.message
                               ? ar.primary_finding.message : "(none)");
                 if (d)
-                    sb_printf(out, " (line %d)", d->line);
-                sb_puts(out, "\n");
+                    json_sb_printf(out, " (line %d)", d->line);
+                json_sb_puts(out, "\n");
             }
             myc_agent_result_free(&ar);
         } else {
             /* myc_build_agent_result sudah membebaskan ar internal saat
              * return -1 (payload > cap) -- jangan free lagi (double-free). */
-            sb_puts(out, "(agent derivation gagal)\n");
+            json_sb_puts(out, "(agent derivation gagal)\n");
         }
         if (!out->len)
-            sb_puts(out, "(run bersih / tidak ada aksi perbaikan)\n");
+            json_sb_puts(out, "(run bersih / tidak ada aksi perbaikan)\n");
         break;
     }
 
     case SEC_PRESERVE: {
-        sb_puts(out,
+        json_sb_puts(out,
                 "- jangan ubah kode di luar fungsi yang disorot (anti-churn)\n");
         if (fidx >= 0)
-            sb_printf(out,
+            json_sb_printf(out,
                       "- jangan ubah/melemahkan kontrak //@ di atas %s\n",
                       f[fidx].name);
         else
-            sb_puts(out,
+            json_sb_puts(out,
                     "- jangan ubah/melemahkan kontrak //@ di atas fungsi target\n"
                     "  (lokasi target tidak ditemukan)\n");
-        sb_puts(out,
+        json_sb_puts(out,
                 "- jangan menyempitkan domain verifikasi / mengubah scenario\n"
                 "- jangan menurunkan assurance / menonaktifkan sanitizer,\n"
                 "  warning, atau assert\n"
@@ -693,7 +626,7 @@ static int ctx_build_section(const myc_result *res, const char *src,
         int i, shown = 0;
         for (i = 0; i < res->diag_count && i < 8; i++) {
             const myc_diagnostic *di = &res->diags[i];
-            sb_printf(out, "line %d %-11s %s%s\n",
+            json_sb_printf(out, "line %d %-11s %s%s\n",
                       di->line,
                       myc_confidence_name(di->confidence),
                       di->message ? di->message : "",
@@ -701,7 +634,7 @@ static int ctx_build_section(const myc_result *res, const char *src,
             shown++;
         }
         if (!shown)
-            sb_puts(out, "(tidak ada diagnostic lain)\n");
+            json_sb_puts(out, "(tidak ada diagnostic lain)\n");
         break;
     }
 
@@ -711,49 +644,49 @@ static int ctx_build_section(const myc_result *res, const char *src,
          * ditandai eksplisit (gap terlihat, bukan kesunyian). */
         if (pack && (pack->prompt_present || pack->spec_present)) {
             if (pack->prompt_present) {
-                sb_printf(out, "prompt.md (sha256 %s):\n",
+                json_sb_printf(out, "prompt.md (sha256 %s):\n",
                           pack->prompt_sha256[0] ? pack->prompt_sha256 : "?");
                 if (pack->prompt_text) {
-                    sb_puts(out, pack->prompt_text);
+                    json_sb_puts(out, pack->prompt_text);
                     if (pack->prompt_text_len > 0 &&
                         pack->prompt_text[pack->prompt_text_len - 1] != '\n')
-                        sb_puts(out, "\n");
+                        json_sb_puts(out, "\n");
                 }
                 if (pack->prompt_total_len > pack->prompt_text_len)
-                    sb_printf(out, "[dipotong: %zu dari %zu byte, cap "
+                    json_sb_printf(out, "[dipotong: %zu dari %zu byte, cap "
                               "MYC_PACK_PROMPT_CAP]\n",
                               pack->prompt_text_len, pack->prompt_total_len);
             } else {
-                sb_puts(out, "(prompt.md tidak ada)\n");
+                json_sb_puts(out, "(prompt.md tidak ada)\n");
             }
             if (pack->spec_present) {
-                sb_printf(out, "spec.json (sha256 %s): name=%s domain=%s\n",
+                json_sb_printf(out, "spec.json (sha256 %s): name=%s domain=%s\n",
                           pack->spec_sha256[0] ? pack->spec_sha256 : "?",
                           pack->spec_name[0] ? pack->spec_name : "(none)",
                           pack->spec_domain[0] ? pack->spec_domain : "(none)");
                 if (pack->spec_n_rules > 0) {
-                    sb_puts(out, "rules:\n");
+                    json_sb_puts(out, "rules:\n");
                     for (i = 0; i < pack->spec_n_rules &&
                                 i < MYC_PACK_MAX_RULES; i++)
-                        sb_printf(out, "  - %s\n", pack->spec_rules[i]);
+                        json_sb_printf(out, "  - %s\n", pack->spec_rules[i]);
                 }
                 if (pack->spec_n_allow > 0) {
-                    sb_puts(out, "allow_headers:\n");
+                    json_sb_puts(out, "allow_headers:\n");
                     for (i = 0; i < pack->spec_n_allow &&
                                 i < MYC_PACK_MAX_HEADS; i++)
-                        sb_printf(out, "  - %s\n", pack->spec_allow[i]);
+                        json_sb_printf(out, "  - %s\n", pack->spec_allow[i]);
                 }
                 if (pack->spec_n_deny > 0) {
-                    sb_puts(out, "deny_functions:\n");
+                    json_sb_puts(out, "deny_functions:\n");
                     for (i = 0; i < pack->spec_n_deny &&
                                 i < MYC_PACK_MAX_DENIES; i++)
-                        sb_printf(out, "  - %s\n", pack->spec_deny[i]);
+                        json_sb_printf(out, "  - %s\n", pack->spec_deny[i]);
                 }
             } else {
-                sb_puts(out, "(spec.json tidak ada)\n");
+                json_sb_puts(out, "(spec.json tidak ada)\n");
             }
         } else {
-            sb_puts(out, "(tidak ada pack proyek lokal: "
+            json_sb_puts(out, "(tidak ada pack proyek lokal: "
                          "myc.prompt.md / myc.spec.json)\n");
         }
         break;
@@ -779,11 +712,12 @@ char *myc_context_build(const myc_result *res,
 {
     ctx_func  funcs[256];
     ctx_lines lines;
-    ctx_sb    body = { NULL, 0, 0 };
-    ctx_sb    header = { NULL, 0, 0 };
-    ctx_sb    deliver = { NULL, 0, 0 };
+    json_sb    body = { NULL, 0, 0 };
+    json_sb    header = { NULL, 0, 0 };
+    json_sb    deliver = { NULL, 0, 0 };
     const char *path;
     char      *scen = NULL;
+    char      *out;
     int        func_count, fidx = -1, diag_idx;
     int        i;
     size_t     budget_bytes;
@@ -801,6 +735,14 @@ char *myc_context_build(const myc_result *res,
         func_count = 0;
     if (ctx_build_lines(src, srclen, &lines) != 0)
         return NULL;
+    if (!json_sb_init(&body) || !json_sb_init(&header) ||
+        !json_sb_init(&deliver)) {
+        json_sb_free(&body);
+        json_sb_free(&header);
+        json_sb_free(&deliver);
+        myc_free(lines.starts);
+        return NULL;
+    }
 
     diag_idx = ctx_select_diag(res, finding_id);
     if (diag_idx >= 0 && diag_idx < res->diag_count)
@@ -811,60 +753,60 @@ char *myc_context_build(const myc_result *res,
 
     /* Body: semua section lengkap (untuk hash deterministik). */
     for (i = 0; i < SEC_COUNT; i++) {
-        sb_printf(&body, "## %s\n", SEC_NAMES[i]);
+        json_sb_printf(&body, "## %s\n", SEC_NAMES[i]);
         ctx_build_section(res, src, srclen, i,
                           funcs, func_count, fidx, diag_idx,
                           pack, &body);
-        sb_puts(&body, "\n");
+        json_sb_puts(&body, "\n");
     }
 
     /* Hash sha256 dari body penuh (tanpa baris hash). */
-    sha256_hex(body.p, body.len, hash_out);
+    sha256_hex(body.buf, body.len, hash_out);
 
     /* Header (selalu dikirim). */
-    sb_puts(&header, "myc context v1 (schema myc.context.v1)\n");
-    sb_printf(&header, "context_sha256: %s\n",
+    json_sb_puts(&header, "myc context v1 (schema myc.context.v1)\n");
+    json_sb_printf(&header, "context_sha256: %s\n",
               hash_out ? hash_out : "?");
-    sb_printf(&header, "budget: %d tokens (chars/4 approx) | "
+    json_sb_printf(&header, "budget: %d tokens (chars/4 approx) | "
                        "delivered: (lihat akhir) | full: %zu bytes\n",
               budget_tokens, body.len);
-    sb_printf(&header, "source_sha256: %s | receipt_sha256: %s\n",
+    json_sb_printf(&header, "source_sha256: %s | receipt_sha256: %s\n",
               res->source_sha256 ? res->source_sha256 : "?",
               res->receipt_sha256);
-    sb_printf(&header, "verdict: %s | finding: %s | claim: %s\n",
+    json_sb_printf(&header, "verdict: %s | finding: %s | claim: %s\n",
               myc_verdict_name(res->verdict),
               myc_finding_name(res->finding),
               myc_claim_status_name(res->claim_status));
     {
         int k;
         static const char DIMS[] = "CSRBPDF";
-        sb_puts(&header, "assurance: ");
+        json_sb_puts(&header, "assurance: ");
         for (k = 0; k < MYC_DIM_COUNT; k++)
-            sb_printf(&header, "%c=%s ",
+            json_sb_printf(&header, "%c=%s ",
                       k < (int)sizeof(DIMS) - 1 ? DIMS[k] : '?',
                       myc_dim_status_name(res->assurance_vector.status[k]));
-        sb_puts(&header, "\n");
+        json_sb_puts(&header, "\n");
     }
     scen = myc_ledger_build_scenario_hash(req, NULL);
-    sb_printf(&header, "scenario: %s\n", scen ? scen : "?");
-    sb_puts(&header, "flags: ");
+    json_sb_printf(&header, "scenario: %s\n", scen ? scen : "?");
+    json_sb_puts(&header, "flags: ");
     ctx_flag_string(req, &header);
-    sb_puts(&header, "\n");
-    sb_puts(&header, "target: ");
+    json_sb_puts(&header, "\n");
+    json_sb_puts(&header, "target: ");
     if (res->resolved_gcc)
-        sb_printf(&header, "gcc=%s", res->resolved_gcc);
+        json_sb_printf(&header, "gcc=%s", res->resolved_gcc);
     if (res->gcc_version)
-        sb_printf(&header, " | gcc_version=%s", res->gcc_version);
+        json_sb_printf(&header, " | gcc_version=%s", res->gcc_version);
     if (res->clang_version)
-        sb_printf(&header, " | clang=%s", res->clang_version);
-    sb_puts(&header, "\n");
-    sb_puts(&header, "verify: ");
+        json_sb_printf(&header, " | clang=%s", res->clang_version);
+    json_sb_puts(&header, "\n");
+    json_sb_puts(&header, "verify: ");
     ctx_verify_command(req, path, &header);
-    sb_puts(&header, "\n");
+    json_sb_puts(&header, "\n");
     myc_free(scen);
 
     /* Deliver: header + section berprioritas sampai budget. */
-    sb_puts(&deliver, header.p ? header.p : "");
+    json_sb_puts(&deliver, header.buf ? header.buf : "");
     {
         size_t used = deliver.len;
         int    omitted = 0;
@@ -876,7 +818,7 @@ char *myc_context_build(const myc_result *res,
 
             snprintf(marker, sizeof(marker), "## %s\n", SEC_NAMES[i]);
             for (j = 0; j + strlen(marker) <= body.len; j++) {
-                if (strncmp(body.p + j, marker, strlen(marker)) == 0) {
+                if (strncmp(body.buf + j, marker, strlen(marker)) == 0) {
                     sec_start = j;
                     break;
                 }
@@ -885,8 +827,8 @@ char *myc_context_build(const myc_result *res,
                 continue;
             sec_end = body.len;
             for (j = sec_start + strlen(marker); j + 3 <= body.len; j++) {
-                if (body.p[j] == '\n' && body.p[j + 1] == '#' &&
-                    body.p[j + 2] == '#') {
+                if (body.buf[j] == '\n' && body.buf[j + 1] == '#' &&
+                    body.buf[j + 2] == '#') {
                     sec_end = j + 1;
                     break;
                 }
@@ -894,28 +836,29 @@ char *myc_context_build(const myc_result *res,
             {
                 size_t slen = sec_end - sec_start;
                 if (used + slen <= budget_bytes) {
-                    sb_append(&deliver, body.p + sec_start, slen);
-                    sb_puts(&deliver, "\n");
+                    json_sb_append(&deliver, body.buf + sec_start, slen);
+                    json_sb_puts(&deliver, "\n");
                     used += slen + 1;
                     found = 1;
                 }
             }
             if (!found) {
-                sb_printf(&deliver, "[omitted: %s (budget %d tokens)]\n",
+                json_sb_printf(&deliver, "[omitted: %s (budget %d tokens)]\n",
                           SEC_NAMES[i], budget_tokens);
                 omitted++;
             }
         }
         /* perbarui baris "delivered" — sederhana: catat di akhir */
-        sb_printf(&deliver, "# delivered %zu bytes (%d tokens) | full %zu "
+        json_sb_printf(&deliver, "# delivered %zu bytes (%d tokens) | full %zu "
                   "bytes | omitted sections: %d | context_sha256 di atas "
                   "mencakup paket penuh (deterministik, tidak tergantung "
                   "budget)\n",
                   deliver.len, budget_tokens, body.len, omitted);
     }
 
-    myc_free(body.p);
-    myc_free(header.p);
+    out = json_sb_steal(&deliver);
+    json_sb_free(&body);
+    json_sb_free(&header);
     myc_free(lines.starts);
-    return deliver.p;
+    return out;
 }
