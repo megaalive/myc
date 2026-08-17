@@ -29,6 +29,24 @@
 #ifndef MYC_DRIVER_H
 #define MYC_DRIVER_H
 
+#include <stddef.h>
+
+#define MYC_MAX_DRIVER_CASES   32  /* budget kombinatorial per fungsi (7.5) */
+#define MYC_MAX_DRIVER_RECORDS 256 /* total case records tersimpan (hasil) */
+
+/* Satu kasus uji driver ter-record (roadmap 7.5 "case record").
+ * Merekam INPUT yang benar-benar diuji — parameter values + allocation
+ * sizes — plus status eksekusi (guard requires lolos / dilewati).
+ * String (func/params) disimpan di arena milik hasil; bila disalin ke
+ * capsule, di-strdup. `case_id` = nomor global 1-based lintas fungsi. */
+typedef struct {
+    char *func;        /* nama fungsi ber-kontrak yang diuji */
+    char *params;      /* ringkasan argumen deterministik, mis. "n=4, a=16B" */
+    long  alloc_bytes; /* total bytes dialokasikan utk parameter pointer */
+    int   case_id;     /* 1-based (global lintas fungsi) */
+    int   executed;    /* 1 = dieksekusi, 0 = dilewati guard requires */
+} myc_driver_case;
+
 #include "myc.h"
 
 /*

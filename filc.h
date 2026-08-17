@@ -17,6 +17,21 @@
 #ifndef MYC_FILC_H
 #define MYC_FILC_H
 
+#include <stddef.h>
+
+/* Satu panic Fil-C terkonfirmasi (MYC-AUDIT-024, roadmap 7.7 per-case
+ * scope). Lokasi berasal dari frame "semantic origin" report Fil-C:
+ *   (module) /path/file.c:LINE:COL: func
+ * String (message/file/function) disimpan di arena milik hasil. */
+#define MYC_MAX_FILC_CASES 8
+
+typedef struct {
+    char *message;      /* pesan panic (mis. "cannot write pointer ...") */
+    char *file;         /* file origin pertama (NULL bila tak terparse) */
+    int   line, col;    /* lokasi origin (0 bila tak terparse) */
+    char *function;     /* fungsi origin pertama (NULL bila tak terparse) */
+} myc_filc_case;
+
 #include "myc.h"
 
 /*

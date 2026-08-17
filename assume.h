@@ -26,6 +26,48 @@
 #ifndef MYC_ASSUME_H
 #define MYC_ASSUME_H
 
+#include <stddef.h>
+
+#define MYC_MAX_ASSUMPTIONS 32
+
+typedef enum {
+    MYC_ASM_OBSERVED = 0,      /* terdeteksi, belum ditindaklanjuti */
+    MYC_ASM_DECLARED,          /* ketergantungan disengaja (di-ack) */
+    MYC_ASM_TESTED,            /* sudah diuji pada target relevan */
+    MYC_ASM_CONTRADICTED,      /* target lain mengubah perilaku (masih terbuka) */
+    MYC_ASM_ELIMINATED,        /* kode diubah, tak lagi bergantung */
+    MYC_ASM_ACCEPTED_RISK      /* pengguna menerima keterikatan target */
+} myc_assumption_status;
+
+/* Satu asumsi terdeteksi. String (id/kind/anchor/host_fact/risk/
+ * next_action) disimpan di arena milik hasil (myc_result_arena_dup). */
+typedef struct {
+    char *id;           /* asm-<kind>-<8 hex sha256(anchor)> */
+    char *kind;         /* char-signedness | int-width | bitfield-endian |
+                           alignment-cast | sizeof-assumption */
+    int   line;         /* 1-based */
+    char *anchor;       /* <fungsi>:<line>:<hash window> (stabil) */
+    char *host_fact;    /* fakta toolchain INI, mis. "char=signed" */
+    char *risk;         /* risiko di target lain */
+    char *next_action;  /* saran perbaikan untuk LLM */
+    int   status;       /* myc_assumption_status (persisten lintas run) */
+    int   confidence;   /* 0..100 (observasi) */
+} myc_assumption;
+
+/* Fakta target toolchain host hasil `gcc -dM -E` (predefined macros).
+ * Disimpan per-value di myc_result (dan di cache entry SOL-18) agar
+ * cache-hit TIDAK perlu mengeksekusi gcc ulang. `ok=1` bila macro dump
+ * berhasil dibaca (gcc tersedia). */
+typedef struct {
+    int  ok;             /* facts berhasil dibaca */
+    int  char_unsigned;  /* __CHAR_UNSIGNED__ terdefinisi */
+    int  int_bits;       /* 8 * __SIZEOF_INT__ (0 = tak diketahui) */
+    int  ptr_bits;       /* 8 * __SIZEOF_POINTER__ (0 = tak diketahui) */
+    int  little_endian;  /* __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ */
+    long stdc_version;   /* __STDC_VERSION__ (0 = tak diketahui) */
+    int  char_bit;       /* CHAR_BIT (default 8) */
+} myc_host_facts;
+
 #include "myc.h"
 
 #define MYC_ASSUME_DIR      ".myc"

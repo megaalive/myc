@@ -43,7 +43,56 @@
 
 #include <stddef.h>
 
+/* Ghost state machine dari deklarasi //@ sm (state/event/trans).
+ * NON-blocking observasi. String (name/from/event/to/text/witness)
+ * disimpan di arena milik hasil. */
+#define MYC_SM_MAX_STATES   32
+#define MYC_SM_MAX_EVENTS   32
+#define MYC_SM_MAX_TRANS    64
+#define MYC_SM_MAX_FINDINGS 32
+
+typedef enum {
+    MYC_SM_SINK = 0,         /* state tanpa transisi keluar, bukan final */
+    MYC_SM_UNREACHABLE,      /* tak ada transisi masuk, bukan initial */
+    MYC_SM_NO_RECOVERY,      /* tak ada jalur kembali ke initial */
+    MYC_SM_UNDECLARED_STATE, /* transisi merujuk state tak terdeklarasi */
+    MYC_SM_UNDECLARED_EVENT, /* transisi merujuk event tak terdeklarasi */
+    MYC_SM_UNUSED_STATE,     /* state dideklarasikan tapi tak dipakai */
+    MYC_SM_UNUSED_EVENT,     /* event dideklarasikan tapi tak dipakai */
+    MYC_SM_NO_INITIAL,       /* tidak ada state initial (pakai state pertama) */
+    MYC_SM_NO_FINAL,         /* tidak ada state final */
+    MYC_SM_DUP_DECL          /* deklarasi nama ganda */
+} myc_sm_finding_kind;
+
+typedef struct {
+    char *name;       /* arena */
+    int   line;
+    int   is_initial;
+    int   is_final;
+} myc_sm_state;
+
+typedef struct {
+    char *name;       /* arena */
+    int   line;
+} myc_sm_event;
+
+typedef struct {
+    char *from;       /* arena */
+    char *event;      /* arena */
+    char *to;         /* arena */
+    int   line;
+} myc_sm_trans;
+
+typedef struct {
+    myc_sm_finding_kind kind;
+    char *text;       /* arena: penjelasan */
+    char *witness;    /* arena: urutan event terpendek ("" bila tak ada) */
+    int   line;
+} myc_sm_finding;
+
 #include "myc.h"
+
+const char *myc_sm_finding_name(myc_sm_finding_kind k);
 
 int myc_sm_scan(const char *source, size_t len, myc_result *res);
 

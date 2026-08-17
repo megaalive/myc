@@ -4,6 +4,44 @@
 #ifndef MYC_WITNESS_H
 #define MYC_WITNESS_H
 
+#include <stddef.h>
+
+/* Setiap hard finding harus disertai witness yang dapat direplay.
+ * Witness berisi reproducer, causal slice, dan violation info. */
+#define MYC_MAX_WITNESS_ARGV 8
+
+typedef struct {
+    /* Reproducer */
+    char *source;           /* source penuh atau slice */
+    size_t source_len;
+    char *stdin_data;       /* stdin input (NULL bila tidak ada) */
+    size_t stdin_len;
+    char *argv[MYC_MAX_WITNESS_ARGV]; /* argv tambahan */
+    int   argc;
+
+    /* Causal slice */
+    char *slice_file;       /* nama file asli */
+    int   slice_line_start; /* baris awal slice */
+    int   slice_line_end;   /* baris akhir slice */
+
+    /* Violation info */
+    char *violation_kind;   /* "use-after-free", "OOB", "null-deref", dst */
+    char *violation_msg;    /* pesan lengkap dari backend */
+    int   violation_line;   /* baris pelanggaran */
+    int   violation_col;    /* kolom pelanggaran */
+
+    /* Backend provenance */
+    char *backend;          /* "gcc", "clang-asan", "eva", "fil-c", "driver" */
+    char *backend_version;  /* "gcc 13.2", "frama-c 33.0", dst */
+
+    /* Kronologi pelanggaran (Fase 1, pre-state → operation → violation).
+     * pre_state : keadaan sebelum pelanggaran (mis. "p freed at line 7")
+     * operation : operasi yang melanggar (mis. "access p[10] out of bounds")
+     * Agar LLM memahami urutan kronologis, bukan hanya titik pelanggaran. */
+    char *pre_state;        /* deskripsi keadaan awal, NULL bila tidak diketahui */
+    char *operation;        /* deskripsi operasi pelanggaran, NULL bila tidak diketahui */
+} myc_witness;
+
 #include "myc.h"
 
 /* Buat direktori repro dari witness + source.

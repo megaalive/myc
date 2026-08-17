@@ -34,10 +34,28 @@
 #ifndef MYC_RESOURCE_H
 #define MYC_RESOURCE_H
 
+#define MYC_RSRC_MAX_PAIRS   16
+#define MYC_RSRC_MAX_FUNCS   64
+#define MYC_RSRC_MAX_VARS    48      /* resource per fungsi */
+#define MYC_RSRC_MAX_FINDINGS 32
+#define MYC_RSRC_NAME_LEN    64
+
+typedef enum {
+    MYC_RSRC_LEAKED = 0,     /* acq@L tidak release/transfer sampai akhir func */
+    MYC_RSRC_DOUBLE_RELEASE,  /* release dua kali tanpa re-acquire */
+    MYC_RSRC_RELEASE_UNKNOWN  /* release pada var yang tidak di-trace acquire */
+} myc_rsrc_finding_kind;
+
+typedef struct {
+    myc_rsrc_finding_kind kind;
+    char *text;       /* arena: penjelasan */
+    char *witness;    /* arena: jalur acq@L -> release/leak@baris */
+    int   line;
+} myc_rsrc_finding;
+
 #include "myc.h"
 
-/* Batas analisis (observasi bounded, deterministik) didefinisikan di
- * myc.h (MYC_RSRC_MAX_*); gunakan konstanta itu di resource.c. */
+const char *myc_rsrc_finding_name(myc_rsrc_finding_kind k);
 
 /* Jalankan ledger (NON-blocking) atas source. Selalu diberi hasil:
  * rsrc_ran=1, pasangan profil (default + deklarasi //@ rsrc), temuan di

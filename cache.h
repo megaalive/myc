@@ -31,6 +31,32 @@
  *     dengan aman; replay TIDAK pernah menurunkan/menaikkan verdict
  *     (hanya mengembalikan hasil yang sudah pernah dihitung valid).
  */
+#ifndef MYC_CACHE_DELTA_H
+#define MYC_CACHE_DELTA_H
+
+/* Status satu fungsi vs baseline cache (hash body). Dipakai myc_result
+ * (--watch-diff) dan cache.h; didefinisikan di sini agar myc.h tidak
+ * menggemukkan kontrak inti. */
+#define MYC_CACHE_MAX_FUNCS 256
+
+typedef enum {
+    MYC_DELTA_FUNC_IDENTICAL = 0, /* hash sama dengan baseline */
+    MYC_DELTA_FUNC_CHANGED,       /* hash beda (isi fungsi berubah) */
+    MYC_DELTA_FUNC_NEW,           /* tidak ada di baseline */
+    MYC_DELTA_FUNC_REMOVED,       /* ada di baseline, hilang dari source */
+    MYC_DELTA_FUNC_DEPENDENT      /* identik tapi memanggil fungsi berubah */
+} myc_delta_func_status;
+
+/* Satu entry delta per-fungsi (nama + line + status). */
+typedef struct {
+    char  name[64];
+    int   line;
+    myc_delta_func_status status;
+} myc_delta_func;
+
+#endif /* MYC_CACHE_DELTA_H */
+
+#ifndef MYC_TYPES_ONLY
 #ifndef MYC_CACHE_H
 #define MYC_CACHE_H
 
@@ -38,9 +64,6 @@
 
 #define MYC_CACHE_FILE       ".myc/evidence_cache.json"
 #define MYC_CACHE_MAX_ENTRIES 64
-/* MYC_CACHE_MAX_FUNCS + myc_delta_func/myc_delta_func_status didefinisikan
- * di myc.h (dipakai myc_result untuk delta assurance IDE-6); cache.h
- * include myc.h. */
 
 /* Satu fungsi yang ter-ekstrak dari source (untuk delta report). */
 typedef struct {
@@ -309,3 +332,4 @@ int myc_cache_delta_struct(const char *src, size_t srclen,
 void myc_cache_entry_free(myc_cache_entry *e);
 
 #endif /* MYC_CACHE_H */
+#endif /* !MYC_TYPES_ONLY */

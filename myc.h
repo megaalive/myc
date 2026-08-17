@@ -1,5 +1,10 @@
 /*
- * myc.h -- Kontrak inti myc: request/result, verdict, error codes.
+ * myc.h -- Kontrak inti myc: request/result, verdict, gate_id, error.
+ *
+ * Struct gate/agent yang hanya dipakai 2-3 modul ada di header modul
+ * (run.h, filc.h, driver.h, state.h, ...). myc.h include header itu
+ * setelah enum verdict/gate_id agar myc_result tetap by-value.
+ * myc_replay_capsule: forward-declare; definisi di report.h.
  *
  * Prinsip (dari rencana fpagnt):
  *   - structured di model boundary
@@ -205,36 +210,6 @@ typedef struct {
     size_t         output_len;
 } myc_gate_result;
 
-/* --- sel matriks cross-toolchain divergence (Fase 4, A2/DS-02) ---
- * Satu kombinasi {toolchain} x {-O0,-O2}. `available=0` bila compiler
- * tidak ditemukan (sel di-skip). `built=1` + `ran=1` = sel benar-benar
- * dieksekusi. `finding` = bukti sanitizer (report log_path non-spoofable
- * ATAU marker + exit!=0). stdout_sha256 = hash trace stdout penuh untuk
- * deteksi semantic divergence (deterministik; env LC_ALL=C). */
-typedef struct {
-    char         tool[16];        /* "gcc" / "clang" / "tcc" */
-    char         tool_path[260];  /* path absolut hasil myc_find_executable
-                                     (fixed array agar aman di-copy untuk
-                                     cache replay) */
-    int          opt_level;       /* 0 = -O0, 1 = -O2 */
-    int          available;       /* 0 = compiler tidak ditemukan */
-    int          san;             /* 1 = build+run DENGAN sanitizer
-                                     (finding bisa jadi bukti); 0 = tanpa
-                                     sanitizer (fallback: toolchain tak
-                                     punya ASan, mis. gcc MinGW) */
-    int          built;           /* 1 = build sukses */
-    int          ran;             /* 1 = exe dijalankan */
-    int          timed_out;       /* 1 = run timeout */
-    int          exit_code;       /* exit code run */
-    int          finding;         /* 1 = bukti sanitizer pada sel ini */
-    char         marker[80];      /* marker sanitizer atau "" */
-    char         stdout_sha256[65]; /* sha256 hex trace stdout ("" bila
-                                       tak tersedia) */
-    int          diag_warn;       /* 1 = build menghasilkan warning */
-} myc_divergence_cell;
-
-#define MYC_DIVERGENCE_MAX_CELLS 8   /* 2 toolchains x 2 opt = 4; cadangan */
-
 typedef enum {
     MYC_EVIDENCE_GATE_START = 0,
     MYC_EVIDENCE_GATE_END,
@@ -319,11 +294,6 @@ typedef struct {
 #define MYC_MAX_GATES      16
 #define MYC_MAX_EVIDENCE   256
 #define MYC_MAX_DEBT       32
-#define MYC_MAX_FILC_CASES 8        /* rincian per-panic Fil-C (7.7) */
-#define MYC_MAX_CONTRACT_CLAUSES 64 /* rincian per-klausa kontrak (7.4) */
-#define MYC_MAX_REL_CLAUSES 64       /* rincian klausa relasional (Fase 5) */
-#define MYC_MAX_DRIVER_CASES   32  /* budget kombinatorial per fungsi (7.5) */
-#define MYC_MAX_DRIVER_RECORDS 256 /* total case records tersimpan (hasil) */
 
 #define MYC_ARENA_BLOCK    65536        /* ukuran blok arena per request */
 
@@ -361,17 +331,6 @@ typedef enum {
     MYC_ERR_INTERNAL
 } myc_error_code;
 
-/* Satu panic Fil-C terkonfirmasi (MYC-AUDIT-024, roadmap 7.7 per-case
- * scope). Lokasi berasal dari frame "semantic origin" report Fil-C:
- *   (module) /path/file.c:LINE:COL: func
- * String (message/file/function) disimpan di arena milik hasil. */
-typedef struct {
-    char *message;      /* pesan panic (mis. "cannot write pointer ...") */
-    char *file;         /* file origin pertama (NULL bila tak terparse) */
-    int   line, col;    /* lokasi origin (0 bila tak terparse) */
-    char *function;     /* fungsi origin pertama (NULL bila tak terparse) */
-} myc_filc_case;
-
 /* Confidence diagnostic heuristik teks (MYC-AUDIT-014, roadmap 5.15):
  * scanner/lint berbasis token/text TIDAK boleh menghasilkan hard verdict
  * kecuali dikonfirmasi bukti SEMANTIK. Skala keyakinan:
@@ -386,203 +345,26 @@ typedef enum {
     MYC_CONF_CONFIRMED        /* bukti semantik / syntactic pasti */
 } myc_confidence;
 
-/* ------------------------------------------------------------------ */
-/* B3: LLM Error Taxonomy (DS-07)                                      */
-/* ------------------------------------------------------------------ */
-/* Sumbu kedua klasifikasi finding: kelas KOGNITIF -- cara model biasanya
- * salah -- bukan hanya semantik C. Urutan enum = prioritas coaching
- * (kecil = diprioritaskan; lihat coach_priority di taxonomy.c).
- * Classifier rule-based, NON-blocking observasi. */
-typedef enum {
-    MYC_TAX_UNCLASSIFIED = 0,
-    MYC_TAX_HALLUCINATED_API,   /* API dianggap lebih aman dari sebenarnya */
-    MYC_TAX_MISSING_GUARD,      /* null-deref / unchecked alloc / uninit */
-    MYC_TAX_OFF_BY_ONE,         /* batas loop/index salah satu */
-    MYC_TAX_UB_ASSUMPTION,      /* implementation-defined / UB */
-    MYC_TAX_TYPE_CONFUSION,     /* cast / signedness / lebar tipe */
-    MYC_TAX_IGNORED_RETURN,     /* return value dibuang */
-    MYC_TAX_WRONG_CONSTANT,     /* konstanta/batas salah */
-    MYC_TAX_CHURN,              /* mengubah kode yang tidak terkait */
-    MYC_TAX_COUNT
-} myc_taxonomy_class;
+typedef struct myc_request myc_request;
+typedef struct myc_result myc_result;
 
-/* Satu item coaching (tersimpan di res->coaching[]). String where di
- * arena milik hasil. */
-typedef struct {
-    myc_taxonomy_class cls;
-    int   line;                  /* 0 bila tak tersedia */
-    char *where;                 /* arena: ringkasan lokasi + pesan */
-} myc_coaching_item;
-
-#define MYC_MAX_COACHING 10
-
-/* Status klausa kontrak (MYC-AUDIT-025, roadmap 7.4): hasil validasi
- * ekspresi kontrak-lite. Purity adalah SYARAT inject: klausa ber-efek
- * samping TIDAK pernah di-inject sebagai assert (safety). */
-typedef enum {
-    MYC_CLAUSE_OK = 0,      /* ekspresi valid + pure (layak inject) */
-    MYC_CLAUSE_EMPTY,       /* ekspresi kosong (ditolak) */
-    MYC_CLAUSE_TOO_LONG,    /* melebihi buffer (ditolak, no silent truncate) */
-    MYC_CLAUSE_IMPURE,      /* efek samping: assignment / ++ / -- / comma */
-    MYC_CLAUSE_CALL         /* pemanggilan fungsi: purity tak terbukti */
-} myc_clause_status;
-
-/* Satu klausa kontrak //@ requires/ensures ter-parse (MYC-AUDIT-025).
- * String (expr/func) disimpan di arena milik hasil. */
-typedef struct {
-    char *expr;             /* ekspresi kontrak */
-    char *func;             /* nama fungsi terikat (stable binding);
-                               "" bila tidak terikat ke fungsi */
-    myc_clause_status status;
-    int   line, col;        /* lokasi klausa di source */
-    int   kind;             /* 0 = requires, 1 = ensures */
-} myc_contract_clause;
-
-/* Satu klausa kontrak terklasifikasi relasional (Fase 5, Relational
- * contracts). Analisis TEKS deterministik -- observasi NON-blocking,
- * verdict tidak pernah turun karenanya. `relational` = klausa yang
- * mengikat >= 2 variabel DISTINCT (order `a <= b`, kesetaraan
- * aritmetika `r == a + b`, rentang `a < b && b < c`) vs `unary`
- * (satu variabel vs konstanta, mis. `n >= 0`). `unbound` = ada
- * identifier di luar parameter fungsi DAN di luar alias return
- * (r/ret/result/res/\result) -- bisa typo atau global (observasi). */
-typedef struct {
-    char *expr;          /* arena: ekspresi kontrak */
-    char *func;          /* arena: fungsi terikat ("" bila tak terikat) */
-    int   kind;          /* 0 = requires, 1 = ensures */
-    int   line, col;     /* lokasi klausa */
-    int   nvars;         /* jumlah identifier DISTINCT (bukan konstanta/keyword/call) */
-    int   relational;    /* 1 = >= 2 variabel */
-    int   unbound;       /* 1 = ada identifier di luar params + alias return */
-    int   has_order;     /* < <= > >= */
-    int   has_equality;  /* == != */
-    int   has_arith;     /* + - * / % */
-    int   has_logic;     /* && || ! */
-} myc_rel_clause;
-
-/* --- Fase 5 (SOL-13): State-Machine Ghosting ---
- * Ghost state machine dari deklarasi //@ sm (state/event/trans).
- * NON-blocking observasi: analisis teks deterministik, verdict tidak
- * pernah turun karenanya. String (name/from/event/to/text/witness)
- * disimpan di arena milik hasil. */
-#define MYC_SM_MAX_STATES   32
-#define MYC_SM_MAX_EVENTS   32
-#define MYC_SM_MAX_TRANS    64
-#define MYC_SM_MAX_FINDINGS 32
-
-typedef enum {
-    MYC_SM_SINK = 0,         /* state tanpa transisi keluar, bukan final */
-    MYC_SM_UNREACHABLE,      /* tak ada transisi masuk, bukan initial */
-    MYC_SM_NO_RECOVERY,      /* tak ada jalur kembali ke initial */
-    MYC_SM_UNDECLARED_STATE, /* transisi merujuk state tak terdeklarasi */
-    MYC_SM_UNDECLARED_EVENT, /* transisi merujuk event tak terdeklarasi */
-    MYC_SM_UNUSED_STATE,     /* state dideklarasikan tapi tak dipakai */
-    MYC_SM_UNUSED_EVENT,     /* event dideklarasikan tapi tak dipakai */
-    MYC_SM_NO_INITIAL,       /* tidak ada state initial (pakai state pertama) */
-    MYC_SM_NO_FINAL,         /* tidak ada state final */
-    MYC_SM_DUP_DECL          /* deklarasi nama ganda */
-} myc_sm_finding_kind;
-
-typedef struct {
-    char *name;       /* arena */
-    int   line;
-    int   is_initial;
-    int   is_final;
-} myc_sm_state;
-
-typedef struct {
-    char *name;       /* arena */
-    int   line;
-} myc_sm_event;
-
-typedef struct {
-    char *from;       /* arena */
-    char *event;      /* arena */
-    char *to;         /* arena */
-    int   line;
-} myc_sm_trans;
-
-typedef struct {
-    myc_sm_finding_kind kind;
-    char *text;       /* arena: penjelasan */
-    char *witness;    /* arena: urutan event terpendek ("" bila tak ada) */
-    int   line;
-} myc_sm_finding;
-
-/* --- Fase 5, SOL-12: Resource Linearity Ledger ---
- * Temuan observasi tee untuk resource yang acquired tapi tidak pernah
- * release, di-release dua kali, atau release pada variabel yang tidak
- * di-trace acquire-nya. NON-blocking: verdict tidak pernah turun. */
-#define MYC_RSRC_MAX_PAIRS   16
-#define MYC_RSRC_MAX_FUNCS   64
-#define MYC_RSRC_MAX_VARS    48      /* resource per fungsi */
-#define MYC_RSRC_MAX_FINDINGS 32
-#define MYC_RSRC_NAME_LEN    64
-
-typedef enum {
-    MYC_RSRC_LEAKED = 0,     /* acq@L tidak release/transfer sampai akhir func */
-    MYC_RSRC_DOUBLE_RELEASE,  /* release dua kali tanpa re-acquire */
-    MYC_RSRC_RELEASE_UNKNOWN  /* release pada var yang tidak di-trace acquire */
-} myc_rsrc_finding_kind;
-
-typedef struct {
-    myc_rsrc_finding_kind kind;
-    char *text;       /* arena: penjelasan */
-    char *witness;    /* arena: jalur acq@L -> release/leak@baris */
-    int   line;
-} myc_rsrc_finding;
-
-const char *myc_rsrc_finding_name(myc_rsrc_finding_kind k);
-
-/* --- Fase 5, SOL-11: Units, Shape, dan Provenance Contracts ---
- * Annotation ringan untuk memberi model vocabulary semantik yang tidak
- * dimiliki type system C: bytes vs elements, capacity vs length, owned
- * vs borrowed, host-endian vs wire-endian.
- *
- *   //@ unit        <ident> <unit>          -- span semantic satu kuantitas
- *   //@ shape       <ident> capacity=K length=L [end=INCL|EXCL]
- *   //@ provenance  <ident> owned|borrowed|static
- *   //@ endian      <ident> little|big
- *
- * myc$ melacak subset sederhana secara deterministik (observasi
- * NON-blocking, verdict tidak pernah turun). Temuan:
- *   UNBOUND          = identifier annotation tidak pernah muncul di code.
- *   UNIT_MISMATCH    = di dalam body, `dest = src` dengan unit berbeda.
- *   SHAPE_DIM        = capacity dan length shape punya unit beda dimensi.
- *   DUP_CONFLICT     = annotation berlawanan utk id yang sama (mis. unit
- *                      bytes lalu elements; endian little lalu big). */
-#define MYC_UNITS_MAX_ANNS    64
-#define MYC_UNITS_MAX_FINDINGS 32
-#define MYC_UNITS_NAME_LEN    64
-
-typedef enum {
-    MYC_UNITS_UNBOUND = 0,    /* ident annotation tak terikat di source */
-    MYC_UNITS_UNIT_MISMATCH,  /* `lhs = rhs` beda unit di dalam fungsi  */
-    MYC_UNITS_SHAPE_DIM,      /* capacity vs length beda dimensi        */
-    MYC_UNITS_DUP_CONFLICT    /* dua annotasi bertentangan pada id sama  */
-} myc_units_finding_kind;
-
-typedef struct {
-    myc_units_finding_kind kind;
-    char *text;       /* arena: penjelasan */
-    char *witness;    /* arena: konteks (mis. "x = y @12@|L" -> label) */
-    int   line;
-} myc_units_finding;
-
-const char *myc_units_finding_name(myc_units_finding_kind k);
-
-/* Satu kasus uji driver ter-record (roadmap 7.5 "case record").
- * Merekam INPUT yang benar-benar diuji — parameter values + allocation
- * sizes — plus status eksekusi (guard requires lolos / dilewati).
- * String (func/params) disimpan di arena milik hasil; bila disalin ke
- * capsule, di-strdup. `case_id` = nomor global 1-based lintas fungsi. */
-typedef struct {
-    char *func;        /* nama fungsi ber-kontrak yang diuji */
-    char *params;      /* ringkasan argumen deterministik, mis. "n=4, a=16B" */
-    long  alloc_bytes; /* total bytes dialokasikan utk parameter pointer */
-    int   case_id;     /* 1-based (global lintas fungsi) */
-    int   executed;    /* 1 = dieksekusi, 0 = dilewati guard requires */
-} myc_driver_case;
+/* Tipe gate/agent yang hanya dipakai 2-3 modul: header modul.
+ * myc.h include mereka SETELAH kontrak inti (verdict/gate_id/debt)
+ * supaya myc_result tetap by-value tanpa circular include. */
+#include "taxonomy.h"
+#include "contract.h"
+#include "state.h"
+#include "resource.h"
+#include "units.h"
+#include "run.h"
+#include "filc.h"
+#include "driver.h"
+#include "assume.h"
+#include "matrix.h"
+#include "witness.h"
+#define MYC_TYPES_ONLY
+#include "cache.h"
+#undef MYC_TYPES_ONLY
 
 /* Satu pelanggaran / diagnostic yang ditemukan scanner atau gcc. */
 typedef struct {
@@ -632,59 +414,7 @@ typedef struct myc_budget_contract {
     char *raw;   /* representasi asli kontrak (untuk laporan), malloc'd */
 } myc_budget_contract;
 
-/* --- Assumption Closure (Fase 4, A1 + DS-01) ---
- * Ledger asumsi: fakta implementation-defined yang DI-PERTARUHKAN source
- * (signedness char, lebar int, endianness bit-field, alignment cast,
- * sizeof), disandingkan dengan kebenaran toolchain host (macro dump
- * `gcc -dM -E`). Observasi NON-blocking: verdict TIDAK pernah turun
- * karena asumsi, kecuali --require-assumptions-closed diminta (DS-01:
- * asumsi terbuka = gap verifikasi -> INCONCLUSIVE + debt).
- * Lifecycle per asumsi (DS-01): observed -> declared / tested /
- * contradicted / eliminated / accepted-risk. Status dipersisten di
- * .myc/assumptions.json agar run kedua bisa menunjukkan asumsi mana
- * yang sudah ditutup; `--assumption-ack id:status` menutup tanpa
- * menghilangkan asumsi dari receipt. */
-#define MYC_MAX_ASSUMPTIONS 32
-
-typedef enum {
-    MYC_ASM_OBSERVED = 0,      /* terdeteksi, belum ditindaklanjuti */
-    MYC_ASM_DECLARED,          /* ketergantungan disengaja (di-ack) */
-    MYC_ASM_TESTED,            /* sudah diuji pada target relevan */
-    MYC_ASM_CONTRADICTED,      /* target lain mengubah perilaku (masih terbuka) */
-    MYC_ASM_ELIMINATED,        /* kode diubah, tak lagi bergantung */
-    MYC_ASM_ACCEPTED_RISK      /* pengguna menerima keterikatan target */
-} myc_assumption_status;
-
-/* Satu asumsi terdeteksi. String (id/kind/anchor/host_fact/risk/
- * next_action) disimpan di arena milik hasil (myc_result_arena_dup). */
-typedef struct {
-    char *id;           /* asm-<kind>-<8 hex sha256(anchor)> */
-    char *kind;         /* char-signedness | int-width | bitfield-endian |
-                           alignment-cast | sizeof-assumption */
-    int   line;         /* 1-based */
-    char *anchor;       /* <fungsi>:<line>:<hash window> (stabil) */
-    char *host_fact;    /* fakta toolchain INI, mis. "char=signed" */
-    char *risk;         /* risiko di target lain */
-    char *next_action;  /* saran perbaikan untuk LLM */
-    int   status;       /* myc_assumption_status (persisten lintas run) */
-    int   confidence;   /* 0..100 (observasi) */
-} myc_assumption;
-
-/* Fakta target toolchain host hasil `gcc -dM -E` (predefined macros).
- * Disimpan per-value di myc_result (dan di cache entry SOL-18) agar
- * cache-hit TIDAK perlu mengeksekusi gcc ulang. `ok=1` bila macro dump
- * berhasil dibaca (gcc tersedia). */
-typedef struct {
-    int  ok;             /* facts berhasil dibaca */
-    int  char_unsigned;  /* __CHAR_UNSIGNED__ terdefinisi */
-    int  int_bits;       /* 8 * __SIZEOF_INT__ (0 = tak diketahui) */
-    int  ptr_bits;       /* 8 * __SIZEOF_POINTER__ (0 = tak diketahui) */
-    int  little_endian;  /* __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ */
-    long stdc_version;   /* __STDC_VERSION__ (0 = tak diketahui) */
-    int  char_bit;       /* CHAR_BIT (default 8) */
-} myc_host_facts;
-
-typedef struct {
+struct myc_request {
     myc_source_input input;     /* sumber program: MEMORY/FILE/STDIN */
     int         timeout_ms;     /* 0 = default */
     int         max_output_bytes;
@@ -858,7 +588,7 @@ typedef struct {
      * lock-order statis (inversi urutan mutex) + TSan runtime bila
      * tersedia. NON-blocking observasi. */
     int         thread_probe;
-} myc_request;
+};
 
 /* --- Differential Backend Quorum (#3) --- */
 typedef enum {
@@ -868,165 +598,10 @@ typedef enum {
     MYC_QUORUM_INCONCLUSIVE
 } myc_quorum_status;
 
-/* --- Counterexample Replay Capsule (#2) ---
- * Captures all information needed to replay a specific verification
- * run: source identity, stdin identity, backend, flags, and result.
- * Stored in myc_result; freed by myc_result_free(). */
-typedef struct {
-    /* Source identity */
-    char *source_sha256;
-    /* Stdin identity (hash of data fed to program under test;
-     * NULL if no --run-stdin was provided). */
-    char *stdin_sha256;
-    size_t stdin_len;
-    /* Backend identity */
-    char *clang_path;
-    char *gcc_path;
-    char *cwd;
-    /* Request parameters */
-    int timeout_ms;
-    int max_output_bytes;
-    int strict;
-    int run_analyzer;
-    int run;
-    int prove;
-    int checked;    int     filc;
-    int     driver;
-    int     metamorphic;    /* (9.7) flag gate metamorphic */
-    int     negative;       /* (9.8) flag gate negative-space */
-    int     require_complete; /* (9.10) flag require-complete */
-    /* Fase 3, SOL-30: hasil enforcement budget contract */
-    int     budget_active;
-    int     budget_met;
-    /* Execution result */
-    myc_verdict verdict;
-    int exit_code;
-    int timed_out;
-    int sanitizer_detected;
-    char sanitizer_marker[64];
-    /* Metamorphic (9.7): hasil per-build */
-    int metamorphic_inconsistent; /* hasil -O0 vs -O2 tidak setuju (sanitizer) */
-    int meta_o0_exit;
-    int meta_o2_exit;
-    int meta_o0_finding;   /* 1 = marker sanitizer pada build -O0 */
-    int meta_o2_finding;   /* 1 = marker sanitizer pada build -O2 */
-    /* Divergence (Fase 4 A2/DS-02): ringkasan klasifikasi */
-    int divergence_ran;         /* sel yang benar-benar dieksekusi */
-    int divergence_sanitizer_div; /* HARD: satu sel finding, lain clean */
-    int divergence_all_findings;  /* HARD: semua sel menemukan */
-    int divergence_semantic_div;  /* observasi: stdout/exit beda */
-    int divergence_diag_div;      /* observasi: set warning beda */
-    /* Negative-space (9.8): hasil observasi */
-    int negative_callsites;   /* total callsite alokasi terdeteksi */
-    int negative_deviations;  /* jumlah yang tidak memeriksa hasil */
-    /* Checked coverage (MYC-AUDIT-026): cakupan transformasi fat-pointer */
-    int checked_buffers;      /* deklarasi MYC_BUF */
-    int checked_allocations;  /* invokasi MYC_NEW */
-    int checked_accesses;     /* invokasi MYC_AT */
-    int checked_frees;        /* invokasi MYC_FREE */
-    /* MYC-AUDIT-040: raw buffers di luar MYC_BUF — jumlah `[` di luar
-     * komentar/string/preprocessor (deklarasi/akses array biasa). Debt
-     * MYC-INCOMPLETE-RAW-BUFFERS bila source memakai MYC_BUF (checked)
-     * tapi masih ada buffer biasa: transformasi fat-pointer tidak menutup
-     * semua buffer. Observasi teks deterministik, NON-blocking. */
-    int checked_raw_buffers;
-    /* Driver (roadmap 7.5): ringkasan + per-case record untuk replay.
-     * String di-strdup (capsule dibebaskan myc_result_free). */
-    int driver_funcs;
-    int driver_cases;
-    int driver_skipped;
-    int driver_case_count;
-    char *driver_harness_sha256;   /* hash source harness yang dibangun */
-    long  driver_max_product;
-    int   driver_bounded;
-    myc_driver_case driver_case_records[MYC_MAX_DRIVER_RECORDS];
-    /* Gate summary (one status per gate) */
-    myc_gate_status gate_status[MYC_GATE_COUNT];
-    /* Finding / completeness / claim */
-    myc_finding finding;
-    myc_completeness completeness;
-    myc_claim_status claim_status;
-    /* Differential Backend Quorum (#3) */
-    myc_quorum_status quorum_status;
-} myc_replay_capsule;
+/* Capsule lengkap di report.h (hanya myc.c + report.c). */
+typedef struct myc_replay_capsule myc_replay_capsule;
 
-/* --- Witness Pipeline (Fase 1) --- */
-/* Setiap hard finding harus disertai witness yang dapat direplay.
- * Witness berisi reproducer, causal slice, dan violation info. */
-#define MYC_MAX_WITNESS_ARGV 8
-
-typedef struct {
-    /* Reproducer */
-    char *source;           /* source penuh atau slice */
-    size_t source_len;
-    char *stdin_data;       /* stdin input (NULL bila tidak ada) */
-    size_t stdin_len;
-    char *argv[MYC_MAX_WITNESS_ARGV]; /* argv tambahan */
-    int   argc;
-
-    /* Causal slice */
-    char *slice_file;       /* nama file asli */
-    int   slice_line_start; /* baris awal slice */
-    int   slice_line_end;   /* baris akhir slice */
-
-    /* Violation info */
-    char *violation_kind;   /* "use-after-free", "OOB", "null-deref", dst */
-    char *violation_msg;    /* pesan lengkap dari backend */
-    int   violation_line;   /* baris pelanggaran */
-    int   violation_col;    /* kolom pelanggaran */
-
-    /* Backend provenance */
-    char *backend;          /* "gcc", "clang-asan", "eva", "fil-c", "driver" */
-    char *backend_version;  /* "gcc 13.2", "frama-c 33.0", dst */
-
-    /* Kronologi pelanggaran (Fase 1, pre-state → operation → violation).
-     * pre_state : keadaan sebelum pelanggaran (mis. "p freed at line 7")
-     * operation : operasi yang melanggar (mis. "access p[10] out of bounds")
-     * Agar LLM memahami urutan kronologis, bukan hanya titik pelanggaran. */
-    char *pre_state;        /* deskripsi keadaan awal, NULL bila tidak diketahui */
-    char *operation;        /* deskripsi operasi pelanggaran, NULL bila tidak diketahui */
-} myc_witness;
-
-/* Satu sel matriks target (Fase 5, C4): satu cross-compiler + fakta
- * target + hasil compile. String target/cc disalin by-value (fixed array)
- * agar aman disalin ke cache replay. `deltas` = jumlah fakta yang
- * berubah vs host (char signedness / ptr bits / endianness). */
-#define MYC_MATRIX_MAX_CELLS 4
-
-typedef struct {
-    char  target[64];        /* "arm-none-eabi" (nama compiler) */
-    char  cc[260];           /* path absolut compiler */
-    int   available;         /* cross-compiler ditemukan */
-    int   facts_ok;          /* macro dump -dM -E terbaca */
-    int   built;             /* compile -c sukses */
-    int   warnings;          /* jumlah warning compile */
-    int   char_unsigned;     /* __CHAR_UNSIGNED__ di target */
-    int   ptr_bits;          /* 8 * sizeof(void*) di target */
-    int   little_endian;     /* endianness target */
-    int   deltas;            /* fakta yang berubah vs host */
-} myc_matrix_cell;
-
-/* --- IDE-6 (--watch-diff): delta assurance per-fungsi ---
- * Status satu fungsi vs baseline cache (hash body). Didefinisikan di
- * sini (bukan cache.h) karena dipakai myc_result; cache.h include myc.h. */
-#define MYC_CACHE_MAX_FUNCS 256
-
-typedef enum {
-    MYC_DELTA_FUNC_IDENTICAL = 0, /* hash sama dengan baseline */
-    MYC_DELTA_FUNC_CHANGED,       /* hash beda (isi fungsi berubah) */
-    MYC_DELTA_FUNC_NEW,           /* tidak ada di baseline */
-    MYC_DELTA_FUNC_REMOVED,       /* ada di baseline, hilang dari source */
-    MYC_DELTA_FUNC_DEPENDENT      /* identik tapi memanggil fungsi berubah */
-} myc_delta_func_status;
-
-/* Satu entry delta per-fungsi (nama + line + status). */
-typedef struct {
-    char  name[64];
-    int   line;
-    myc_delta_func_status status;
-} myc_delta_func;
-
-typedef struct {
+struct myc_result {
     myc_verdict verdict;
     myc_assurance assurance;    /* level jaminan yang DIBUKTIKAN */
     int         exit_code;              /* exit code dari gate terakhir */
@@ -1614,7 +1189,7 @@ char          *rsrc_report;                /* arena */
     char *delta_kind;       /* "fixed" / "new" / "persistent" / "churn" */
     char *delta_gate;       /* gate yang berubah */
     int  delta_changed;     /* 1 jika ada perubahan dari run sebelumnya */
-} myc_result;
+};
 
 /* Nama debt type (statis). */
 const char *myc_debt_type_name(myc_debt_type t);
@@ -1700,13 +1275,6 @@ const char *myc_assurance_name(myc_assurance a);
 const char *myc_finding_name(myc_finding f);
 const char *myc_claim_status_name(myc_claim_status c);
 const char *myc_dim_status_name(myc_dim_status s);
-/* Status klausa kontrak (MYC-AUDIT-025): "ok"/"empty"/"too_long"
- * /"impure"/"call" (statis). */
-const char *myc_clause_status_name(myc_clause_status s);
-/* Nama finding ghost state machine (Fase 5, SOL-13): "sink"/"unreachable"
- * /"no_recovery"/"undeclared_state"/"undeclared_event"/"unused_state"
- * /"unused_event"/"no_initial"/"no_final"/"dup_decl" (statis). */
-const char *myc_sm_finding_name(myc_sm_finding_kind k);
 
 /* Nama confidence diagnostic (MYC-AUDIT-014): "observation"/"suspicious"
  * /"likely"/"confirmed" (statis). */

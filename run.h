@@ -8,6 +8,39 @@
 #ifndef MYC_RUN_H
 #define MYC_RUN_H
 
+#include <stddef.h>
+
+/* --- sel matriks cross-toolchain divergence (Fase 4, A2/DS-02) ---
+ * Satu kombinasi {toolchain} x {-O0,-O2}. `available=0` bila compiler
+ * tidak ditemukan (sel di-skip). `built=1` + `ran=1` = sel benar-benar
+ * dieksekusi. `finding` = bukti sanitizer (report log_path non-spoofable
+ * ATAU marker + exit!=0). stdout_sha256 = hash trace stdout penuh untuk
+ * deteksi semantic divergence (deterministik; env LC_ALL=C).
+ * Tipe di sini (bukan myc.h) karena hanya run/report/cache. */
+#define MYC_DIVERGENCE_MAX_CELLS 8   /* 2 toolchains x 2 opt = 4; cadangan */
+
+typedef struct {
+    char         tool[16];        /* "gcc" / "clang" / "tcc" */
+    char         tool_path[260];  /* path absolut hasil myc_find_executable
+                                     (fixed array agar aman di-copy untuk
+                                     cache replay) */
+    int          opt_level;       /* 0 = -O0, 1 = -O2 */
+    int          available;       /* 0 = compiler tidak ditemukan */
+    int          san;             /* 1 = build+run DENGAN sanitizer
+                                     (finding bisa jadi bukti); 0 = tanpa
+                                     sanitizer (fallback: toolchain tak
+                                     punya ASan, mis. gcc MinGW) */
+    int          built;           /* 1 = build sukses */
+    int          ran;             /* 1 = exe dijalankan */
+    int          timed_out;       /* 1 = run timeout */
+    int          exit_code;       /* exit code run */
+    int          finding;         /* 1 = bukti sanitizer pada sel ini */
+    char         marker[80];      /* marker sanitizer atau "" */
+    char         stdout_sha256[65]; /* sha256 hex trace stdout ("" bila
+                                       tak tersedia) */
+    int          diag_warn;       /* 1 = build menghasilkan warning */
+} myc_divergence_cell;
+
 #include "myc.h"
 
 /*

@@ -54,6 +54,11 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   sama dengan jalur sekuensial). Masuk cache key g2.
 - **P3 — `json_sb` = myc_sb bersama.** `json_sb_append` / `json_sb_steal`
   + `typedef json_sb myc_sb`. `context.c` tidak lagi menyalin builder.
+- **P3 — slim `myc.h`.** Struct gate/agent 2–3 modul pindah ke header
+  modul (run/filc/driver/state/resource/units/taxonomy/contract/assume/
+  matrix/witness/cache-delta). `myc_replay_capsule` hanya forward-decl
+  (definisi `report.h`). Verdict, `gate_id`, dan `myc_budget_contract`
+  tetap di `myc.h`.
 
 ### Changed
 

@@ -24,7 +24,56 @@
 
 #include <stddef.h>
 
+#define MYC_MAX_CONTRACT_CLAUSES 64 /* rincian per-klausa kontrak (7.4) */
+#define MYC_MAX_REL_CLAUSES 64       /* rincian klausa relasional (Fase 5) */
+
+/* Status klausa kontrak (MYC-AUDIT-025, roadmap 7.4): hasil validasi
+ * ekspresi kontrak-lite. Purity adalah SYARAT inject: klausa ber-efek
+ * samping TIDAK pernah di-inject sebagai assert (safety). */
+typedef enum {
+    MYC_CLAUSE_OK = 0,      /* ekspresi valid + pure (layak inject) */
+    MYC_CLAUSE_EMPTY,       /* ekspresi kosong (ditolak) */
+    MYC_CLAUSE_TOO_LONG,    /* melebihi buffer (ditolak, no silent truncate) */
+    MYC_CLAUSE_IMPURE,      /* efek samping: assignment / ++ / -- / comma */
+    MYC_CLAUSE_CALL         /* pemanggilan fungsi: purity tak terbukti */
+} myc_clause_status;
+
+/* Satu klausa kontrak //@ requires/ensures ter-parse (MYC-AUDIT-025).
+ * String (expr/func) disimpan di arena milik hasil. */
+typedef struct {
+    char *expr;             /* ekspresi kontrak */
+    char *func;             /* nama fungsi terikat (stable binding);
+                               "" bila tidak terikat ke fungsi */
+    myc_clause_status status;
+    int   line, col;        /* lokasi klausa di source */
+    int   kind;             /* 0 = requires, 1 = ensures */
+} myc_contract_clause;
+
+/* Satu klausa kontrak terklasifikasi relasional (Fase 5, Relational
+ * contracts). Analisis TEKS deterministik -- observasi NON-blocking,
+ * verdict tidak pernah turun karenanya. `relational` = klausa yang
+ * mengikat >= 2 variabel DISTINCT (order `a <= b`, kesetaraan
+ * aritmetika `r == a + b`, rentang `a < b && b < c`) vs `unary`
+ * (satu variabel vs konstanta, mis. `n >= 0`). `unbound` = ada
+ * identifier di luar parameter fungsi DAN di luar alias return
+ * (r/ret/result/res/\result) -- bisa typo atau global (observasi). */
+typedef struct {
+    char *expr;          /* arena: ekspresi kontrak */
+    char *func;          /* arena: fungsi terikat ("" bila tak terikat) */
+    int   kind;          /* 0 = requires, 1 = ensures */
+    int   line, col;     /* lokasi klausa */
+    int   nvars;         /* jumlah identifier DISTINCT (bukan konstanta/keyword/call) */
+    int   relational;    /* 1 = >= 2 variabel */
+    int   unbound;       /* 1 = ada identifier di luar params + alias return */
+    int   has_order;     /* < <= > >= */
+    int   has_equality;  /* == != */
+    int   has_arith;     /* + - * / % */
+    int   has_logic;     /* && || ! */
+} myc_rel_clause;
+
 #include "myc.h"
+
+const char *myc_clause_status_name(myc_clause_status s);
 
 /*
  * Scan source untuk kontrak //@ requires/ensures. Mengisi
