@@ -26,8 +26,8 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 - **G2 — skip `gcc -E`.** Source tanpa direktif preprocessor tidak
   memanggil preprocessor; marker/denylist tetap di-scan pada source
   asli.
-- **G2 — cache in-process.** Proses MCP hidup: sidecar sha256 + mtime +
-  size tidak berubah → skip parse JSON (PR-013 tetap fail-closed).
+- **G2 — cache in-process.** Proses MCP hidup: sha256 byte file ==
+  sidecar == memo → skip parse JSON (PR-013 fail-closed; bukan mtime/size).
 - **G2 — `--watch-diff` di lite.** Bila fungsi finding tidak `CHANGED`,
   `action=STOP_COMPILE_CLEAN` (anti-churn; mengalahkan eskalasi runtime).
 - **G3 — template gets/sprintf + compile apply.** `gets(buf)` →
@@ -93,6 +93,9 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 
 ### Changed
 
+- **G2 memo vs PR-013.** Skip parse JSON hanya jika sha256 byte file
+  sama dengan sidecar dan memo. mtime/size dihapus: korupsi same-length
+  dalam 1 detik (T3 `lint_obs` 1001→9999) tidak boleh HIT.
 - **P1 — `gcc -dM -E` sekali per proses.** `myc_assume_fetch_facts`
   menyimpan fakta toolchain di TLS (assume + prompt tidak spawn dua kali).
 
