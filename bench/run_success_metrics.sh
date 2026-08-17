@@ -1,24 +1,19 @@
 #!/usr/bin/env bash
 # =====================================================================
 # run_success_metrics.sh — Roll-up ukuran sukses keseluruhan (qwen-review
-# §7). Mengukur 5 metrik terukur dari Fase 7 (T1-T6) pada corpus nyata:
+# §7 + grok-rev G6). Mengukur M1–M5 (Fase 7) dan M6–M10 (pemakaian agen):
 #
 #   M1  RUNTIME_VIOLATION membawa lokasi benar ≥90% (baseline: 0%)
-#       -> fixture runtime di-check --run, sanitizer_location
-#          dibandingkan dengan lokasi HARAPAN (kind+line+fungsi).
 #   M2  Repair runtime menghasilkan patch terverifikasi ≥50%
-#       -> runtime_repair_test (T1-T15 template; T5/T14 jujur null).
 #   M3  Regression replay 100% pasca-repair
-#       -> regress_replay_test (in-process, corpus vs source fixed).
 #   M4  agent_check satu-panggilan konvergen ≤3 iterasi ≥50%
-#       -> fixture agent_check_loop_input.jsonl via MCP (8 kasus:
-#          strcpy-pair, memset-heap, memset-array, strcat, UAF-guarded,
-#          memcpy-heap = 6 template runtime konvergen + UBSan why jujur
-#          + source bersih).
 #   M5  Seluruh source myc tetap self-dogfood OK
-#       -> myc check --no-cache verdict OK pada SEMUA source kompiler
-#          (root *.c + dogfood/*.c; fixture test/ dan tests/ yang
-#          sengaja buggy tidak termasuk corpus self-dogfood).
+#   M6  agen-lite patuh allowed_span ≥90%
+#   M7  inner-loop cache-hit (CLI duration_ms; target MCP p50 <20 ms)
+#   M8  payload lite ≤ 2048 B (kecuali GIVE_UP yang menyertakan context)
+#   M9  STOP_COMPILE_CLEAN tidak muncul bila --scenario auto masih
+#       meminta runtime yang available
+#   M10 first-action = enum action, bukan flag soup ≥80%
 #
 # Report deterministik ke bench/reports/success-metrics-latest.txt;
 # exit 0 = semua metrik lulus, exit 1 = ada metrik gagal.
@@ -39,7 +34,7 @@ mkdir -p "$REPORT_DIR"
 REPORT="$REPORT_DIR/success-metrics-latest.txt"
 
 # SRCS sama dengan test/_audit018.sh (kompilasi test unit in-process).
-SRCS="myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c"
+SRCS="myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c"
 
 PASS=0
 FAIL=0
@@ -227,6 +222,159 @@ else
 fi
 
 # ------------------------------------------------------------------
+# M6: agen-lite patuh allowed_span ≥90% (lite_agent_test)
+# ------------------------------------------------------------------
+echo "--- M6. agen-lite patuh allowed_span (>=90%) ---"
+if $CC -O2 -std=c11 -Wall -Wextra -Werror -pedantic -I. -DMYC_NO_MAIN \
+       -o test/lite_agent_test_tmp test/lite_agent_test.c $SRCS 2>/dev/null; then
+    LOG="test/lite_agent_test_tmp.log"
+    test/lite_agent_test_tmp >"$LOG" 2>&1; RC=$?
+    M6_LINE=$(grep -oE 'lite_agent_test: PASS=[0-9]+ FAIL=[0-9]+' "$LOG" | head -1)
+    M6_PASS=$(echo "$M6_LINE" | sed -E 's/.*PASS=([0-9]+).*/\1/')
+    M6_FAILN=$(echo "$M6_LINE" | sed -E 's/.*FAIL=([0-9]+).*/\1/')
+    if [ -z "$M6_PASS" ] || [ -z "$M6_FAILN" ]; then
+        fail "M6: lite_agent_test tidak mencetak PASS/FAIL"
+        M6_PCT=0
+    else
+        M6_TOT=$((M6_PASS + M6_FAILN))
+        if [ "$M6_TOT" -eq 0 ]; then
+            fail "M6: 0 CHECK"
+            M6_PCT=0
+        else
+            M6_PCT=$((M6_PASS * 100 / M6_TOT))
+            echo "M6: $M6_PASS/$M6_TOT CHECK patuh span ($M6_PCT% >= 90%; exit $RC)" >> "$REPORT"
+            if [ "$RC" -eq 0 ] && [ "$M6_PCT" -ge 90 ]; then
+                note "M6: agen-lite patuh allowed_span $M6_PCT%"
+            else
+                fail "M6: patuh span $M6_PCT% (exit $RC)"
+            fi
+        fi
+    fi
+else
+    fail "M6: lite_agent_test gagal dibangun"
+    M6_PCT=0
+fi
+rm -f test/lite_agent_test_tmp test/lite_agent_test_tmp.exe \
+      test/lite_agent_test_tmp.log
+
+# ------------------------------------------------------------------
+# M7: inner-loop cache-hit. Target MCP p50 <20 ms; CLI one-shot
+#     memuat process start jadi ambang CI = 150 ms + harus < miss.
+# ------------------------------------------------------------------
+echo "--- M7. inner-loop cache-hit ---"
+M7_PCT="n/a"
+if bash bench/inner_loop.sh >/tmp/myc_inner_loop.log 2>&1; then
+    M7_MISS=$(sed -n 's/^miss_ms=//p' bench/reports/inner-loop-latest.txt | head -1)
+    M7_HIT=$(sed -n 's/^replay_avg_ms=//p' bench/reports/inner-loop-latest.txt | head -1)
+    echo "M7: miss=${M7_MISS:-?} replay_avg=${M7_HIT:-?} (CLI ms; target MCP <20)" >> "$REPORT"
+    if echo "${M7_HIT:-}" | grep -qE '^[0-9]+$' && echo "${M7_MISS:-}" | grep -qE '^[0-9]+$'; then
+        if [ "$M7_HIT" -lt "$M7_MISS" ] && [ "$M7_HIT" -lt 150 ]; then
+            note "M7: cache-hit CLI ${M7_HIT}ms < miss ${M7_MISS}ms (ambang CI 150; MCP target 20)"
+            M7_PCT="$M7_HIT"
+        else
+            fail "M7: replay_avg ${M7_HIT}ms (miss ${M7_MISS}; harus < miss dan <150)"
+            M7_PCT="$M7_HIT"
+        fi
+    else
+        fail "M7: inner_loop tidak menulis angka ms"
+    fi
+else
+    fail "M7: bench/inner_loop.sh gagal"
+fi
+
+# ------------------------------------------------------------------
+# M8: payload lite ≤ 2048 B (GIVE_UP+context dikecualikan)
+# ------------------------------------------------------------------
+echo "--- M8. payload lite <= 2048 B ---"
+M8_CASES="tests/ok_hello.c test/fixtures/ok_driver.c test/fixtures/blinky_clean.c"
+M8_OK=0
+M8_TOTAL=0
+for f in $M8_CASES; do
+    [ -f "$f" ] || continue
+    inc; M8_TOTAL=$((M8_TOTAL + 1))
+    js=$("$MYC" check "$f" --lite --no-cache 2>/dev/null)
+    act=$(printf '%s' "$js" | grep -oE '"action":"[A-Z_]+"' | head -1)
+    bytes=$(printf '%s' "$js" | wc -c)
+    if printf '%s' "$act" | grep -q GIVE_UP_NO_TEMPLATE; then
+        note "M8 $f: GIVE_UP (context; tidak dihitung ke batas 2048)"
+        M8_OK=$((M8_OK + 1))
+        continue
+    fi
+    if [ "$bytes" -le 2048 ]; then
+        M8_OK=$((M8_OK + 1))
+        note "M8 $f: ${bytes} B"
+    else
+        fail "M8 $f: ${bytes} B > 2048"
+    fi
+done
+echo "M8: $M8_OK/$M8_TOTAL payload lite <=2048 B" >> "$REPORT"
+if [ "$M8_TOTAL" -gt 0 ] && [ "$M8_OK" -eq "$M8_TOTAL" ]; then
+    note "M8: payload lite $M8_OK/$M8_TOTAL <=2048 B"
+else
+    fail "M8: payload lite $M8_OK/$M8_TOTAL"
+fi
+
+# ------------------------------------------------------------------
+# M9: STOP tidak boleh jika --scenario auto masih butuh runtime available
+# ------------------------------------------------------------------
+echo "--- M9. STOP vs scenario auto runtime ---"
+M9_OK=1
+if command -v clang >/dev/null 2>&1 || command -v clang.exe >/dev/null 2>&1; then
+    lite=$("$MYC" check tests/ok_hello.c --scenario auto --lite --no-cache 2>/dev/null)
+    sum=$("$MYC" check tests/ok_hello.c --scenario auto --json-summary --no-cache 2>/dev/null)
+    act=$(printf '%s' "$lite" | grep -oE '"action":"[A-Z_]+"' | head -1)
+    ran=$(printf '%s' "$sum" | grep -oE '"ran_runtime":[a-z]+' | head -1)
+    if printf '%s' "$act" | grep -q STOP_COMPILE_CLEAN &&
+       printf '%s' "$ran" | grep -q 'ran_runtime":false'; then
+        fail "M9: STOP_COMPILE_CLEAN padahal runtime available belum jalan"
+        M9_OK=0
+    else
+        note "M9: action=${act:-?} ran_runtime=${ran:-?} (bukan STOP tanpa runtime)"
+    fi
+else
+    note "M9: clang tidak ada — dilewati"
+fi
+echo "M9: STOP vs scenario-auto runtime: $([ $M9_OK -eq 1 ] && echo OK || echo FAIL)" >> "$REPORT"
+
+# ------------------------------------------------------------------
+# M10: first-action = enum, bukan flag soup ≥80%
+# ------------------------------------------------------------------
+echo "--- M10. first-action enum bukan flag soup (>=80%) ---"
+M10_CASES="tests/ok_hello.c test/fixtures/ok_driver.c test/fixtures/blinky_clean.c tests/bad_syntax.c"
+M10_OK=0
+M10_TOTAL=0
+for f in $M10_CASES; do
+    [ -f "$f" ] || continue
+    inc; M10_TOTAL=$((M10_TOTAL + 1))
+    js=$("$MYC" check "$f" --lite --no-cache 2>/dev/null)
+    act=$(printf '%s' "$js" | grep -oE '"action":"[A-Z_]+"' | head -1)
+    nxt=$(printf '%s' "$js" | grep -oE '"next_command":"[^"]*"' | head -1)
+    soup=0
+    printf '%s' "$nxt" | grep -q -- '--filc' && soup=1
+    printf '%s' "$nxt" | grep -q -- '--prove' && soup=1
+    printf '%s' "$nxt" | grep -q -- '--divergence' && soup=1
+    printf '%s' "$nxt" | grep -q -- '--analyze' && soup=1
+    if [ -n "$act" ] && [ "$soup" -eq 0 ]; then
+        M10_OK=$((M10_OK + 1))
+        note "M10 $f: $act"
+    else
+        fail "M10 $f: action=${act:-?} next=${nxt:-?} (flag soup?)"
+    fi
+done
+if [ "$M10_TOTAL" -eq 0 ]; then
+    M10_PCT=0
+    fail "M10: 0 kasus"
+else
+    M10_PCT=$((M10_OK * 100 / M10_TOTAL))
+    echo "M10: $M10_OK/$M10_TOTAL first-action enum ($M10_PCT% >= 80%)" >> "$REPORT"
+    if [ "$M10_PCT" -ge 80 ]; then
+        note "M10: first-action enum $M10_PCT%"
+    else
+        fail "M10: first-action enum $M10_PCT% (<80%)"
+    fi
+fi
+
+# ------------------------------------------------------------------
 # Report + ringkasan
 # ------------------------------------------------------------------
 {
@@ -237,6 +385,11 @@ fi
     echo "M3 regression_replay: 100% (target 100)"
     echo "M4 agent_check_konvergen_pct: ${M4_PCT:-0} (target >=50)"
     echo "M5 self_dogfood: $M5_OK/$M5_TOTAL (target all)"
+    echo "M6 lite_span_pct: ${M6_PCT:-?} (target >=90)"
+    echo "M7 cache_hit_cli_ms: ${M7_PCT:-?} (CI <150 dan < miss; MCP target <20)"
+    echo "M8 lite_payload: ${M8_OK:-?}/${M8_TOTAL:-?} (target all <=2048 B)"
+    echo "M9 stop_vs_auto_runtime: $([ ${M9_OK:-1} -eq 1 ] && echo OK || echo FAIL)"
+    echo "M10 first_action_enum_pct: ${M10_PCT:-?} (target >=80)"
     echo "result: $([ $FAIL -eq 0 ] && echo PASS || echo FAIL)"
     echo "pass: $PASS fail: $FAIL total: $TOTAL"
 } >> "$REPORT"

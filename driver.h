@@ -22,6 +22,9 @@
  *   - NULL tidak pernah diuji (pointer selalu dialokasikan) agar tidak
  *     menghasilkan false positive null-deref pada kode yang berasumsi
  *     caller menghormati kontrak non-NULL.
+ *
+ * Exhaustive (A3) ada di exhaustive.c; fuzz-lite (D1) di fuzz.c;
+ * helper bersama di driver_internal.h.
  */
 #ifndef MYC_DRIVER_H
 #define MYC_DRIVER_H

@@ -13,7 +13,7 @@ if errorlevel 1 (
   del test\_tmp_prove_preflight.o 2>nul
 )
 echo --- Fase 5 reentrancy (MYC-AUDIT-008): myc_run paralel bebas race/stale
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\stress_threads.exe test\stress_threads.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c prove.c filc.c driver.c json.c gate.c negative.c taxonomy.c alloc.c >nul 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\stress_threads.exe test\stress_threads.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c gate.c negative.c taxonomy.c alloc.c >nul 2>&1
 if exist test\stress_threads.exe (
   test\stress_threads.exe | findstr "no race" >nul && echo [OK] stress_threads deterministik, no race || echo [WARN] stress_threads race/stale - stress test; lihat issue
 ) else (
@@ -29,7 +29,7 @@ if exist test\json_abuse.exe (
 )
 del test\json_abuse.exe 2>nul
 echo --- PR-003 verdict reducer exhaustif (INV-001/002/003/011)
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\reducer_exhaustive.exe test\reducer_exhaustive.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\reducer_exhaustive.exe test\reducer_exhaustive.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
 if exist test\reducer_exhaustive.exe (
   test\reducer_exhaustive.exe | findstr "OK" >nul && echo [OK] reducer_exhaustive lulus INV-001/002/003/011 + exhaustive || echo [FAIL] reducer_exhaustive reducer menyimpang
 ) else (
@@ -37,7 +37,7 @@ if exist test\reducer_exhaustive.exe (
 )
 del test\reducer_exhaustive.exe 2>nul
 echo --- IDE-1 sanitizer location extractor (qwen-review): fixture deterministik
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\sanloc_test.exe test\sanloc_test.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\sanloc_test.exe test\sanloc_test.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
 if exist test\sanloc_test.exe (
   test\sanloc_test.exe | findstr "FAIL=0" >nul && echo [OK] sanloc_test lulus IDE-1 location extractor || echo [FAIL] sanloc_test menemukan kegagalan
 ) else (
@@ -47,14 +47,14 @@ del test\sanloc_test.exe 2>nul
 echo --- IDE-4 regression replay pasca-repair (qwen-review): in-process replay corpus
 if exist test\.replay_tmp rmdir /s /q test\.replay_tmp
 if exist .myc\regression rmdir /s /q .myc\regression
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\regress_replay_test.exe test\regress_replay_test.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\regress_replay_test.exe test\regress_replay_test.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
 if exist test\regress_replay_test.exe (
   test\regress_replay_test.exe | findstr "FAIL=0" >nul && echo [OK] regress_replay_test lulus IDE-4 replay pasca-repair || echo [FAIL] regress_replay_test menemukan kegagalan
 ) else (
   echo [WARN] regress_replay_test gagal dibangun
 )
 del test\regress_replay_test.exe 2>nul
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\runtime_repair_test.exe test\runtime_repair_test.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\runtime_repair_test.exe test\runtime_repair_test.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
 if exist test\runtime_repair_test.exe (
   test\runtime_repair_test.exe | findstr "FAIL=0" >nul && echo [OK] runtime_repair_test lulus IDE-2 repair template runtime || echo [FAIL] runtime_repair_test menemukan kegagalan
 ) else (
@@ -62,7 +62,7 @@ if exist test\runtime_repair_test.exe (
 )
 del test\runtime_repair_test.exe 2>nul
 echo --- NEMO-1..4 agent next_check / edits / delta / diagnostic_class
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\agent_nemo_test.exe test\agent_nemo_test.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\agent_nemo_test.exe test\agent_nemo_test.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
 if exist test\agent_nemo_test.exe (
   test\agent_nemo_test.exe | findstr "FAIL=0" >nul && echo [OK] agent_nemo_test lulus NEMO-1..4 || echo [FAIL] agent_nemo_test menemukan kegagalan
 ) else (
@@ -70,7 +70,7 @@ if exist test\agent_nemo_test.exe (
 )
 del test\agent_nemo_test.exe 2>nul
 echo --- myc.lite.v1 agen-bodoh (action/span + watch-diff)
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\lite_agent_test.exe test\lite_agent_test.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\lite_agent_test.exe test\lite_agent_test.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
 if exist test\lite_agent_test.exe (
   test\lite_agent_test.exe | findstr "FAIL=0" >nul && echo [OK] lite_agent_test lulus kasus agen-bodoh || echo [FAIL] lite_agent_test menemukan kegagalan
 ) else (
@@ -211,7 +211,7 @@ myc.exe canary list > %OUT% 2>&1
 findstr /C:"11 canary untuk 9 backend" %OUT% >nul && echo [OK] Fase 6 canary registry lengkap || echo [WARN] Fase 6 canary registry tidak lengkap
 del %OUT%
 echo --- self-dogfooding: semua source myc harus OK
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c) do (
   echo === %%f
   myc.exe check "%%f" > %OUT%
   findstr /B /C:"verdict:" %OUT%
@@ -228,7 +228,7 @@ findstr /C:"stderr_text" %OUT% >nul && echo [WARN] --json-summary seharusnya tan
 findstr /C:"fingerprint" %OUT% >nul && echo [WARN] --json-summary seharusnya tanpa fingerprint || echo [OK] --json-summary tanpa fingerprint
 del %OUT%
 echo --- run fixtures (--run) harus RUNTIME_VIOLATION utk bad_run*
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c) do (
   echo === %%f
   myc.exe check "%%f" --run > %OUT%
   findstr /B /C:"verdict:" /C:"assurance:" %OUT%
@@ -247,13 +247,13 @@ findstr /B /C:"verdict:" /C:"assurance:" %OUT%
 myc.exe check dogfood\dogfood_tilemap.c --run > %OUT%
 findstr /B /C:"verdict:" /C:"assurance:" %OUT%
 echo --- prove fixtures (--prove): ok_prove harus L2, bad_prove harus PROVE_VIOLATION
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c) do (
   echo === %%f
   myc.exe check "%%f" --prove > %OUT%
   findstr /B /C:"verdict:" /C:"assurance:" /C:"prove:" /C:"  alarms:" %OUT%
 )
 echo --- checked fixtures (--checked): ok_checked harus L4, bad_checked harus COMPILE_ERROR
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c) do (
   echo === %%f
   myc.exe check "%%f" --checked > %OUT%
   findstr /B /C:"verdict:" /C:"assurance:" /C:"checked:" /C:"  build_ok:" %OUT%
@@ -344,7 +344,7 @@ if exist test\_parity_prod.exe if exist test\_parity_ck.exe (
 del test\_parity_prod.exe test\_parity_ck.exe test\_parity_prod.txt test\_parity_ck.txt 2>nul
 del %OUT%
 echo --- filc fixtures (--filc): di-skip bila Fil-C tak tersedia (non-blocking)
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c) do (
   echo === %%f
   myc.exe check "%%f" --filc > %OUT%
   findstr /B /C:"verdict:" /C:"assurance:" /C:"filc:" /C:"  panics:" %OUT%
@@ -536,7 +536,7 @@ if not defined REC1 echo [WARN] receipt tidak terbaca
 if defined REC1 if "%REC1%"=="%REC2%" echo [OK] receipt deterministik lintas-run, CI-portabel
 if defined REC1 if not "%REC1%"=="%REC2%" echo [WARN] receipt tidak deterministik: %REC1% vs %REC2%
 echo --- driver fixtures (D2.2, --driver): ok_driver harus OK, bad_driver_oob harus DRIVER_VIOLATION
-for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c) do (
+for %%f in (myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c mcp.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c) do (
   echo === %%f
   myc.exe check "%%f" --driver > %OUT%
   findstr /B /C:"verdict:" /C:"assurance:" /C:"driver:" /C:"  funcs:" /C:"  cases:" %OUT%
@@ -693,7 +693,7 @@ findstr /C:"7 perubahan" %TEMP%\myc_abi_d.txt >nul && echo [OK] abi: delta 7 bar
 findstr /C:"MEMBER Point z off=8" %TEMP%\myc_abi_d.txt >nul && echo [OK] abi: offset member baru terdeteksi || echo [FAIL] abi: offset member baru tidak terdeteksi
 myc.exe check test\fixtures\abi_stable.c --abi --no-cache --json-summary > %OUT% 2>&1
 findstr /C:"\"abi\":{\"ran\":true,\"structs\":3" %OUT% >nul && echo [OK] abi: check --abi masuk JSON summary || echo [FAIL] abi: JSON summary abi hilang
-gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\abi_tx_reject.exe test\abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c > %TEMP%\myc_abi_build.txt 2>&1
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\abi_tx_reject.exe test\abi_tx_reject.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c > %TEMP%\myc_abi_build.txt 2>&1
 if exist test\abi_tx_reject.exe (
   test\abi_tx_reject.exe >nul 2>&1 && echo [OK] abi: ABI drift ditolak dalam transaction - exit criteria SOL-14 || echo [FAIL] abi: transaction tidak menolak ABI drift
   del test\abi_tx_reject.exe

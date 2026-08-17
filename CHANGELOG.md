@@ -42,6 +42,12 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   `myc.spec.json`; ensiklopedia flag di `docs/capabilities.md`.
 - **B2 — self-ASan Linux opsional.** Job CI `linux-asan`
   (`continue-on-error`), bukan gate rilis.
+- **P3 — pecah `driver.c`.** Gate `--exhaustive` di `exhaustive.c`,
+  `--fuzz` di `fuzz.c`; helper bersama `driver_internal.h`. Compare
+  (A4) tetap di `driver.c`. `cmp_rng_state` jadi `_Thread_local`.
+- **G6 — M6–M10.** `bench/run_success_metrics.sh`: span lite, cache-hit
+  inner-loop, payload ≤2 KiB, STOP vs `--scenario auto`, first-action
+  enum.
 
 ### Changed
 
