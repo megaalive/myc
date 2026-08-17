@@ -6,6 +6,8 @@
 > tidak boleh lebih kuat dari bukti yang benar-benar dihasilkan pipeline.
 > Referensi implementasi: `AGENTS.md`, `docs/capabilities.md`,
 > `docs/production-invariants.md`, `docs/verdict-state-inventory.md`.
+> Level rilis saat ini: **PR-3 Production Ready** (2026-08-17). PR-4
+> di luar scope.
 
 myc adalah **evidence orchestrator dan trust broker untuk C yang ditulis
 agent dan manusia**: ia mengoordinasikan backend semantik (gcc, clang
@@ -37,7 +39,7 @@ Diizinkan:
 
 Tidak diizinkan: diiklankan sebagai stabil.
 
-### PR-1 — Usable (posisi myc 2026-08-11; PR-2 tercapai 2026-08-17)
+### PR-1 — Usable (tercapai 2026-08-11)
 
 Persyaratan:
 
@@ -49,7 +51,7 @@ Persyaratan:
 - test anti-false-OK ada (`test/_anti_false_ok.bat`, `test/_anti_false_ok.sh`,
   `tests/spoof_marker_run.c`, `tests/bad_driver_spoof.c`).
 
-### PR-2 — Dependable (posisi myc saat ini, 2026-08-17)
+### PR-2 — Dependable (tercapai 2026-08-17)
 
 Persyaratan (status tiap item tercantum):
 
@@ -61,25 +63,32 @@ Persyaratan (status tiap item tercantum):
 | Cache/receipt replay deterministik | Ya (`_regress_run.bat` blok cache + receipt; MYC-AUDIT-042); PR-A01 soak miss/hit tanpa drift |
 | Schema punya versi + test kompatibilitas | `myc.result.v1` + registry `docs/schema-registry.md` + `test/schema_compat.c` (PR-015) |
 | Backend tak tersedia jadi typed debt | Ya (`myc_build_debt` gate.c; MYC-AUDIT-040/041/042) |
-| Crash/hang corpus adversial = 0 | Sebagian: `test/_corpus_abuse.bat`, `oom_alloc`, `mcp_abuse`; soak beban berulang = PR-A01 (dimulai) |
+| Crash/hang corpus adversial = 0 | `test/_corpus_abuse.bat`, `oom_alloc`, `mcp_abuse`; soak `test/pra01_soak.c` |
 
-### PR-3 — Production Ready (target plan ini)
+### PR-3 — Production Ready (posisi myc saat ini, 2026-08-17)
 
-Semua kondisi PR-2 **plus**:
+Semua kondisi PR-2 **plus** item di bawah. Klaim ini **bukan** PR-4
+(High Assurance) dan **bukan** "OK = program aman".
 
-- matriks platform/backend didukung didefinisikan formal (P5/P6);
-- rilis kandidat lolos soak/fault/adversarial suite (PR-A);
-- tidak ada bug trust-core P0/P1 terbuka (PR-004 closure + P0-T05);
-- artefak rilis punya provenance + checksum (P11);
-- rilis dapat dibangun ulang reproducible dalam toleransi terdokumentasi (P11);
-- kontrak kompatibilitas CLI/JSON/MCP/receipt ada (P4);
-- threshold benchmark mencegah regresi kualitas senyap (P9);
-- prosedur insiden produksi ada (P15);
-- ≥2 codebase C eksternal nyata di-dogfood terus-menerus (P9-T03);
-- myc bertahan beban verifikasi self-hosted berulang tanpa leak, deadlock,
-  cache basi, atau verdict drift (PR-A01; soak `test/pra01_soak.c`
-  dimulai 2026-08-17 — N× no-cache + miss/hit persist; leak = job
-  `linux-asan`; deadlock = PR-006/007).
+| Item | Status | Bukti |
+|---|---|---|
+| P5/P6 matriks platform/backend | Ditutup | `docs/backends.md` tier A/B/C + min_version; P6-T01 host Windows/Linux x86-64; ARM/RISC-V = target `--matrix` saja |
+| PR-A soak / adversarial | Ditutup dengan batas jujur | `test/pra01_soak.c`, `mcp_abuse`, corpus abuse, `proc_*`. Job `linux-asan` = `continue-on-error`, **bukan** gate rilis |
+| PR-004 / P0-T05 trust-core P0/P1 | Ditutup | Closure `docs/audit-closure/MYC-AUDIT-001`..`005.md`; regresi di CI sejak 2026-08-12 |
+| P11 provenance + checksum | Ditutup | `release.yml` → `SHA256SUMS` + stempel `git:`; rebuild di `docs/release.md`. **Bukan** bit-identical |
+| P4 kontrak CLI/JSON/MCP/receipt | Ditutup | PR-015 `docs/schema-registry.md` + `test/schema_compat.c` |
+| P9 threshold benchmark | Ditutup | `bench/run_bench.sh` (20 task, mismatch = FAIL CI); `bench/run_success_metrics.sh` M1–M10 |
+| P15 prosedur insiden | Ditutup | `docs/incident.md` |
+| P9-T03 ≥2 C eksternal | Ditutup | `dogfood/dogfood_ring.c`, `dogfood_config.c`, `dogfood_tilemap.c` di `_ci_linux.sh` + `_regress_run.bat` |
+| PR-A01 soak berulang | Ditutup | `test/pra01_soak.c`: N× no-cache + miss/hit persist tanpa drift verdict/receipt |
+| P12 `--production` | Ditutup | INV-015: floor min_version; `test/production_mode.c` |
+
+Batas yang tetap terlihat (bukan utang tersembunyi):
+
+- Frama-C / Fil-C = Tier B (ketiadaan = UNAVAILABLE + debt, bukan FAIL).
+- `linux-asan` tidak memblokir rilis.
+- Rebuild rilis tidak dijamin bit-identical.
+- Heuristik tetap non-blocking.
 
 ### PR-4 — High Assurance
 
@@ -111,6 +120,5 @@ atau backend proof yang tidak diminta ikut berjalan.
 
 ## Rekomendasi eksekusi
 
-Urutan kerja dari plan §21 (P0 → P1 → ... → P15 → PR-A). Batch PR-001..004
-(P0) adalah fondasi yang sedang dikerjakan; lihat `myc-production-readiness-plan.md`
-untuk detail mileston per batch.
+PR-0..PR-3 tertutup di dokumen ini. PR-4 (High Assurance) **tetap di luar
+scope**. Rilis biner: `docs/release.md`. Insiden: `docs/incident.md`.

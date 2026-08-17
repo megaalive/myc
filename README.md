@@ -155,6 +155,9 @@ regression.
 | [`docs/capabilities.md`](docs/capabilities.md) | Gate matrix: what each flag does **and does not** guarantee |
 | [`docs/mcp-tools.md`](docs/mcp-tools.md) | MCP tool schemas |
 | [`docs/result-schema.md`](docs/result-schema.md) | Frozen `myc.result.v1` / `myc.agent.v2` / `myc.lite.v1` |
+| [`docs/backends.md`](docs/backends.md) | Backend tiers + host support contract |
+| [`docs/release.md`](docs/release.md) | Tag, checksums, rebuild (not bit-identical) |
+| [`docs/incident.md`](docs/incident.md) | False-OK / rollback / what to keep |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release notes |
 
 Baseline bench: `bash bench/run_bench.sh` (20 tasks; reports in `bench/reports/`).

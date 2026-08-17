@@ -81,6 +81,15 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   men-stempel `-DMYC_GIT_SHA` (`myc version` → `git: <sha>`), dan menulis
   commit SHA di catatan rilis. Rebuild didokumentasikan di
   `docs/release.md`; biner bit-identical **tidak** diklaim.
+- **P15 — prosedur insiden.** `docs/incident.md`: false-OK = P0, rollback
+  tag, jejak receipt/ledger yang harus disimpan.
+- **P6-T01 — host support.** Windows + Linux x86-64 production; ARM/RISC-V
+  hanya target `--matrix` (`docs/backends.md`).
+- **P9 / P9-T03.** Ambang bench (`run_bench.sh` 20 task, success metrics
+  M1–M10) mem-FAIL CI; dogfood `dogfood_ring` / `dogfood_config` /
+  `dogfood_tilemap` tetap di CI. PR-3 ditandai tercapai di
+  `docs/production-readiness.md` (batas: `linux-asan` bukan gate rilis,
+  Frama-C/Fil-C Tier B, OK ≠ aman).
 
 ### Changed
 

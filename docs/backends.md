@@ -61,10 +61,18 @@ DIDEKLARASIKAN — keberadaan biner di PATH tidak menjadikan backend
    myc tetap menjalankan tool yang ada (perilaku lama, jujur di
    `myc backends`).
 
-## Host vs target
+## Host vs target (P6-T01)
 
-Tabel di atas adalah **host support** (myc berjalan dan memanggil backend
-di mesin itu). `matrix` adalah cross-compile **target support** — host
-myc di Windows/Linux x86-64 dapat menargetkan ARM/RISC-V; itu TIDAK
-berarti myc host runtime didukung production di ARM/RISC-V (lihat
-P6-T01 support contract).
+Tabel registry di atas adalah **host support** (myc berjalan dan
+memanggil backend di mesin itu). `matrix` adalah cross-compile
+**target support**.
+
+| Host myc | Arch | Kontrak produksi |
+|---|---|---|
+| Windows | x86-64 | Ya — CI `_regress_run.bat` |
+| Linux | x86-64 | Ya — CI `_ci_linux.sh` |
+| ARM, RISC-V, 32-bit, macOS, big-endian | — | Bukan host produksi. ARM/RISC-V hanya **target** `--matrix` dari host x86-64 |
+
+Host myc di Windows/Linux x86-64 dapat menargetkan ARM/RISC-V lewat
+`myc matrix`; itu **tidak** berarti myc host runtime didukung production
+di ARM/RISC-V. Temuan di luar tabel ini = best-effort, bukan kontrak.
