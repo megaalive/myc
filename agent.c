@@ -6,10 +6,13 @@
 #include "observation.h"
 #include "causal.h"
 #include "nextbest.h"
+#include "compile.h"
+#include "lint.h"
 #include <string.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <ctype.h>
 
 static char *agent_strdup(const char *s)
 {
@@ -312,6 +315,221 @@ const char *myc_agent_result_json(const myc_agent_result *ar)
     return out;
 }
 
+/* NEMO-4: gate id dari verdict/sanloc/gate_status — bukan hardcode compile. */
+static myc_gate_id agent_primary_gate(const myc_result *res)
+{
+    const myc_gate_result *g;
+
+    if (!res)
+        return MYC_GATE_COMPILE;
+    if (res->verdict == MC_RUNTIME_VIOLATION || res->sanloc_have)
+        return MYC_GATE_RUNTIME;
+    if (res->verdict == MC_PROVE_VIOLATION)
+        return MYC_GATE_PROVE;
+    if (res->verdict == MC_DRIVER_VIOLATION)
+        return MYC_GATE_DRIVER;
+    if (res->verdict == MC_FILC_VIOLATION)
+        return MYC_GATE_FILC;
+    g = myc_gate_get(res, MYC_GATE_CHECKED);
+    if (g && g->status == MYC_GATE_COMPLETED_FINDINGS)
+        return MYC_GATE_CHECKED;
+    g = myc_gate_get(res, MYC_GATE_ANALYZER);
+    if (g && g->status == MYC_GATE_COMPLETED_FINDINGS)
+        return MYC_GATE_ANALYZER;
+    return MYC_GATE_COMPILE;
+}
+
+static myc_gate_status agent_gate_status(const myc_result *res, myc_gate_id id)
+{
+    const myc_gate_result *g = myc_gate_get(res, id);
+    return g ? g->status : MYC_GATE_NOT_REQUESTED;
+}
+
+/* Flatten newline di description menjadi spasi (satu baris JSON). */
+static void agent_flatten_ws(char *s)
+{
+    if (!s)
+        return;
+    for (; *s; s++) {
+        if (*s == '\n' || *s == '\r' || *s == '\t')
+            *s = ' ';
+    }
+}
+
+/* Parse "warning: fungsi dilarang: NAME (non-blocking)" -> NAME. */
+static int agent_parse_denied_name(const char *msg, char *out, size_t outcap)
+{
+    const char *p;
+    size_t n = 0;
+
+    if (!msg || !out || outcap < 2)
+        return 0;
+    p = strstr(msg, "fungsi dilarang:");
+    if (!p)
+        return 0;
+    p += strlen("fungsi dilarang:");
+    while (*p == ' ' || *p == '\t')
+        p++;
+    while (*p && *p != ' ' && *p != '(' && *p != '\t' && n + 1 < outcap) {
+        if (!isalnum((unsigned char)*p) && *p != '_')
+            break;
+        out[n++] = *p++;
+    }
+    out[n] = '\0';
+    return n > 0;
+}
+
+static int agent_forbidden_has(const myc_agent_result *ar, const char *region)
+{
+    int i;
+    for (i = 0; i < ar->forbidden_count; i++) {
+        if (ar->forbidden[i].region &&
+            strcmp(ar->forbidden[i].region, region) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+/* NEMO-2: isi allowed_edits / preserve / forbidden_changes. */
+static void agent_fill_edits(const myc_result *res, myc_agent_result *ar,
+                             const char *source, size_t source_len)
+{
+    const char *msg = NULL;
+    int primary_line = 0;
+    char region_buf[80];
+    char *desc = NULL;
+    int need_preserve = 0;
+    int i;
+
+    if (ar->has_primary) {
+        msg = ar->primary_finding.message;
+        if (ar->primary_finding.finding_id &&
+            ar->primary_finding.finding_id[0] == 'f' &&
+            ar->primary_finding.finding_id[1] == '-') {
+            primary_line = (int)strtoul(
+                ar->primary_finding.finding_id + 2, NULL, 16);
+        }
+    } else if (res->diag_count > 0 && res->diags[0].message) {
+        msg = res->diags[0].message;
+        primary_line = res->diags[0].line;
+    }
+
+    /* --- allowed_edits (satu entri bila ada finding) --- */
+    if (res->finding == MYC_FINDING_FINDINGS ||
+        res->verdict == MC_RUNTIME_VIOLATION ||
+        res->verdict == MC_COMPILE_ERROR ||
+        res->verdict == MC_PROVE_VIOLATION ||
+        res->verdict == MC_DRIVER_VIOLATION ||
+        res->verdict == MC_FILC_VIOLATION ||
+        ar->has_primary) {
+        region_buf[0] = '\0';
+        if (res->sanloc_have && res->sanloc_function &&
+            res->sanloc_function[0]) {
+            snprintf(region_buf, sizeof(region_buf), "%s",
+                     res->sanloc_function);
+        } else if (primary_line > 0) {
+            snprintf(region_buf, sizeof(region_buf), "line %d",
+                     primary_line);
+        } else if (res->sanloc_line > 0) {
+            snprintf(region_buf, sizeof(region_buf), "line %d",
+                     res->sanloc_line);
+        }
+
+        if (region_buf[0] != '\0' &&
+            ar->allowed_edit_count < MYC_AGENT_MAX_FRONTIER) {
+            if (res->verdict == MC_RUNTIME_VIOLATION &&
+                res->sanloc_have && source && source_len > 0) {
+                myc_runtime_repair *rr =
+                    myc_repair_runtime_patch(res, source, source_len);
+                if (rr) {
+                    if (rr->patch_text)
+                        desc = agent_strdup(rr->patch_text);
+                    else if (rr->why)
+                        desc = agent_strdup(rr->why);
+                    myc_runtime_repair_free(rr);
+                }
+            }
+            if (!desc && msg) {
+                char *rp = myc_repair_from_diagnostic(msg);
+                if (rp) {
+                    desc = rp; /* sudah malloc'd */
+                } else if (res->verdict != MC_COMPILE_ERROR &&
+                           res->verdict != MC_RUNTIME_VIOLATION) {
+                    const char *lf = myc_lint_fix(msg);
+                    if (lf)
+                        desc = agent_strdup(lf);
+                }
+                if (!desc) {
+                    /* potong message diagnostic ~200 char */
+                    size_t ml = strlen(msg);
+                    if (ml > 200)
+                        ml = 200;
+                    desc = myc_malloc(ml + 1);
+                    if (desc) {
+                        memcpy(desc, msg, ml);
+                        desc[ml] = '\0';
+                    }
+                }
+            }
+            if (desc) {
+                agent_flatten_ws(desc);
+                ar->allowed_edits[ar->allowed_edit_count].region =
+                    agent_strdup(region_buf);
+                ar->allowed_edits[ar->allowed_edit_count].description =
+                    desc;
+                ar->allowed_edit_count++;
+                need_preserve = 1;
+                desc = NULL;
+            }
+        }
+    }
+
+    /* --- preserve (anti-churn, teks dari context.c SEC_PRESERVE) --- */
+    if (need_preserve) {
+        const char *sym0 = region_buf[0] ? region_buf : "*";
+        static const char *const PRES_SYM[] = {
+            NULL, /* diisi sym0 */
+            "@requires/@ensures",
+            "sanitizer",
+            "ABI"
+        };
+        static const char *const PRES_RSN[] = {
+            "jangan ubah kode di luar fungsi yang disorot (anti-churn)",
+            "jangan ubah/melemahkan kontrak //@",
+            "jangan menurunkan assurance / menonaktifkan sanitizer, "
+                "warning, atau assert",
+            "pertahankan signature/ABI fungsi publik"
+        };
+        for (i = 0; i < 4 &&
+                    ar->preserve_count < MYC_AGENT_MAX_PRESERVE; i++) {
+            const char *sym = (i == 0) ? sym0 : PRES_SYM[i];
+            ar->preserve[ar->preserve_count].symbol = agent_strdup(sym);
+            ar->preserve[ar->preserve_count].reason =
+                agent_strdup(PRES_RSN[i]);
+            ar->preserve_count++;
+        }
+    }
+
+    /* --- forbidden_changes dari diag denylist --- */
+    for (i = 0; i < res->diag_count &&
+                ar->forbidden_count < MYC_AGENT_MAX_FORBIDDEN; i++) {
+        char name[64];
+        char region[72];
+        const char *m = res->diags[i].message;
+        if (!m || !strstr(m, "fungsi dilarang"))
+            continue;
+        if (!agent_parse_denied_name(m, name, sizeof(name)))
+            continue;
+        snprintf(region, sizeof(region), "%s()", name);
+        if (agent_forbidden_has(ar, region))
+            continue;
+        ar->forbidden[ar->forbidden_count].region = agent_strdup(region);
+        ar->forbidden[ar->forbidden_count].reason =
+            agent_strdup("denylist observasi, non-blocking");
+        ar->forbidden_count++;
+    }
+}
+
 const myc_agent_finding *myc_agent_select_primary(const myc_result *res)
 {
     static myc_agent_finding primary;
@@ -327,7 +545,9 @@ const myc_agent_finding *myc_agent_select_primary(const myc_result *res)
         conf = res->diags[0].confidence;
     }
 
-    primary.diagnostic_class = agent_strdup("memory-safety");
+    /* NEMO-4: class = gate id pendek, bukan label generik. */
+    primary.diagnostic_class = agent_strdup(
+        myc_gate_id_short(agent_primary_gate(res)));
     primary.message = agent_strdup(msg);
     primary.confidence = conf;
     primary.repro = NULL;
@@ -342,17 +562,49 @@ char *myc_agent_build_witness(const myc_result *res)
     return agent_strdup(res->capsule->source_sha256);
 }
 
-char *myc_agent_build_next_check(const myc_result *res)
+/* NEMO-1: next_check dari verdict/gate — flag yang sudah ada, bukan --focus. */
+char *myc_agent_build_next_check(const myc_result *res, const char *path)
 {
-    (void)res;
-    return agent_strdup("myc check <file> --agent");
+    const char *p = (path && path[0]) ? path : "<file>";
+    char buf[320];
+
+    if (!res)
+        return agent_strdup("myc check <file> --agent");
+
+    if (res->verdict == MC_RUNTIME_VIOLATION) {
+        snprintf(buf, sizeof(buf), "myc check %s --run --agent", p);
+    } else if (res->verdict == MC_COMPILE_ERROR) {
+        snprintf(buf, sizeof(buf), "myc check %s --agent", p);
+    } else if (res->verdict == MC_DRIVER_VIOLATION) {
+        snprintf(buf, sizeof(buf), "myc check %s --driver --agent", p);
+    } else if (res->verdict == MC_PROVE_VIOLATION ||
+               agent_gate_status(res, MYC_GATE_PROVE) ==
+                   MYC_GATE_INCONCLUSIVE) {
+        snprintf(buf, sizeof(buf), "myc check %s --prove --agent", p);
+    } else if (res->verdict == MC_FILC_VIOLATION) {
+        snprintf(buf, sizeof(buf), "myc check %s --filc --agent", p);
+    } else if (agent_gate_status(res, MYC_GATE_CHECKED) ==
+               MYC_GATE_COMPLETED_FINDINGS) {
+        snprintf(buf, sizeof(buf), "myc check %s --checked --agent", p);
+    } else if (res->verdict == MC_OK) {
+        myc_gate_status rs = agent_gate_status(res, MYC_GATE_RUNTIME);
+        if (rs == MYC_GATE_NOT_REQUESTED || rs == MYC_GATE_NOT_APPLICABLE)
+            snprintf(buf, sizeof(buf), "myc check %s --run --agent", p);
+        else
+            snprintf(buf, sizeof(buf), "myc check %s --agent", p);
+    } else {
+        snprintf(buf, sizeof(buf), "myc check %s --agent", p);
+    }
+    return agent_strdup(buf);
 }
 
 int myc_build_agent_result(const myc_result *res,
                                   myc_agent_result *ar,
                                   const char *intent_hash,
                                   const char *scenario_hash,
-                                  const myc_pack_info *pack)
+                                  const myc_pack_info *pack,
+                                  const char *source,
+                                  size_t source_len)
 {
     size_t i;
     const char *js = NULL;
@@ -390,6 +642,12 @@ int myc_build_agent_result(const myc_result *res,
         ar->receipt_sha256 = agent_strdup(res->receipt_sha256);
     }
 
+    /* NEMO-3: delta_receipt_sha = receipt run sebelumnya (ledger parent).
+     * Bermakna untuk re-run source_sha identik; edit source = parent
+     * tidak ketemu (perilaku ledger hari ini, jangan "diperbaiki" di sini). */
+    if (res->receipt_parent && res->receipt_parent[0] != '\0')
+        ar->delta_receipt_sha = agent_strdup(res->receipt_parent);
+
     /* Primary finding: ROOT CAUSE dari causal graph dulu (SOL-09) --
      * bukan sekadar diag CONFIRMED pertama. Setelah root hilang,
      * dependent findings diverifikasi ulang (lihat ar->causal_json). */
@@ -409,11 +667,16 @@ int myc_build_agent_result(const myc_result *res,
             if (ridx >= 0) {
                 const myc_diagnostic *d = &res->diags[ridx];
                 myc_agent_finding *pf = &ar->primary_finding;
+                int line = d->line;
+                /* Prefer sanloc line bila available (diag runtime sering line=0). */
+                if (res->sanloc_have && res->sanloc_line > 0)
+                    line = res->sanloc_line;
                 pf->finding_id = agent_printf("f-%08x",
-                    (unsigned)d->line);
+                    (unsigned)line);
                 pf->anchor = agent_strdup(d->message);
+                /* NEMO-4 */
                 pf->diagnostic_class = agent_strdup(
-                    myc_gate_id_short(MYC_GATE_COMPILE));
+                    myc_gate_id_short(agent_primary_gate(res)));
                 pf->message = agent_strdup(d->message);
                 pf->confidence = d->confidence;
                 pf->repro = NULL;
@@ -428,6 +691,22 @@ int myc_build_agent_result(const myc_result *res,
             ar->causal_json = myc_causal_json(&cg);
 
         myc_causal_free(&cg);
+    }
+
+    /* Runtime tanpa diag CONFIRMED di finding sumbu A: tetap primary dari sanloc. */
+    if (!ar->has_primary && res->sanloc_have) {
+        myc_agent_finding *pf = &ar->primary_finding;
+        int line = res->sanloc_line > 0 ? res->sanloc_line : 0;
+        pf->finding_id = agent_printf("f-%08x", (unsigned)line);
+        pf->anchor = agent_strdup(res->sanloc_function
+                                      ? res->sanloc_function : "");
+        pf->diagnostic_class = agent_strdup(
+            myc_gate_id_short(MYC_GATE_RUNTIME));
+        pf->message = agent_strdup(res->sanloc_kind
+                                       ? res->sanloc_kind
+                                       : "runtime violation");
+        pf->confidence = MYC_CONF_CONFIRMED;
+        ar->has_primary = 1;
     }
 
     /* Witness from myc_witness (Fase 1) */
@@ -452,9 +731,14 @@ int myc_build_agent_result(const myc_result *res,
         }
     }
 
-    /* Next check */
-    ar->next_check.command = agent_strdup(
-        "myc check <file> --agent");
+    /* NEMO-2: allowed_edits / preserve / forbidden */
+    agent_fill_edits(res, ar, source, source_len);
+
+    /* NEMO-1: next_check situasional + finding_id dari primary */
+    ar->next_check.command = myc_agent_build_next_check(res, NULL);
+    if (ar->has_primary && ar->primary_finding.finding_id)
+        ar->next_check.finding_id =
+            agent_strdup(ar->primary_finding.finding_id);
     ar->has_next_check = 1;
 
     /* Frontier + Experiments (Fase 3, SOL-02/SOL-17): isi peta frontier

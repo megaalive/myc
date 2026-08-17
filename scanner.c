@@ -409,8 +409,15 @@ int myc_scan_calls(const char *pre, size_t len, myc_result *res)
 
                     if (j < len && pre[j] == '(') {
                         if (myc_policy_deny_function(ident)) {
-                            add_diag(res, src_line, (int)save_col,
-                                     "warning: fungsi dilarang (non-blocking)");
+                            /* NEMO-2: sertakan nama fungsi agar
+                             * forbidden_changes agent bisa diisi
+                             * tanpa rescanner source. */
+                            char dmsg[160];
+                            snprintf(dmsg, sizeof(dmsg),
+                                     "warning: fungsi dilarang: %s "
+                                     "(non-blocking)",
+                                     ident);
+                            add_diag(res, src_line, (int)save_col, dmsg);
                         }
                     }
                 }

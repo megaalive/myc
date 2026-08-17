@@ -2972,20 +2972,36 @@ int main(int argc, char **argv)
                 return 1;
             }
         }
-        if (needs_free)
-            myc_free((void *)src);
-    }
+        /* NEMO-2: --agent butuh source untuk repair template; defer free. */
+        {
+            const char *agent_src = NULL;
+            size_t      agent_len = 0;
+            int         agent_free = 0;
 
-    if (is_context) {
-        /* paket sudah dicetak di atas (membutuhkan source); tanpa report */
-    } else if (req.as_json)
-        myc_report_json(&res);
-    else if (req.json_summary)
-        myc_report_json_summary(&res);
-    else if (req.agent)
-        myc_report_agent(&res, pinfo_loaded ? &pinfo : NULL);
-    else
-        myc_report_text(&res);
+            if (req.agent && !is_context) {
+                agent_src = src;
+                agent_len = len;
+                agent_free = needs_free;
+                needs_free = 0;
+            }
+            if (needs_free)
+                myc_free((void *)src);
+
+            if (is_context) {
+                /* paket sudah dicetak di atas (membutuhkan source) */
+            } else if (req.as_json)
+                myc_report_json(&res);
+            else if (req.json_summary)
+                myc_report_json_summary(&res);
+            else if (req.agent) {
+                myc_report_agent(&res, pinfo_loaded ? &pinfo : NULL,
+                                 agent_src, agent_len);
+                if (agent_free)
+                    myc_free((void *)agent_src);
+            } else
+                myc_report_text(&res);
+        }
+    }
 
     myc_result_free(&res);
     if (pinfo_loaded)

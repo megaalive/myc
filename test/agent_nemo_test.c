@@ -1,0 +1,193 @@
+/*
+ * agent_nemo_test.c -- NEMO-1..4: next_check, edits, delta, diagnostic_class.
+ *
+ * Fixture myc_result (tanpa gcc/clang). Deterministik.
+ *
+ * Jalankan: gcc -O2 -std=c11 -Wall -Wextra -Werror -pedantic -I.
+ *           -DMYC_NO_MAIN -o test/agent_nemo_test.exe test/agent_nemo_test.c
+ *           <SRCS>
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "myc.h"
+#include "agent.h"
+#include "gate.h"
+
+static int PASS = 0;
+static int FAIL = 0;
+
+#define CHECK(cond, msg)                                              \
+    do {                                                              \
+        if (cond) {                                                   \
+            PASS++;                                                   \
+        } else {                                                      \
+            FAIL++;                                                   \
+            fprintf(stderr, "[FAIL] %s (%s:%d)\n", msg, __FILE__,     \
+                    __LINE__);                                        \
+        }                                                             \
+    } while (0)
+
+static void res_init(myc_result *res)
+{
+    memset(res, 0, sizeof(*res));
+    myc_result_init(res);
+}
+
+static void test_next_check(void)
+{
+    myc_result res;
+    char *cmd;
+
+    /* T1: RUNTIME_VIOLATION -> --run */
+    res_init(&res);
+    res.verdict = MC_RUNTIME_VIOLATION;
+    cmd = myc_agent_build_next_check(&res, NULL);
+    CHECK(cmd && strstr(cmd, "--run") && strstr(cmd, "--agent"),
+          "T1: RUNTIME -> --run --agent");
+    CHECK(cmd && !strstr(cmd, "--prove"), "T1: tanpa --prove");
+    myc_free(cmd);
+    myc_result_free(&res);
+
+    /* T2: COMPILE_ERROR -> tanpa --run */
+    res_init(&res);
+    res.verdict = MC_COMPILE_ERROR;
+    cmd = myc_agent_build_next_check(&res, "x.c");
+    CHECK(cmd && strcmp(cmd, "myc check x.c --agent") == 0,
+          "T2: COMPILE_ERROR -> myc check x.c --agent");
+    myc_free(cmd);
+    myc_result_free(&res);
+
+    /* T3: OK + runtime untested -> --run */
+    res_init(&res);
+    res.verdict = MC_OK;
+    myc_gate_set_status(&res, MYC_GATE_RUNTIME, MYC_GATE_NOT_REQUESTED,
+                        NULL);
+    cmd = myc_agent_build_next_check(&res, NULL);
+    CHECK(cmd && strstr(cmd, "--run"), "T3: OK untested runtime -> --run");
+    myc_free(cmd);
+    myc_result_free(&res);
+
+    /* T4: OK + runtime clean -> tanpa --run */
+    res_init(&res);
+    res.verdict = MC_OK;
+    myc_gate_set_status(&res, MYC_GATE_RUNTIME, MYC_GATE_COMPLETED_CLEAN,
+                        NULL);
+    cmd = myc_agent_build_next_check(&res, NULL);
+    CHECK(cmd && !strstr(cmd, "--run"),
+          "T4: OK + runtime clean -> tanpa --run");
+    myc_free(cmd);
+    myc_result_free(&res);
+
+    /* T5: DRIVER_VIOLATION */
+    res_init(&res);
+    res.verdict = MC_DRIVER_VIOLATION;
+    cmd = myc_agent_build_next_check(&res, NULL);
+    CHECK(cmd && strstr(cmd, "--driver"), "T5: DRIVER -> --driver");
+    myc_free(cmd);
+    myc_result_free(&res);
+}
+
+static void test_diagnostic_class_and_edits(void)
+{
+    myc_agent_result ar;
+    myc_result res;
+    const char *src =
+        "int f(void){char b[4]; return b[0];}\n"
+        "int main(void){system(\"x\"); return f();}\n";
+
+    res_init(&res);
+    res.verdict = MC_RUNTIME_VIOLATION;
+    res.finding = MYC_FINDING_FINDINGS;
+    res.sanloc_have = 1;
+    res.sanloc_line = 1;
+    res.sanloc_kind = "stack-buffer-overflow";
+    res.sanloc_function = "f";
+    res.sanloc_snippet = "return b[0];";
+    res.diags[0].line = 1;
+    res.diags[0].col = 1;
+    res.diags[0].message = "sanitizer runtime: stack-buffer-overflow";
+    res.diags[0].confidence = MYC_CONF_CONFIRMED;
+    res.diag_count = 1;
+    res.diags[1].line = 2;
+    res.diags[1].col = 1;
+    res.diags[1].message =
+        "warning: fungsi dilarang: system (non-blocking)";
+    res.diags[1].confidence = MYC_CONF_OBSERVATION;
+    res.diag_count = 2;
+
+    CHECK(myc_build_agent_result(&res, &ar, NULL, NULL, NULL,
+                                 src, strlen(src)) == 0,
+          "T6: build agent result OK");
+    CHECK(ar.has_primary, "T6: has primary");
+    CHECK(ar.primary_finding.diagnostic_class &&
+              strcmp(ar.primary_finding.diagnostic_class, "runtime") == 0,
+          "T6: diagnostic_class=runtime");
+    CHECK(ar.has_next_check && ar.next_check.command &&
+              strstr(ar.next_check.command, "--run"),
+          "T6: next_check --run");
+    CHECK(ar.allowed_edit_count >= 1, "T6: allowed_edits non-empty");
+    CHECK(ar.preserve_count >= 1, "T6: preserve non-empty");
+    CHECK(ar.forbidden_count >= 1 && ar.forbidden[0].region &&
+              strstr(ar.forbidden[0].region, "system"),
+          "T6: forbidden system()");
+    CHECK(ar.delta_receipt_sha == NULL,
+          "T6: no delta on first/fixture without parent");
+
+    myc_agent_result_free(&ar);
+    myc_result_free(&res);
+
+    /* T7: delta_receipt_sha dari receipt_parent */
+    res_init(&res);
+    res.verdict = MC_OK;
+    memcpy(res.receipt_sha256,
+           "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+           64);
+    res.receipt_sha256[64] = '\0';
+    res.receipt_parent =
+        myc_strdup(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    CHECK(myc_build_agent_result(&res, &ar, NULL, NULL, NULL, NULL, 0) == 0,
+          "T7: build OK");
+    CHECK(ar.delta_receipt_sha &&
+              strcmp(ar.delta_receipt_sha, res.receipt_parent) == 0,
+          "T7: delta_receipt_sha = receipt_parent");
+    myc_agent_result_free(&ar);
+    myc_result_free(&res);
+}
+
+static void test_compile_class(void)
+{
+    myc_agent_result ar;
+    myc_result res;
+
+    res_init(&res);
+    res.verdict = MC_COMPILE_ERROR;
+    res.finding = MYC_FINDING_FINDINGS;
+    res.diags[0].line = 10;
+    res.diags[0].col = 1;
+    res.diags[0].message = "error: array subscript is above array bounds";
+    res.diags[0].confidence = MYC_CONF_CONFIRMED;
+    res.diag_count = 1;
+
+    CHECK(myc_build_agent_result(&res, &ar, NULL, NULL, NULL, NULL, 0) == 0,
+          "T8: build compile");
+    CHECK(ar.has_primary && ar.primary_finding.diagnostic_class &&
+              strcmp(ar.primary_finding.diagnostic_class, "compile") == 0,
+          "T8: diagnostic_class=compile");
+    CHECK(ar.next_check.command &&
+              !strstr(ar.next_check.command, "--run"),
+          "T8: next_check tanpa --run");
+    myc_agent_result_free(&ar);
+    myc_result_free(&res);
+}
+
+int main(void)
+{
+    test_next_check();
+    test_diagnostic_class_and_edits();
+    test_compile_class();
+    printf("agent_nemo_test: PASS=%d FAIL=%d\n", PASS, FAIL);
+    return FAIL ? 1 : 0;
+}

@@ -890,7 +890,9 @@ static void tool_agent_check(json_value *id, json_value *args)
 
     memset(&ar, 0, sizeof(ar));
     if (myc_build_agent_result(&final_res, &ar, NULL, NULL,
-                               pinfo_loaded ? &pinfo : NULL) < 0) {
+                               pinfo_loaded ? &pinfo : NULL,
+                               current,
+                               current ? strlen(current) : 0) < 0) {
         /* Catatan: myc_build_agent_result SUDAH membebaskan ar secara
          * internal sebelum return -1 (payload > cap) -- jangan free lagi
          * di sini (double-free). */

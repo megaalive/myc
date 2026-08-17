@@ -61,6 +61,14 @@ if exist test\runtime_repair_test.exe (
   echo [WARN] runtime_repair_test gagal dibangun
 )
 del test\runtime_repair_test.exe 2>nul
+echo --- NEMO-1..4 agent next_check / edits / delta / diagnostic_class
+gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\agent_nemo_test.exe test\agent_nemo_test.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
+if exist test\agent_nemo_test.exe (
+  test\agent_nemo_test.exe | findstr "FAIL=0" >nul && echo [OK] agent_nemo_test lulus NEMO-1..4 || echo [FAIL] agent_nemo_test menemukan kegagalan
+) else (
+  echo [WARN] agent_nemo_test gagal dibangun
+)
+del test\agent_nemo_test.exe 2>nul
 if exist test\.replay_tmp rmdir /s /q test\.replay_tmp
 if exist .myc\regression rmdir /s /q .myc\regression
 echo --- Fase 1 streaming evidence detector: sanitizer marker terdeteksi pada output streaming

@@ -15,6 +15,9 @@ docs/myc-serious-review-and-roadmap.md
 
 # dokumen rencana kerja (tidak untuk di-commit)
 docs/plans/
+nemo-light-rev.md
+qwen-review.md
+.fpagnt/
 
 # scratch logs / repro (sesi dev, bukan deliverable)
 ci_linux_local.txt

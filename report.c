@@ -2022,7 +2022,8 @@ void myc_report_json(const myc_result *res)
     }
 }
 
-int myc_report_agent(const myc_result *res, const myc_pack_info *pack)
+int myc_report_agent(const myc_result *res, const myc_pack_info *pack,
+                     const char *source, size_t source_len)
 {
     myc_agent_result ar;
     const char *js;
@@ -2031,7 +2032,8 @@ int myc_report_agent(const myc_result *res, const myc_pack_info *pack)
 
     memset(&ar, 0, sizeof(ar));
 
-    if (myc_build_agent_result(res, &ar, NULL, NULL, pack) < 0)
+    if (myc_build_agent_result(res, &ar, NULL, NULL, pack,
+                               source, source_len) < 0)
         return -1;
 
     js = myc_agent_result_json(&ar);

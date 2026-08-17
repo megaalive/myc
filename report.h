@@ -18,7 +18,9 @@ const char *myc_gate_status_name(myc_gate_status s);
 const char *myc_quorum_status_name(myc_quorum_status s);
 
 /* Cetak protokol agent JSON ke stdout.
+ * source/source_len opsional (NEMO-2); NULL/0 = tanpa repair runtime.
  * Return 0 bila sukses, -1 bila gagal. */
-int myc_report_agent(const myc_result *res, const myc_pack_info *pack);
+int myc_report_agent(const myc_result *res, const myc_pack_info *pack,
+                     const char *source, size_t source_len);
 
 #endif /* MYC_REPORT_H */

@@ -225,6 +225,8 @@ rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \
       test/regress_replay_test.log \
       test/runtime_repair_test test/runtime_repair_test.exe \
       test/runtime_repair_test.log \
+      test/agent_nemo_test test/agent_nemo_test.exe \
+      test/agent_nemo_test.log \
       test/schema_compat test/schema_compat.exe \
       test/schema_compat.log \
       test/mcp_abuse test/mcp_abuse.exe \
@@ -1027,6 +1029,29 @@ else
     FAIL=1
 fi
 
+# --- 17e. agent_nemo_test: NEMO-1..4 next_check / edits / delta / class ---
+if $CC -O2 -std=c11 -Wall -Wextra -Werror -pedantic -I. -DMYC_NO_MAIN \
+       -o test/agent_nemo_test test/agent_nemo_test.c $SRCS 2>/dev/null; then
+    LOG="test/agent_nemo_test.log"
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 120 test/agent_nemo_test >"$LOG" 2>&1
+        ANT=$?
+    else
+        test/agent_nemo_test >"$LOG" 2>&1
+        ANT=$?
+    fi
+    if [ $ANT -eq 0 ]; then
+        echo "[OK] agent_nemo_test (NEMO-1..4 agent protocol: semua cek lulus)"
+    else
+        echo "[FAIL] agent_nemo_test (NEMO-1..4 agent protocol, exit $ANT)"
+        grep -E '^\[FAIL\]' "$LOG" | head -10
+        FAIL=1
+    fi
+else
+    echo "[FAIL] agent_nemo_test gagal dibangun (-Werror -pedantic)"
+    FAIL=1
+fi
+
 # --- 18. schema_compat: PR-015 (MYC-AUDIT-047) machine schema freeze ---
 # Golden file untuk SEMUA skema JSON mesin dibekukan di
 # docs/schema-registry.md + test/golden/ (result.v1, agent.v2,
@@ -1280,6 +1305,8 @@ rm -f test/proc_flood test/proc_flood.exe test/oom_guards test/oom_guards.exe \
       test/sanloc_test.log \
       test/regress_replay_test test/regress_replay_test.exe \
       test/regress_replay_test.log \
+      test/agent_nemo_test test/agent_nemo_test.exe \
+      test/agent_nemo_test.log \
       test/schema_compat test/schema_compat.exe \
       test/schema_compat.log \
       test/mcp_abuse test/mcp_abuse.exe \

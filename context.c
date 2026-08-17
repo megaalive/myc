@@ -646,7 +646,8 @@ static int ctx_build_section(const myc_result *res, const char *src,
     case SEC_ACTION: {
         /* one action: reuse derivasi agent (primary + next-best). */
         myc_agent_result ar;
-        if (myc_build_agent_result(res, &ar, NULL, NULL, NULL) == 0) {
+        if (myc_build_agent_result(res, &ar, NULL, NULL, NULL,
+                                   src, srclen) == 0) {
             if (ar.next_best_json && ar.next_best_json[0])
                 sb_printf(out, "next-best experiment: %s\n", ar.next_best_json);
             if (ar.has_primary) {

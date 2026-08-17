@@ -118,12 +118,16 @@ void myc_agent_result_free(myc_agent_result *ar);
 
 /* Bangun agent protocol dari myc_result. Mengembalikan 0 jika
    berhasil, -1 bila payload melebihi MYC_AGENT_PAYLOAD_CAP.
-   pack: pack proyek lokal (myc_pack_load), NULL = tanpa pack. */
+   pack: pack proyek lokal (myc_pack_load), NULL = tanpa pack.
+   source/source_len: opsional (NULL/0 sah) untuk NEMO-2 runtime
+   repair template; denylist tetap dari diag. */
 int myc_build_agent_result(const myc_result *res,
                            myc_agent_result *ar,
                            const char *intent_hash,
                            const char *scenario_hash,
-                           const myc_pack_info *pack);
+                           const myc_pack_info *pack,
+                           const char *source,
+                           size_t source_len);
 
 /* Serialisasi JSON ke buffer statis (terbatas). Mengembalikan
    pointer ke buffer internal (tidak perlu dibebaskan). */
@@ -137,8 +141,10 @@ const myc_agent_finding *myc_agent_select_primary(const myc_result *res);
  * Mengembalikan string malloc'd yang harus free() oleh caller. */
 char *myc_agent_build_witness(const myc_result *res);
 
-/* Bangun next_check command string.
+/* Bangun next_check command string (NEMO-1: flag situasional).
+ * path: NULL/"" -> token "<file>"; "-" tetap "-".
  * Mengembalikan string malloc'd yang harus free() oleh caller. */
-char *myc_agent_build_next_check(const myc_result *res);
+char *myc_agent_build_next_check(const myc_result *res,
+                                 const char *path);
 
 #endif
