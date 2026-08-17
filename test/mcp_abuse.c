@@ -54,6 +54,9 @@
  * Penggunaan:
  *   mcp_abuse <path-mcp>      (mcp binary: root/mcp atau root/mcp.exe)
  */
+#if !defined(_WIN32)
+#define _DEFAULT_SOURCE
+#endif
 #define _POSIX_C_SOURCE 200809L
 
 #include <stdio.h>

@@ -98,6 +98,8 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   dalam 1 detik (T3 `lint_obs` 1001→9999) tidak boleh HIT.
 - **P1 — `gcc -dM -E` sekali per proses.** `myc_assume_fetch_facts`
   menyimpan fakta toolchain di TLS (assume + prompt tidak spawn dua kali).
+- **linux-asan mcp_abuse.** `_DEFAULT_SOURCE` agar `realpath` terlihat
+  pada clang `-std=c11` (glibc); job tetap `continue-on-error`.
 
 ### Tests
 
