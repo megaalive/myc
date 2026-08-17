@@ -16,6 +16,6 @@
     { "id": "INV-012", "title": "Partial write is never valid cache", "status": "enforced", "modules": ["cache.c", "persist.c"], "tests": ["test/atomic_state.c", "test/oom_alloc.c"], "notes": "read side fail-closed (miss+recompute); write atomik myc_persist_atomic_write (PR-012 / P3-T03); sidecar sha256 (PR-013)" },
     { "id": "INV-013", "title": "Backend identity is evidence", "status": "enforced", "modules": ["compile.c", "run.c", "cache.c"], "tests": ["test/_regress_run.bat"], "notes": "gcc_version/clang_version exact tool identity (MYC-AUDIT-022); tool_key cache" },
     { "id": "INV-014", "title": "Reproduction command is semantically complete", "status": "enforced", "modules": ["context.c", "witness.c"], "tests": ["test/_regress_run.bat"], "notes": "verify: command penuh + witness repro + capsule" },
-    { "id": "INV-015", "title": "Production mode never silently weakens requested assurance", "status": "partial", "modules": ["budget.c"], "tests": ["test/_regress_run.bat"], "notes": "budget contract ditegakkan (MYC-INCOMPLETE-BUDGET-UNMET); --production mode = target P12" }
+    { "id": "INV-015", "title": "Production mode never silently weakens requested assurance", "status": "enforced", "modules": ["budget.c", "canary.c"], "tests": ["test/_regress_run.bat", "test/production_mode.c"], "notes": "budget contract + --production (require_complete + min_version floor P5-T03); FINDINGS not overwritten" }
   ]
 }

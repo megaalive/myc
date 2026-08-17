@@ -55,7 +55,7 @@ Persyaratan (status tiap item tercantum):
 
 | Item | Status |
 |---|---|
-| Trust-core invariants diuji (INV-001..015) | INV-001..014 ditegakkan; INV-015 budget contract ya, `--production` = P12. INV-001/002/003/011: `test/reducer_exhaustive.c`; INV-011 cache: `test/cache_corrupt.c` (PR-013) |
+| Trust-core invariants diuji (INV-001..015) | INV-001..015 ditegakkan. `--production` (P12) = require-complete + floor min_version. INV-001/002/003/011: `test/reducer_exhaustive.c`; INV-011 cache: `test/cache_corrupt.c` (PR-013); INV-015: `test/production_mode.c` |
 | Transisi verdict/state diuji exhaustif | `test/reducer_exhaustive.c` (PR-003) |
 | Process runner tahan abuse | Ya: `proc_flood`, `verify_descendants`, `stress_threads`, deadlock matrix PR-006, process-tree kill PR-007 |
 | Cache/receipt replay deterministik | Ya (`_regress_run.bat` blok cache + receipt; MYC-AUDIT-042); PR-A01 soak miss/hit tanpa drift |

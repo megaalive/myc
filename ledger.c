@@ -155,11 +155,11 @@ char *myc_ledger_build_scenario_hash(const myc_request *req,
     n += snprintf(buf + n, sizeof(buf) - n,
                   "strict=%d|analyzer=%d|run=%d|prove=%d|checked=%d|filc=%d|"
                   "driver=%d|metamorphic=%d|divergence=%d|negative=%d|"
-                  "quorum=%d|require_complete=%d",
+                  "quorum=%d|require_complete=%d|prod=%d",
                   req->strict, req->run_analyzer, req->run, req->prove,
                   req->checked, req->filc, req->driver,
                   req->metamorphic, req->divergence, req->negative,
-                  req->quorum, req->require_complete);
+                  req->quorum, req->require_complete, req->production);
     /* Fase 4 A1/DS-01: flags asumsi + hash ack masuk scenario hash — run
      * dengan --require-assumptions-closed / --assumption-ack berbeda
      * TIDAK boleh berbagi cache entry (hasil enforcement/status asumsi

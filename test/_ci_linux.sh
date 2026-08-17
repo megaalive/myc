@@ -92,6 +92,11 @@ if ./myc check tests/ok_hello.c --json-summary 2>&1 | grep -qF '"verdict":"OK"';
 else
     fail "--json-summary verdict missing"
 fi
+if ./myc check tests/ok_hello.c --production --no-cache 2>&1 | grep -qF "verdict:   OK"; then
+    note "--production ok_hello MC_OK (gcc >= min)"
+else
+    fail "--production ok_hello bukan OK"
+fi
 if ./myc check tests/ok_hello.c --json-summary 2>&1 | grep -qF '"assurance_vector"'; then
     note "--json-summary assurance_vector ada"
 else

@@ -302,8 +302,17 @@ flags.
 Scenario/budget contract yang meminta bukti runtime/proof/checked tidak
 boleh mengganti gate lebih lemah tanpa typed debt.
 
-**Status:** ditegakkan untuk budget contract; `--production` mode itu
-sendiri = target P12 (belum ada).
+**Status:** ditegakkan (`--production` + budget contract).
+
+**Implementasi:** `budget.c` — `myc_budget_enforce()`: target `clean` yang
+tidak tercapai → `INCONCLUSIVE` + debt `MYC-INCOMPLETE-BUDGET-UNMET`.
+`canary.c` `myc_production_enforce()` (P12/P5-T03): `--production`
+menyalakan `require_complete` dan menolak CLEAN dari toolchain di bawah
+`min_version` (gcc 9+ / gcc 10+ analyzer / clang 11+ / frama-c 28+).
+FINDINGS tidak ditimpa (INV-002).
+
+**Test:** `test/_regress_run.bat` blok SOL-30; `test/production_mode.c`;
+`test/cache_key_matrix.c` dimensi `production`.
 
 **Implementasi:** `budget.c` — `myc_budget_enforce()`: target `clean` yang
 tidak tercapai (tidak diminta / UNAVAILABLE / FINDINGS / not_run) →
@@ -334,4 +343,4 @@ ditolak).
 | INV-012 Partial write invalid cache | ✅ ditegakkan (persist.c PR-012) |
 | INV-013 Backend identity is evidence | ✅ ditegakkan |
 | INV-014 Reproduction command complete | ✅ ditegakkan |
-| INV-015 No silent weaker assurance | ✅ budget contract / `--production` = P12 |
+| INV-015 No silent weaker assurance | ✅ ditegakkan (`--production` + budget) |

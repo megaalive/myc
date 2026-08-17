@@ -74,6 +74,9 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
   `myc_run` no-cache (receipt identik) + miss persist lalu N× hit
   (receipt/verdict sama dengan miss). INV-011/012 registry ditutup
   (sudah ditegakkan PR-013/012; dokumen tidak lagi mengklaim gap).
+- **P12 — `--production`.** `require_complete` + floor versi backend
+  (P5-T03): gcc 9+ / analyzer gcc 10+ / clang 11+ / frama-c 28+.
+  Toolchain di bawah min = UNAVAILABLE, bukan CLEAN. Masuk cache key g2.
 
 ### Changed
 

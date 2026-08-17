@@ -46,6 +46,14 @@ if exist test\pra01_soak.exe (
 )
 del test\pra01_soak.exe 2>nul
 if exist test\.pra01_tmp rmdir /s /q test\.pra01_tmp
+echo --- P12 --production + floor versi backend
+gcc -O2 -std=c11 -Wall -Wextra -Werror -pedantic -I. -DMYC_NO_MAIN -o test\production_mode.exe test\production_mode.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
+if exist test\production_mode.exe (
+  test\production_mode.exe | findstr "FAIL=0" >nul && echo [OK] production_mode P12 min-version + MC_OK || echo [FAIL] production_mode
+) else (
+  echo [FAIL] production_mode gagal dibangun
+)
+del test\production_mode.exe 2>nul
 echo --- IDE-1 sanitizer location extractor (qwen-review): fixture deterministik
 gcc -O2 -std=c11 -Wall -Wextra -I. -DMYC_NO_MAIN -o test\sanloc_test.exe test\sanloc_test.c myc.c proc.c scanner.c policy.c compile.c report.c sha256.c lint.c run.c sanloc.c contract.c state.c abi.c resource.c units.c profile.c calibrate.c eig.c candidate.c prove.c filc.c driver.c exhaustive.c fuzz.c json.c gate.c negative.c agent.c witness.c ledger.c transaction.c frontier.c observation.c causal.c nextbest.c cache.c context.c budget.c assume.c taxonomy.c prompt.c stack.c mutate.c scenario.c matrix.c canary.c testaudit.c perturb.c concur.c regress.c persist.c limit.c alloc.c >nul 2>&1
 if exist test\sanloc_test.exe (

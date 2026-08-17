@@ -486,6 +486,11 @@ struct myc_request {
       * checked / prove / filc). Masuk cache key g2. Timeout anak
       * tetap timeout_ms. */
      int         parallel_gates;
+     /* P12 / INV-015: --production — jangan senyap melemahan assurance.
+      * Mengaktifkan require_complete + floor versi backend (P5-T03).
+      * Toolchain di bawah min_version = UNAVAILABLE + debt, bukan clean.
+      * Masuk cache key g2. Default OFF. */
+     int         production;
      int         write_repro;     /* --write-repro: tulis .myc-witness/ repro dir */
      int         tx_verify;       /* --tx-verify: verifikasi patch dalam transaksi */
      char       *tx_finding_id;   /* --finding-id ID: finding target */

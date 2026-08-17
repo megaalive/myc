@@ -54,12 +54,12 @@ DIDEKLARASIKAN — keberadaan biner di PATH tidak menjadikan backend
    **UNRELIABLE** — klaim bersihnya tidak dipercaya sampai canary hijau.
    `myc backends --canary` / `myc canary run` menjalankan kualifikasi ini.
 6. **Tidak menjanjikan dukungan universal.** Biner yang ditemukan di PATH
-   belum tentu "didukung". Catatan kebijakan: versi di bawah minimum atau
-   known-bad (jika ada) HARUSNYA diperlakukan sebagai unavailable + debt,
-   bukan clean — namun ENFORCEMENT versi minimum belum diimplementasikan
-   di pemilih tool (tabel `min_version` di registry bersifat informatif
-   sampai PR-027 `--production` + P5-T03 version-drift lane; gate saat ini
-   menjalankan tool yang tersedia dengan perilaku lama).
+   belum tentu "didukung". Versi di bawah minimum (tabel `min_version`)
+   diperlakukan sebagai unavailable + debt **bila `--production`**
+   (P12 / P5-T03 version-drift): gate CLEAN dari toolchain di luar
+   kontrak tidak dihitung sebagai bukti produksi. Tanpa `--production`,
+   myc tetap menjalankan tool yang ada (perilaku lama, jujur di
+   `myc backends`).
 
 ## Host vs target
 

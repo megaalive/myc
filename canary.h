@@ -107,4 +107,14 @@ void myc_backend_probe_free(myc_backend_probe *p, int count);
  * backend yang canary-nya GAGAL (0 = semua terverifikasi hidup). */
 int myc_backends_report(FILE *out, int run_canary);
 
+/* P5-T03 / P12: major version dari string `--version` atau "gcc 9+".
+ * Tupel N.N terakhir ("15.2.0" → 15); bila tidak ada titik, integer
+ * terakhir ("gcc 9+" → 9). Return -1 bila tidak ada angka. */
+int myc_tool_version_major(const char *s);
+
+struct myc_request;
+struct myc_result;
+void myc_production_enforce(const struct myc_request *req,
+                            struct myc_result *res);
+
 #endif /* MYC_CANARY_H */

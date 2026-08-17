@@ -266,7 +266,8 @@
     "--delta",
     "--eig-apply",
     "--budget-ms",
-    "--parallel-gates"
+    "--parallel-gates",
+    "--production"
   ],
   "mcp_tools": [
     "check",

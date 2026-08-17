@@ -207,7 +207,10 @@ static int mcp_apply_flags(json_value *flags, myc_request *req,
             req->negative = 1;
         else if (strcmp(f, "--require-complete") == 0)
             req->require_complete = 1;
-        else if (strcmp(f, "--eig-apply") == 0)
+        else if (strcmp(f, "--production") == 0) {
+            req->production = 1;
+            req->require_complete = 1;
+        } else if (strcmp(f, "--eig-apply") == 0)
             req->eig_apply = 1;
         else if (strcmp(f, "--parallel-gates") == 0)
             req->parallel_gates = 1;

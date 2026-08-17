@@ -78,6 +78,7 @@ Common extras (all optional; missing backends stay non-blocking):
 - `--scenario auto` — smallest sufficient gate recipe from source shape
 - `--eig-apply [--budget-ms N]` — after L1, run **at most one** EIG experiment (default off)
 - `--parallel-gates` — overlap `--analyze` with `--run` after compile-clean (default off)
+- `--production` — require-complete + backend min-version floor (no silent weaker OK)
 - `--require-complete` — verification gaps fail CI (`MYC-INCOMPLETE-*`)
 - `--no-cache` — disable evidence replay from `.myc/evidence_cache.json`
 
@@ -103,6 +104,7 @@ optional:
   --negative    missing-pattern observations
   --quorum      cross-backend agreement
   --require-complete → gap = CI failure
+  --production      → require-complete + min-version floor
 ```
 
 ## Policy

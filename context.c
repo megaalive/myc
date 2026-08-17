@@ -364,6 +364,7 @@ static void ctx_verify_command(const myc_request *req, const char *path,
     if (req->run_analyzer) json_sb_puts(out, " --analyze");
     if (req->run) json_sb_puts(out, " --run");
     if (req->parallel_gates) json_sb_puts(out, " --parallel-gates");
+    if (req->production) json_sb_puts(out, " --production");
     if (req->prove) json_sb_puts(out, " --prove");
     if (req->checked) json_sb_puts(out, " --checked");
     if (req->filc) json_sb_puts(out, " --filc");

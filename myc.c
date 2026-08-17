@@ -1046,6 +1046,7 @@ void myc_run(const myc_request *req, myc_result *res)
                     myc_quorum_analysis(&req2, res);
                     /* Fase 5 B3 (DS-07): coaching transcript untuk model. */
                     myc_coach_build(res);
+                    myc_production_enforce(&req2, res);
                     enforce_require_complete(&req2, res);
                     /* Fase 4 A1/DS-01: asumsi terbuka = gap verifikasi
                      * bila --require-assumptions-closed (pola 9.10). */
@@ -1074,6 +1075,7 @@ void myc_run(const myc_request *req, myc_result *res)
                     myc_quorum_analysis(&req2, res);
                     /* Fase 5 B3 (DS-07): coaching transcript untuk model. */
                     myc_coach_build(res);
+                    myc_production_enforce(&req2, res);
                     enforce_require_complete(&req2, res);
                     /* SOL-30: pada cache-hit, hasil enforcement budget
                      * contract sudah di-replay utuh dari entry (verdict/
@@ -1101,6 +1103,7 @@ void myc_run(const myc_request *req, myc_result *res)
             myc_quorum_analysis(eff, res);
             /* Fase 5 B3 (DS-07): coaching transcript untuk model. */
             myc_coach_build(res);
+            myc_production_enforce(eff, res);
             enforce_require_complete(eff, res);
             if (eff->require_assumptions_closed)
                 myc_assume_enforce(eff, res);
@@ -1118,6 +1121,7 @@ void myc_run(const myc_request *req, myc_result *res)
             myc_quorum_analysis(eff, res);
             /* Fase 5 B3 (DS-07): coaching transcript untuk model. */
             myc_coach_build(res);
+            myc_production_enforce(eff, res);
             enforce_require_complete(eff, res);
             /* SOL-30: cache-hit — enforcement budget sudah di-replay. */
             if (eff->require_assumptions_closed)
@@ -1252,7 +1256,10 @@ static void usage(void)
         "  myc check <file.c> [--analyze --run --parallel-gates]\n"
         "                        (P4: overlap gcc -fanalyzer dengan clang\n"
         "                        ASan/UBSan setelah compile clean; default OFF;\n"
-        "                        status gate ditulis urutan kanonik)\n");
+        "                        status gate ditulis urutan kanonik)\n"
+        "  myc check <file.c> --production\n"
+        "                        (P12/INV-015: require-complete + floor versi\n"
+        "                        backend; toolchain di bawah min = UNAVAILABLE)\n");
     /* PR-017: blok usage backends dipisah ke printf tersendiri — string
      * literal yang BERTETANGGA digabung compiler (overlength-strings),
      * dan gabungan usage utama sudah mendekati batas 4095 C99. */
@@ -2636,6 +2643,10 @@ int main(int argc, char **argv)
                 req.eig_apply = 1; known = 1;
             } else if (strcmp(argv[i], "--parallel-gates") == 0) {
                 req.parallel_gates = 1; known = 1;
+            } else if (strcmp(argv[i], "--production") == 0) {
+                req.production = 1;
+                req.require_complete = 1;
+                known = 1;
             } else if (strcmp(argv[i], "--budget-ms") == 0) {
                 int ms;
                 if (i + 1 >= argc) {

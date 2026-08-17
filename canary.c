@@ -16,6 +16,7 @@
 
 #include "myc.h"
 #include "proc.h"
+#include "gate.h"
 
 static const myc_canary CANARIES[] = {
     /* ---- compile: canary negatif + positif ---- */
@@ -476,4 +477,123 @@ int myc_backends_report(FILE *out, int run_canary)
     }
     myc_backend_probe_free(arr, n);
     return total_fail;
+}
+
+int myc_tool_version_major(const char *s)
+{
+    int last_int = -1;
+    int last_dotted = -1;
+    int i;
+
+    if (!s)
+        return -1;
+    /* Ambil major dari tupel N.N terakhir ("15.2.0" → 15, bukan 2).
+     * Bila tidak ada titik, integer terakhir ("gcc 9+" → 9). */
+    for (i = 0; s[i]; ) {
+        if (s[i] >= '0' && s[i] <= '9') {
+            int n = 0;
+            int start = i;
+            while (s[i] >= '0' && s[i] <= '9') {
+                n = n * 10 + (s[i] - '0');
+                i++;
+            }
+            last_int = n;
+            if (s[i] == '.' && (start == 0 || s[start - 1] != '.'))
+                last_dotted = n;
+            continue;
+        }
+        i++;
+    }
+    if (last_dotted >= 0)
+        return last_dotted;
+    return last_int;
+}
+
+static void production_downgrade(myc_result *res, myc_gate_id id,
+                                 const char *exe, const char *min_s,
+                                 const char *why)
+{
+    const myc_gate_result *g = myc_gate_get(res, id);
+    char msg[192];
+
+    if (g && g->status == MYC_GATE_COMPLETED_FINDINGS)
+        return;
+    snprintf(msg, sizeof(msg), "production: %s (min %s) %s",
+             exe ? exe : "backend", min_s ? min_s : "?",
+             why ? why : "di luar kontrak dukungan");
+    myc_gate_set_status(res, id, MYC_GATE_UNAVAILABLE, msg);
+}
+
+void myc_production_enforce(const myc_request *req, myc_result *res)
+{
+    char *path;
+    char *ver;
+    int   major;
+    int   minv;
+
+    if (!req || !res || !req->production)
+        return;
+
+    path = myc_find_executable("gcc");
+    ver = path ? myc_tool_version(path) : NULL;
+    major = myc_tool_version_major(ver);
+    minv = myc_tool_version_major("gcc 9+");
+    if (!path)
+        production_downgrade(res, MYC_GATE_COMPILE, "gcc", "gcc 9+",
+                             "tidak ada di PATH");
+    else if (major < 0 || major < minv)
+        production_downgrade(res, MYC_GATE_COMPILE, "gcc", "gcc 9+",
+                             major < 0 ? "versi tak ter-parse"
+                                       : "di bawah min_version");
+    if (req->run_analyzer) {
+        minv = myc_tool_version_major("gcc 10+");
+        if (!path)
+            production_downgrade(res, MYC_GATE_ANALYZER, "gcc",
+                                 "gcc 10+", "tidak ada di PATH");
+        else if (major < 0 || major < minv)
+            production_downgrade(res, MYC_GATE_ANALYZER, "gcc",
+                                 "gcc 10+",
+                                 major < 0 ? "versi tak ter-parse"
+                                           : "di bawah min_version");
+    }
+    myc_free(ver);
+    myc_free(path);
+
+    if (req->run) {
+        path = myc_find_executable("clang");
+        ver = path ? myc_tool_version(path) : NULL;
+        major = myc_tool_version_major(ver);
+        minv = myc_tool_version_major("clang 11+");
+        if (!path)
+            production_downgrade(res, MYC_GATE_RUNTIME, "clang",
+                                 "clang 11+", "tidak ada di PATH");
+        else if (major < 0 || major < minv)
+            production_downgrade(res, MYC_GATE_RUNTIME, "clang",
+                                 "clang 11+",
+                                 major < 0 ? "versi tak ter-parse"
+                                           : "di bawah min_version");
+        myc_free(ver);
+        myc_free(path);
+    }
+    if (req->prove) {
+        path = myc_find_executable("frama-c");
+        ver = path ? myc_tool_version(path) : NULL;
+        major = myc_tool_version_major(ver);
+        minv = myc_tool_version_major("frama-c 28+");
+        if (!path) {
+            /* Windows via WSL: gate prove sudah UNAVAILABLE bila frama-c
+             * host absen; jangan double-message. */
+            const myc_gate_result *g = myc_gate_get(res, MYC_GATE_PROVE);
+            if (!g || g->status != MYC_GATE_UNAVAILABLE)
+                production_downgrade(res, MYC_GATE_PROVE, "frama-c",
+                                     "frama-c 28+", "tidak ada di PATH");
+        } else if (major < 0 || major < minv)
+            production_downgrade(res, MYC_GATE_PROVE, "frama-c",
+                                 "frama-c 28+",
+                                 major < 0 ? "versi tak ter-parse"
+                                           : "di bawah min_version");
+        myc_free(ver);
+        myc_free(path);
+    }
+    myc_reduce_verdict(res);
 }
