@@ -1281,7 +1281,7 @@ void myc_pipeline(const myc_request *req, myc_result *res)
      * diminta = hard transaction failure (ditegakkan transaction.c).
      * Hanya jalan saat --abi (helper butuh compile+run, mahal). */
     if (req->abi)
-        myc_abi_snapshot(src, srclen, NULL, res);
+        myc_abi_snapshot(src, srclen, req->gcc_program, res);
 
     /* --- Lint memory-safety (P5; default aktif, mati via --no-lint) ---
      * MYC-AUDIT-014: heuristik teks TIDAK boleh hard verdict. Hasil lint

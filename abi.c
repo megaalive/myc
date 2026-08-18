@@ -1047,7 +1047,7 @@ void myc_abi_snapshot(const char *src, size_t len, const char *cc_arg,
     sha256_hex(src, len, hex);
     res->abi_header_sha = myc_result_arena_dup(res, hex, 0);
 
-    cc = myc_find_executable(cc_arg ? cc_arg : "gcc");
+    cc = myc_find_gcc(cc_arg);
     if (!cc) {
         abuf_printf(&snap, "# myc abi v1\n"
                            "TARGET unknown\n"

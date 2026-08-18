@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -322,30 +323,52 @@ char *myc_tool_version(const char *exe)
 
 int myc_tool_version_major(const char *s)
 {
-    int last_int = -1;
-    int last_dotted = -1;
-    int i;
+    int first_any = -1;
+    int first_outside = -1;
+    int paren_depth = 0;
+    size_t i;
 
     if (!s)
         return -1;
     for (i = 0; s[i]; ) {
+        if (s[i] == '(') {
+            paren_depth++;
+            i++;
+            continue;
+        }
+        if (s[i] == ')' && paren_depth > 0) {
+            paren_depth--;
+            i++;
+            continue;
+        }
         if (s[i] >= '0' && s[i] <= '9') {
             int n = 0;
-            int start = i;
             while (s[i] >= '0' && s[i] <= '9') {
-                n = n * 10 + (s[i] - '0');
+                int digit = s[i] - '0';
+                if (n > (INT_MAX - digit) / 10)
+                    n = INT_MAX;
+                else
+                    n = n * 10 + digit;
                 i++;
             }
-            last_int = n;
-            if (s[i] == '.' && (start == 0 || s[start - 1] != '.'))
-                last_dotted = n;
+            if (first_any < 0)
+                first_any = n;
+            if (paren_depth == 0) {
+                if (first_outside < 0)
+                    first_outside = n;
+                /* Prefer the first dotted version outside metadata
+                 * parentheses: this handles banners such as "Rev6 ...
+                 * 15.2.0" while ignoring target dates in "(22.04)". */
+                if (s[i] == '.')
+                    return n;
+            }
             continue;
         }
         i++;
     }
-    if (last_dotted >= 0)
-        return last_dotted;
-    return last_int;
+    if (first_outside >= 0)
+        return first_outside;
+    return first_any;
 }
 
 /* ------------------------------------------------------------------ */
@@ -523,8 +546,8 @@ char *myc_find_gcc(const char *override)
     char *path_env;
     char *first = NULL;
     char *dup;
-    char *tok;
-    char *save = NULL;
+    char *cursor;
+    char sep;
 
     if (name && *name)
         return myc_find_executable(name);
@@ -539,14 +562,27 @@ char *myc_find_gcc(const char *override)
     if (!dup)
         return NULL;
 #ifdef _WIN32
-    tok = strtok_s(dup, ";", &save);
+    sep = ';';
 #else
-    tok = strtok_r(dup, ":", &save);
+    sep = ':';
 #endif
-    while (tok) {
-        char *cand = exe_in_dir(tok, "gcc");
+    /* Do not use strtok here: empty PATH entries are meaningful and denote
+     * the current directory on both Windows and POSIX. */
+    cursor = dup;
+    for (;;) {
+        char *tok = cursor;
+        char *end = strchr(cursor, sep);
+        char *cand;
         char *ver;
         int major;
+
+        if (end) {
+            *end = '\0';
+            cursor = end + 1;
+        } else {
+            cursor = NULL;
+        }
+        cand = exe_in_dir(tok[0] ? tok : ".", "gcc");
 
         if (cand) {
             ver = myc_tool_version(cand);
@@ -562,11 +598,8 @@ char *myc_find_gcc(const char *override)
             else
                 myc_free(cand);
         }
-#ifdef _WIN32
-        tok = strtok_s(NULL, ";", &save);
-#else
-        tok = strtok_r(NULL, ":", &save);
-#endif
+        if (!cursor)
+            break;
     }
     myc_free(dup);
     return first;

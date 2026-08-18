@@ -35,7 +35,7 @@
 /* Snapshot ABI dari source: scan deklarasi, generate helper program
  * (sizeof/offsetof/_Alignof/enum), compile + run via compiler, kumpulkan
  * teks snapshot deterministik. Hasil di res->abi_* (arena).
- * cc = compiler eksplisit atau NULL (auto-cari "gcc"). */
+ * cc = compiler eksplisit atau NULL (auto-cari gcc major >= 9). */
 void myc_abi_snapshot(const char *src, size_t len, const char *cc,
                       myc_result *res);
 
