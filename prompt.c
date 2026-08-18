@@ -149,7 +149,7 @@ char *myc_prompt_build(const char *source, size_t len)
     } while (0)
 
     memset(&facts, 0, sizeof(facts));
-    gcc = myc_find_executable("gcc");
+    gcc = myc_find_gcc(NULL);
     if (gcc) {
         facts_ok = myc_assume_fetch_facts(gcc, &facts);
         myc_free(gcc);

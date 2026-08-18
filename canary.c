@@ -356,7 +356,9 @@ int myc_backend_probe_run(const char *backend, myc_backend_probe **out,
             p = &t[i];
             arr[k].policy = p;
             if (p->exe) {
-                arr[k].path = myc_find_executable(p->exe);
+                arr[k].path = strcmp(p->exe, "gcc") == 0
+                                  ? myc_find_gcc(NULL)
+                                  : myc_find_executable(p->exe);
                 if (arr[k].path) {
                     arr[k].found = 1;
                     arr[k].version = myc_tool_version(arr[k].path);
@@ -479,36 +481,6 @@ int myc_backends_report(FILE *out, int run_canary)
     return total_fail;
 }
 
-int myc_tool_version_major(const char *s)
-{
-    int last_int = -1;
-    int last_dotted = -1;
-    int i;
-
-    if (!s)
-        return -1;
-    /* Ambil major dari tupel N.N terakhir ("15.2.0" → 15, bukan 2).
-     * Bila tidak ada titik, integer terakhir ("gcc 9+" → 9). */
-    for (i = 0; s[i]; ) {
-        if (s[i] >= '0' && s[i] <= '9') {
-            int n = 0;
-            int start = i;
-            while (s[i] >= '0' && s[i] <= '9') {
-                n = n * 10 + (s[i] - '0');
-                i++;
-            }
-            last_int = n;
-            if (s[i] == '.' && (start == 0 || s[start - 1] != '.'))
-                last_dotted = n;
-            continue;
-        }
-        i++;
-    }
-    if (last_dotted >= 0)
-        return last_dotted;
-    return last_int;
-}
-
 static void production_downgrade(myc_result *res, myc_gate_id id,
                                  const char *exe, const char *min_s,
                                  const char *why)
@@ -534,7 +506,7 @@ void myc_production_enforce(const myc_request *req, myc_result *res)
     if (!req || !res || !req->production)
         return;
 
-    path = myc_find_executable("gcc");
+    path = myc_find_gcc(req->gcc_program);
     ver = path ? myc_tool_version(path) : NULL;
     major = myc_tool_version_major(ver);
     minv = myc_tool_version_major("gcc 9+");

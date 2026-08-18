@@ -49,9 +49,18 @@ typedef struct {
 int myc_proc_run(const myc_proc_request *req, myc_proc_result *res);
 void myc_proc_result_free(myc_proc_result *res);
 
-/* Cari executable "gcc" via PATH + extension .exe di Windows. */
-/* Mengembalikan string yang dialokasikan, atau NULL bila tidak ditemukan. */
+/* Cari executable "gcc" via PATH + extension .exe di Windows.
+ * Mengembalikan string yang dialokasikan, atau NULL bila tidak ditemukan. */
 char *myc_find_executable(const char *program);
+
+/* gcc untuk pipeline myc: override (--gcc / path), lalu env MYC_GCC,
+ * lalu PATH — skip major < 9 (FPC 2.95, DJGPP) bila ada gcc 9+ belakangan.
+ * Override tidak di-skip. Caller membebaskan. */
+char *myc_find_gcc(const char *override);
+
+/* Major dari string `--version` atau "gcc 9+". Tupel N.N terakhir
+ * ("15.2.0" → 15). Return -1 bila tidak ada angka. */
+int myc_tool_version_major(const char *s);
 
 /* --- Saluran laporan sanitizer (MYC-AUDIT-017) ---
  * ASan/UBSan dengan ASAN_OPTIONS/UBSAN_OPTIONS log_path=<base> menulis

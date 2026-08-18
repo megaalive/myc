@@ -320,6 +320,34 @@ char *myc_tool_version(const char *exe)
     return v;
 }
 
+int myc_tool_version_major(const char *s)
+{
+    int last_int = -1;
+    int last_dotted = -1;
+    int i;
+
+    if (!s)
+        return -1;
+    for (i = 0; s[i]; ) {
+        if (s[i] >= '0' && s[i] <= '9') {
+            int n = 0;
+            int start = i;
+            while (s[i] >= '0' && s[i] <= '9') {
+                n = n * 10 + (s[i] - '0');
+                i++;
+            }
+            last_int = n;
+            if (s[i] == '.' && (start == 0 || s[start - 1] != '.'))
+                last_dotted = n;
+            continue;
+        }
+        i++;
+    }
+    if (last_dotted >= 0)
+        return last_dotted;
+    return last_int;
+}
+
 /* ------------------------------------------------------------------ */
 /* Pencarian executable                                                */
 /* ------------------------------------------------------------------ */
@@ -443,6 +471,105 @@ char *myc_find_executable(const char *program)
         return NULL;
     }
 #endif
+}
+
+#ifdef _WIN32
+static char *exe_in_dir(const char *dir, const char *program)
+{
+    static const char *exts[] = { ".exe", "" };
+    DWORD attrs;
+    int i;
+
+    for (i = 0; i < 2; i++) {
+        char *cand = path_join(dir, program, exts[i]);
+        if (!cand)
+            return NULL;
+        attrs = GetFileAttributesA(cand);
+        if (attrs != INVALID_FILE_ATTRIBUTES &&
+            !(attrs & FILE_ATTRIBUTE_DIRECTORY))
+            return cand;
+        myc_free(cand);
+    }
+    return NULL;
+}
+#else
+static char *exe_in_dir(const char *dir, const char *program)
+{
+    size_t need;
+    char *cand;
+
+    if (!dir || !program)
+        return NULL;
+    need = strlen(dir) + 1 + strlen(program) + 1;
+    cand = (char *)myc_malloc(need);
+    if (!cand)
+        return NULL;
+    snprintf(cand, need, "%s/%s", dir, program);
+    if (access(cand, X_OK) == 0)
+        return cand;
+    myc_free(cand);
+    return NULL;
+}
+#endif
+
+/* gcc 9+ dibutuhkan untuk -std=c11 -Werror -pedantic (docs/backends.md).
+ * Override (--gcc / MYC_GCC / path eksplisit) tidak di-skip: compile.c
+ * menolak major < 9 sebagai UNAVAILABLE, bukan COMPILE_ERROR source. */
+#define MYC_GCC_MIN_MAJOR 9
+
+char *myc_find_gcc(const char *override)
+{
+    const char *name = override;
+    char *path_env;
+    char *first = NULL;
+    char *dup;
+    char *tok;
+    char *save = NULL;
+
+    if (name && *name)
+        return myc_find_executable(name);
+    name = getenv("MYC_GCC");
+    if (name && *name)
+        return myc_find_executable(name);
+
+    path_env = getenv("PATH");
+    if (!path_env)
+        return NULL;
+    dup = myc_strdup(path_env);
+    if (!dup)
+        return NULL;
+#ifdef _WIN32
+    tok = strtok_s(dup, ";", &save);
+#else
+    tok = strtok_r(dup, ":", &save);
+#endif
+    while (tok) {
+        char *cand = exe_in_dir(tok, "gcc");
+        char *ver;
+        int major;
+
+        if (cand) {
+            ver = myc_tool_version(cand);
+            major = myc_tool_version_major(ver);
+            myc_free(ver);
+            if (major >= MYC_GCC_MIN_MAJOR) {
+                myc_free(first);
+                myc_free(dup);
+                return cand;
+            }
+            if (!first)
+                first = cand;
+            else
+                myc_free(cand);
+        }
+#ifdef _WIN32
+        tok = strtok_s(NULL, ";", &save);
+#else
+        tok = strtok_r(NULL, ":", &save);
+#endif
+    }
+    myc_free(dup);
+    return first;
 }
 
 /* ------------------------------------------------------------------ */

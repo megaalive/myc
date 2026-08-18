@@ -11,6 +11,13 @@ pengembangan) ada di [`docs/audit-history.md`](docs/audit-history.md).
 
 ### Added
 
+- **Compiler selection diagnostics.** `myc_find_gcc` skips gcc major < 9
+  (for example gcc 2.95 bundled with FPC) when a newer gcc appears later in
+  `PATH`; `--gcc PATH` and `MYC_GCC` provide explicit overrides. An old or
+  unavailable compiler is reported as `UNAVAILABLE`/`INCONCLUSIVE` with a
+  diagnostic instead of being misattributed to the C source. MCP `check`,
+  `verify`, and `agent_check` accept the optional `gcc` field.
+
 - **G1 — myc.lite.v1.** Skema agent-lite: satu `action`
   (`STOP_COMPILE_CLEAN` / `FIX_ONE` / `ESCALATE_RUNTIME` /
   `ESCALATE_CONTRACT` / `GIVE_UP_NO_TEMPLATE`), `allowed_span`,

@@ -231,6 +231,7 @@ static void tool_check(json_value *id, json_value *args)
     const char *source = NULL;
     const char *cwd = NULL;
     const char *run_stdin = NULL;
+    const char *gcc = NULL;
     json_value *flags = NULL;
     char       *text = NULL;
     json_value *result = NULL;
@@ -248,6 +249,7 @@ static void tool_check(json_value *id, json_value *args)
     }
     cwd = json_get_str(args, "cwd");
     run_stdin = json_get_str(args, "run_stdin");
+    gcc = json_get_str(args, "gcc");
     flags = json_get(args, "flags");
 
     myc_request_init(&req);
@@ -256,6 +258,7 @@ static void tool_check(json_value *id, json_value *args)
     req.input.len = strlen(source);
     req.run_lint = 1;               /* lint memory-safety default ON */
     req.checked_header_dir = g_exe_dir;
+    req.gcc_program = gcc;
     if (cwd)
         req.cwd = cwd;
     /* stdin program verification: dikonsumsi gate --run (run.c) dan
@@ -339,7 +342,7 @@ static void tool_version(json_value *id)
         send_error(id, -32603, "Internal error");
         return;
     }
-    gcc = myc_find_executable("gcc");
+    gcc = myc_find_gcc(NULL);
     clang = myc_find_executable("clang");
     json_sb_printf(&b, "myc %s\n", MCP_VERSION);
     if (gcc)
@@ -534,6 +537,7 @@ static void tool_agent_check(json_value *id, json_value *args)
 {
     const char *source = NULL;
     const char *pack_dir = NULL;
+    const char *gcc = NULL;
     int         no_pack = 0;
     json_value *flags = NULL;
     int         max_iter = 3;
@@ -566,6 +570,7 @@ static void tool_agent_check(json_value *id, json_value *args)
         send_error(id, -32602, "Invalid params: 'source' wajib (string kode C)");
         return;
     }
+    gcc = json_get_str(args, "gcc");
     /* Fase 7 (MYC-AUDIT-039): pack proyek lokal opsional (myc.prompt.md
      * + myc.spec.json). pack_dir: NULL = cwd server (konsisten CLI);
      * no_pack: true = nonaktifkan (perilaku = pack absen). */
@@ -642,6 +647,7 @@ static void tool_agent_check(json_value *id, json_value *args)
         req.input.len = strlen(current);
         req.run_lint = 1;
         req.checked_header_dir = g_exe_dir;
+        req.gcc_program = gcc;
         if (mcp_apply_flags(flags, &req, ferr, sizeof(ferr)) != 0) {
             send_error(id, -32602, ferr);
             myc_free(current);
@@ -1346,6 +1352,7 @@ static void tool_policy(json_value *id)
 static void tool_verify(json_value *id, json_value *args)
 {
     const char *source = NULL;
+    const char *gcc = NULL;
     json_value *flags = NULL;
     myc_request req;
     myc_result  res;
@@ -1366,6 +1373,7 @@ static void tool_verify(json_value *id, json_value *args)
                    "Invalid params: 'source' wajib (string kode C)");
         return;
     }
+    gcc = json_get_str(args, "gcc");
     flags = json_get(args, "flags");
     if (flags && flags->type == JSON_ARR && flags->len > 0)
         use_auto = 0;
@@ -1376,6 +1384,7 @@ static void tool_verify(json_value *id, json_value *args)
     req.input.len = strlen(source);
     req.run_lint = 1;
     req.checked_header_dir = g_exe_dir;
+    req.gcc_program = gcc;
     myc_result_init(&res);
 
     if (use_auto) {
@@ -1651,6 +1660,8 @@ static json_value *tools_list_body(void)
         "Verify C source with myc. source (string, required). "
         "flags (array of strings, optional): --run --analyze --checked "
         "--driver --strict --no-lint --require-complete. "
+        "gcc (string, optional): explicit compiler path/name; MYC_GCC is "
+        "used when omitted. "
         "Result: structuredContent myc.result.v1. isError=true only for "
         "tool/protocol failure, not for compile/runtime findings."));
     {
@@ -1686,6 +1697,12 @@ static json_value *tools_list_body(void)
         json_obj_set(p, "type", json_new_str("string"));
         json_obj_set(p, "description", json_new_str("Direktori kerja (opsional)."));
         json_obj_set(props, "cwd", p);
+
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("string"));
+        json_obj_set(p, "description", json_new_str(
+            "Compiler gcc eksplisit (path atau nama executable; opsional)."));
+        json_obj_set(props, "gcc", p);
 
         json_obj_set(schema, "properties", props);
         {
@@ -1847,6 +1864,7 @@ static json_value *tools_list_body(void)
         "--driver --analyze --strict --no-lint --quorum --metamorphic "
         "--negative --require-complete] (sama seperti tool check; wajib "
         "array string). "
+        "gcc: path/nama compiler eksplisit (opsional; MYC_GCC bila kosong). "
         "max_iter: number opsional 1..8 (default 3, IDE-3/qwen-review): "
         "bounded repair loop -- check -> repair(template) -> apply patch "
         "di memori -> check lagi -> bandingkan verdict, ulangi maks "
@@ -1898,6 +1916,11 @@ static json_value *tools_list_body(void)
         json_obj_set(p, "description", json_new_str(
             "Nonaktifkan pack (opsional; perilaku = pack absen)."));
         json_obj_set(props, "no_pack", p);
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("string"));
+        json_obj_set(p, "description", json_new_str(
+            "Compiler gcc eksplisit (path atau nama executable; opsional)."));
+        json_obj_set(props, "gcc", p);
         json_obj_set(schema, "properties", props);
         {
             json_value *req = json_new_arr();
@@ -1916,6 +1939,7 @@ static json_value *tools_list_body(void)
         "--scenario auto. Returns one action: STOP_COMPILE_CLEAN, FIX_ONE, "
         "ESCALATE_RUNTIME, ESCALATE_CONTRACT, or GIVE_UP_NO_TEMPLATE. "
         "source required. flags optional array; omit to use scenario auto. "
+        "gcc optional explicit compiler path/name; MYC_GCC is used when omitted. "
         "STOP_COMPILE_CLEAN is compile_clean, not memory-safe."));
     {
         json_value *schema = json_new_obj();
@@ -1935,6 +1959,11 @@ static json_value *tools_list_body(void)
         json_obj_set(p, "description", json_new_str(
             "Flag opsional. Kosong/absen = --scenario auto."));
         json_obj_set(props, "flags", p);
+        p = json_new_obj();
+        json_obj_set(p, "type", json_new_str("string"));
+        json_obj_set(p, "description", json_new_str(
+            "Compiler gcc eksplisit (path atau nama executable; opsional)."));
+        json_obj_set(props, "gcc", p);
         json_obj_set(schema, "properties", props);
         {
             json_value *req = json_new_arr();

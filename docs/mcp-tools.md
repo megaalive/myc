@@ -36,6 +36,9 @@ Agen lemah: pakai tool **`verify`** (`myc.lite.v1`). Agen frontier: `agent_check
   Fil-C) diminta — konten ini dikirim ke stdin program yang dijalankan gate
   tersebut (pengganti `--run-stdin FILE` di CLI).
 - `cwd` (string, opsional): direktori kerja gate (gcc/clang).
+- `gcc` (string, opsional): path atau nama compiler gcc eksplisit. Bila
+  kosong, resolver memakai `MYC_GCC` lalu mencari gcc major >= 9 di `PATH`;
+  gcc lama yang di-override tetap dilaporkan sebagai `UNAVAILABLE`.
 - **Hasil**: `content[0].text` memuat **JSON lengkap** `myc_result`
   (`verdict`, `assurance`, `error`, `exit_code`, `duration_ms`,
   `resolved_gcc`, `gcc_version`, `clang_version` (exact tool identity,
@@ -192,6 +195,8 @@ Contoh (runtime, IDE-2):
   string** (PR-016 / MYC-AUDIT-048) — tipe salah = -32602 fail-fast.
   Meneruskan `--run` mengaktifkan deteksi runtime (RUNTIME_VIOLATION +
   `sanitizer_location`) sehingga loop repair bisa bekerja.
+- `gcc` (string, opsional): path/nama compiler eksplisit; semantik sama
+  dengan field `gcc` pada tool `check`.
 - `max_iter` (number, opsional, **IDE-3/T4**, default 3, dibatasi 1..8):
   **bounded repair loop** — satu panggilan `agent_check` menjalankan:
   1. `check(mode)` → verdict;
@@ -257,6 +262,8 @@ Contoh (bounded repair loop, dua bug runtime beruntun → konvergen):
 - `source` (string, **wajib**): kode C.
 - `flags` (array string, opsional). Kosong atau absen = `--scenario auto`
   (resep terkecil yang cukup dari bentuk source).
+- `gcc` (string, opsional): path/nama compiler eksplisit; `MYC_GCC` dipakai
+  bila field ini absen.
 - **Hasil**: `content[0].text` + `structuredContent` schema `myc.lite.v1`:
   `verdict`, `claim`, `action`, `finding_id`, `line`, `function`, `why`,
   `fix_or_null`, `allowed_span`, `next_command`, `assurance_vector`,

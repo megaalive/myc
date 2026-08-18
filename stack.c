@@ -374,8 +374,7 @@ int myc_stack_gate(const myc_request *req, const char *source,
     }
 
     /* 2. gcc + temp dir */
-    gcc_path = myc_find_executable(req->gcc_program
-                                       ? req->gcc_program : "gcc");
+    gcc_path = myc_find_gcc(req->gcc_program);
     if (!gcc_path) {
         res->err = MYC_ERR_GCC_NOT_FOUND;
         myc_gate_set_status(res, MYC_GATE_STACK, MYC_GATE_UNAVAILABLE,

@@ -312,10 +312,12 @@ static void ingest_gcc_diagnostics(myc_result *res, const char *text)
 {
     size_t      len;
     json_value *root = NULL;
+    int         start_n;
 
     if (!text || !text[0])
         return;
     len = strlen(text);
+    start_n = res->diag_count;
 
     /* 1. Jalur JSON (jika stderr berupa array JSON). */
     if (text[0] == '[' && json_parse(text, len, &root) && root &&
@@ -392,6 +394,43 @@ static void ingest_gcc_diagnostics(myc_result *res, const char *text)
             if (!nl)
                 break;
             p = nl + 1;
+        }
+    }
+
+    /* gcc lama (termasuk gcc 2.95 dari paket FPC) sering menulis error
+     * hanya sebagai satu baris umum, mis. "gcc: unrecognized option ...",
+     * tanpa prefix <stdin>:line:col:. Jangan hilangkan bukti itu: agent
+     * tetap perlu alasan yang dapat ditindaklanjuti. Ini tetap CONFIRMED
+     * karena berasal langsung dari stderr compiler; line/col = 0 berarti
+     * lokasi tidak disediakan toolchain. Ambil satu baris pertama saja agar
+     * payload deterministik dan bounded. */
+    if (res->diag_count == start_n && res->diag_count < MYC_MAX_DIAGNOSTICS) {
+        const char *p = text;
+        while (*p) {
+            const char *e = strchr(p, '\n');
+            size_t n = e ? (size_t)(e - p) : strlen(p);
+            while (n > 0 && (p[0] == ' ' || p[0] == '\t')) {
+                p++;
+                n--;
+            }
+            while (n > 0 && (p[n - 1] == '\r' || p[n - 1] == ' ' ||
+                              p[n - 1] == '\t'))
+                n--;
+            if (n > 0) {
+                char *fallback = (char *)myc_malloc(n + 1);
+                if (fallback) {
+                    if (n > 2048)
+                        n = 2048;
+                    memcpy(fallback, p, n);
+                    fallback[n] = '\0';
+                    add_diag_copy(res, 0, 0, fallback);
+                    myc_free(fallback);
+                }
+                break;
+            }
+            if (!e)
+                break;
+            p = e + 1;
         }
     }
 
@@ -1133,17 +1172,47 @@ void myc_pipeline(const myc_request *req, myc_result *res)
     sha256_hex(src, srclen, hex);
     res->source_sha256 = myc_strdup(hex);
 
-    /* cari gcc */
-    gcc_path = myc_find_executable(req->gcc_program ? req->gcc_program : "gcc");
+    /* cari gcc (skip 2.95/FPC di PATH bila ada gcc 9+) */
+    gcc_path = myc_find_gcc(req->gcc_program);
     if (!gcc_path) {
         res->err = MYC_ERR_GCC_NOT_FOUND;
         res->verdict = MC_ERROR;
+        myc_gate_set_status(res, MYC_GATE_COMPILE, MYC_GATE_UNAVAILABLE,
+                            "gcc tidak ada di PATH (butuh gcc 9+)");
+        add_diag_copy(res, 0, 0,
+                      "gcc tidak ada di PATH (butuh gcc 9+); "
+                      "set MYC_GCC atau gunakan --gcc <path>");
+        myc_reduce_verdict(res);
         return;
     }
     res->resolved_gcc = myc_strdup(gcc_path);
     /* MYC-AUDIT-022 (roadmap 7.1): exact tool identity — baris pertama
      * `gcc --version` (mis. "gcc.exe (...) 15.2.0"). NULL bila gagal. */
     res->gcc_version = myc_tool_version(gcc_path);
+    {
+        int maj = myc_tool_version_major(res->gcc_version);
+        char msg[384];
+
+        if (maj < 0 || maj < 9) {
+            snprintf(msg, sizeof(msg),
+                     "gcc major %d < 9 (%s). myc butuh -std=c11 -Werror "
+                     "-pedantic; gcc 2.95 (FPC) tidak bisa. Bukan error "
+                     "source. Pakai --gcc <path> atau MYC_GCC, atau geser "
+                     "gcc lama dari depan PATH. path=%s",
+                     maj,
+                     res->gcc_version ? res->gcc_version : "versi tak terbaca",
+                     gcc_path);
+            myc_gate_set_status(res, MYC_GATE_COMPILE, MYC_GATE_UNAVAILABLE,
+                                msg);
+            myc_result_add_evidence(res, MYC_GATE_COMPILE, MYC_EVIDENCE_SKIP,
+                                    msg);
+            add_diag_copy(res, 0, 0, msg);
+            myc_free(gcc_path);
+            res->verdict = MC_ERROR;
+            myc_reduce_verdict(res);
+            return;
+        }
+    }
 
     /* fingerprint kanonik (incremental — cache base components
      * agar perubahan source saja tidak perlu recompute gcc_path/

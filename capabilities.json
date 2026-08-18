@@ -242,6 +242,7 @@
     "--strict",
     "--level",
     "--no-lint",
+    "--gcc",
     "--cwd",
     "--timeout",
     "--output-cap",

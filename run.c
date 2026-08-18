@@ -1342,8 +1342,7 @@ int myc_divergence_gate(const myc_request *req, const char *source,
                         NULL);
 
     /* 1. Resolve toolchain: gcc + clang wajib, tcc opsional. */
-    gcc_path = myc_find_executable(req->gcc_program ? req->gcc_program
-                                                    : "gcc");
+    gcc_path = myc_find_gcc(req->gcc_program);
     clang_path = myc_find_executable(req->clang_program ? req->clang_program
                                                         : "clang");
     tcc_path = myc_find_executable("tcc");

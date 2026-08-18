@@ -1173,7 +1173,7 @@ static void usage(void)
     printf(
         "myc -- verifikator C aman untuk agent (structured, no shell)\n\n"
         "usage:\n"
-        "  myc check <file.c> [--json] [--json-summary] [--agent] [--lite] [--analyze] [--strict] [--no-lint] [--no-cache] [--no-assumptions] [--cwd DIR] [--profile ID] [--calibrate] [--watch-diff]\n"
+        "  myc check <file.c> [--json] [--json-summary] [--agent] [--lite] [--analyze] [--strict] [--no-lint] [--no-cache] [--gcc PATH] [--no-assumptions] [--cwd DIR] [--profile ID] [--calibrate] [--watch-diff]\n"
         "  myc check <file.c> [--run [--run-stdin FILE]] [--prove] [--checked] [--filc] [--driver] [--exhaustive] [--stack [--stack-budget N]] [--fuzz [--fuzz-iters N] [--fuzz-seed S]] [--mutate-audit [--mutate-max N]] [--freestanding] [--metamorphic] [--divergence] [--negative] [--quorum] [--require-complete] [--scenario NAME [--scenario-file PATH]] [--matrix] [--abi]\n"
         "  myc check <file.c> [--watch-diff | --delta]   (IDE-6: fast inner loop per-fungsi --\n"
         "                        delta assurance terstruktur vs baseline cache (fungsi\n"
@@ -1373,7 +1373,7 @@ static int cmd_version(void)
      * identity — versi persis backend (baris pertama `<exe> --version`),
      * bukan hanya path. Roadmap lama: "version belum memberi exact
      * toolchain identity" (docs/myc-serious-review-and-roadmap.md). */
-    char *gcc = myc_find_executable("gcc");
+    char *gcc = myc_find_gcc(NULL);
     char *clang = myc_find_executable("clang");
     char *gv, *cv;
     printf("myc 0.1.0\n");
@@ -2477,6 +2477,18 @@ int main(int argc, char **argv)
                 req.run_lint = 0; known = 1;
             } else if (strcmp(argv[i], "--no-cache") == 0) {
                 req.no_cache = 1; known = 1;
+            } else if (strcmp(argv[i], "--gcc") == 0) {
+                /* Override compiler secara eksplisit. Path boleh absolut
+                 * atau nama executable; myc_find_gcc sengaja tidak melewati
+                 * floor versi untuk override agar harness dapat menguji
+                 * toolchain tertentu dan melaporkannya sebagai UNAVAILABLE. */
+                if (i + 1 >= argc || argv[i + 1][0] == '\0') {
+                    fprintf(stderr, "myc: --gcc membutuhkan argumen PATH\n");
+                    myc_result_free(&res);
+                    return 2;
+                }
+                req.gcc_program = argv[++i];
+                known = 1;
             } else if (strcmp(argv[i], "--watch-diff") == 0 ||
                        strcmp(argv[i], "--delta") == 0) {
                 /* IDE-6 (T5, qwen-review): fast inner loop per-fungsi.

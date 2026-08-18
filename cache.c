@@ -47,7 +47,7 @@ static void cache_tool_key(const myc_request *req, char *out, size_t cap)
         return;
     out[0] = '\0';
 
-    gcc = myc_find_executable(req->gcc_program ? req->gcc_program : "gcc");
+    gcc = myc_find_gcc(req->gcc_program);
     if (gcc)
         gcc_ver = myc_tool_version(gcc);
 

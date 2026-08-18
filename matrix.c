@@ -69,8 +69,7 @@ int myc_matrix_gate(const myc_request *req, const char *source,
     res->ran_matrix = 1;
 
     /* 1. fakta host (gcc) */
-    gcc_path = myc_find_executable(req->gcc_program ? req->gcc_program
-                                                    : "gcc");
+    gcc_path = myc_find_gcc(req->gcc_program);
     if (!gcc_path) {
         myc_gate_set_status(res, MYC_GATE_MATRIX, MYC_GATE_UNAVAILABLE,
                             "gcc tidak ditemukan");

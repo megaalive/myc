@@ -69,6 +69,21 @@ myc context FILE.c --budget 4K
 myc version
 ```
 
+Jika PATH memiliki gcc lama (misalnya gcc 2.95 dari FPC), pilih compiler
+secara eksplisit:
+
+```text
+myc check FILE.c --gcc "C:\\WinLibs\\mingw64\\bin\\gcc.exe"
+set MYC_GCC=C:\\WinLibs\\mingw64\\bin\\gcc.exe
+# PowerShell: $env:MYC_GCC = 'C:\\WinLibs\\mingw64\\bin\\gcc.exe'
+myc check FILE.c
+```
+
+Tanpa override, myc melewati gcc major < 9 bila menemukan gcc 9+ di entri
+PATH berikutnya. Override versi lama tetap dijalankan dan dilaporkan sebagai
+`UNAVAILABLE`, bukan sebagai error pada source. MCP `check`, `verify`, dan
+`agent_check` menerima field string `gcc` dengan semantik yang sama.
+
 `myc --help` lists every command. Full flag encyclopedia and honest gate
 limits: [`docs/capabilities.md`](docs/capabilities.md). Registry:
 [`capabilities.json`](capabilities.json).
